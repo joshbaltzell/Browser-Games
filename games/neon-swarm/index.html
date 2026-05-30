@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neon Swarm</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- HUD (in-game) -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <div class="hud-bar-wrap">
+        <div class="hud-label">HP</div>
+        <div class="bar hp"><div id="hp-fill" class="fill"></div></div>
+      </div>
+      <div class="hud-bar-wrap">
+        <div class="hud-label">LV <span id="level">1</span></div>
+        <div class="bar xp"><div id="xp-fill" class="fill"></div></div>
+      </div>
+    </div>
+    <div class="hud-stats">
+      <span id="timer">0:00</span>
+      <span id="kills">0 kills</span>
+    </div>
+  </div>
+
+  <!-- Start screen -->
+  <div id="start" class="overlay">
+    <div class="panel">
+      <h1 class="game-title">NEON<span>SWARM</span></h1>
+      <p class="subtitle">Survive the endless swarm.</p>
+      <ul class="how-to">
+        <li><b>Move</b> with <kbd>WASD</kbd> / <kbd>&larr;&uarr;&darr;&rarr;</kbd></li>
+        <li>Your weapon <b>auto-fires</b> at the nearest enemy</li>
+        <li>Collect <b style="color:#fffb96">XP gems</b> to level up &amp; pick upgrades</li>
+        <li>Don't let them touch you for too long</li>
+      </ul>
+      <button id="start-btn" class="btn">Start</button>
+      <a class="back-link" href="../../index.html">&larr; Back to games</a>
+    </div>
+  </div>
+
+  <!-- Level-up screen -->
+  <div id="levelup" class="overlay hidden">
+    <div class="panel">
+      <h2 class="levelup-title">LEVEL UP!</h2>
+      <p class="subtitle">Choose an upgrade</p>
+      <div id="upgrade-cards" class="upgrade-cards"></div>
+    </div>
+  </div>
+
+  <!-- Game over screen -->
+  <div id="gameover" class="overlay hidden">
+    <div class="panel">
+      <h2 class="gameover-title">GAME OVER</h2>
+      <div id="final-stats" class="final-stats"></div>
+      <button id="restart-btn" class="btn">Play again</button>
+      <a class="back-link" href="../../index.html">&larr; Back to games</a>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

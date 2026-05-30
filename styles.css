@@ -1,0 +1,191 @@
+:root {
+  --bg: #0a0a14;
+  --bg-2: #12122a;
+  --fg: #e8e8ff;
+  --muted: #8a8ab0;
+  --cyan: #00e5ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: var(--fg);
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(0, 229, 255, 0.12), transparent 60%),
+    radial-gradient(900px 500px at 100% 100%, rgba(255, 59, 107, 0.1), transparent 60%),
+    var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Header ---- */
+.hub-header {
+  text-align: center;
+  padding: 4rem 1.5rem 1.5rem;
+}
+
+.hub-title {
+  margin: 0;
+  font-size: clamp(2.5rem, 8vw, 5rem);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  background: linear-gradient(90deg, var(--cyan), #b388ff 60%, #ff3b6b);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 24px rgba(0, 229, 255, 0.35));
+}
+
+.hub-title span {
+  display: block;
+  font-weight: 300;
+  letter-spacing: 0.35em;
+}
+
+.hub-tagline {
+  margin: 1.25rem auto 0;
+  max-width: 46ch;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+/* ---- Grid ---- */
+main {
+  flex: 1;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+/* ---- Cards ---- */
+.game-card {
+  --accent: var(--cyan);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: inherit;
+  background: linear-gradient(180deg, var(--bg-2), rgba(18, 18, 42, 0.4));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.game-card:not(.placeholder):hover {
+  transform: translateY(-6px);
+  border-color: var(--accent);
+  box-shadow: 0 12px 40px -12px var(--accent);
+}
+
+.card-art {
+  display: grid;
+  place-items: center;
+  height: 150px;
+  background:
+    radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
+    #07070f;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.card-art svg {
+  width: 65%;
+  height: 65%;
+  filter: drop-shadow(0 0 8px var(--accent));
+}
+
+.card-body {
+  padding: 1.1rem 1.25rem 0.5rem;
+  flex: 1;
+}
+
+.card-title {
+  margin: 0 0 0.4rem;
+  font-size: 1.3rem;
+}
+
+.card-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.9rem 0 0;
+}
+
+.tag {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+}
+
+.card-cta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 1rem 1.25rem 1.25rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.card-cta .arrow {
+  transition: transform 0.18s ease;
+}
+
+.game-card:hover .card-cta .arrow {
+  transform: translateX(5px);
+}
+
+/* ---- Placeholder card ---- */
+.placeholder {
+  border-style: dashed;
+  opacity: 0.6;
+}
+
+.placeholder .card-art .plus {
+  font-size: 3rem;
+  font-weight: 200;
+  color: var(--muted);
+}
+
+.placeholder code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+/* ---- Footer ---- */
+.hub-footer {
+  text-align: center;
+  padding: 2rem 1.5rem 3rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
