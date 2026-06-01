@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Word Forge</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <a class="back-link" href="../../index.html">&larr; Back to games</a>
+
+  <main class="forge">
+    <header class="forge-header">
+      <h1 class="forge-title">WORD<span>FORGE</span></h1>
+      <div class="forge-stats">
+        <span class="stat" title="Current win streak">Streak <b id="streak">0</b></span>
+        <span class="stat" title="Best win streak">Best <b id="best">0</b></span>
+      </div>
+    </header>
+
+    <!-- Live status / validation messages -->
+    <div id="message" class="message" role="status" aria-live="polite"></div>
+
+    <!-- 6 x 5 guess grid (built by JS) -->
+    <div id="board" class="board" aria-label="Guess grid"></div>
+
+    <!-- On-screen QWERTY keyboard (built by JS) -->
+    <div id="keyboard" class="keyboard" aria-label="On-screen keyboard"></div>
+
+    <div class="controls">
+      <button id="new-game" type="button">New Game</button>
+    </div>
+
+    <!-- Color legend / how to play -->
+    <div class="legend">
+      <span class="legend-item"><span class="swatch correct"></span> Right spot</span>
+      <span class="legend-item"><span class="swatch present"></span> Wrong spot</span>
+      <span class="legend-item"><span class="swatch absent"></span> Not in word</span>
+    </div>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,353 @@
+/* ============================================================
+   WORD FORGE — dark neon arcade word game
+   Accent green: #06ffa5
+   ============================================================ */
+
+:root {
+  --bg: #0a0a14;
+  --bg-deep: #07070f;
+  --accent: #06ffa5;
+  --accent-dim: #05c47f;
+  --present: #d4a017;     /* amber for "wrong spot" */
+  --present-glow: #ffcc4d;
+  --absent: #2a2a3a;      /* grey for "not in word" */
+  --tile-border: #2e2e44;
+  --tile-border-active: #5a5a7a;
+  --text: #e8e8f0;
+  --text-dim: #7a7a92;
+  --key-bg: #1d1d2e;
+  --key-bg-hover: #2a2a40;
+  --shadow: rgba(0, 0, 0, 0.45);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(6, 255, 165, 0.10), transparent 55%),
+    linear-gradient(160deg, var(--bg) 0%, var(--bg-deep) 100%);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* keep the page from scrolling on input */
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* ---- Back link to hub ---- */
+.back-link {
+  position: fixed;
+  top: 14px;
+  left: 16px;
+  font-size: 13px;
+  color: var(--text-dim);
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  transition: color 0.2s ease;
+  z-index: 10;
+}
+.back-link:hover {
+  color: var(--accent);
+}
+
+/* ---- Layout ---- */
+.forge {
+  width: 100%;
+  max-width: 500px;
+  padding: 12px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.forge-header {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--tile-border);
+  padding: 6px 2px 12px;
+  margin-top: 6px;
+}
+
+.forge-title {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--text);
+  text-shadow: 0 0 18px rgba(6, 255, 165, 0.25);
+}
+.forge-title span {
+  color: var(--accent);
+  text-shadow: 0 0 16px rgba(6, 255, 165, 0.55);
+}
+
+.forge-stats {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.forge-stats b {
+  color: var(--accent);
+  font-size: 15px;
+  margin-left: 4px;
+}
+
+/* ---- Message line ---- */
+.message {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.message .toast {
+  background: rgba(232, 232, 240, 0.95);
+  color: #14141f;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  padding: 7px 14px;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px var(--shadow);
+  animation: toastIn 0.18s ease;
+}
+.message .toast.win {
+  background: var(--accent);
+  box-shadow: 0 0 24px rgba(6, 255, 165, 0.55);
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Board ---- */
+.board {
+  display: grid;
+  grid-template-rows: repeat(6, 1fr);
+  gap: 6px;
+  padding: 4px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.tile {
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text);
+  background: transparent;
+  border: 2px solid var(--tile-border);
+  border-radius: 10px;
+  transition: border-color 0.12s ease, transform 0.08s ease;
+}
+
+/* a tile that just received a letter */
+.tile.filled {
+  border-color: var(--tile-border-active);
+}
+.tile.pop {
+  animation: pop 0.12s ease;
+}
+@keyframes pop {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+/* ---- Flip reveal ---- */
+.tile.flip {
+  animation: flip 0.55s ease forwards;
+}
+@keyframes flip {
+  0%   { transform: rotateX(0deg); }
+  50%  { transform: rotateX(90deg); }
+  100% { transform: rotateX(0deg); }
+}
+
+/* state colors (applied mid-flip via delay) */
+.tile.correct {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #07120d;
+  box-shadow: 0 0 16px rgba(6, 255, 165, 0.45);
+}
+.tile.present {
+  background: var(--present);
+  border-color: var(--present);
+  color: #1a1304;
+  box-shadow: 0 0 12px rgba(212, 160, 23, 0.35);
+}
+.tile.absent {
+  background: var(--absent);
+  border-color: var(--absent);
+  color: var(--text);
+}
+
+/* ---- Row feedback animations ---- */
+.row.shake {
+  animation: shake 0.45s ease;
+}
+@keyframes shake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(4px); }
+  30%, 50%, 70% { transform: translateX(-7px); }
+  40%, 60% { transform: translateX(7px); }
+}
+
+.row.bounce .tile {
+  animation: bounce 0.6s ease;
+}
+@keyframes bounce {
+  0%   { transform: translateY(0); }
+  30%  { transform: translateY(-22px); }
+  50%  { transform: translateY(4px); }
+  65%  { transform: translateY(-10px); }
+  80%  { transform: translateY(2px); }
+  100% { transform: translateY(0); }
+}
+
+/* ---- Keyboard ---- */
+.keyboard {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 4px;
+}
+.kb-row {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+.key {
+  min-width: 32px;
+  height: 52px;
+  flex: 1;
+  max-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text);
+  background: var(--key-bg);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s ease, transform 0.06s ease, box-shadow 0.18s ease;
+}
+.key:hover {
+  background: var(--key-bg-hover);
+}
+.key:active {
+  transform: translateY(1px) scale(0.97);
+}
+.key.wide {
+  flex: 1.5;
+  max-width: 66px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.key.correct {
+  background: var(--accent);
+  color: #07120d;
+  box-shadow: 0 0 12px rgba(6, 255, 165, 0.4);
+}
+.key.present {
+  background: var(--present);
+  color: #1a1304;
+}
+.key.absent {
+  background: #14141f;
+  color: var(--text-dim);
+}
+
+/* ---- Controls ---- */
+.controls {
+  margin-top: 2px;
+}
+#new-game {
+  padding: 10px 26px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #07120d;
+  background: var(--accent);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 0 18px rgba(6, 255, 165, 0.35);
+  transition: background 0.18s ease, transform 0.08s ease, box-shadow 0.18s ease;
+}
+#new-game:hover {
+  background: #3affb9;
+  box-shadow: 0 0 26px rgba(6, 255, 165, 0.55);
+}
+#new-game:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+/* ---- Legend ---- */
+.legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.03em;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.swatch {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.swatch.correct { background: var(--accent); }
+.swatch.present { background: var(--present); }
+.swatch.absent  { background: var(--absent); }
+
+/* ---- Responsive ---- */
+@media (max-width: 420px) {
+  .tile { width: 52px; height: 52px; font-size: 26px; }
+  .forge-title { font-size: 25px; }
+  .key { height: 48px; }
+}
+@media (max-height: 700px) {
+  .tile { width: 50px; height: 50px; font-size: 24px; }
+}
