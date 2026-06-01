@@ -189,3 +189,18 @@ main {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+/* ---- Starfield background ---- */
+#bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.hub-header,
+main,
+.hub-footer {
+  position: relative;
+  z-index: 1;
+}

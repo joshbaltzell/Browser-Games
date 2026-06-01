@@ -102,3 +102,49 @@ function renderGames() {
 }
 
 renderGames();
+
+/* ---- Animated starfield background (drifts behind the cards) ---- */
+(function starfield() {
+  const canvas = document.getElementById("bg");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  let W, H;
+  const stars = [];
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener("resize", resize);
+
+  for (let i = 0; i < 160; i++) {
+    stars.push({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      r: Math.random() * 1.6 + 0.2,
+      a: Math.random() * 0.6 + 0.1,
+      speed: Math.random() * 0.2 + 0.04,
+    });
+  }
+
+  function draw() {
+    // clearRect (not fill) so the hub's gradient shows through behind the stars
+    ctx.clearRect(0, 0, W, H);
+    for (const s of stars) {
+      s.y += s.speed;
+      if (s.y > H) {
+        s.y = 0;
+        s.x = Math.random() * W;
+      }
+      ctx.globalAlpha = s.a;
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
