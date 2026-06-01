@@ -28,6 +28,36 @@ const GAMES = [
         <rect x="58" y="44" width="4" height="14" rx="2" fill="#fffb96" />
       </svg>`,
   },
+  {
+    title: "Void Breaker",
+    description:
+      "A Newtonian take on Asteroids: drift, thrust, and blast procedurally generated rocks and UFOs. Chain combos and ride the particle storm.",
+    path: "games/void-breaker/index.html",
+    tags: ["Arcade", "Shooter", "Physics"],
+    accent: "#5b8cff",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="28" cy="24" r="11" fill="#6b7a8f" />
+        <circle cx="94" cy="56" r="14" fill="#6b7a8f" />
+        <polygon points="60,30 71,52 60,46 49,52" fill="#5b8cff" />
+        <rect x="58" y="12" width="4" height="16" rx="2" fill="#fffb96" />
+      </svg>`,
+  },
+  {
+    title: "Dungeon Explorer",
+    description:
+      "Descend a procedurally generated dungeon floor by floor. Dodge enemies, grab loot, and push your score as deep as you dare.",
+    path: "games/dungeon-explorer/index.html",
+    tags: ["Roguelike", "Dungeon", "Pixel"],
+    accent: "#00d4ff",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="20" y="16" width="80" height="48" rx="3" fill="none" stroke="#0f3460" stroke-width="3" />
+        <rect x="30" y="26" width="14" height="14" rx="2" fill="#00d4ff" />
+        <rect x="54" y="34" width="10" height="10" rx="1" fill="#fffb96" />
+        <rect x="78" y="44" width="14" height="14" rx="2" fill="#ff5d73" />
+      </svg>`,
+  },
 ];
 
 function buildCard(game) {
