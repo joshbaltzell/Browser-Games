@@ -27,6 +27,9 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 | **[Neon Swarm](games/neon-swarm/)** | A survival auto-shooter. Move to dodge, auto-fire at the swarm, collect XP, and stack upgrades on every level-up. How long can you last? |
 | **[Void Breaker](games/void-breaker/)** | A Newtonian take on Asteroids — drift, thrust, and blast procedurally generated rocks and UFOs with combo multipliers and particle explosions. |
 | **[Dungeon Explorer](games/dungeon-explorer/)** | Descend a procedurally generated dungeon floor by floor. Dodge enemies, grab loot, and push your score as deep as you dare. |
+| **[Tetra Storm](games/tetra-storm/)** | A neon falling-block puzzle. Move, rotate, and slam tetrominoes to clear lines — the storm falls faster every level. |
+| **[Word Forge](games/word-forge/)** | Crack the hidden five-letter word in six guesses, with green/amber/grey feedback. A quick, cerebral brain-teaser. |
+| **[Sky Climber](games/sky-climber/)** | Auto-bounce ever upward across drifting, springing, and crumbling platforms. Steer carefully and climb as high as you can. |
 
 ## Project structure
 
@@ -38,9 +41,13 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 └── games/
     ├── neon-swarm/       # Canvas survival auto-shooter
     ├── void-breaker/     # Single-file Asteroids-like
-    └── dungeon-explorer/ # Roguelike (single-file build)
-        ├── index.html
-        └── game.js        # bundled engine + game (no modules; runs from file://)
+    ├── dungeon-explorer/ # Roguelike (single-file build)
+    │   ├── index.html
+    │   └── game.js        # bundled engine + game (no modules; runs from file://)
+    ├── tetra-storm/      # Falling-block puzzle (tetromino stacker)
+    ├── word-forge/       # Five-letter word guessing game
+    └── sky-climber/      # Vertical auto-bounce platformer
+        # each: index.html + game.js + style.css, self-contained
 ```
 
 ## Adding a new game
