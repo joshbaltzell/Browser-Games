@@ -1,0 +1,186 @@
+/* ═══════════════════════════════════════════════════════════════
+   TETRA STORM — dark neon arcade styling (violet accent #b388ff)
+   ═══════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg:      #07070f;
+  --bg2:     #0a0a14;
+  --violet:  #b388ff;
+  --violet-d:#7c5bd6;
+  --panel:   rgba(30, 22, 56, 0.55);
+  --panel-b: rgba(179, 136, 255, 0.22);
+  --text:    #e8e2ff;
+  --muted:   #8a82b8;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Soft radial violet glow over the deep arcade backdrop */
+  background:
+    radial-gradient(1200px 800px at 50% -10%, rgba(124, 91, 214, 0.18), transparent 60%),
+    radial-gradient(900px 700px at 50% 120%, rgba(124, 91, 214, 0.10), transparent 60%),
+    linear-gradient(160deg, var(--bg2) 0%, var(--bg) 100%);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  overflow: hidden;
+  padding: 16px;
+}
+
+/* ── Back-link to hub ─────────────────────────────────────────── */
+.back-link {
+  position: fixed;
+  top: 14px;
+  left: 16px;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+  letter-spacing: 0.5px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: color 0.2s, background 0.2s;
+  z-index: 10;
+}
+.back-link:hover {
+  color: var(--violet);
+  background: rgba(179, 136, 255, 0.08);
+}
+
+/* ── Layout: board + HUD side by side ─────────────────────────── */
+#stage {
+  display: flex;
+  gap: 26px;
+  align-items: stretch;
+}
+
+#board-wrap {
+  position: relative;
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(15, 12, 30, 0.5);
+  border: 1px solid var(--panel-b);
+  box-shadow:
+    0 0 30px rgba(124, 91, 214, 0.25),
+    inset 0 0 40px rgba(124, 91, 214, 0.06);
+}
+
+#board {
+  display: block;
+  border-radius: 6px;
+}
+
+/* ── Side panel ───────────────────────────────────────────────── */
+#hud {
+  width: 188px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.logo {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  line-height: 1;
+  color: #fff;
+  text-shadow:
+    0 0 8px rgba(179, 136, 255, 0.9),
+    0 0 22px rgba(124, 91, 214, 0.6);
+  margin-bottom: 2px;
+}
+.logo span {
+  display: block;
+  color: var(--violet);
+  font-size: 21px;
+  letter-spacing: 5px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-b);
+  border-radius: 12px;
+  padding: 10px 14px;
+  backdrop-filter: blur(4px);
+  box-shadow: inset 0 0 18px rgba(124, 91, 214, 0.05);
+}
+
+.panel-row {
+  display: flex;
+  gap: 12px;
+}
+.panel-row .panel {
+  flex: 1;
+  text-align: center;
+}
+
+.panel-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.panel-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--violet);
+  text-shadow: 0 0 10px rgba(179, 136, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+}
+
+.slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.slot canvas {
+  display: block;
+}
+
+/* ── Controls list ────────────────────────────────────────────── */
+.controls {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ctrl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.key {
+  display: inline-block;
+  min-width: 48px;
+  text-align: center;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(179, 136, 255, 0.10);
+  border: 1px solid var(--panel-b);
+  color: var(--violet);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+/* Compact for short viewports */
+@media (max-height: 720px) {
+  .controls { font-size: 11px; gap: 4px; }
+  .logo { font-size: 22px; }
+  .logo span { font-size: 18px; }
+}

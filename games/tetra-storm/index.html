@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tetra Storm</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Subtle back-link to the hub -->
+  <a class="back-link" href="../../index.html">&larr; Back to games</a>
+
+  <div id="stage">
+    <!-- Playfield -->
+    <div id="board-wrap">
+      <canvas id="board"></canvas>
+    </div>
+
+    <!-- Side panel / HUD -->
+    <aside id="hud">
+      <h1 class="logo">TETRA<span>STORM</span></h1>
+
+      <div class="panel">
+        <div class="panel-label">Score</div>
+        <div class="panel-value" id="score">0</div>
+      </div>
+
+      <div class="panel-row">
+        <div class="panel">
+          <div class="panel-label">Level</div>
+          <div class="panel-value" id="level">1</div>
+        </div>
+        <div class="panel">
+          <div class="panel-label">Lines</div>
+          <div class="panel-value" id="lines">0</div>
+        </div>
+      </div>
+
+      <div class="panel slot">
+        <div class="panel-label">Next</div>
+        <canvas id="next" width="120" height="80"></canvas>
+      </div>
+
+      <div class="panel slot">
+        <div class="panel-label">Hold</div>
+        <canvas id="hold" width="120" height="80"></canvas>
+      </div>
+
+      <div class="controls">
+        <div class="ctrl"><span class="key">&larr; &rarr;</span> Move</div>
+        <div class="ctrl"><span class="key">&uarr; / X</span> Rotate CW</div>
+        <div class="ctrl"><span class="key">Z</span> Rotate CCW</div>
+        <div class="ctrl"><span class="key">&darr;</span> Soft drop</div>
+        <div class="ctrl"><span class="key">Space</span> Hard drop</div>
+        <div class="ctrl"><span class="key">C</span> Hold</div>
+        <div class="ctrl"><span class="key">P</span> Pause</div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
