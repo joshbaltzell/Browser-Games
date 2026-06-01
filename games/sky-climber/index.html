@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sky Climber</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- The game canvas. Sized to a fixed portrait play area, scaled to fit. -->
+  <div id="stage">
+    <canvas id="game" width="480" height="640"></canvas>
+
+    <!-- Live score HUD (in-game) -->
+    <div id="hud" class="hidden">
+      <div class="hud-score">
+        <span id="score">0</span><span class="hud-unit">m</span>
+      </div>
+      <div class="hud-best">BEST <span id="hud-best">0</span>m</div>
+    </div>
+
+    <!-- Start / title screen -->
+    <div id="start" class="overlay">
+      <div class="panel">
+        <h1 class="game-title">SKY<span>CLIMBER</span></h1>
+        <p class="subtitle">Bounce ever higher. Don't look down.</p>
+        <ul class="how-to">
+          <li><b>Steer</b> with <kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd></li>
+          <li>You <b>auto-bounce</b> off every platform</li>
+          <li>You <b>wrap</b> around the screen edges</li>
+          <li>Watch for <b style="color:#7bffb0">springs</b> &amp; crumbling <b style="color:#ff6f6f">tiles</b></li>
+        </ul>
+        <button id="start-btn" class="btn">Start</button>
+        <p class="hint">Press <kbd>Enter</kbd> or click to start</p>
+        <a class="back-link" href="../../index.html">&larr; Back to games</a>
+      </div>
+    </div>
+
+    <!-- Game over screen -->
+    <div id="gameover" class="overlay hidden">
+      <div class="panel">
+        <h2 class="gameover-title">GAME OVER</h2>
+        <div class="final-stats">
+          <div class="row"><span>Height</span><b><span id="final-score">0</span> m</b></div>
+          <div class="row"><span>Best</span><b><span id="final-best">0</span> m</b></div>
+        </div>
+        <p id="new-best" class="new-best hidden">NEW BEST!</p>
+        <button id="restart-btn" class="btn">Play again</button>
+        <p class="hint">Press <kbd>Enter</kbd> or click to restart</p>
+        <a class="back-link" href="../../index.html">&larr; Back to games</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
