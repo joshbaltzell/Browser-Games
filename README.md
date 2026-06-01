@@ -1,8 +1,8 @@
 # Browser Games
 
 A growing arcade of tiny, **dependency-free** browser games. No frameworks, no
-build step, no `node_modules` — just plain HTML, CSS, Canvas, and native ES
-modules. Open the landing page and play.
+build step, no `node_modules` — just plain HTML, CSS, and Canvas. Open the
+landing page and play.
 
 ## Play
 
@@ -14,9 +14,9 @@ python3 -m http.server 8000
 # then open http://localhost:8000/
 ```
 
-> **Note:** Neon Swarm and Void Breaker also run by opening their `index.html`
-> directly (`file://`). **Dungeon Explorer uses native ES modules and must be
-> served over http** — use the local server above.
+> Every game is self-contained and also runs by opening its `index.html`
+> directly (`file://`) — no server required. The static server above is just
+> the easy way to browse the whole collection from the hub.
 
 The landing page (`index.html`) lists every game as a card. Click one to play.
 
@@ -36,13 +36,11 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 ├── hub.js            # Renders game cards from the GAMES array + starfield
 ├── styles.css        # Hub styling
 └── games/
-    ├── neon-swarm/       # Canvas survival auto-shooter (self-contained)
-    ├── void-breaker/     # Single-file Asteroids-like (self-contained)
-    └── dungeon-explorer/ # ES-module roguelike
+    ├── neon-swarm/       # Canvas survival auto-shooter
+    ├── void-breaker/     # Single-file Asteroids-like
+    └── dungeon-explorer/ # Roguelike (single-file build)
         ├── index.html
-        ├── main.js       # entry: wires engine + game, starts the loop
-        ├── engine/       # game-engine, game-loop, input-handler
-        └── src/          # constants, dungeon, entities, index
+        └── game.js        # bundled engine + game (no modules; runs from file://)
 ```
 
 ## Adding a new game
