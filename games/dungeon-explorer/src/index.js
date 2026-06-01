@@ -1,4 +1,4 @@
-import { GameEngine } from '../../../src/engine/game-engine.js';
+import { GameEngine } from '../engine/game-engine.js';
 import { Dungeon } from './dungeon.js';
 import { Player } from './entities.js';
 import { DUNGEON_CONFIG } from './constants.js';

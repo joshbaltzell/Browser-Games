@@ -1,6 +1,6 @@
 import { GameLoop } from './engine/game-loop.js';
 import { InputHandler } from './engine/input-handler.js';
-import { DungeonExplorer } from '../games/dungeon-explorer/src/index.js';
+import { DungeonExplorer } from './src/index.js';
 
 const canvas = document.getElementById('game-canvas');
 const inputHandler = new InputHandler();
