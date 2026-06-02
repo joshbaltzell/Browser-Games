@@ -25,8 +25,8 @@ const COLORS = {
 // Enemy archetypes. `minTime` gates when a type starts appearing (seconds).
 const ENEMY_TYPES = {
   chaser: { radius: 13, speed: 70, hp: 3, damage: 8, xp: 1, color: COLORS.pink, minTime: 0 },
-  darter: { radius: 9, speed: 145, hp: 2, damage: 6, xp: 1, color: "#ff9f43", minTime: 25 },
-  brute: { radius: 24, speed: 42, hp: 14, damage: 18, xp: 4, color: "#c850ff", minTime: 60 },
+  darter: { radius: 9, speed: 145, hp: 2, damage: 6, xp: 1, color: "#ff9f43", minTime: 35 },
+  brute: { radius: 24, speed: 42, hp: 14, damage: 18, xp: 4, color: "#c850ff", minTime: 90 },
 };
 
 // Upgrade pool. Each `apply` mutates the player; some are repeatable.
@@ -93,12 +93,12 @@ function initGame() {
     regen: 0,
     level: 1,
     xp: 0,
-    xpToNext: 5,
+    xpToNext: 4,
     pickupRange: 90,
     invuln: 0,
-    // weapon
-    damage: 1,
-    fireInterval: 0.5,
+    // weapon — buffed baseline so the early game isn't a losing race
+    damage: 2,
+    fireInterval: 0.42,
     projectileCount: 1,
     projectileSpeed: 460,
     projectileRadius: 5,
@@ -110,7 +110,7 @@ function initGame() {
   elapsed = 0;
   kills = 0;
   spawnTimer = 0;
-  spawnInterval = 1.1;
+  spawnInterval = 1.2;
   shootTimer = 0;
   shake = 0;
   pendingLevels = 0;
@@ -176,8 +176,8 @@ function spawnEnemy() {
   const available = Object.entries(ENEMY_TYPES).filter(([, t]) => elapsed >= t.minTime);
   const [, def] = available[Math.floor(Math.random() * available.length)];
 
-  // Scale HP with survival time so it ramps.
-  const hpScale = 1 + elapsed / 50;
+  // Scale HP with survival time so it ramps (gentler curve: doubles ~90s).
+  const hpScale = 1 + elapsed / 90;
 
   // Spawn just outside a random screen edge.
   const margin = 40;
@@ -272,13 +272,14 @@ function updateShooting(dt) {
 }
 
 function updateSpawning(dt) {
-  // Spawn interval shrinks over time (more pressure), clamped.
-  spawnInterval = Math.max(0.18, 1.1 - elapsed * 0.012);
+  // Spawn interval shrinks over time (more pressure), clamped. Slower ramp
+  // and a higher floor so the swarm builds gradually instead of all at once.
+  spawnInterval = Math.max(0.3, 1.2 - elapsed * 0.007);
   spawnTimer -= dt;
   if (spawnTimer <= 0) {
     spawnTimer = spawnInterval;
     // Spawn a small burst as time progresses.
-    const burst = 1 + Math.floor(elapsed / 45);
+    const burst = 1 + Math.floor(elapsed / 75);
     for (let i = 0; i < burst; i++) spawnEnemy();
   }
 }
@@ -362,7 +363,7 @@ function gainXp(amount) {
   while (player.xp >= player.xpToNext) {
     player.xp -= player.xpToNext;
     player.level++;
-    player.xpToNext = Math.round(player.xpToNext * 1.25 + 2);
+    player.xpToNext = Math.round(player.xpToNext * 1.2 + 2);
     pendingLevels++;
   }
   if (pendingLevels > 0 && gameState === "playing") openLevelUp();
