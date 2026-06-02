@@ -181,8 +181,15 @@ function spawnEnemy() {
   const available = Object.entries(ENEMY_TYPES).filter(([, t]) => elapsed >= t.minTime);
   const [, def] = available[Math.floor(Math.random() * available.length)];
 
-  // Scale HP with survival time so it ramps (gentler curve: doubles ~90s).
-  const hpScale = 1 + elapsed / 90;
+  // Difficulty scales with survival time. The first minute is left gentle so
+  // the player gets to feel strong; after that, speed and contact damage ramp
+  // up *without bound* and HP gains a late quadratic term. Player power is
+  // ultimately capped (finite upgrade picks, leveling slows down), so the
+  // swarm eventually outruns and out-hits any build — every run has an end.
+  const t = elapsed;
+  const hpScale = 1 + t / 90 + Math.pow(Math.max(0, t - 150) / 200, 2);
+  const speedScale = 1 + Math.max(0, t - 60) / 240;   // enemies eventually outrun you
+  const dmgScale = 1 + Math.max(0, t - 60) / 300;     // hits eventually one-shot you
 
   // Spawn just outside a random screen edge.
   const margin = 40;
@@ -196,10 +203,10 @@ function spawnEnemy() {
   enemies.push({
     x, y,
     radius: def.radius,
-    speed: def.speed,
+    speed: def.speed * speedScale,
     hp: def.hp * hpScale,
     maxHp: def.hp * hpScale,
-    damage: def.damage,
+    damage: def.damage * dmgScale,
     xp: def.xp,
     color: def.color,
     flash: 0,
@@ -283,9 +290,10 @@ function updateSpawning(dt) {
   spawnTimer -= dt;
   if (spawnTimer <= 0) {
     spawnTimer = spawnInterval;
-    // Spawn a small burst as time progresses.
-    const burst = 1 + Math.floor(elapsed / 75);
-    for (let i = 0; i < burst; i++) spawnEnemy();
+    // Spawn a small burst that grows as time progresses. Capped at a max
+    // on-screen count to protect framerate (you'll be overwhelmed long before).
+    const burst = 1 + Math.floor(elapsed / 70);
+    for (let i = 0; i < burst && enemies.length < 300; i++) spawnEnemy();
   }
 }
 
