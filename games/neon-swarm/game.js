@@ -26,7 +26,7 @@ const COLORS = {
 const ENEMY_TYPES = {
   chaser: { radius: 13, speed: 70, hp: 3, damage: 8, xp: 1, color: COLORS.pink, minTime: 0 },
   darter: { radius: 9, speed: 145, hp: 2, damage: 6, xp: 1, color: "#ff9f43", minTime: 35 },
-  brute: { radius: 24, speed: 42, hp: 14, damage: 18, xp: 4, color: "#c850ff", minTime: 90 },
+  brute: { radius: 24, speed: 42, hp: 10, damage: 18, xp: 4, color: "#c850ff", minTime: 90 },
 };
 
 // Upgrade pool. Each `apply` mutates the player; some are repeatable.
@@ -39,6 +39,7 @@ const UPGRADES = [
   { id: "pickup", icon: "🧲", name: "Magnetism", desc: "+45% pickup range", accent: COLORS.purple, apply: (p) => (p.pickupRange *= 1.45) },
   { id: "velocity", icon: "🚀", name: "Hot Rounds", desc: "+30% projectile speed", accent: COLORS.gold, apply: (p) => (p.projectileSpeed *= 1.3) },
   { id: "regen", icon: "🌿", name: "Regeneration", desc: "Heal 1.5 HP/sec", accent: "#5dff9b", apply: (p) => (p.regen += 1.5) },
+  { id: "splash", icon: "💥", name: "Explosive Rounds", desc: "+45% blast radius & +20% blast damage", accent: "#ff9f43", apply: (p) => { p.splashRadius *= 1.45; p.splashDamage += 0.2; } },
 ];
 
 // ----------------------------------------------------------------------------
@@ -102,6 +103,10 @@ function initGame() {
     projectileCount: 1,
     projectileSpeed: 460,
     projectileRadius: 5,
+    // splash: every hit bursts, dealing a fraction of the shot's damage to
+    // nearby enemies — clears darter swarms and chips tanky brutes.
+    splashRadius: 42,
+    splashDamage: 0.5,
   };
   enemies = [];
   bullets = [];
@@ -325,10 +330,30 @@ function resolveBulletHits() {
         b.life = 0;
         spawnParticles(b.x, b.y, e.color, 4, [30, 110]);
         if (e.hp <= 0) killEnemy(e);
+        applySplash(b, e);
         break;
       }
     }
   }
+}
+
+// Bullets burst on impact: nearby enemies (other than the one directly hit)
+// take a fraction of the shot's damage. Scales with the Explosive Rounds upgrade.
+function applySplash(b, primary) {
+  if (player.splashRadius <= 0) return;
+  const sr2 = player.splashRadius ** 2;
+  const splash = b.damage * player.splashDamage;
+  if (splash <= 0) return;
+  for (const o of enemies) {
+    if (o === primary || o.hp <= 0) continue;
+    if ((o.x - b.x) ** 2 + (o.y - b.y) ** 2 < sr2) {
+      o.hp -= splash;
+      o.flash = 0.1;
+      if (o.hp <= 0) killEnemy(o);
+    }
+  }
+  // Blast visual: a quick orange burst at the impact point.
+  spawnParticles(b.x, b.y, "#ff9f43", 9, [70, 230]);
 }
 
 function killEnemy(e) {
