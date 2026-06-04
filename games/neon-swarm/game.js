@@ -27,6 +27,10 @@ const ENEMY_TYPES = {
   chaser: { radius: 13, speed: 70, hp: 3, damage: 8, xp: 1, color: COLORS.pink, minTime: 0 },
   darter: { radius: 9, speed: 145, hp: 2, damage: 6, xp: 1, color: "#ff9f43", minTime: 35 },
   brute: { radius: 24, speed: 42, hp: 10, damage: 18, xp: 4, color: "#c850ff", minTime: 90 },
+  // Spore: bursts into two fast sporelings when it dies — don't let them pile up.
+  spore: { radius: 16, speed: 80, hp: 8, damage: 11, xp: 2, color: "#39d98a", minTime: 120, split: 2 },
+  // Sentinel: hangs back at range and spits projectiles you have to dodge.
+  sentinel: { radius: 12, speed: 66, hp: 7, damage: 5, xp: 3, color: "#7c83ff", minTime: 150, ranged: true, shootRange: 330, shootInterval: 1.7, projDamage: 9, projSpeed: 240 },
 };
 
 // Upgrade pool. Each `apply` mutates the player; some are repeatable.
@@ -40,6 +44,10 @@ const UPGRADES = [
   { id: "velocity", icon: "🚀", name: "Hot Rounds", desc: "+30% projectile speed", accent: COLORS.gold, apply: (p) => (p.projectileSpeed *= 1.3) },
   { id: "regen", icon: "🌿", name: "Regeneration", desc: "Heal 1.5 HP/sec", accent: "#5dff9b", apply: (p) => (p.regen += 1.5) },
   { id: "splash", icon: "💥", name: "Explosive Rounds", desc: "+45% blast radius & +20% blast damage", accent: "#ff9f43", apply: (p) => { p.splashRadius *= 1.45; p.splashDamage += 0.2; } },
+  { id: "pierce", icon: "🎯", name: "Piercing Rounds", desc: "Shots punch through +1 enemy", accent: "#00e5ff", apply: (p) => (p.pierce += 1) },
+  { id: "crit", icon: "🎲", name: "Critical Strikes", desc: "+12% chance to deal 2× damage", accent: "#fffb96", apply: (p) => (p.critChance = Math.min(0.6, p.critChance + 0.12)) },
+  { id: "orbital", icon: "🛰️", name: "Orbital Drone", desc: "+1 drone orbiting you, shredding nearby foes", accent: "#b388ff", apply: (p) => (p.orbitals += 1) },
+  { id: "lifesteal", icon: "🩸", name: "Vampirism", desc: "Heal +0.5 HP for every kill", accent: "#ff3b6b", apply: (p) => (p.lifesteal += 0.5) },
 ];
 
 // ----------------------------------------------------------------------------
@@ -66,7 +74,7 @@ resize();
 // Game states: "start" | "playing" | "levelup" | "gameover"
 let gameState = "start";
 
-let player, enemies, bullets, gems, particles;
+let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue;
 let elapsed, kills, spawnTimer, spawnInterval, shootTimer, shake, pendingLevels;
 
 const dom = {
@@ -107,11 +115,20 @@ function initGame() {
     // nearby enemies — clears darter swarms and chips tanky brutes.
     splashRadius: 42,
     splashDamage: 0.5,
+    // build-defining extras — all start off, unlocked/stacked via upgrades
+    pierce: 0,
+    critChance: 0,
+    critMult: 2,
+    orbitals: 0,
+    lifesteal: 0,
   };
   enemies = [];
   bullets = [];
   gems = [];
   particles = [];
+  eBullets = [];
+  blasts = [];
+  spawnQueue = [];
   elapsed = 0;
   kills = 0;
   spawnTimer = 0;
@@ -176,20 +193,44 @@ function spawnParticles(x, y, color, count, speedRange = [40, 180]) {
 // ----------------------------------------------------------------------------
 // Spawning
 // ----------------------------------------------------------------------------
+
+// Difficulty scales with survival time. The first minute is left gentle so the
+// player gets to feel strong; after that, enemy speed and contact damage ramp
+// up *without bound* and HP gains a late quadratic term. Player power is
+// ultimately capped (finite upgrade picks, leveling slows), so the swarm
+// eventually outruns and out-hits any build — every run has an end.
+function difficultyScales() {
+  const t = elapsed;
+  return {
+    hp: 1 + t / 90 + Math.pow(Math.max(0, t - 150) / 200, 2),
+    speed: 1 + Math.max(0, t - 60) / 240,
+    dmg: 1 + Math.max(0, t - 60) / 300,
+  };
+}
+
+// The small, fast swarm that bursts out of a dying Spore. Queued (not pushed
+// directly) so we never mutate the enemies array mid-iteration.
+function spawnSporeling(x, y) {
+  const sc = difficultyScales();
+  spawnQueue.push({
+    x: x + rand(-12, 12),
+    y: y + rand(-12, 12),
+    radius: 7,
+    speed: 150 * sc.speed,
+    hp: 2 * sc.hp,
+    maxHp: 2 * sc.hp,
+    damage: 5 * sc.dmg,
+    xp: 1,
+    color: "#9bf6c9",
+    flash: 0,
+  });
+}
+
 function spawnEnemy() {
-  // Pick an unlocked type, weighted toward variety as time goes on.
+  // Pick an unlocked type (uniform among those whose minTime has passed).
   const available = Object.entries(ENEMY_TYPES).filter(([, t]) => elapsed >= t.minTime);
   const [, def] = available[Math.floor(Math.random() * available.length)];
-
-  // Difficulty scales with survival time. The first minute is left gentle so
-  // the player gets to feel strong; after that, speed and contact damage ramp
-  // up *without bound* and HP gains a late quadratic term. Player power is
-  // ultimately capped (finite upgrade picks, leveling slows down), so the
-  // swarm eventually outruns and out-hits any build — every run has an end.
-  const t = elapsed;
-  const hpScale = 1 + t / 90 + Math.pow(Math.max(0, t - 150) / 200, 2);
-  const speedScale = 1 + Math.max(0, t - 60) / 240;   // enemies eventually outrun you
-  const dmgScale = 1 + Math.max(0, t - 60) / 300;     // hits eventually one-shot you
+  const sc = difficultyScales();
 
   // Spawn just outside a random screen edge.
   const margin = 40;
@@ -200,17 +241,27 @@ function spawnEnemy() {
   else if (side === 2) { x = rand(0, W); y = H + margin; }
   else { x = -margin; y = rand(0, H); }
 
-  enemies.push({
+  const e = {
     x, y,
     radius: def.radius,
-    speed: def.speed * speedScale,
-    hp: def.hp * hpScale,
-    maxHp: def.hp * hpScale,
-    damage: def.damage * dmgScale,
+    speed: def.speed * sc.speed,
+    hp: def.hp * sc.hp,
+    maxHp: def.hp * sc.hp,
+    damage: def.damage * sc.dmg,
     xp: def.xp,
     color: def.color,
     flash: 0,
-  });
+  };
+  if (def.split) e.split = def.split;
+  if (def.ranged) {
+    e.ranged = true;
+    e.shootRange = def.shootRange;
+    e.shootInterval = def.shootInterval;
+    e.shootCd = rand(0.3, def.shootInterval); // stagger initial shots
+    e.projDamage = def.projDamage * sc.dmg;
+    e.projSpeed = def.projSpeed;
+  }
+  enemies.push(e);
 }
 
 // ----------------------------------------------------------------------------
@@ -224,9 +275,13 @@ function update(dt) {
   updateShooting(dt);
   updateSpawning(dt);
   updateEnemies(dt);
+  updateOrbitals(dt);
   updateBullets(dt);
+  updateEBullets(dt);
   updateGems(dt);
+  flushSpawnQueue();
   updateParticles(dt);
+  updateBlasts(dt);
 
   if (player.hp <= 0) endGame();
 }
@@ -278,6 +333,9 @@ function updateShooting(dt) {
       vy: Math.sin(a) * player.projectileSpeed,
       radius: player.projectileRadius,
       damage: player.damage,
+      crit: Math.random() < player.critChance,
+      pierce: player.pierce,
+      hit: null,
       life: 1.6,
     });
   }
@@ -299,9 +357,26 @@ function updateSpawning(dt) {
 
 function updateEnemies(dt) {
   for (const e of enemies) {
+    if (e.orbCd > 0) e.orbCd -= dt;
     const ang = Math.atan2(player.y - e.y, player.x - e.x);
-    e.x += Math.cos(ang) * e.speed * dt;
-    e.y += Math.sin(ang) * e.speed * dt;
+
+    if (e.ranged) {
+      // Sentinels hover at range and spit projectiles instead of charging in.
+      const dist = Math.hypot(player.x - e.x, player.y - e.y);
+      let move = 0;
+      if (dist > e.shootRange) move = 1;             // close the gap
+      else if (dist < e.shootRange * 0.6) move = -1; // back off if crowded
+      e.x += Math.cos(ang) * e.speed * move * dt;
+      e.y += Math.sin(ang) * e.speed * move * dt;
+      e.shootCd -= dt;
+      if (dist <= e.shootRange && e.shootCd <= 0) {
+        fireEnemyShot(e);
+        e.shootCd = e.shootInterval;
+      }
+    } else {
+      e.x += Math.cos(ang) * e.speed * dt;
+      e.y += Math.sin(ang) * e.speed * dt;
+    }
     if (e.flash > 0) e.flash -= dt;
 
     // Contact damage.
@@ -313,6 +388,59 @@ function updateEnemies(dt) {
       spawnParticles(player.x, player.y, COLORS.pink, 12);
     }
   }
+}
+
+function fireEnemyShot(e) {
+  const a = Math.atan2(player.y - e.y, player.x - e.x);
+  eBullets.push({
+    x: e.x, y: e.y,
+    vx: Math.cos(a) * e.projSpeed,
+    vy: Math.sin(a) * e.projSpeed,
+    radius: 6,
+    damage: e.projDamage,
+    life: 3.2,
+  });
+}
+
+// Orbiting drones: rotate around the player and shred anything they brush
+// (each enemy can only be hit on a short cooldown so they aren't deleted instantly).
+function updateOrbitals(dt) {
+  if (player.orbitals <= 0) return;
+  const dmg = player.damage * 0.7;
+  for (let i = 0; i < player.orbitals; i++) {
+    const a = elapsed * 2.6 + (i * TAU) / player.orbitals;
+    const ox = player.x + Math.cos(a) * 70;
+    const oy = player.y + Math.sin(a) * 70;
+    for (const e of enemies) {
+      if (e.hp <= 0 || e.orbCd > 0) continue;
+      const rr = (9 + e.radius) ** 2;
+      if ((e.x - ox) ** 2 + (e.y - oy) ** 2 < rr) {
+        e.hp -= dmg;
+        e.flash = 0.1;
+        e.orbCd = 0.4;
+        spawnParticles(ox, oy, COLORS.purple, 3, [40, 120]);
+        if (e.hp <= 0) killEnemy(e);
+      }
+    }
+  }
+}
+
+// Enemy projectiles (from Sentinels): fly straight and hurt the player on contact.
+function updateEBullets(dt) {
+  for (const b of eBullets) {
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.life -= dt;
+    if (b.x < -30 || b.x > W + 30 || b.y < -30 || b.y > H + 30) b.life = 0;
+    if (player.invuln <= 0 && (b.x - player.x) ** 2 + (b.y - player.y) ** 2 < (b.radius + player.radius) ** 2) {
+      player.hp -= b.damage;
+      player.invuln = 0.6;
+      shake = 9;
+      spawnParticles(player.x, player.y, "#ff4dd2", 12);
+      b.life = 0;
+    }
+  }
+  eBullets = eBullets.filter((b) => b.life > 0);
 }
 
 function updateBullets(dt) {
@@ -331,44 +459,68 @@ function resolveBulletHits() {
     if (b.life <= 0) continue;
     for (const e of enemies) {
       if (e.hp <= 0) continue;
+      if (b.hit && b.hit.has(e)) continue; // a piercing shot hits each foe only once
       const rr = (b.radius + e.radius) ** 2;
       if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 < rr) {
-        e.hp -= b.damage;
+        const dealt = b.crit ? b.damage * player.critMult : b.damage;
+        e.hp -= dealt;
         e.flash = 0.1;
-        b.life = 0;
-        spawnParticles(b.x, b.y, e.color, 4, [30, 110]);
+        spawnParticles(b.x, b.y, b.crit ? COLORS.gold : e.color, b.crit ? 8 : 4, [30, b.crit ? 170 : 110]);
         if (e.hp <= 0) killEnemy(e);
-        applySplash(b, e);
-        break;
+        applySplash(b, e, dealt);
+        if (b.pierce > 0) {
+          b.pierce--;
+          (b.hit || (b.hit = new Set())).add(e);
+        } else {
+          b.life = 0;
+          break;
+        }
       }
     }
   }
 }
 
 // Bullets burst on impact: nearby enemies (other than the one directly hit)
-// take a fraction of the shot's damage. Scales with the Explosive Rounds upgrade.
-function applySplash(b, primary) {
+// take a fraction of the damage dealt. Scales with the Explosive Rounds upgrade.
+function applySplash(b, primary, dealt) {
   if (player.splashRadius <= 0) return;
   const sr2 = player.splashRadius ** 2;
-  const splash = b.damage * player.splashDamage;
-  if (splash <= 0) return;
-  for (const o of enemies) {
-    if (o === primary || o.hp <= 0) continue;
-    if ((o.x - b.x) ** 2 + (o.y - b.y) ** 2 < sr2) {
-      o.hp -= splash;
-      o.flash = 0.1;
-      if (o.hp <= 0) killEnemy(o);
+  const splash = dealt * player.splashDamage;
+  if (splash > 0) {
+    for (const o of enemies) {
+      if (o === primary || o.hp <= 0) continue;
+      if ((o.x - b.x) ** 2 + (o.y - b.y) ** 2 < sr2) {
+        o.hp -= splash;
+        o.flash = 0.1;
+        if (o.hp <= 0) killEnemy(o);
+      }
     }
   }
-  // Blast visual: a quick orange burst at the impact point.
-  spawnParticles(b.x, b.y, "#ff9f43", 9, [70, 230]);
+  // Blast visuals: a quick burst plus an expanding shockwave ring sized to the
+  // actual splash radius, so you can see exactly where you're dealing damage.
+  spawnParticles(b.x, b.y, b.crit ? COLORS.gold : "#ff9f43", 9, [70, 230]);
+  if (blasts.length < 48) {
+    blasts.push({ x: b.x, y: b.y, r: player.splashRadius, life: 0.26, maxLife: 0.26, crit: b.crit });
+  }
 }
 
 function killEnemy(e) {
   kills++;
   spawnParticles(e.x, e.y, e.color, 14);
-  // Drop XP gem(s).
   gems.push({ x: e.x, y: e.y, radius: 5, value: e.xp, vx: 0, vy: 0 });
+  if (player.lifesteal > 0) player.hp = Math.min(player.maxHp, player.hp + player.lifesteal);
+  if (e.split) for (let i = 0; i < e.split; i++) spawnSporeling(e.x, e.y);
+}
+
+function flushSpawnQueue() {
+  if (!spawnQueue.length) return;
+  for (const e of spawnQueue) enemies.push(e);
+  spawnQueue.length = 0;
+}
+
+function updateBlasts(dt) {
+  for (const s of blasts) s.life -= dt;
+  blasts = blasts.filter((s) => s.life > 0);
 }
 
 function updateGems(dt) {
@@ -427,8 +579,11 @@ function render() {
 
   drawParticles();
   drawGems();
+  drawEBullets();
   drawBullets();
   drawEnemies();
+  drawBlasts();
+  drawOrbitals();
   drawPlayer();
 
   ctx.restore();
@@ -489,6 +644,13 @@ function drawEnemies() {
   for (const e of enemies) {
     const color = e.flash > 0 ? COLORS.white : e.color;
     glowCircle(e.x, e.y, e.radius, color, 12);
+    // Sentinels get a bright core so you can pick the shooters out of the swarm.
+    if (e.ranged) {
+      ctx.fillStyle = COLORS.white;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.radius * 0.4, 0, TAU);
+      ctx.fill();
+    }
     // Tiny HP hint for tougher enemies.
     if (e.maxHp > 6 && e.hp < e.maxHp) {
       ctx.fillStyle = "rgba(0,0,0,0.5)";
@@ -501,7 +663,57 @@ function drawEnemies() {
 
 function drawBullets() {
   for (const b of bullets) {
-    glowCircle(b.x, b.y, b.radius, COLORS.gold, 14);
+    if (b.crit) {
+      // Crit shots read bigger and whiter so the lucky hits pop.
+      glowCircle(b.x, b.y, b.radius * 1.5, COLORS.gold, 18);
+      ctx.fillStyle = COLORS.white;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.radius * 0.6, 0, TAU);
+      ctx.fill();
+    } else {
+      glowCircle(b.x, b.y, b.radius, COLORS.gold, 14);
+    }
+  }
+}
+
+function drawEBullets() {
+  for (const b of eBullets) {
+    glowCircle(b.x, b.y, b.radius, "#ff4dd2", 16);
+  }
+}
+
+function drawBlasts() {
+  for (const s of blasts) {
+    const k = 1 - s.life / s.maxLife;      // 0 -> 1 across its lifetime
+    const r = s.r * (0.4 + 0.6 * k);       // ring expands outward
+    const color = s.crit ? COLORS.gold : "#ff9f43";
+    ctx.save();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 14;
+    ctx.globalAlpha = (1 - k) * 0.55;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, r, 0, TAU);
+    ctx.stroke();
+    ctx.globalAlpha = (1 - k) * 0.1;       // faint fill so the area reads as a blast
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawOrbitals() {
+  if (player.orbitals <= 0) return;
+  for (let i = 0; i < player.orbitals; i++) {
+    const a = elapsed * 2.6 + (i * TAU) / player.orbitals;
+    const ox = player.x + Math.cos(a) * 70;
+    const oy = player.y + Math.sin(a) * 70;
+    glowCircle(ox, oy, 7, COLORS.purple, 16);
+    ctx.fillStyle = COLORS.white;
+    ctx.beginPath();
+    ctx.arc(ox, oy, 2.5, 0, TAU);
+    ctx.fill();
   }
 }
 
