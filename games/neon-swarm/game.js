@@ -90,6 +90,7 @@ let levelUpFlash;
 let combo, comboTimer;
 let powerups;
 let freezeTimer;
+let overdriveTimer, overdriveOriginals;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -159,6 +160,8 @@ function initGame() {
   comboTimer = 0;
   powerups = [];
   freezeTimer = 0;
+  overdriveTimer = 0;
+  overdriveOriginals = null;
 }
 
 // ----------------------------------------------------------------------------
@@ -328,6 +331,10 @@ function update(rawDt) {
     if (comboTimer <= 0) combo = 0;
   }
   if (freezeTimer > 0) freezeTimer -= rawDt;
+  if (overdriveTimer > 0) {
+    overdriveTimer -= rawDt;
+    if (overdriveTimer <= 0) deactivateOverdrive();
+  }
 
   if (player.hp <= 0) endGame();
 }
@@ -674,7 +681,27 @@ function activateBomb() {
 function activateFreeze() {
   freezeTimer = 3.0;
 }
-function activateOverdrive() {}
+function activateOverdrive() {
+  if (overdriveTimer > 0) {
+    // Already active: just refresh the duration without re-applying multipliers.
+    overdriveTimer = 5.0;
+    return;
+  }
+  overdriveOriginals = {
+    fireInterval: player.fireInterval,
+    projectileSpeed: player.projectileSpeed,
+  };
+  player.fireInterval *= 0.5;
+  player.projectileSpeed *= 1.4;
+  overdriveTimer = 5.0;
+}
+
+function deactivateOverdrive() {
+  if (!overdriveOriginals) return;
+  player.fireInterval = overdriveOriginals.fireInterval;
+  player.projectileSpeed = overdriveOriginals.projectileSpeed;
+  overdriveOriginals = null;
+}
 
 function gainXp(amount) {
   const mult = 1 + Math.min(0.5, combo * 0.02);
@@ -815,7 +842,9 @@ function drawPlayer() {
 
   const flicker = player.invuln > 0 && Math.floor(elapsed * 20) % 2 === 0;
   if (!flicker) {
-    glowCircle(player.x, player.y, player.radius, COLORS.cyan, 22);
+    const glowColor = overdriveTimer > 0 ? "#ffffd0" : COLORS.cyan;
+    const glowR = overdriveTimer > 0 ? player.radius + 4 : player.radius;
+    glowCircle(player.x, player.y, glowR, glowColor, 24);
     ctx.fillStyle = "#ffffff";
     ctx.beginPath();
     ctx.arc(player.x, player.y, player.radius * 0.45, 0, TAU);
