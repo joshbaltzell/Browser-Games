@@ -38,6 +38,15 @@ const ENEMY_TYPES = {
   sentinel: { radius: 12, speed: 66, hp: 7, damage: 5, xp: 3, color: "#7c83ff", minTime: 150, ranged: true, shootRange: 330, shootInterval: 2.2, projDamage: 7, projSpeed: 220 },
 };
 
+// Surge event table. `minTime` mirrors the ENEMY_TYPES gate so a surge is only
+// announced once the enemy type is already in rotation.
+const SURGE_TYPES = [
+  { label: "BRUTE SURGE!",   enemyKey: "brute",    count: 4,  color: "#c850ff", minTime: 90  },
+  { label: "DARTER STORM!",  enemyKey: "darter",   count: 10, color: "#ff9f43", minTime: 35  },
+  { label: "SENTINEL CALL!", enemyKey: "sentinel", count: 2,  color: "#7c83ff", minTime: 150 },
+  { label: "SPORE BLOOM!",   enemyKey: "spore",    count: 3,  color: "#39d98a", minTime: 120 },
+];
+
 const POWERUP_TYPES = {
   bomb:      { color: "#ff9f43", icon: "\u{1F4A3}", label: "BOMB" },
   freeze:    { color: "#7ee8fa", icon: "❄️",  label: "FREEZE" },
@@ -95,6 +104,7 @@ let combo, comboTimer;
 let powerups;
 let freezeTimer;
 let overdriveTimer, overdriveFactors;
+let surgeTimer, surgeState, surgeWarningTimer, surgeType, surgeFlash;
 let audioCtx = null;
 let lastHitSound = 0;
 
@@ -168,6 +178,11 @@ function initGame() {
   freezeTimer = 0;
   overdriveTimer = 0;
   overdriveFactors = null;
+  surgeTimer = 45;
+  surgeState = "idle";
+  surgeWarningTimer = 0;
+  surgeType = null;
+  surgeFlash = 0;
 }
 
 // ----------------------------------------------------------------------------
@@ -370,6 +385,46 @@ function spawnEnemy() {
   enemies.push(e);
 }
 
+// Queue a single surge enemy of the given type via spawnQueue (D-15, D-16).
+// Mirrors spawnEnemy()'s enemy-object shape exactly so surge enemies behave
+// identically to normally spawned ones; uses difficultyScales() for stat scaling.
+function spawnSurgeEnemy(enemyKey) {
+  const def = ENEMY_TYPES[enemyKey];
+  const sc = difficultyScales();
+
+  // Spawn just outside a random screen edge — same logic as spawnEnemy().
+  const margin = 40;
+  let x, y;
+  const side = Math.floor(Math.random() * 4);
+  if (side === 0) { x = rand(0, W); y = -margin; }
+  else if (side === 1) { x = W + margin; y = rand(0, H); }
+  else if (side === 2) { x = rand(0, W); y = H + margin; }
+  else { x = -margin; y = rand(0, H); }
+
+  const e = {
+    x, y,
+    radius: def.radius,
+    speed: def.speed * sc.speed,
+    hp: def.hp * sc.hp,
+    maxHp: def.hp * sc.hp,
+    damage: def.damage * sc.dmg,
+    xp: def.xp,
+    type: enemyKey,
+    color: def.color,
+    flash: 0,
+  };
+  if (def.split) e.split = def.split;
+  if (def.ranged) {
+    e.ranged = true;
+    e.shootRange = def.shootRange;
+    e.shootInterval = def.shootInterval;
+    e.shootCd = rand(0.3, def.shootInterval);
+    e.projDamage = def.projDamage * sc.dmg;
+    e.projSpeed = def.projSpeed;
+  }
+  spawnQueue.push(e);
+}
+
 // ----------------------------------------------------------------------------
 // Update
 // ----------------------------------------------------------------------------
@@ -389,6 +444,7 @@ function update(rawDt) {
   updatePlayer(dt);
   updateShooting(dt);
   updateSpawning(dt);
+  updateSurges(dt);
   updateEnemies(dt);
   updateOrbitals(dt);
   updateBullets(dt);
@@ -480,6 +536,46 @@ function updateSpawning(dt) {
     // on-screen count to protect framerate (you'll be overwhelmed long before).
     const burst = 1 + Math.floor(elapsed / 90);
     for (let i = 0; i < burst && enemies.length < 300; i++) spawnEnemy();
+  }
+}
+
+// Three-state surge machine: idle → warning → spawning → idle.
+// Surges begin only after the 60s warm-up (D-01); the first fires ~105s in
+// (surgeTimer starts at 45, after the 60s gate opens). Subsequent surges use a
+// rand(30,50)s cooldown (D-02).
+function updateSurges(dt) {
+  if (elapsed < 60) return; // D-01: no surges in the first minute
+
+  if (surgeState === "idle") {
+    surgeTimer -= dt;
+    if (surgeTimer <= 0) {
+      // Filter to surge types whose minTime has been reached (D-06).
+      const avail = SURGE_TYPES.filter(s => elapsed >= s.minTime);
+      if (avail.length === 0) {
+        surgeTimer = 5; // nothing available yet — retry soon
+        return;
+      }
+      surgeType = avail[Math.floor(Math.random() * avail.length)]; // D-19
+      surgeState = "warning"; // D-04
+      surgeWarningTimer = 3.0; // D-08, D-09
+    }
+  } else if (surgeState === "warning") {
+    surgeWarningTimer -= dt; // D-09
+    // Drive discretionary edge-pulse (sinusoidal flicker tied to real elapsed time).
+    surgeFlash = 0.5 + 0.5 * Math.sin(elapsed * 8);
+    if (surgeWarningTimer <= 0) {
+      // Fire the burst — cap at 200 total (enemies + queued) to prevent overload (D-07).
+      for (let i = 0; i < surgeType.count && (enemies.length + spawnQueue.length) < 200; i++) {
+        spawnSurgeEnemy(surgeType.enemyKey); // D-15, D-16
+      }
+      surgeState = "spawning"; // transitional
+    }
+  } else if (surgeState === "spawning") {
+    // One-frame transition: reset to idle and set next cooldown (D-17).
+    surgeState = "idle";
+    surgeType = null;
+    surgeFlash = 0;
+    surgeTimer = rand(30, 50); // D-02
   }
 }
 
@@ -879,6 +975,7 @@ function render() {
     ctx.restore();
   }
 
+  drawSurgeWarning();
   drawCombo();
   drawPowerupTimers();
 }
@@ -1252,6 +1349,34 @@ function drawFloaters() {
     ctx.fillStyle = f.color;
     ctx.fillText(f.text, f.x, f.y);
   }
+  ctx.restore();
+}
+
+// Renders the surge announcement outside the shake transform (D-21).
+// Text is solid for the first 2.5s, then fades to 0 over the final 0.5s (D-13).
+function drawSurgeWarning() {
+  if (surgeState !== "warning" || !surgeType) return;
+
+  // Alpha: solid while surgeWarningTimer >= 0.5, linear fade below that (D-13).
+  const alpha = surgeWarningTimer >= 0.5 ? 1 : surgeWarningTimer / 0.5;
+
+  // Discretionary screen-edge tint pulse — low-alpha full-screen fill in surge color.
+  ctx.save();
+  ctx.globalAlpha = 0.08 * alpha * (0.6 + 0.4 * (surgeFlash || 0));
+  ctx.fillStyle = surgeType.color;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  // Centered announcement text with neon glow (D-10, D-11, D-12, D-14).
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = "bold 28px monospace"; // D-12
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = surgeType.color; // D-12
+  ctx.shadowColor = surgeType.color;
+  ctx.shadowBlur = 20; // D-14
+  ctx.fillText(surgeType.label, W / 2, H / 2 - 60); // D-11
   ctx.restore();
 }
 
