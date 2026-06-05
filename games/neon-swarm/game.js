@@ -69,6 +69,7 @@ const UPGRADES = [
   { id: "crit", icon: "🎲", name: "Critical Strikes", desc: "+12% chance to deal 2× damage", accent: "#fffb96", apply: (p) => (p.critChance = Math.min(0.6, p.critChance + 0.12)) },
   { id: "orbital", icon: "🛰️", name: "Orbital Drone", desc: "+1 drone orbiting you, shredding nearby foes", accent: "#b388ff", apply: (p) => (p.orbitals += 1) },
   { id: "lifesteal", icon: "🩸", name: "Vampirism", desc: "Heal +0.5 HP for every kill", accent: "#ff3b6b", apply: (p) => (p.lifesteal += 0.5) },
+  { id: "chain", icon: "⚡", name: "Chain Lightning", desc: "Shots arc to nearest enemy within 150px for 55% damage", accent: COLORS.cyan, apply: (p) => (p.chainCount = (p.chainCount || 0) + 1) },
 ];
 
 // Run modifier definitions. Each `apply` mutates the player and/or globals.
@@ -200,6 +201,7 @@ function initGame() {
     critMult: 2,
     orbitals: 0,
     lifesteal: 0,
+    chainCount: 0,
     glassCannonMode: false, // set true by Glass Cannon modifier — disables regen
   };
   enemies = [];
