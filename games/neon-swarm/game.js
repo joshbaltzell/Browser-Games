@@ -70,6 +70,7 @@ const UPGRADES = [
   { id: "orbital", icon: "🛰️", name: "Orbital Drone", desc: "+1 drone orbiting you, shredding nearby foes", accent: "#b388ff", apply: (p) => (p.orbitals += 1) },
   { id: "lifesteal", icon: "🩸", name: "Vampirism", desc: "Heal +0.5 HP for every kill", accent: "#ff3b6b", apply: (p) => (p.lifesteal += 0.5) },
   { id: "chain", icon: "⚡", name: "Chain Lightning", desc: "Shots arc to nearest enemy within 150px for 55% damage", accent: COLORS.cyan, apply: (p) => (p.chainCount = (p.chainCount || 0) + 1) },
+  { id: "laststand", icon: "🛡️", name: "Last Stand", desc: "Once per run: survive a killing blow with 5 HP and trigger a Bomb", accent: COLORS.gold, apply: (p) => { p.lastStandCharges = Math.min((p.lastStandCharges || 0) + 1, 2); } },
 ];
 
 // Run modifier definitions. Each `apply` mutates the player and/or globals.
