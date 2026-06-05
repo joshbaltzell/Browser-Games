@@ -742,6 +742,12 @@ function updateEBullets(dt) {
       spawnParticles(player.x, player.y, "#ff4dd2", 12);
       sndPlayerHit(); // D-20
       b.life = 0;
+      // Last Stand interception: survive lethal projectile hit with 5 HP (D-04, D-05, D-11)
+      if (player.hp <= 0 && player.lastStandCharges > 0) {
+        player.lastStandCharges--;
+        player.hp = 5;
+        triggerLastStand();
+      }
     }
   }
   eBullets = eBullets.filter((b) => b.life > 0);
