@@ -539,7 +539,9 @@ function updatePlayer(dt) {
   player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
 
   if (player.invuln > 0) player.invuln -= dt;
-  if (player.regen > 0 && player.hp < player.maxHp) {
+  // Glass Cannon suppresses all regeneration — guard so even later Regen/Vitality
+  // upgrade picks produce no healing under this modifier.
+  if (player.regen > 0 && player.hp < player.maxHp && !player.glassCannonMode) {
     player.hp = Math.min(player.maxHp, player.hp + player.regen * dt);
   }
 }
@@ -674,15 +676,21 @@ function updateEnemies(dt) {
 }
 
 function fireEnemyShot(e) {
-  const a = Math.atan2(player.y - e.y, player.x - e.x);
-  eBullets.push({
-    x: e.x, y: e.y,
-    vx: Math.cos(a) * e.projSpeed,
-    vy: Math.sin(a) * e.projSpeed,
-    radius: 6,
-    damage: e.projDamage,
-    life: 3.2,
-  });
+  // Bullet Hell: 3-shot burst with slight spread; otherwise 1 shot straight at player.
+  const a0 = Math.atan2(player.y - e.y, player.x - e.x);
+  const count = bulletHellMode ? 3 : 1;
+  const spread = 0.12; // radians between shots in a burst
+  for (let i = 0; i < count; i++) {
+    const a = a0 + (i - (count - 1) / 2) * spread;
+    eBullets.push({
+      x: e.x, y: e.y,
+      vx: Math.cos(a) * e.projSpeed,
+      vy: Math.sin(a) * e.projSpeed,
+      radius: 6,
+      damage: e.projDamage,
+      life: 3.2,
+    });
+  }
 }
 
 // Orbiting drones: rotate around the player and shred anything they brush
@@ -800,7 +808,9 @@ function applySplash(b, primary, dealt) {
 // bonus and scatter their XP across several gems, so clearing one reads as a
 // real payoff — and the faster leveling is the main lever that eases the run.
 function dropLoot(e) {
-  const total = e.xp >= 2 ? Math.ceil(e.xp * 1.5) : e.xp;
+  // Bullet Hell doubles the XP value going into gems; power-up drop chance unchanged.
+  const baseXp = bulletHellMode ? e.xp * 2 : e.xp;
+  const total = baseXp >= 2 ? Math.ceil(baseXp * 1.5) : baseXp;
   const count = Math.min(8, Math.max(1, Math.round(total / 1.5)));
   const base = Math.floor(total / count);
   let remainder = total - base * count;
