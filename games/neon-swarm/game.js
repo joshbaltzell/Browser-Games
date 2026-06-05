@@ -880,6 +880,7 @@ function render() {
   }
 
   drawCombo();
+  drawPowerupTimers();
 }
 
 function drawBackground() {
