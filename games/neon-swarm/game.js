@@ -207,6 +207,8 @@ function initGame() {
     chainCount: 0,
     lastStandCharges: 0,
     glassCannonMode: false, // set true by Glass Cannon modifier — disables regen
+    upgradeCounts: {},       // maps upgrade id -> times picked this run (D-01, D-03)
+    currentBuildName: null,  // active named build, or null if none yet (D-18)
   };
   enemies = [];
   bullets = [];
