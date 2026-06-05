@@ -121,7 +121,7 @@ Plans:
   5. Arc visual is a jagged cyan line that fades over ~0.15s
 
 Plans:
-- [ ] 07-01-PLAN.md: Chain Lightning upgrade definition, arc logic in resolveBulletHits(), arc visual system
+- [x] 07-01-PLAN.md: Chain Lightning upgrade definition, arc logic in resolveBulletHits(), arc visual system
 
 ### Phase 8: Death Bomb (Last Stand) Upgrade
 **Goal**: Add Last Stand as a new upgrade that saves the player from death once per run with a dramatic Bomb explosion, creating a memorable "peak moment" every run
@@ -176,7 +176,7 @@ Plans:
 | 4. Power-up Timer | 1/1 | Complete   | 2026-06-05 |
 | 5. Wave Surges | 0/1 | Not started | - |
 | 6. Run Modifiers | 0/1 | Not started | - |
-| 7. Chain Lightning | 0/1 | Not started | - |
+| 7. Chain Lightning | 1/1 | Complete   | 2026-06-05 |
 | 8. Death Bomb | 0/1 | Not started | - |
 | 9. Invuln Dash | 0/1 | Not started | - |
 | 10. Build Names | 0/1 | Not started | - |
