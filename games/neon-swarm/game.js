@@ -1180,6 +1180,7 @@ function render() {
   drawSentinelTelegraphs(); // VIS-02: shrinking reticle at player pos before Sentinel fires
   drawBlasts();
   drawOrbitals();
+  drawAfterimages();
   drawPlayer();
 
   ctx.restore();
@@ -1571,6 +1572,14 @@ function drawPowerups() {
     ctx.fillText(def.icon, p.x, p.y);
     ctx.restore();
   }
+}
+
+function drawAfterimages() {
+  for (const image of afterimages) {
+    ctx.globalAlpha = (image.life / image.maxLife) * 0.5;
+    glowCircle(image.x, image.y, image.radius, image.color, 20);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawParticles() {
