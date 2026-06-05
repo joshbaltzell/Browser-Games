@@ -140,7 +140,7 @@ resize();
 // Game states: "start" | "modifier" | "playing" | "levelup" | "gameover"
 let gameState = "start";
 
-let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue, lightningArcs;
+let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue, lightningArcs, afterimages;
 let elapsed, kills, spawnTimer, spawnInterval, shootTimer, shake, pendingLevels;
 let timeScale, slowmoTimer, slowmoTarget;
 let floaters;
@@ -170,6 +170,7 @@ const dom = {
   modifier: document.getElementById("modifier"),
   modifierCards: document.getElementById("modifier-cards"),
   modifierLabel: document.getElementById("modifier-label"),
+  dashReady: document.getElementById("dash-ready"),
 };
 
 function initGame() {
@@ -186,6 +187,7 @@ function initGame() {
     xpToNext: 4,
     pickupRange: 90,
     invuln: 0,
+    dashCd: 0,
     // weapon — buffed baseline so the early game isn't a losing race
     damage: 2,
     fireInterval: 0.42,
@@ -210,6 +212,7 @@ function initGame() {
   bullets = [];
   gems = [];
   particles = [];
+  afterimages = [];
   eBullets = [];
   blasts = [];
   lightningArcs = [];
@@ -259,6 +262,10 @@ window.addEventListener("keydown", (e) => {
     keys.add(MOVE_KEYS[k]);
     e.preventDefault();
   }
+  if (gameState === "playing" && e.key === "Shift") {
+    executeDash();
+    e.preventDefault();
+  }
   if (gameState === "levelup" && ["1", "2", "3"].includes(k)) {
     chooseUpgrade(Number(k) - 1);
   }
@@ -301,6 +308,65 @@ function triggerSlowmo(target, duration) {
   slowmoTarget = target;
   slowmoTimer = duration;
   timeScale = Math.min(timeScale, target); // snap down immediately
+}
+
+function executeDash() {
+  // Guard: cooldown not ready (D-02, D-14)
+  if (player.dashCd > 0) return;
+
+  // Compute movement vector exactly as updatePlayer() does (D-06)
+  let dx = 0, dy = 0;
+  if (keys.has("up"))    dy -= 1;
+  if (keys.has("down"))  dy += 1;
+  if (keys.has("left"))  dx -= 1;
+  if (keys.has("right")) dx += 1;
+
+  // No-direction guard: no keys held = no dash (D-24, D-25)
+  if (dx === 0 && dy === 0) return;
+
+  // Normalize direction
+  const len = Math.hypot(dx, dy);
+  const nx = dx / len;
+  const ny = dy / len;
+
+  // Record origin before moving (needed for afterimage intermediate positions)
+  const ox = player.x;
+  const oy = player.y;
+
+  // Teleport 120px instantly (D-07)
+  player.x += nx * 120;
+  player.y += ny * 120;
+
+  // Boundary clamp (D-08)
+  player.x = Math.max(player.radius, Math.min(W - player.radius, player.x));
+  player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
+
+  // Set invuln and cooldown (D-10, D-11)
+  player.invuln = 0.35;
+  player.dashCd = 1.5;
+
+  // Spawn 3 afterimages at 25%, 50%, 75% along dash path (D-15, D-16)
+  for (const f of [0.25, 0.5, 0.75]) {
+    afterimages.push({
+      x: ox + (player.x - ox) * f,
+      y: oy + (player.y - oy) * f,
+      radius: player.radius,
+      alpha: 0.5,
+      life: 0.25,
+      maxLife: 0.25,
+      color: COLORS.cyan,
+    });
+  }
+
+  // Small cyan burst at origin for extra juice
+  spawnParticles(ox, oy, COLORS.cyan, 6);
+}
+
+function updateAfterimages(dt) {
+  for (const image of afterimages) {
+    image.life -= dt;
+  }
+  afterimages = afterimages.filter((a) => a.life > 0);
 }
 
 function unlockAudio() {
@@ -513,6 +579,7 @@ function update(rawDt) {
   updatePowerups(dt);
   flushSpawnQueue();
   updateParticles(dt);
+  updateAfterimages(dt);
   updateBlasts(dt);
   updateLightningArcs(dt);
   updateFloaters(dt);
@@ -545,6 +612,7 @@ function updatePlayer(dt) {
   player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
 
   if (player.invuln > 0) player.invuln -= dt;
+  if (player.dashCd > 0) player.dashCd -= dt;
   // Glass Cannon suppresses all regeneration — guard so even later Regen/Vitality
   // upgrade picks produce no healing under this modifier.
   if (player.regen > 0 && player.hp < player.maxHp && !player.glassCannonMode) {
@@ -1113,6 +1181,7 @@ function render() {
   drawSentinelTelegraphs(); // VIS-02: shrinking reticle at player pos before Sentinel fires
   drawBlasts();
   drawOrbitals();
+  drawAfterimages();
   drawPlayer();
 
   ctx.restore();
@@ -1506,6 +1575,14 @@ function drawPowerups() {
   }
 }
 
+function drawAfterimages() {
+  for (const image of afterimages) {
+    ctx.globalAlpha = (image.life / image.maxLife) * 0.5;
+    glowCircle(image.x, image.y, image.radius, image.color, 20);
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawParticles() {
   for (const p of particles) {
     ctx.save();
@@ -1648,6 +1725,7 @@ function updateHud() {
   const m = Math.floor(elapsed / 60);
   const s = Math.floor(elapsed % 60);
   dom.timer.textContent = `${m}:${s.toString().padStart(2, "0")}`;
+  dom.dashReady.classList.toggle("cooling", player.dashCd > 0);
 }
 
 function openLevelUp() {
