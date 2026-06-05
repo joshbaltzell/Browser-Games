@@ -257,6 +257,9 @@ window.addEventListener("keydown", (e) => {
   if (gameState === "levelup" && ["1", "2", "3"].includes(k)) {
     chooseUpgrade(Number(k) - 1);
   }
+  if (gameState === "modifier" && ["1", "2", "3", "4"].includes(k)) {
+    chooseModifier(Number(k) - 1);
+  }
 });
 window.addEventListener("keyup", (e) => {
   const k = e.key.toLowerCase();
@@ -265,8 +268,8 @@ window.addEventListener("keyup", (e) => {
 // Lose focus -> stop drifting.
 window.addEventListener("blur", () => keys.clear());
 
-document.getElementById("start-btn").addEventListener("click", startGame);
-document.getElementById("restart-btn").addEventListener("click", startGame);
+document.getElementById("start-btn").addEventListener("click", openModifierSelection);
+document.getElementById("restart-btn").addEventListener("click", openModifierSelection);
 
 // ----------------------------------------------------------------------------
 // Helpers
@@ -1633,6 +1636,29 @@ function chooseModifier(index) {
   selectedModifier = m;
   dom.modifier.classList.add("hidden");
   applyAndStart();
+}
+
+// Apply the selected modifier's effects and transition to "playing".
+// initGame() already ran in openModifierSelection(), so we do NOT call it again.
+function applyAndStart() {
+  if (selectedModifier) selectedModifier.apply(player);
+
+  gameState = "playing";
+  dom.start.classList.add("hidden");
+  dom.gameover.classList.add("hidden");
+  dom.levelup.classList.add("hidden");
+  dom.modifier.classList.add("hidden");
+  dom.hud.classList.remove("hidden");
+  lastTime = performance.now();
+
+  // Show modifier name in HUD for non-standard runs (D-12, D-15).
+  if (selectedModifier && selectedModifier.id !== "standard") {
+    dom.modifierLabel.textContent = selectedModifier.name;
+    dom.modifierLabel.classList.remove("hidden");
+  } else {
+    dom.modifierLabel.textContent = "";
+    dom.modifierLabel.classList.add("hidden");
+  }
 }
 
 // ----------------------------------------------------------------------------
