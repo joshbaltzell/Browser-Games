@@ -990,6 +990,15 @@ function activateBomb() {
   // Central burst so the screen-clear reads as an explosion.
   spawnParticles(W / 2, H / 2, "#ff9f43", 30, [100, 500]);
 }
+function triggerLastStand() {
+  activateBomb();            // screen-clear explosion (overridden below for drama)
+  shake = 30;                // slightly more than bomb's 28 (D-06)
+  triggerSlowmo(0.1, 0.4);  // deeper, longer slow-mo than bomb (D-06)
+  spawnFloater(player.x, player.y - 20, "LAST STAND!", COLORS.gold, 28); // large gold floater (D-06)
+  player.invuln = 1.5;       // 1.5s invuln so player isn't immediately re-killed (D-06)
+  levelUpFlash = 0.4;        // white screen-wide flash (D-06, D-12)
+}
+
 function activateFreeze() {
   sndFreeze(); // D-18
   freezeTimer = 3.0;
