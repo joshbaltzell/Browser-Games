@@ -91,6 +91,8 @@ let combo, comboTimer;
 let powerups;
 let freezeTimer;
 let overdriveTimer, overdriveFactors;
+let audioCtx = null;
+let lastHitSound = 0;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -220,6 +222,57 @@ function triggerSlowmo(target, duration) {
   slowmoTarget = target;
   slowmoTimer = duration;
   timeScale = Math.min(timeScale, target); // snap down immediately
+}
+
+function unlockAudio() {
+  try {
+    if (audioCtx === null) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+  } catch (e) {
+    // AudioContext not supported — audioCtx stays null, all sounds are no-ops.
+  }
+}
+
+function playTone(opts) {
+  if (!audioCtx) return;
+  try {
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const type    = opts.type    || "sine";
+    const freq    = opts.freq    || 440;
+    const endFreq = opts.endFreq;
+    const dur     = opts.dur     || 0.1;
+    const gain    = Math.min(0.3, opts.gain !== undefined ? opts.gain : 0.1);
+    const now     = audioCtx.currentTime;
+
+    const osc = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now);
+    if (endFreq !== undefined) {
+      if (freq > 0 && endFreq > 0) {
+        osc.frequency.exponentialRampToValueAtTime(endFreq, now + dur);
+      } else {
+        osc.frequency.linearRampToValueAtTime(endFreq, now + dur);
+      }
+    }
+
+    // Attack/decay envelope — prevents clicks and pops.
+    gainNode.gain.setValueAtTime(0.0001, now);
+    gainNode.gain.linearRampToValueAtTime(gain, now + 0.005);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+    osc.start(now);
+    osc.stop(now + dur);
+  } catch (e) {
+    // Silently swallow any unexpected audio error — never break the game loop.
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -1129,6 +1182,7 @@ function endGame() {
 }
 
 function startGame() {
+  unlockAudio();
   initGame();
   gameState = "playing";
   dom.start.classList.add("hidden");
