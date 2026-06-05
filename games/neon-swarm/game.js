@@ -22,6 +22,10 @@ const COLORS = {
   white: "#ffffff",
 };
 const COMBO_DECAY = 2.5; // seconds before streak resets after last kill
+// Timer display max durations — must stay in sync with activateFreeze() and
+// activateOverdrive() which set freezeTimer/overdriveTimer to these values.
+const FREEZE_MAX_DURATION = 3.0;    // matches activateFreeze():    freezeTimer = 3.0
+const OVERDRIVE_MAX_DURATION = 5.0; // matches activateOverdrive(): overdriveTimer = 5.0
 
 // Enemy archetypes. `minTime` gates when a type starts appearing (seconds).
 const ENEMY_TYPES = {
@@ -876,6 +880,7 @@ function render() {
   }
 
   drawCombo();
+  drawPowerupTimers();
 }
 
 function drawBackground() {
@@ -1274,6 +1279,57 @@ function drawCombo() {
   ctx.fillRect(cx - barW / 2, cy + size / 2 + 5, barW, 4);
   ctx.fillStyle = color;
   ctx.fillRect(cx - barW / 2, cy + size / 2 + 5, barW * progress, 4);
+  ctx.restore();
+}
+
+function drawPowerupTimers() {
+  // Build list of currently active timers (Freeze first, then Overdrive).
+  const active = [];
+  if (freezeTimer > 0)    active.push({ icon: "❄️",  label: "FREEZE",    color: "#7ee8fa", timer: freezeTimer,    max: FREEZE_MAX_DURATION });
+  if (overdriveTimer > 0) active.push({ icon: "⚡",  label: "OVERDRIVE", color: "#ffe066", timer: overdriveTimer, max: OVERDRIVE_MAX_DURATION });
+  if (active.length === 0) return;
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  const cx = W / 2;
+  // 28px row pitch: first entry at H-80, second (if both) at H-52.
+  for (let i = 0; i < active.length; i++) {
+    const entry = active[i];
+    const y = H - 80 + i * 28;
+
+    // Subtle fade as time runs low (Claude's discretion — subtle, clamped).
+    const pct = Math.max(0, entry.timer) / entry.max;
+    ctx.globalAlpha = 0.55 + pct * 0.45; // 0.55 at 0% → 1.0 at 100%
+
+    // Text line: icon, label, remaining time.
+    ctx.font = "bold 13px monospace";
+    ctx.fillStyle = entry.color;
+    ctx.shadowColor = entry.color;
+    ctx.shadowBlur = 12;
+    ctx.fillText(`${entry.icon} ${entry.label}  ${Math.max(0, entry.timer).toFixed(1)}s`, cx, y);
+
+    // Bar geometry: 160×5 px, 6px below the text centre.
+    const barW = 160;
+    const barH = 5;
+    const barX = cx - barW / 2;
+    const barY = y + 10; // nudged slightly lower than +6 so it clears the 13px text
+
+    // Background track.
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    ctx.fillRect(barX, barY, barW, barH);
+
+    // Depleting fill — shrinks left-to-right as timer runs down.
+    const fillW = (Math.max(0, entry.timer) / entry.max) * barW;
+    ctx.shadowColor = entry.color;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = entry.color;
+    ctx.fillRect(barX, barY, fillW, barH);
+  }
+
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
