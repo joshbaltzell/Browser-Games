@@ -77,6 +77,7 @@ let gameState = "start";
 let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue;
 let elapsed, kills, spawnTimer, spawnInterval, shootTimer, shake, pendingLevels;
 let timeScale, slowmoTimer, slowmoTarget;
+let floaters;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -140,6 +141,7 @@ function initGame() {
   timeScale = 1;
   slowmoTimer = 0;
   slowmoTarget = 1;
+  floaters = [];
 }
 
 // ----------------------------------------------------------------------------
@@ -301,6 +303,7 @@ function update(rawDt) {
   flushSpawnQueue();
   updateParticles(dt);
   updateBlasts(dt);
+  updateFloaters(dt);
 
   if (player.hp <= 0) endGame();
 }
@@ -606,6 +609,34 @@ function updateParticles(dt) {
   particles = particles.filter((p) => p.life > 0);
 }
 
+function spawnFloater(x, y, text, color, size) {
+  if (floaters.length >= 60) floaters.shift();
+  floaters.push({
+    x: x + rand(-10, 10),
+    y,
+    text,
+    color,
+    size: size || 15,
+    alpha: 1,
+    vy: -55,
+    vx: rand(-14, 14),
+    life: 0.8,
+    maxLife: 0.8,
+  });
+}
+
+function updateFloaters(dt) {
+  for (const f of floaters) {
+    f.x += f.vx * dt;
+    f.y += f.vy * dt;
+    f.vy *= 0.94;
+    f.vx *= 0.94;
+    f.life -= dt;
+    f.alpha = Math.max(0, f.life / f.maxLife);
+  }
+  floaters = floaters.filter((f) => f.life > 0);
+}
+
 // ----------------------------------------------------------------------------
 // Render
 // ----------------------------------------------------------------------------
@@ -628,6 +659,8 @@ function render() {
   drawPlayer();
 
   ctx.restore();
+
+  drawFloaters(); // drawn outside the shake transform so numbers don't jitter
 }
 
 function drawBackground() {
@@ -803,6 +836,19 @@ function drawParticles() {
     ctx.fill();
     ctx.restore();
   }
+}
+
+function drawFloaters() {
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const f of floaters) {
+    ctx.globalAlpha = f.alpha;
+    ctx.font = `bold ${f.size}px monospace`;
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.restore();
 }
 
 // ----------------------------------------------------------------------------
