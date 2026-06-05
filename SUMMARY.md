@@ -1,38 +1,46 @@
-# Phase 05-01 Execution Summary
+# Phase 07-01 Execution Summary
 
-**Plan:** 05-01 (Wave Surge Announcements)
-**Phase:** 05-wave-surges
+**Plan:** 07-01-PLAN.md — Chain Lightning Upgrade
 **Executed:** 2026-06-05
-**Status:** Complete — all 4 tasks committed
+**Status:** Complete — all 6 tasks committed
 
 ## Tasks Completed
 
-### 05-01-T01: SURGE_TYPES table and surge state globals
-- Added SURGE_TYPES constant array (4 entries) after ENEMY_TYPES
-- Declared let surgeTimer, surgeState, surgeWarningTimer, surgeType, surgeFlash
-- initGame() resets all five variables to correct initial values
-- Commit: f53cade
+### T01 — Upgrade definition + chainCount
+- Added chain entry as 14th item in UPGRADES array with id "chain", icon "⚡", name "Chain Lightning", desc containing "150px" and "55% damage", accent COLORS.cyan, apply increments p.chainCount via || 0 guard.
+- Added chainCount: 0 to initGame()'s player object alongside pierce/critChance/orbitals/lifesteal.
 
-### 05-01-T02: spawnSurgeEnemy() helper
-- Mirrors spawnEnemy() object shape exactly with difficultyScales()
-- Replicates def.split and def.ranged blocks
-- Pushes to spawnQueue — no mid-iteration mutation
-- Commit: 7d9ac83
+### T02 — lightningArcs state array + updateLightningArcs lifecycle
+- Added lightningArcs to global let declaration alongside blasts/spawnQueue.
+- Added lightningArcs = [] reset in initGame().
+- Added updateLightningArcs(dt) mirroring updateBlasts pattern — decrements life, filters expired.
+- Wired updateLightningArcs(dt) into update() immediately after updateBlasts(dt).
 
-### 05-01-T03: updateSurges() state machine
-- Three-state idle-warning-spawning-idle machine
-- Early-returns when elapsed < 60 (D-01)
-- Burst capped at enemies.length + spawnQueue.length < 200
-- Cooldown: rand(30,50)s after each surge
-- Wired into update() after updateSpawning(dt)
-- Commit: c859f26
+### T03 — applyChainLightning() core hop logic
+- Placed directly after applySplash().
+- Uses a Set seeded with primary to prevent re-targeting.
+- Each hop: nearest enemy to previous target within 150px, damage = b.damage * 0.55^hop (no crit scaling), flash=0.1, cyan particle burst (4 particles), killEnemy() if hp <= 0, spawnLightningArc() call. Chain stops if nothing in range.
 
-### 05-01-T04: drawSurgeWarning() render
-- Alpha: solid 2.5s, fades over final 0.5s (D-13)
-- Discretionary edge-tint pulse at 8% alpha
-- bold 28px monospace, shadowBlur 20, centered at (W/2, H/2-60)
-- Called from render() after ctx.restore() (outside shake transform)
-- Commit: 040d175
+### T04 — spawnLightningArc() pre-jittered polyline
+- Placed directly after updateLightningArcs().
+- Enforces 12-arc cap (shifts oldest on overflow).
+- Generates 6-point polyline: start + 4 interior points (t=0.2/0.4/0.6/0.8) offset +-15px perpendicular + end. Points computed once at creation.
+- Pushes { x1, y1, x2, y2, points, life: 0.15, maxLife: 0.15 }.
+
+### T05 — Hook into resolveBulletHits()
+- Added guard call immediately after applySplash(b, e, dealt) and before the pierce/break block.
+
+### T06 — drawLightningArcs() + render() integration
+- Added drawLightningArcs() after drawBlasts() — cyan stroke, shadowBlur 14, lineWidth 1.5, per-arc alpha fade, save/restore.
+- Called from render() inside the shake-translate block after drawBullets().
 
 ## Files Modified
-- games/neon-swarm/game.js (sole file — no HTML/DOM changes)
+- games/neon-swarm/game.js (sole modified file)
+
+## Commits
+- ca0ee7b T01: feat(neon-swarm): add Chain Lightning upgrade definition and chainCount
+- 4cc6150 T02: feat(neon-swarm): add lightningArcs array and updateLightningArcs lifecycle
+- 028a100 T03: feat(neon-swarm): implement applyChainLightning() — hop logic with falloff damage
+- e750ce1 T04: feat(neon-swarm): implement spawnLightningArc() — pre-jittered polyline with 12-arc cap
+- f98b783 T05: feat(neon-swarm): hook applyChainLightning into resolveBulletHits()
+- 5a22e45 T06: feat(neon-swarm): implement drawLightningArcs() and wire into render()

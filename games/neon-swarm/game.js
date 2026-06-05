@@ -69,6 +69,7 @@ const UPGRADES = [
   { id: "crit", icon: "🎲", name: "Critical Strikes", desc: "+12% chance to deal 2× damage", accent: "#fffb96", apply: (p) => (p.critChance = Math.min(0.6, p.critChance + 0.12)) },
   { id: "orbital", icon: "🛰️", name: "Orbital Drone", desc: "+1 drone orbiting you, shredding nearby foes", accent: "#b388ff", apply: (p) => (p.orbitals += 1) },
   { id: "lifesteal", icon: "🩸", name: "Vampirism", desc: "Heal +0.5 HP for every kill", accent: "#ff3b6b", apply: (p) => (p.lifesteal += 0.5) },
+  { id: "chain", icon: "⚡", name: "Chain Lightning", desc: "Shots arc to nearest enemy within 150px for 55% damage", accent: COLORS.cyan, apply: (p) => (p.chainCount = (p.chainCount || 0) + 1) },
 ];
 
 // Run modifier definitions. Each `apply` mutates the player and/or globals.
@@ -138,7 +139,7 @@ resize();
 // Game states: "start" | "modifier" | "playing" | "levelup" | "gameover"
 let gameState = "start";
 
-let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue;
+let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue, lightningArcs;
 let elapsed, kills, spawnTimer, spawnInterval, shootTimer, shake, pendingLevels;
 let timeScale, slowmoTimer, slowmoTarget;
 let floaters;
@@ -200,6 +201,7 @@ function initGame() {
     critMult: 2,
     orbitals: 0,
     lifesteal: 0,
+    chainCount: 0,
     glassCannonMode: false, // set true by Glass Cannon modifier — disables regen
   };
   enemies = [];
@@ -208,6 +210,7 @@ function initGame() {
   particles = [];
   eBullets = [];
   blasts = [];
+  lightningArcs = [];
   spawnQueue = [];
   elapsed = 0;
   kills = 0;
@@ -509,6 +512,7 @@ function update(rawDt) {
   flushSpawnQueue();
   updateParticles(dt);
   updateBlasts(dt);
+  updateLightningArcs(dt);
   updateFloaters(dt);
   if (levelUpFlash > 0) levelUpFlash = Math.max(0, levelUpFlash - rawDt * 3.5);
   if (comboTimer > 0) {
@@ -768,6 +772,7 @@ function resolveBulletHits() {
         );
         if (e.hp <= 0) killEnemy(e);
         applySplash(b, e, dealt);
+        if (player.chainCount > 0) applyChainLightning(b, e, player.chainCount);
         if (b.pierce > 0) {
           b.pierce--;
           (b.hit || (b.hit = new Set())).add(e);
@@ -801,6 +806,39 @@ function applySplash(b, primary, dealt) {
   spawnParticles(b.x, b.y, b.crit ? COLORS.gold : "#ff9f43", 9, [70, 230]);
   if (blasts.length < 48) {
     blasts.push({ x: b.x, y: b.y, r: player.splashRadius, life: 0.26, maxLife: 0.26, crit: b.crit });
+  }
+}
+
+// Chain Lightning hop logic. Fires after the primary bullet hit when the player
+// has chainCount > 0. Each hop searches the nearest enemy to the PREVIOUS target
+// within 150px, deals b.damage * 0.55^hop (no crit scaling), flashes/particles,
+// kills if hp <= 0, and creates a jagged arc visual. Stops when no target in range.
+function applyChainLightning(b, primary, hops) {
+  const chained = new Set();
+  chained.add(primary);
+  let source = primary;
+
+  for (let hop = 1; hop <= hops; hop++) {
+    let next = null;
+    let nearestDist = Infinity;
+    for (const o of enemies) {
+      if (chained.has(o) || o.hp <= 0) continue;
+      const d = Math.hypot(o.x - source.x, o.y - source.y);
+      if (d <= 150 && d < nearestDist) {
+        nearestDist = d;
+        next = o;
+      }
+    }
+    if (!next) break; // no target in range — chain stops
+
+    const dmg = b.damage * Math.pow(0.55, hop);
+    next.hp -= dmg;
+    next.flash = 0.1;
+    spawnParticles(next.x, next.y, COLORS.cyan, 4, [40, 120]);
+    if (next.hp <= 0) killEnemy(next);
+    spawnLightningArc(source.x, source.y, next.x, next.y);
+    chained.add(next);
+    source = next;
   }
 }
 
@@ -856,6 +894,39 @@ function flushSpawnQueue() {
 function updateBlasts(dt) {
   for (const s of blasts) s.life -= dt;
   blasts = blasts.filter((s) => s.life > 0);
+}
+
+function updateLightningArcs(dt) {
+  for (const a of lightningArcs) a.life -= dt;
+  lightningArcs = lightningArcs.filter((a) => a.life > 0);
+}
+
+// Pre-generates a 6-point jittered polyline from (x1,y1) to (x2,y2) and stores
+// it as a lightning arc visual that fades over 0.15s. Interior points are offset
+// perpendicularly by ±15px so the path looks jagged without re-jittering per frame.
+function spawnLightningArc(x1, y1, x2, y2) {
+  if (lightningArcs.length >= 12) lightningArcs.shift(); // oldest-first cap
+
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dir = Math.atan2(dy, dx);
+  const perp = dir + Math.PI / 2;
+  const cosP = Math.cos(perp);
+  const sinP = Math.sin(perp);
+
+  // 4 interior points at t = 0.2, 0.4, 0.6, 0.8 with perpendicular jitter
+  const ts = [0.2, 0.4, 0.6, 0.8];
+  const points = [{ x: x1, y: y1 }];
+  for (const t of ts) {
+    const j = rand(-15, 15);
+    points.push({
+      x: x1 + dx * t + cosP * j,
+      y: y1 + dy * t + sinP * j,
+    });
+  }
+  points.push({ x: x2, y: y2 });
+
+  lightningArcs.push({ x1, y1, x2, y2, points, life: 0.15, maxLife: 0.15 });
 }
 
 function updateGems(dt) {
@@ -1014,6 +1085,7 @@ function render() {
   drawPowerups();
   drawEBullets();
   drawBullets();
+  drawLightningArcs();
   drawEnemies();
   drawSentinelTelegraphs(); // VIS-02: shrinking reticle at player pos before Sentinel fires
   drawBlasts();
@@ -1274,6 +1346,25 @@ function drawBlasts() {
     ctx.fill();
     ctx.restore();
   }
+}
+
+function drawLightningArcs() {
+  if (lightningArcs.length === 0) return;
+  ctx.save();
+  ctx.strokeStyle = COLORS.cyan;
+  ctx.shadowColor = COLORS.cyan;
+  ctx.shadowBlur = 14;
+  ctx.lineWidth = 1.5;
+  for (const arc of lightningArcs) {
+    ctx.globalAlpha = arc.life / arc.maxLife;
+    ctx.beginPath();
+    ctx.moveTo(arc.points[0].x, arc.points[0].y);
+    for (let i = 1; i < arc.points.length; i++) {
+      ctx.lineTo(arc.points[i].x, arc.points[i].y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawOrbitals() {
