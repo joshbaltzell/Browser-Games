@@ -10,7 +10,7 @@ highest-impact changes first (audio, then visual clarity, then new mechanics).
 ## Phases
 
 - [x] **Phase 1: Web Audio** — Synthesized sounds for all game events (shoot, hit, kill, level-up, bomb, freeze, overdrive) (completed 2026-06-05)
-- [ ] **Phase 2: Enemy Shape Vocabulary** — Distinct geometric silhouette per enemy type
+- [x] **Phase 2: Enemy Shape Vocabulary** — Distinct geometric silhouette per enemy type (completed 2026-06-05)
 - [ ] **Phase 3: Sentinel Telegraph** — Targeting reticle 0.8s before Sentinel fires
 - [ ] **Phase 4: Power-up Timer Display** — Countdown timer + bar for Freeze and Overdrive duration
 - [ ] **Phase 5: Wave Surge Announcements** — 3s pre-warning before specific enemy burst events
@@ -50,7 +50,7 @@ Plans:
   6. All shapes retain the existing glow effect and color palette
 
 Plans:
-- [ ] 02-01-PLAN.md: Shape drawing functions and updated drawEnemies() per type
+- [x] 02-01-PLAN.md: Shape drawing functions and updated drawEnemies() per type
 
 ### Phase 3: Sentinel Telegraph
 **Goal**: Add a targeting reticle that animates at the player's position 0.8s before a Sentinel fires, so shots are readable and dodgeable
@@ -171,7 +171,7 @@ Plans:
 | Phase | Plans | Status | Completed |
 |-------|-------|--------|-----------|
 | 1. Web Audio | 1/1 | Complete   | 2026-06-05 |
-| 2. Enemy Shapes | 0/1 | Not started | - |
+| 2. Enemy Shapes | 1/1 | Complete   | 2026-06-05 |
 | 3. Sentinel Telegraph | 0/1 | Not started | - |
 | 4. Power-up Timer | 0/1 | Not started | - |
 | 5. Wave Surges | 0/1 | Not started | - |
