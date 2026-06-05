@@ -385,6 +385,46 @@ function spawnEnemy() {
   enemies.push(e);
 }
 
+// Queue a single surge enemy of the given type via spawnQueue (D-15, D-16).
+// Mirrors spawnEnemy()'s enemy-object shape exactly so surge enemies behave
+// identically to normally spawned ones; uses difficultyScales() for stat scaling.
+function spawnSurgeEnemy(enemyKey) {
+  const def = ENEMY_TYPES[enemyKey];
+  const sc = difficultyScales();
+
+  // Spawn just outside a random screen edge — same logic as spawnEnemy().
+  const margin = 40;
+  let x, y;
+  const side = Math.floor(Math.random() * 4);
+  if (side === 0) { x = rand(0, W); y = -margin; }
+  else if (side === 1) { x = W + margin; y = rand(0, H); }
+  else if (side === 2) { x = rand(0, W); y = H + margin; }
+  else { x = -margin; y = rand(0, H); }
+
+  const e = {
+    x, y,
+    radius: def.radius,
+    speed: def.speed * sc.speed,
+    hp: def.hp * sc.hp,
+    maxHp: def.hp * sc.hp,
+    damage: def.damage * sc.dmg,
+    xp: def.xp,
+    type: enemyKey,
+    color: def.color,
+    flash: 0,
+  };
+  if (def.split) e.split = def.split;
+  if (def.ranged) {
+    e.ranged = true;
+    e.shootRange = def.shootRange;
+    e.shootInterval = def.shootInterval;
+    e.shootCd = rand(0.3, def.shootInterval);
+    e.projDamage = def.projDamage * sc.dmg;
+    e.projSpeed = def.projSpeed;
+  }
+  spawnQueue.push(e);
+}
+
 // ----------------------------------------------------------------------------
 // Update
 // ----------------------------------------------------------------------------
