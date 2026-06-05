@@ -30,7 +30,7 @@ const ENEMY_TYPES = {
   // Spore: bursts into two fast sporelings when it dies — don't let them pile up.
   spore: { radius: 16, speed: 80, hp: 8, damage: 11, xp: 2, color: "#39d98a", minTime: 120, split: 2 },
   // Sentinel: hangs back at range and spits projectiles you have to dodge.
-  sentinel: { radius: 12, speed: 66, hp: 7, damage: 5, xp: 3, color: "#7c83ff", minTime: 150, ranged: true, shootRange: 330, shootInterval: 1.7, projDamage: 9, projSpeed: 240 },
+  sentinel: { radius: 12, speed: 66, hp: 7, damage: 5, xp: 3, color: "#7c83ff", minTime: 150, ranged: true, shootRange: 330, shootInterval: 2.2, projDamage: 7, projSpeed: 220 },
 };
 
 // Upgrade pool. Each `apply` mutates the player; some are repeatable.
@@ -97,8 +97,8 @@ function initGame() {
     y: H / 2,
     radius: 14,
     speed: 200,
-    hp: 100,
-    maxHp: 100,
+    hp: 120,
+    maxHp: 120,
     regen: 0,
     level: 1,
     xp: 0,
@@ -202,9 +202,9 @@ function spawnParticles(x, y, color, count, speedRange = [40, 180]) {
 function difficultyScales() {
   const t = elapsed;
   return {
-    hp: 1 + t / 90 + Math.pow(Math.max(0, t - 150) / 200, 2),
-    speed: 1 + Math.max(0, t - 60) / 240,
-    dmg: 1 + Math.max(0, t - 60) / 300,
+    hp: 1 + t / 110 + Math.pow(Math.max(0, t - 180) / 240, 2),
+    speed: 1 + Math.max(0, t - 75) / 300,
+    dmg: 1 + Math.max(0, t - 75) / 360,
   };
 }
 
@@ -344,13 +344,13 @@ function updateShooting(dt) {
 function updateSpawning(dt) {
   // Spawn interval shrinks over time (more pressure), clamped. Slower ramp
   // and a higher floor so the swarm builds gradually instead of all at once.
-  spawnInterval = Math.max(0.3, 1.2 - elapsed * 0.007);
+  spawnInterval = Math.max(0.4, 1.2 - elapsed * 0.006);
   spawnTimer -= dt;
   if (spawnTimer <= 0) {
     spawnTimer = spawnInterval;
     // Spawn a small burst that grows as time progresses. Capped at a max
     // on-screen count to protect framerate (you'll be overwhelmed long before).
-    const burst = 1 + Math.floor(elapsed / 70);
+    const burst = 1 + Math.floor(elapsed / 90);
     for (let i = 0; i < burst && enemies.length < 300; i++) spawnEnemy();
   }
 }
@@ -504,10 +504,32 @@ function applySplash(b, primary, dealt) {
   }
 }
 
+// Loot drop. Tougher foes (xp >= 2: brutes, spores, sentinels) are worth a
+// bonus and scatter their XP across several gems, so clearing one reads as a
+// real payoff — and the faster leveling is the main lever that eases the run.
+function dropLoot(e) {
+  const total = e.xp >= 2 ? Math.ceil(e.xp * 1.5) : e.xp;
+  const count = Math.min(8, Math.max(1, Math.round(total / 1.5)));
+  const base = Math.floor(total / count);
+  let remainder = total - base * count;
+  for (let i = 0; i < count; i++) {
+    const val = base + (remainder-- > 0 ? 1 : 0);
+    const spread = count > 1 ? 18 : 0;
+    gems.push({
+      x: e.x + rand(-spread, spread),
+      y: e.y + rand(-spread, spread),
+      radius: 4 + Math.min(4, val), // chunkier gems telegraph a bigger drop
+      value: val,
+      vx: 0,
+      vy: 0,
+    });
+  }
+}
+
 function killEnemy(e) {
   kills++;
   spawnParticles(e.x, e.y, e.color, 14);
-  gems.push({ x: e.x, y: e.y, radius: 5, value: e.xp, vx: 0, vy: 0 });
+  dropLoot(e);
   if (player.lifesteal > 0) player.hp = Math.min(player.maxHp, player.hp + player.lifesteal);
   if (e.split) for (let i = 0; i < e.split; i++) spawnSporeling(e.x, e.y);
 }
@@ -678,7 +700,29 @@ function drawBullets() {
 
 function drawEBullets() {
   for (const b of eBullets) {
-    glowCircle(b.x, b.y, b.radius, "#ff4dd2", 16);
+    // Hostile fire reads as a RED hazard diamond inside a pulsing warning ring
+    // — deliberately unlike the cyan loot gems so danger and reward never blur.
+    const pulse = 1 + 0.25 * Math.sin(elapsed * 14 + b.x * 0.05);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    // pulsing outer warning ring
+    ctx.strokeStyle = "rgba(255, 60, 60, 0.55)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, (b.radius + 5) * pulse, 0, TAU);
+    ctx.stroke();
+    // hazard diamond (rotated square) with a hot red glow
+    ctx.rotate(Math.PI / 4);
+    ctx.shadowColor = "#ff2d2d";
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = "#ff2d2d";
+    const s = b.radius * 1.25;
+    ctx.fillRect(-s, -s, s * 2, s * 2);
+    // white-hot core so it pops against dark and crowds alike
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(-s * 0.35, -s * 0.35, s * 0.7, s * 0.7);
+    ctx.restore();
   }
 }
 
