@@ -38,6 +38,15 @@ const ENEMY_TYPES = {
   sentinel: { radius: 12, speed: 66, hp: 7, damage: 5, xp: 3, color: "#7c83ff", minTime: 150, ranged: true, shootRange: 330, shootInterval: 2.2, projDamage: 7, projSpeed: 220 },
 };
 
+// Surge event table. `minTime` mirrors the ENEMY_TYPES gate so a surge is only
+// announced once the enemy type is already in rotation.
+const SURGE_TYPES = [
+  { label: "BRUTE SURGE!",   enemyKey: "brute",    count: 4,  color: "#c850ff", minTime: 90  },
+  { label: "DARTER STORM!",  enemyKey: "darter",   count: 10, color: "#ff9f43", minTime: 35  },
+  { label: "SENTINEL CALL!", enemyKey: "sentinel", count: 2,  color: "#7c83ff", minTime: 150 },
+  { label: "SPORE BLOOM!",   enemyKey: "spore",    count: 3,  color: "#39d98a", minTime: 120 },
+];
+
 const POWERUP_TYPES = {
   bomb:      { color: "#ff9f43", icon: "\u{1F4A3}", label: "BOMB" },
   freeze:    { color: "#7ee8fa", icon: "❄️",  label: "FREEZE" },
@@ -95,6 +104,7 @@ let combo, comboTimer;
 let powerups;
 let freezeTimer;
 let overdriveTimer, overdriveFactors;
+let surgeTimer, surgeState, surgeWarningTimer, surgeType, surgeFlash;
 let audioCtx = null;
 let lastHitSound = 0;
 
@@ -168,6 +178,11 @@ function initGame() {
   freezeTimer = 0;
   overdriveTimer = 0;
   overdriveFactors = null;
+  surgeTimer = 45;
+  surgeState = "idle";
+  surgeWarningTimer = 0;
+  surgeType = null;
+  surgeFlash = 0;
 }
 
 // ----------------------------------------------------------------------------
