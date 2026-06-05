@@ -202,6 +202,7 @@ function initGame() {
     orbitals: 0,
     lifesteal: 0,
     chainCount: 0,
+    lastStandCharges: 0,
     glassCannonMode: false, // set true by Glass Cannon modifier — disables regen
   };
   enemies = [];
