@@ -275,6 +275,21 @@ function playTone(opts) {
   }
 }
 
+// Sound event functions — each is a thin wrapper around playTone().
+function sndShoot()     { playTone({ type: "sine",     freq: 440, endFreq: 300, dur: 0.08, gain: 0.08 }); }
+function sndHit() {
+  const now = performance.now();
+  if (now - lastHitSound < 50) return; // throttle: max one hit sound per 50ms (D-24)
+  lastHitSound = now;
+  playTone({ type: "triangle", freq: 120, dur: 0.06, gain: 0.12 });
+}
+function sndKill(loud)  { playTone({ type: "sine",     freq: 220, endFreq: 80,  dur: 0.12, gain: loud ? 0.22 : 0.15 }); }
+function sndLevelUp()   { playTone({ type: "sine",     freq: 440, endFreq: 880, dur: 0.4,  gain: 0.18 }); }
+function sndBomb()      { playTone({ type: "sine",     freq: 60,  endFreq: 20,  dur: 0.5,  gain: 0.3  }); }
+function sndFreeze()    { playTone({ type: "sawtooth", freq: 600, endFreq: 150, dur: 0.3,  gain: 0.12 }); }
+function sndOverdrive() { playTone({ type: "square",   freq: 200, dur: 0.2,  gain: 0.1  }); }
+function sndPlayerHit() { playTone({ type: "triangle", freq: 80,  dur: 0.1,  gain: 0.2  }); }
+
 // ----------------------------------------------------------------------------
 // Spawning
 // ----------------------------------------------------------------------------
