@@ -169,6 +169,7 @@ let overdriveTimer, overdriveFactors;
 let surgeTimer, surgeState, surgeWarningTimer, surgeType, surgeFlash;
 let audioCtx = null;
 let lastHitSound = 0;
+let muted = false;
 let selectedModifier = null; // D-10: which modifier the player picked this run
 let bulletHellMode = false;  // D-11: set true by Bullet Hell modifier
 
@@ -188,8 +189,14 @@ const dom = {
   modifierCards: document.getElementById("modifier-cards"),
   modifierLabel: document.getElementById("modifier-label"),
   dashReady: document.getElementById("dash-ready"),
-  buildName: document.getElementById("build-name"),  // D-22: persistent build-name HUD element
+  buildName: document.getElementById("build-name"),
+  muteBtn: document.getElementById("mute-btn"),
 };
+
+dom.muteBtn.addEventListener("click", () => {
+  muted = !muted;
+  dom.muteBtn.textContent = muted ? "🔇" : "🔊";
+});
 
 function initGame() {
   player = {
@@ -403,7 +410,7 @@ function unlockAudio() {
 }
 
 function playTone(opts) {
-  if (!audioCtx) return;
+  if (!audioCtx || muted) return;
   try {
     if (audioCtx.state === "suspended") audioCtx.resume();
     const type    = opts.type    || "sine";
@@ -657,8 +664,10 @@ function updateShooting(dt) {
   const baseAngle = Math.atan2(nearest.y - player.y, nearest.x - player.x);
   const count = player.projectileCount;
   const spread = 0.18; // radians between extra projectiles
-  for (let i = 0; i < count; i++) {
-    const offset = (i - (count - 1) / 2) * spread;
+  // Force odd shot count so centre is always included (even picks fire one extra)
+  const bulletsToFire = count % 2 === 0 ? count + 1 : count;
+  for (let i = 0; i < bulletsToFire; i++) {
+    const offset = (i - (bulletsToFire - 1) / 2) * spread;
     const a = baseAngle + offset;
     bullets.push({
       x: player.x,
