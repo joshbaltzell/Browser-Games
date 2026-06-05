@@ -140,7 +140,7 @@ resize();
 // Game states: "start" | "modifier" | "playing" | "levelup" | "gameover"
 let gameState = "start";
 
-let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue, lightningArcs;
+let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue, lightningArcs, afterimages;
 let elapsed, kills, spawnTimer, spawnInterval, shootTimer, shake, pendingLevels;
 let timeScale, slowmoTimer, slowmoTarget;
 let floaters;
@@ -186,6 +186,7 @@ function initGame() {
     xpToNext: 4,
     pickupRange: 90,
     invuln: 0,
+    dashCd: 0,
     // weapon — buffed baseline so the early game isn't a losing race
     damage: 2,
     fireInterval: 0.42,
@@ -210,6 +211,7 @@ function initGame() {
   bullets = [];
   gems = [];
   particles = [];
+  afterimages = [];
   eBullets = [];
   blasts = [];
   lightningArcs = [];
