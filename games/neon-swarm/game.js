@@ -71,6 +71,49 @@ const UPGRADES = [
   { id: "lifesteal", icon: "🩸", name: "Vampirism", desc: "Heal +0.5 HP for every kill", accent: "#ff3b6b", apply: (p) => (p.lifesteal += 0.5) },
 ];
 
+// Run modifier definitions. Each `apply` mutates the player and/or globals.
+// Displayed as cards before each run; one is always chosen.
+const MODIFIERS = [
+  {
+    id: "glasscannon",
+    icon: "💥",
+    name: "Glass Cannon",
+    desc: "2\xd7 damage — but 50% HP, no regeneration",
+    accent: COLORS.pink,
+    apply(p) {
+      p.damage *= 2;
+      p.maxHp = 60;
+      p.hp = 60;
+      p.regen = 0;
+      p.glassCannonMode = true;
+    },
+  },
+  {
+    id: "headstart",
+    icon: "🚀",
+    name: "Headstart",
+    desc: "Start at Level 5 with 3 random upgrades",
+    accent: COLORS.gold,
+    apply(p) { applyHeadstart(p); },
+  },
+  {
+    id: "bullethell",
+    icon: "🌀",
+    name: "Bullet Hell",
+    desc: "Enemy fire 3\xd7 — but XP drops are 2\xd7",
+    accent: COLORS.purple,
+    apply() { bulletHellMode = true; },
+  },
+  {
+    id: "standard",
+    icon: "▶",
+    name: "Standard Run",
+    desc: "No modifiers — the baseline game",
+    accent: COLORS.white,
+    apply() {},
+  },
+];
+
 // ----------------------------------------------------------------------------
 // Canvas & global state
 // ----------------------------------------------------------------------------
@@ -92,7 +135,7 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-// Game states: "start" | "playing" | "levelup" | "gameover"
+// Game states: "start" | "modifier" | "playing" | "levelup" | "gameover"
 let gameState = "start";
 
 let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue;
@@ -107,6 +150,8 @@ let overdriveTimer, overdriveFactors;
 let surgeTimer, surgeState, surgeWarningTimer, surgeType, surgeFlash;
 let audioCtx = null;
 let lastHitSound = 0;
+let selectedModifier = null; // D-10: which modifier the player picked this run
+let bulletHellMode = false;  // D-11: set true by Bullet Hell modifier
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -120,6 +165,9 @@ const dom = {
   gameover: document.getElementById("gameover"),
   upgradeCards: document.getElementById("upgrade-cards"),
   finalStats: document.getElementById("final-stats"),
+  modifier: document.getElementById("modifier"),
+  modifierCards: document.getElementById("modifier-cards"),
+  modifierLabel: document.getElementById("modifier-label"),
 };
 
 function initGame() {
@@ -152,6 +200,7 @@ function initGame() {
     critMult: 2,
     orbitals: 0,
     lifesteal: 0,
+    glassCannonMode: false, // set true by Glass Cannon modifier — disables regen
   };
   enemies = [];
   bullets = [];
@@ -183,6 +232,9 @@ function initGame() {
   surgeWarningTimer = 0;
   surgeType = null;
   surgeFlash = 0;
+  // Modifier state reset — actual selection + apply happens after initGame (T05).
+  selectedModifier = null;
+  bulletHellMode = false;
 }
 
 // ----------------------------------------------------------------------------
