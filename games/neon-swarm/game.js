@@ -1133,7 +1133,7 @@ function updateParticles(dt) {
   particles = particles.filter((p) => p.life > 0);
 }
 
-function spawnFloater(x, y, text, color, size) {
+function spawnFloater(x, y, text, color, size, lifeOverride = 0.8) {
   if (floaters.length >= 60) floaters.shift();
   floaters.push({
     x: x + rand(-10, 10),
@@ -1144,8 +1144,8 @@ function spawnFloater(x, y, text, color, size) {
     alpha: 1,
     vy: -55,
     vx: rand(-14, 14),
-    life: 0.8,
-    maxLife: 0.8,
+    life: lifeOverride,
+    maxLife: lifeOverride,
   });
 }
 
