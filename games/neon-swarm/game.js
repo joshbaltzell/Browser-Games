@@ -22,6 +22,10 @@ const COLORS = {
   white: "#ffffff",
 };
 const COMBO_DECAY = 2.5; // seconds before streak resets after last kill
+// Timer display max durations — must stay in sync with activateFreeze() and
+// activateOverdrive() which set freezeTimer/overdriveTimer to these values.
+const FREEZE_MAX_DURATION = 3.0;    // matches activateFreeze():    freezeTimer = 3.0
+const OVERDRIVE_MAX_DURATION = 5.0; // matches activateOverdrive(): overdriveTimer = 5.0
 
 // Enemy archetypes. `minTime` gates when a type starts appearing (seconds).
 const ENEMY_TYPES = {
