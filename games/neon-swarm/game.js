@@ -850,6 +850,7 @@ function render() {
   drawEBullets();
   drawBullets();
   drawEnemies();
+  drawSentinelTelegraphs(); // VIS-02: shrinking reticle at player pos before Sentinel fires
   drawBlasts();
   drawOrbitals();
   drawPlayer();
@@ -978,6 +979,69 @@ function drawEnemies() {
       ctx.fillStyle = COLORS.gold;
       ctx.fillRect(e.x - e.radius, e.y - e.radius - 8, e.radius * 2 * (e.hp / e.maxHp), 4);
     }
+  }
+}
+
+// Render a shrinking red targeting reticle at the player's position for each
+// Sentinel whose shoot cooldown has entered the final 0.8s warning window AND
+// whose shoot range contains the player. VIS-02 / D-01..D-15.
+function drawSentinelTelegraphs() {
+  if (freezeTimer > 0) return; // D-13: frozen Sentinels never advance shootCd — suppress entirely
+
+  for (const e of enemies) {
+    if (!e.ranged) continue; // only Sentinels have e.ranged === true
+
+    const dist = Math.hypot(player.x - e.x, player.y - e.y);
+
+    // Gate: only show when cooldown is within the warning window AND in range
+    // (mirrors the fire condition: dist <= e.shootRange && e.shootCd <= 0)
+    if (e.shootCd > 0.8 || dist > e.shootRange) continue;
+
+    // Animation progress: 0 at 0.8s remaining → 1 at fire moment (D-06)
+    const progress = 1 - (e.shootCd / 0.8);
+    const t = Math.max(0, Math.min(1, progress)); // clamp defensively
+
+    const r     = 36 - t * 28;          // outer ring radius 36 → 8 (D-05)
+    const alpha = 0.3 + t * 0.55;       // 0.3 → 0.85 (D-07)
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = "#ff2d2d";        // red hazard color matching drawEBullets (D-08)
+    ctx.lineWidth = 2;
+    ctx.shadowColor = "#ff2d2d";
+    ctx.shadowBlur = 10;               // (D-08)
+
+    // Outer ring centered on the player (D-03: real-time tracking, not predictive)
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, r, 0, TAU);
+    ctx.stroke();
+
+    // 4 crosshair tick marks at N/S/E/W just outside the ring (D-10: scope silhouette)
+    ctx.beginPath();
+    // North
+    ctx.moveTo(player.x,     player.y - r);
+    ctx.lineTo(player.x,     player.y - r - 8);
+    // South
+    ctx.moveTo(player.x,     player.y + r);
+    ctx.lineTo(player.x,     player.y + r + 8);
+    // East
+    ctx.moveTo(player.x + r, player.y);
+    ctx.lineTo(player.x + r + 8, player.y);
+    // West
+    ctx.moveTo(player.x - r, player.y);
+    ctx.lineTo(player.x - r - 8, player.y);
+    ctx.stroke();
+
+    // Small solid red inner dot only in the final moment (D-09)
+    if (t > 0.7) {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#ff2d2d";
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, 3, 0, TAU);
+      ctx.fill();
+    }
+
+    ctx.restore();
   }
 }
 
