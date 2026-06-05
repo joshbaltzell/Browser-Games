@@ -975,6 +975,7 @@ function render() {
     ctx.restore();
   }
 
+  drawSurgeWarning();
   drawCombo();
   drawPowerupTimers();
 }
@@ -1348,6 +1349,34 @@ function drawFloaters() {
     ctx.fillStyle = f.color;
     ctx.fillText(f.text, f.x, f.y);
   }
+  ctx.restore();
+}
+
+// Renders the surge announcement outside the shake transform (D-21).
+// Text is solid for the first 2.5s, then fades to 0 over the final 0.5s (D-13).
+function drawSurgeWarning() {
+  if (surgeState !== "warning" || !surgeType) return;
+
+  // Alpha: solid while surgeWarningTimer >= 0.5, linear fade below that (D-13).
+  const alpha = surgeWarningTimer >= 0.5 ? 1 : surgeWarningTimer / 0.5;
+
+  // Discretionary screen-edge tint pulse — low-alpha full-screen fill in surge color.
+  ctx.save();
+  ctx.globalAlpha = 0.08 * alpha * (0.6 + 0.4 * (surgeFlash || 0));
+  ctx.fillStyle = surgeType.color;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  // Centered announcement text with neon glow (D-10, D-11, D-12, D-14).
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = "bold 28px monospace"; // D-12
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = surgeType.color; // D-12
+  ctx.shadowColor = surgeType.color;
+  ctx.shadowBlur = 20; // D-14
+  ctx.fillText(surgeType.label, W / 2, H / 2 - 60); // D-11
   ctx.restore();
 }
 
