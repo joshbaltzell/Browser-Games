@@ -321,6 +321,7 @@ function spawnSporeling(x, y) {
     maxHp: 2 * sc.hp,
     damage: 5 * sc.dmg,
     xp: 1,
+    type: "sporeling",
     color: "#9bf6c9",
     flash: 0,
   });
@@ -329,7 +330,7 @@ function spawnSporeling(x, y) {
 function spawnEnemy() {
   // Pick an unlocked type (uniform among those whose minTime has passed).
   const available = Object.entries(ENEMY_TYPES).filter(([, t]) => elapsed >= t.minTime);
-  const [, def] = available[Math.floor(Math.random() * available.length)];
+  const [typeName, def] = available[Math.floor(Math.random() * available.length)];
   const sc = difficultyScales();
 
   // Spawn just outside a random screen edge.
@@ -349,6 +350,7 @@ function spawnEnemy() {
     maxHp: def.hp * sc.hp,
     damage: def.damage * sc.dmg,
     xp: def.xp,
+    type: typeName,
     color: def.color,
     flash: 0,
   };
@@ -906,6 +908,17 @@ function glowCircle(x, y, r, color, blur = 14) {
   ctx.restore();
 }
 
+// Fills a closed path defined by pathFn() with a neon glow — mirrors glowCircle. (D-08)
+function glowShape(pathFn, color, blur = 12) {
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur;
+  ctx.fillStyle = color;
+  pathFn();
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawPlayer() {
   // Pickup-range ring.
   ctx.save();
@@ -930,16 +943,35 @@ function drawPlayer() {
 
 function drawEnemies() {
   for (const e of enemies) {
-    const color = e.flash > 0 ? COLORS.white : e.color;
-    glowCircle(e.x, e.y, e.radius, color, 12);
-    // Sentinels get a bright core so you can pick the shooters out of the swarm.
+    const color = e.flash > 0 ? COLORS.white : e.color; // D-09: white hit-flash
+
+    // Dispatch to correct shape based on enemy type. (D-01..D-06, D-16)
+    if (e.type === "darter") {
+      // Leading vertex points toward player — computed fresh each frame, not stored. (D-13, D-14)
+      const ang = Math.atan2(player.y - e.y, player.x - e.x);
+      glowShape(() => drawTriangle(ctx, e.x, e.y, e.radius, ang), color, 12);
+    } else if (e.type === "brute") {
+      // Heavier blur on brutes reads as more solid/massive. (D-03)
+      glowShape(() => drawHexShape(ctx, e.x, e.y, e.radius), color, 14);
+    } else if (e.type === "sentinel") {
+      // Diamond silhouette; white core dot drawn below. (D-04)
+      glowShape(() => drawDiamond(ctx, e.x, e.y, e.radius), color, 12);
+    } else if (e.type === "spore") {
+      // Irregular lumpy blob. (D-05)
+      glowShape(() => drawBlob(ctx, e.x, e.y, e.radius), color, 12);
+    } else {
+      // Chasers, sporelings, and any enemy without a type fall back to circle. (D-01, D-06)
+      glowCircle(e.x, e.y, e.radius, color, 12);
+    }
+
+    // Sentinels get a bright core so you can pick the shooters out of the swarm. (D-04)
     if (e.ranged) {
       ctx.fillStyle = COLORS.white;
       ctx.beginPath();
       ctx.arc(e.x, e.y, e.radius * 0.4, 0, TAU);
       ctx.fill();
     }
-    // Tiny HP hint for tougher enemies.
+    // Tiny HP hint for tougher enemies. (D-10)
     if (e.maxHp > 6 && e.hp < e.maxHp) {
       ctx.fillStyle = "rgba(0,0,0,0.5)";
       ctx.fillRect(e.x - e.radius, e.y - e.radius - 8, e.radius * 2, 4);
@@ -1046,6 +1078,53 @@ function drawHexagon(x, y, r) {
     const a = (i * Math.PI) / 3 - Math.PI / 6;
     if (i === 0) ctx.moveTo(x + r * Math.cos(a), y + r * Math.sin(a));
     else ctx.lineTo(x + r * Math.cos(a), y + r * Math.sin(a));
+  }
+  ctx.closePath();
+}
+
+// Shape helpers for enemy type dispatch — each defines a closed path only.
+// The caller is responsible for fill, stroke, save/restore, and shadow setup.
+// This mirrors the drawHexagon contract used by drawPowerups. (D-15)
+
+// Equilateral triangle inscribed in radius r with one vertex at `angle` (pointing toward player).
+function drawTriangle(ctx, x, y, r, angle) {
+  ctx.beginPath();
+  ctx.moveTo(x + r * Math.cos(angle),               y + r * Math.sin(angle));
+  ctx.lineTo(x + r * Math.cos(angle + TAU / 3),     y + r * Math.sin(angle + TAU / 3));
+  ctx.lineTo(x + r * Math.cos(angle + 2 * TAU / 3), y + r * Math.sin(angle + 2 * TAU / 3));
+  ctx.closePath();
+}
+
+// Regular hexagon inscribed in radius r — parameterized version of drawHexagon (takes ctx). (D-03)
+function drawHexShape(ctx, x, y, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (i * Math.PI) / 3 - Math.PI / 6;
+    if (i === 0) ctx.moveTo(x + r * Math.cos(a), y + r * Math.sin(a));
+    else         ctx.lineTo(x + r * Math.cos(a), y + r * Math.sin(a));
+  }
+  ctx.closePath();
+}
+
+// Diamond: square rotated 45°, vertices at top/right/bottom/left on radius r. (D-04, D-11)
+function drawDiamond(ctx, x, y, r) {
+  ctx.beginPath();
+  ctx.moveTo(x,     y - r);
+  ctx.lineTo(x + r, y    );
+  ctx.lineTo(x,     y + r);
+  ctx.lineTo(x - r, y    );
+  ctx.closePath();
+}
+
+// Irregular lumpy pentagon — fixed per-vertex radius variation so shape is stable frame-to-frame. (D-05)
+const BLOB_VARIATION = [1.0, 0.82, 0.95, 0.80, 0.90];
+function drawBlob(ctx, x, y, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a  = i * TAU / 5 - Math.PI / 2;
+    const rr = r * BLOB_VARIATION[i];
+    if (i === 0) ctx.moveTo(x + rr * Math.cos(a), y + rr * Math.sin(a));
+    else         ctx.lineTo(x + rr * Math.cos(a), y + rr * Math.sin(a));
   }
   ctx.closePath();
 }
