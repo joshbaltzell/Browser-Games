@@ -652,7 +652,20 @@ function activatePowerup(type) {
 }
 
 // Placeholder stubs — replaced in Tasks 7-9.
-function activateBomb() {}
+function activateBomb() {
+  const dmg = player.damage * 8;
+  for (const e of enemies) {
+    if (e.hp <= 0) continue;
+    e.hp -= dmg;
+    spawnParticles(e.x, e.y, e.color, 8, [60, 220]);
+    if (e.hp <= 0) killEnemy(e);
+  }
+  enemies = enemies.filter((e) => e.hp > 0);
+  shake = 28;
+  triggerSlowmo(0.15, 0.22);
+  // Central burst so the screen-clear reads as an explosion.
+  spawnParticles(W / 2, H / 2, "#ff9f43", 30, [100, 500]);
+}
 function activateFreeze() {}
 function activateOverdrive() {}
 
