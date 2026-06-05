@@ -1581,6 +1581,23 @@ function endGame() {
   dom.gameover.classList.remove("hidden");
 }
 
+// Headstart helper: silently grant 3 random distinct upgrades and set the
+// player to Level 5 with the correct next-level XP threshold.
+// Level 5 xpToNext derivation — initial xpToNext = 4, apply 4 times:
+//   4 → round(4*1.2+2) = 7 → round(7*1.2+2) = 10 → round(10*1.2+2) = 14 → round(14*1.2+2) = 19
+function applyHeadstart(p) {
+  // Apply 3 distinct random upgrades (no repeats — splice ensures uniqueness).
+  const pool = [...UPGRADES];
+  for (let i = 0; i < 3 && pool.length; i++) {
+    const pick = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+    pick.apply(p);
+  }
+  // Set player to Level 5 with xpToNext = 19 (computed above).
+  p.level = 5;
+  p.xp = 0;
+  p.xpToNext = 19;
+}
+
 // Show the modifier selection overlay. Calls initGame() first so the player is
 // freshly reset before any modifier apply() mutates it.
 function openModifierSelection() {
