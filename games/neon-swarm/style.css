@@ -109,6 +109,18 @@ body {
   color: var(--muted);
 }
 
+#dash-ready {
+  color: var(--cyan);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+#dash-ready.cooling {
+  opacity: 0.3;
+}
+
 /* ---------- Overlays ---------- */
 .overlay {
   position: fixed;

@@ -170,6 +170,7 @@ const dom = {
   modifier: document.getElementById("modifier"),
   modifierCards: document.getElementById("modifier-cards"),
   modifierLabel: document.getElementById("modifier-label"),
+  dashReady: document.getElementById("dash-ready"),
 };
 
 function initGame() {
@@ -1724,6 +1725,7 @@ function updateHud() {
   const m = Math.floor(elapsed / 60);
   const s = Math.floor(elapsed % 60);
   dom.timer.textContent = `${m}:${s.toString().padStart(2, "0")}`;
+  dom.dashReady.classList.toggle("cooling", player.dashCd > 0);
 }
 
 function openLevelUp() {
