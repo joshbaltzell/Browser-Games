@@ -908,6 +908,17 @@ function glowCircle(x, y, r, color, blur = 14) {
   ctx.restore();
 }
 
+// Fills a closed path defined by pathFn() with a neon glow — mirrors glowCircle. (D-08)
+function glowShape(pathFn, color, blur = 12) {
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur;
+  ctx.fillStyle = color;
+  pathFn();
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawPlayer() {
   // Pickup-range ring.
   ctx.save();
@@ -932,16 +943,35 @@ function drawPlayer() {
 
 function drawEnemies() {
   for (const e of enemies) {
-    const color = e.flash > 0 ? COLORS.white : e.color;
-    glowCircle(e.x, e.y, e.radius, color, 12);
-    // Sentinels get a bright core so you can pick the shooters out of the swarm.
+    const color = e.flash > 0 ? COLORS.white : e.color; // D-09: white hit-flash
+
+    // Dispatch to correct shape based on enemy type. (D-01..D-06, D-16)
+    if (e.type === "darter") {
+      // Leading vertex points toward player — computed fresh each frame, not stored. (D-13, D-14)
+      const ang = Math.atan2(player.y - e.y, player.x - e.x);
+      glowShape(() => drawTriangle(ctx, e.x, e.y, e.radius, ang), color, 12);
+    } else if (e.type === "brute") {
+      // Heavier blur on brutes reads as more solid/massive. (D-03)
+      glowShape(() => drawHexShape(ctx, e.x, e.y, e.radius), color, 14);
+    } else if (e.type === "sentinel") {
+      // Diamond silhouette; white core dot drawn below. (D-04)
+      glowShape(() => drawDiamond(ctx, e.x, e.y, e.radius), color, 12);
+    } else if (e.type === "spore") {
+      // Irregular lumpy blob. (D-05)
+      glowShape(() => drawBlob(ctx, e.x, e.y, e.radius), color, 12);
+    } else {
+      // Chasers, sporelings, and any enemy without a type fall back to circle. (D-01, D-06)
+      glowCircle(e.x, e.y, e.radius, color, 12);
+    }
+
+    // Sentinels get a bright core so you can pick the shooters out of the swarm. (D-04)
     if (e.ranged) {
       ctx.fillStyle = COLORS.white;
       ctx.beginPath();
       ctx.arc(e.x, e.y, e.radius * 0.4, 0, TAU);
       ctx.fill();
     }
-    // Tiny HP hint for tougher enemies.
+    // Tiny HP hint for tougher enemies. (D-10)
     if (e.maxHp > 6 && e.hp < e.maxHp) {
       ctx.fillStyle = "rgba(0,0,0,0.5)";
       ctx.fillRect(e.x - e.radius, e.y - e.radius - 8, e.radius * 2, 4);
