@@ -24,6 +24,7 @@
     <div class="hud-stats">
       <span id="timer">0:00</span>
       <span id="kills">0 kills</span>
+      <span id="modifier-label" class="hidden"></span>
     </div>
   </div>
 
@@ -49,6 +50,15 @@
       <h2 class="levelup-title">LEVEL UP!</h2>
       <p class="subtitle">Choose an upgrade</p>
       <div id="upgrade-cards" class="upgrade-cards"></div>
+    </div>
+  </div>
+
+  <!-- Modifier selection screen -->
+  <div id="modifier" class="overlay hidden">
+    <div class="panel">
+      <h2 class="levelup-title">CHOOSE YOUR RUN</h2>
+      <p class="subtitle">Pick a modifier</p>
+      <div id="modifier-cards" class="upgrade-cards"></div>
     </div>
   </div>
 
