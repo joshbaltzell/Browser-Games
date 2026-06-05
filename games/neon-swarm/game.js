@@ -488,6 +488,12 @@ function resolveBulletHits() {
         e.hp -= dealt;
         e.flash = 0.1;
         spawnParticles(b.x, b.y, b.crit ? COLORS.gold : e.color, b.crit ? 8 : 4, [30, b.crit ? 170 : 110]);
+        spawnFloater(
+          b.x, e.y - e.radius - 2,
+          b.crit ? Math.round(dealt) + "!" : String(Math.round(dealt)),
+          b.crit ? COLORS.gold : "#ffffff",
+          b.crit ? 20 : 13
+        );
         if (e.hp <= 0) killEnemy(e);
         applySplash(b, e, dealt);
         if (b.pierce > 0) {
@@ -551,6 +557,7 @@ function dropLoot(e) {
 function killEnemy(e) {
   kills++;
   spawnParticles(e.x, e.y, e.color, 14);
+  spawnFloater(e.x, e.y - e.radius - 8, "DEAD", e.color, 14);
   dropLoot(e);
   if (player.lifesteal > 0) player.hp = Math.min(player.maxHp, player.hp + player.lifesteal);
   if (e.split) for (let i = 0; i < e.split; i++) spawnSporeling(e.x, e.y);
