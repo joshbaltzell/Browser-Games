@@ -76,6 +76,7 @@ let gameState = "start";
 
 let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue;
 let elapsed, kills, spawnTimer, spawnInterval, shootTimer, shake, pendingLevels;
+let timeScale, slowmoTimer, slowmoTarget;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -136,6 +137,9 @@ function initGame() {
   shootTimer = 0;
   shake = 0;
   pendingLevels = 0;
+  timeScale = 1;
+  slowmoTimer = 0;
+  slowmoTarget = 1;
 }
 
 // ----------------------------------------------------------------------------
@@ -188,6 +192,12 @@ function spawnParticles(x, y, color, count, speedRange = [40, 180]) {
       color,
     });
   }
+}
+
+function triggerSlowmo(target, duration) {
+  slowmoTarget = target;
+  slowmoTimer = duration;
+  timeScale = Math.min(timeScale, target); // snap down immediately
 }
 
 // ----------------------------------------------------------------------------
@@ -267,7 +277,16 @@ function spawnEnemy() {
 // ----------------------------------------------------------------------------
 // Update
 // ----------------------------------------------------------------------------
-function update(dt) {
+function update(rawDt) {
+  // Ease timeScale toward its target each frame (real time, not scaled).
+  timeScale += (slowmoTarget - timeScale) * Math.min(1, rawDt * 12);
+  if (slowmoTimer > 0) {
+    slowmoTimer -= rawDt;
+    if (slowmoTimer <= 0) slowmoTarget = 1;
+  }
+
+  const dt = rawDt * timeScale; // scaled simulation time
+
   elapsed += dt;
   if (shake > 0) shake = Math.max(0, shake - dt * 60);
 
