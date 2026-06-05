@@ -89,6 +89,7 @@ let floaters;
 let levelUpFlash;
 let combo, comboTimer;
 let powerups;
+let freezeTimer;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -157,6 +158,7 @@ function initGame() {
   combo = 0;
   comboTimer = 0;
   powerups = [];
+  freezeTimer = 0;
 }
 
 // ----------------------------------------------------------------------------
@@ -325,6 +327,7 @@ function update(rawDt) {
     comboTimer -= rawDt;
     if (comboTimer <= 0) combo = 0;
   }
+  if (freezeTimer > 0) freezeTimer -= rawDt;
 
   if (player.hp <= 0) endGame();
 }
@@ -401,6 +404,10 @@ function updateSpawning(dt) {
 function updateEnemies(dt) {
   for (const e of enemies) {
     if (e.orbCd > 0) e.orbCd -= dt;
+    if (e.flash > 0) e.flash -= dt;
+
+    if (freezeTimer > 0) continue; // frozen: no movement, no shooting, no contact damage
+
     const ang = Math.atan2(player.y - e.y, player.x - e.x);
 
     if (e.ranged) {
@@ -420,8 +427,6 @@ function updateEnemies(dt) {
       e.x += Math.cos(ang) * e.speed * dt;
       e.y += Math.sin(ang) * e.speed * dt;
     }
-    if (e.flash > 0) e.flash -= dt;
-
     // Contact damage.
     const rr = (e.radius + player.radius) ** 2;
     if (player.invuln <= 0 && (e.x - player.x) ** 2 + (e.y - player.y) ** 2 < rr) {
@@ -666,7 +671,9 @@ function activateBomb() {
   // Central burst so the screen-clear reads as an explosion.
   spawnParticles(W / 2, H / 2, "#ff9f43", 30, [100, 500]);
 }
-function activateFreeze() {}
+function activateFreeze() {
+  freezeTimer = 3.0;
+}
 function activateOverdrive() {}
 
 function gainXp(amount) {
@@ -750,6 +757,14 @@ function render() {
     ctx.save();
     ctx.globalAlpha = levelUpFlash;
     ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  if (freezeTimer > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.13;
+    ctx.fillStyle = "#78dcff";
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
