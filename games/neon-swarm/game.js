@@ -261,6 +261,10 @@ window.addEventListener("keydown", (e) => {
     keys.add(MOVE_KEYS[k]);
     e.preventDefault();
   }
+  if (gameState === "playing" && e.key === "Shift") {
+    executeDash();
+    e.preventDefault();
+  }
   if (gameState === "levelup" && ["1", "2", "3"].includes(k)) {
     chooseUpgrade(Number(k) - 1);
   }
@@ -574,6 +578,7 @@ function update(rawDt) {
   updatePowerups(dt);
   flushSpawnQueue();
   updateParticles(dt);
+  updateAfterimages(dt);
   updateBlasts(dt);
   updateLightningArcs(dt);
   updateFloaters(dt);
@@ -606,6 +611,7 @@ function updatePlayer(dt) {
   player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
 
   if (player.invuln > 0) player.invuln -= dt;
+  if (player.dashCd > 0) player.dashCd -= dt;
   // Glass Cannon suppresses all regeneration — guard so even later Regen/Vitality
   // upgrade picks produce no healing under this modifier.
   if (player.regen > 0 && player.hp < player.maxHp && !player.glassCannonMode) {
