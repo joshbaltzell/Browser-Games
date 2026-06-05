@@ -78,6 +78,7 @@ let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue;
 let elapsed, kills, spawnTimer, spawnInterval, shootTimer, shake, pendingLevels;
 let timeScale, slowmoTimer, slowmoTarget;
 let floaters;
+let levelUpFlash;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -142,6 +143,7 @@ function initGame() {
   slowmoTimer = 0;
   slowmoTarget = 1;
   floaters = [];
+  levelUpFlash = 0;
 }
 
 // ----------------------------------------------------------------------------
@@ -304,6 +306,7 @@ function update(rawDt) {
   updateParticles(dt);
   updateBlasts(dt);
   updateFloaters(dt);
+  if (levelUpFlash > 0) levelUpFlash = Math.max(0, levelUpFlash - rawDt * 3.5);
 
   if (player.hp <= 0) endGame();
 }
@@ -407,6 +410,7 @@ function updateEnemies(dt) {
       player.hp -= e.damage;
       player.invuln = 0.6;
       shake = 10;
+      triggerSlowmo(0.05, 0.08);
       spawnParticles(player.x, player.y, COLORS.pink, 12);
     }
   }
@@ -458,6 +462,7 @@ function updateEBullets(dt) {
       player.hp -= b.damage;
       player.invuln = 0.6;
       shake = 9;
+      triggerSlowmo(0.05, 0.08);
       spawnParticles(player.x, player.y, "#ff4dd2", 12);
       b.life = 0;
     }
@@ -668,6 +673,14 @@ function render() {
   ctx.restore();
 
   drawFloaters(); // drawn outside the shake transform so numbers don't jitter
+
+  if (levelUpFlash > 0) {
+    ctx.save();
+    ctx.globalAlpha = levelUpFlash;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
 }
 
 function drawBackground() {
@@ -873,6 +886,8 @@ function updateHud() {
 
 function openLevelUp() {
   gameState = "levelup";
+  triggerSlowmo(0.3, 0.3);
+  levelUpFlash = 0.35;
   // Pick 3 distinct upgrades at random.
   const pool = [...UPGRADES];
   const picks = [];
