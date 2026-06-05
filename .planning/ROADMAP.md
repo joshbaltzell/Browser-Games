@@ -92,7 +92,7 @@ Plans:
   5. At least 4 surge types are available: BRUTE SURGE, DARTER STORM, SENTINEL CALL, SPORE BLOOM
 
 Plans:
-- [ ] 05-01-PLAN.md: Surge system (surgeTimer, surge definitions, announcement floater, burst spawn)
+- [x] 05-01-PLAN.md: Surge system (surgeTimer, surge definitions, announcement floater, burst spawn)
 
 ### Phase 6: Run Modifier Cards
 **Goal**: Add a pre-run modifier selection so each run starts with a different strategic flavor
