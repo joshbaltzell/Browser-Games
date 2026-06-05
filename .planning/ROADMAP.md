@@ -150,7 +150,7 @@ Plans:
   5. Dash is disabled if no movement keys are held (no direction = no dash)
 
 Plans:
-- [ ] 09-01-PLAN.md: Dash input handling, dash state/cooldown in player, afterimage visual, HUD indicator
+- [x] 09-01-PLAN.md: Dash input handling, dash state/cooldown in player, afterimage visual, HUD indicator
 
 ### Phase 10: Build Names
 **Goal**: Detect recognized upgrade combination patterns and flash a build title so players feel a sense of discovered identity and strategic accomplishment
