@@ -1085,6 +1085,7 @@ function render() {
   drawPowerups();
   drawEBullets();
   drawBullets();
+  drawLightningArcs();
   drawEnemies();
   drawSentinelTelegraphs(); // VIS-02: shrinking reticle at player pos before Sentinel fires
   drawBlasts();
@@ -1345,6 +1346,25 @@ function drawBlasts() {
     ctx.fill();
     ctx.restore();
   }
+}
+
+function drawLightningArcs() {
+  if (lightningArcs.length === 0) return;
+  ctx.save();
+  ctx.strokeStyle = COLORS.cyan;
+  ctx.shadowColor = COLORS.cyan;
+  ctx.shadowBlur = 14;
+  ctx.lineWidth = 1.5;
+  for (const arc of lightningArcs) {
+    ctx.globalAlpha = arc.life / arc.maxLife;
+    ctx.beginPath();
+    ctx.moveTo(arc.points[0].x, arc.points[0].y);
+    for (let i = 1; i < arc.points.length; i++) {
+      ctx.lineTo(arc.points[i].x, arc.points[i].y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawOrbitals() {
