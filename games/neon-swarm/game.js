@@ -21,6 +21,7 @@ const COLORS = {
   purple: "#b388ff",
   white: "#ffffff",
 };
+const COMBO_DECAY = 2.5; // seconds before streak resets after last kill
 
 // Enemy archetypes. `minTime` gates when a type starts appearing (seconds).
 const ENEMY_TYPES = {
@@ -79,6 +80,7 @@ let elapsed, kills, spawnTimer, spawnInterval, shootTimer, shake, pendingLevels;
 let timeScale, slowmoTimer, slowmoTarget;
 let floaters;
 let levelUpFlash;
+let combo, comboTimer;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -144,6 +146,8 @@ function initGame() {
   slowmoTarget = 1;
   floaters = [];
   levelUpFlash = 0;
+  combo = 0;
+  comboTimer = 0;
 }
 
 // ----------------------------------------------------------------------------
@@ -307,6 +311,10 @@ function update(rawDt) {
   updateBlasts(dt);
   updateFloaters(dt);
   if (levelUpFlash > 0) levelUpFlash = Math.max(0, levelUpFlash - rawDt * 3.5);
+  if (comboTimer > 0) {
+    comboTimer -= rawDt;
+    if (comboTimer <= 0) combo = 0;
+  }
 
   if (player.hp <= 0) endGame();
 }
@@ -561,6 +569,8 @@ function dropLoot(e) {
 
 function killEnemy(e) {
   kills++;
+  combo++;
+  comboTimer = COMBO_DECAY;
   spawnParticles(e.x, e.y, e.color, 14);
   spawnFloater(e.x, e.y - e.radius - 8, "DEAD", e.color, 14);
   dropLoot(e);
@@ -600,7 +610,8 @@ function updateGems(dt) {
 }
 
 function gainXp(amount) {
-  player.xp += amount;
+  const mult = 1 + Math.min(0.5, combo * 0.02);
+  player.xp += amount * mult;
   while (player.xp >= player.xpToNext) {
     player.xp -= player.xpToNext;
     player.level++;
@@ -681,6 +692,8 @@ function render() {
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
+
+  drawCombo();
 }
 
 function drawBackground() {
@@ -868,6 +881,33 @@ function drawFloaters() {
     ctx.fillStyle = f.color;
     ctx.fillText(f.text, f.x, f.y);
   }
+  ctx.restore();
+}
+
+function drawCombo() {
+  if (combo < 3) return;
+  let color, size;
+  if (combo >= 20) { color = COLORS.pink; size = 26; }
+  else if (combo >= 10) { color = COLORS.gold; size = 22; }
+  else { color = "#ffffff"; size = 18; }
+
+  const cx = W / 2;
+  const cy = 52;
+
+  ctx.save();
+  ctx.font = `bold ${size}px monospace`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = color;
+  ctx.fillText(`COMBO \xd7${combo}`, cx, cy);
+
+  // Decay bar showing time left in streak.
+  const barW = 120;
+  const progress = Math.max(0, comboTimer / COMBO_DECAY);
+  ctx.fillStyle = "rgba(255,255,255,0.15)";
+  ctx.fillRect(cx - barW / 2, cy + size / 2 + 5, barW, 4);
+  ctx.fillStyle = color;
+  ctx.fillRect(cx - barW / 2, cy + size / 2 + 5, barW * progress, 4);
   ctx.restore();
 }
 
