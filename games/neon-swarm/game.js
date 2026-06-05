@@ -808,6 +808,39 @@ function applySplash(b, primary, dealt) {
   }
 }
 
+// Chain Lightning hop logic. Fires after the primary bullet hit when the player
+// has chainCount > 0. Each hop searches the nearest enemy to the PREVIOUS target
+// within 150px, deals b.damage * 0.55^hop (no crit scaling), flashes/particles,
+// kills if hp <= 0, and creates a jagged arc visual. Stops when no target in range.
+function applyChainLightning(b, primary, hops) {
+  const chained = new Set();
+  chained.add(primary);
+  let source = primary;
+
+  for (let hop = 1; hop <= hops; hop++) {
+    let next = null;
+    let nearestDist = Infinity;
+    for (const o of enemies) {
+      if (chained.has(o) || o.hp <= 0) continue;
+      const d = Math.hypot(o.x - source.x, o.y - source.y);
+      if (d <= 150 && d < nearestDist) {
+        nearestDist = d;
+        next = o;
+      }
+    }
+    if (!next) break; // no target in range — chain stops
+
+    const dmg = b.damage * Math.pow(0.55, hop);
+    next.hp -= dmg;
+    next.flash = 0.1;
+    spawnParticles(next.x, next.y, COLORS.cyan, 4, [40, 120]);
+    if (next.hp <= 0) killEnemy(next);
+    spawnLightningArc(source.x, source.y, next.x, next.y);
+    chained.add(next);
+    source = next;
+  }
+}
+
 // Loot drop. Tougher foes (xp >= 2: brutes, spores, sentinels) are worth a
 // bonus and scatter their XP across several gems, so clearing one reads as a
 // real payoff — and the faster leveling is the main lever that eases the run.
