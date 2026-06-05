@@ -5,13 +5,13 @@ milestone_name: milestone
 status: executing
 stopped_at: Planning structure initialized, ready to plan Phase 1
 last_updated: "2026-06-05T18:11:18.200Z"
-last_activity: 2026-06-05 -- Phase 7 wave 1 completed
+last_activity: 2026-06-05 -- Phase 8 wave 1 completed
 progress:
   total_phases: 10
   completed_phases: 6
   total_plans: 10
-  completed_plans: 7
-  percent: 70
+  completed_plans: 8
+  percent: 80
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05)
 
 **Core value:** The game is effortlessly fun from the first second
-**Current focus:** Phase 7 — chain-lightning (wave 1 complete)
+**Current focus:** Phase 8 — death-bomb (wave 1 complete)
 
 ## Current Position
 
-Phase: 7 (chain-lightning) — IN PROGRESS
+Phase: 8 (death-bomb) — IN PROGRESS
 Plan: 1 of 1
-Status: Phase 7 wave 1 complete
-Last activity: 2026-06-05 -- Phase 7 wave 1 completed
+Status: Phase 8 wave 1 complete
+Last activity: 2026-06-05 -- Phase 8 wave 1 completed
 
 Progress: [░░░░░░░░░░] 0%
 

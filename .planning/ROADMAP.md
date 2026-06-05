@@ -136,7 +136,7 @@ Plans:
   6. Player's hp never drops below 0 via the Last Stand path
 
 Plans:
-- [ ] 08-01-PLAN.md: Last Stand player property, lethal-hit intercept in updatePlayer/updateEBullets, floater and visual feedback
+- [x] 08-01-PLAN.md: Last Stand player property, lethal-hit intercept in updatePlayer/updateEBullets, floater and visual feedback
 
 ### Phase 9: Invuln Dash
 **Goal**: Add a Shift-key dash that gives the player active evasion skill expression — threading gaps in the swarm, dodging Sentinel shots — without changing the auto-aim identity
