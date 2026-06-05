@@ -139,7 +139,7 @@ resize();
 // Game states: "start" | "modifier" | "playing" | "levelup" | "gameover"
 let gameState = "start";
 
-let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue;
+let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue, lightningArcs;
 let elapsed, kills, spawnTimer, spawnInterval, shootTimer, shake, pendingLevels;
 let timeScale, slowmoTimer, slowmoTarget;
 let floaters;
@@ -210,6 +210,7 @@ function initGame() {
   particles = [];
   eBullets = [];
   blasts = [];
+  lightningArcs = [];
   spawnQueue = [];
   elapsed = 0;
   kills = 0;
@@ -511,6 +512,7 @@ function update(rawDt) {
   flushSpawnQueue();
   updateParticles(dt);
   updateBlasts(dt);
+  updateLightningArcs(dt);
   updateFloaters(dt);
   if (levelUpFlash > 0) levelUpFlash = Math.max(0, levelUpFlash - rawDt * 3.5);
   if (comboTimer > 0) {
@@ -858,6 +860,11 @@ function flushSpawnQueue() {
 function updateBlasts(dt) {
   for (const s of blasts) s.life -= dt;
   blasts = blasts.filter((s) => s.life > 0);
+}
+
+function updateLightningArcs(dt) {
+  for (const a of lightningArcs) a.life -= dt;
+  lightningArcs = lightningArcs.filter((a) => a.life > 0);
 }
 
 function updateGems(dt) {
