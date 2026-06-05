@@ -164,7 +164,7 @@ Plans:
   5. Build detection works correctly for cumulative upgrades (e.g., "pierce ≥ 2 AND projectileCount ≥ 2")
 
 Plans:
-- [ ] 10-01-PLAN.md: Upgrade tracking on player, build name definitions, detection logic after chooseUpgrade(), floater + HUD display
+- [x] 10-01-PLAN.md: Upgrade tracking on player, build name definitions, detection logic after chooseUpgrade(), floater + HUD display
 
 ## Progress
 
