@@ -676,6 +676,12 @@ function updateEnemies(dt) {
       triggerSlowmo(0.05, 0.08);
       spawnParticles(player.x, player.y, COLORS.pink, 12);
       sndPlayerHit(); // D-20
+      // Last Stand interception: survive lethal hit with 5 HP and trigger bomb-save (D-05, D-11)
+      if (player.hp <= 0 && player.lastStandCharges > 0) {
+        player.lastStandCharges--;
+        player.hp = 5;
+        triggerLastStand();
+      }
     }
   }
 }
