@@ -11,7 +11,7 @@ highest-impact changes first (audio, then visual clarity, then new mechanics).
 
 - [x] **Phase 1: Web Audio** — Synthesized sounds for all game events (shoot, hit, kill, level-up, bomb, freeze, overdrive) (completed 2026-06-05)
 - [x] **Phase 2: Enemy Shape Vocabulary** — Distinct geometric silhouette per enemy type (completed 2026-06-05)
-- [ ] **Phase 3: Sentinel Telegraph** — Targeting reticle 0.8s before Sentinel fires
+- [x] **Phase 3: Sentinel Telegraph** — Targeting reticle 0.8s before Sentinel fires (completed 2026-06-05)
 - [ ] **Phase 4: Power-up Timer Display** — Countdown timer + bar for Freeze and Overdrive duration
 - [ ] **Phase 5: Wave Surge Announcements** — 3s pre-warning before specific enemy burst events
 - [ ] **Phase 6: Run Modifier Cards** — Pre-game modifier selection (Glass Cannon / Headstart / Bullet Hell / None)
@@ -64,7 +64,7 @@ Plans:
   5. Multiple Sentinels show independent reticles simultaneously
 
 Plans:
-- [ ] 03-01-PLAN.md: Sentinel shootWarning tracking and drawSentinelTelegraph() render function
+- [x] 03-01-PLAN.md: Sentinel shootWarning tracking and drawSentinelTelegraph() render function
 
 ### Phase 4: Power-up Timer Display
 **Goal**: Show a visible countdown timer and depleting bar for active Freeze and Overdrive power-ups so the player knows exactly how long they have
@@ -172,7 +172,7 @@ Plans:
 |-------|-------|--------|-----------|
 | 1. Web Audio | 1/1 | Complete   | 2026-06-05 |
 | 2. Enemy Shapes | 1/1 | Complete   | 2026-06-05 |
-| 3. Sentinel Telegraph | 0/1 | Not started | - |
+| 3. Sentinel Telegraph | 1/1 | Complete   | 2026-06-05 |
 | 4. Power-up Timer | 0/1 | Not started | - |
 | 5. Wave Surges | 0/1 | Not started | - |
 | 6. Run Modifiers | 0/1 | Not started | - |
