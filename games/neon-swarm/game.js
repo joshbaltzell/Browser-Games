@@ -900,6 +900,34 @@ function updateLightningArcs(dt) {
   lightningArcs = lightningArcs.filter((a) => a.life > 0);
 }
 
+// Pre-generates a 6-point jittered polyline from (x1,y1) to (x2,y2) and stores
+// it as a lightning arc visual that fades over 0.15s. Interior points are offset
+// perpendicularly by ±15px so the path looks jagged without re-jittering per frame.
+function spawnLightningArc(x1, y1, x2, y2) {
+  if (lightningArcs.length >= 12) lightningArcs.shift(); // oldest-first cap
+
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dir = Math.atan2(dy, dx);
+  const perp = dir + Math.PI / 2;
+  const cosP = Math.cos(perp);
+  const sinP = Math.sin(perp);
+
+  // 4 interior points at t = 0.2, 0.4, 0.6, 0.8 with perpendicular jitter
+  const ts = [0.2, 0.4, 0.6, 0.8];
+  const points = [{ x: x1, y: y1 }];
+  for (const t of ts) {
+    const j = rand(-15, 15);
+    points.push({
+      x: x1 + dx * t + cosP * j,
+      y: y1 + dy * t + sinP * j,
+    });
+  }
+  points.push({ x: x2, y: y2 });
+
+  lightningArcs.push({ x1, y1, x2, y2, points, life: 0.15, maxLife: 0.15 });
+}
+
 function updateGems(dt) {
   const pr2 = player.pickupRange ** 2;
   for (const g of gems) {
