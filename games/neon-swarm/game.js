@@ -460,6 +460,7 @@ function updateShooting(dt) {
       life: 1.6,
     });
   }
+  sndShoot(); // D-13: one pew per volley (safe: updateShooting only called from update(), which only runs while gameState==="playing")
 }
 
 function updateSpawning(dt) {
@@ -510,6 +511,7 @@ function updateEnemies(dt) {
       shake = 10;
       triggerSlowmo(0.05, 0.08);
       spawnParticles(player.x, player.y, COLORS.pink, 12);
+      sndPlayerHit(); // D-20
     }
   }
 }
@@ -562,6 +564,7 @@ function updateEBullets(dt) {
       shake = 9;
       triggerSlowmo(0.05, 0.08);
       spawnParticles(player.x, player.y, "#ff4dd2", 12);
+      sndPlayerHit(); // D-20
       b.life = 0;
     }
   }
@@ -590,6 +593,7 @@ function resolveBulletHits() {
         const dealt = b.crit ? b.damage * player.critMult : b.damage;
         e.hp -= dealt;
         e.flash = 0.1;
+        sndHit(); // D-14 (throttled internally to 50ms)
         spawnParticles(b.x, b.y, b.crit ? COLORS.gold : e.color, b.crit ? 8 : 4, [30, b.crit ? 170 : 110]);
         spawnFloater(
           b.x, e.y - e.radius - 2,
@@ -669,6 +673,7 @@ function killEnemy(e) {
   combo++;
   comboTimer = COMBO_DECAY;
   spawnParticles(e.x, e.y, e.color, 14);
+  sndKill(e.xp >= 3); // D-15: louder for high-XP enemies (brutes/sentinels)
   spawnFloater(e.x, e.y - e.radius - 8, "DEAD", e.color, 14);
   dropLoot(e);
   if (player.lifesteal > 0) player.hp = Math.min(player.maxHp, player.hp + player.lifesteal);
@@ -732,6 +737,7 @@ function activatePowerup(type) {
 }
 
 function activateBomb() {
+  sndBomb(); // D-17
   const dmg = player.damage * 8;
   for (const e of enemies) {
     if (e.hp <= 0) continue;
@@ -746,13 +752,14 @@ function activateBomb() {
   spawnParticles(W / 2, H / 2, "#ff9f43", 30, [100, 500]);
 }
 function activateFreeze() {
+  sndFreeze(); // D-18
   freezeTimer = 3.0;
 }
 function activateOverdrive() {
   if (overdriveTimer > 0) {
     // Already active: just refresh the duration without re-applying multipliers.
     overdriveTimer = 5.0;
-    return;
+    return; // D-19: do NOT replay the buzz on refresh/extend
   }
   // Apply the boost multiplicatively and remember the exact factors so we can
   // divide them straight back out on expiry. This way an upgrade picked up
@@ -762,6 +769,7 @@ function activateOverdrive() {
   player.fireInterval *= overdriveFactors.fire;
   player.projectileSpeed *= overdriveFactors.speed;
   overdriveTimer = 5.0;
+  sndOverdrive(); // D-19: only on fresh activation (after the early-return above)
 }
 
 function deactivateOverdrive() {
@@ -1143,6 +1151,7 @@ function openLevelUp() {
   gameState = "levelup";
   triggerSlowmo(0.3, 0.3);
   levelUpFlash = 0.35;
+  sndLevelUp(); // D-16
   // Pick 3 distinct upgrades at random.
   const pool = [...UPGRADES];
   const picks = [];
