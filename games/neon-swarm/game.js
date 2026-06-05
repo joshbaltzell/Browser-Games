@@ -1581,15 +1581,41 @@ function endGame() {
   dom.gameover.classList.remove("hidden");
 }
 
-function startGame() {
+// Show the modifier selection overlay. Calls initGame() first so the player is
+// freshly reset before any modifier apply() mutates it.
+function openModifierSelection() {
   unlockAudio();
-  initGame();
-  gameState = "playing";
+  initGame(); // clean slate — modifier apply runs after selection (T05)
+  gameState = "modifier";
   dom.start.classList.add("hidden");
   dom.gameover.classList.add("hidden");
-  dom.levelup.classList.add("hidden");
-  dom.hud.classList.remove("hidden");
-  lastTime = performance.now();
+
+  // Populate cards — same markup pattern as openLevelUp().
+  dom.modifierCards.innerHTML = "";
+  MODIFIERS.forEach((m, i) => {
+    const el = document.createElement("div");
+    el.className = "upgrade";
+    el.style.setProperty("--accent", m.accent);
+    el.innerHTML = `
+      <div class="u-icon">${m.icon}</div>
+      <p class="u-name">${m.name}</p>
+      <p class="u-desc">${m.desc}</p>
+      <span class="u-key">${i + 1}</span>
+    `;
+    el.addEventListener("click", () => chooseModifier(i));
+    dom.modifierCards.appendChild(el);
+  });
+
+  dom.modifier.classList.remove("hidden");
+}
+
+// Apply the chosen modifier and begin the run.
+function chooseModifier(index) {
+  const m = MODIFIERS[index];
+  if (!m) return;
+  selectedModifier = m;
+  dom.modifier.classList.add("hidden");
+  applyAndStart();
 }
 
 // ----------------------------------------------------------------------------
