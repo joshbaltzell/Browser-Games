@@ -188,6 +188,7 @@ const dom = {
   modifierCards: document.getElementById("modifier-cards"),
   modifierLabel: document.getElementById("modifier-label"),
   dashReady: document.getElementById("dash-ready"),
+  buildName: document.getElementById("build-name"),  // D-22: persistent build-name HUD element
 };
 
 function initGame() {
@@ -1768,6 +1769,7 @@ function updateHud() {
   const s = Math.floor(elapsed % 60);
   dom.timer.textContent = `${m}:${s.toString().padStart(2, "0")}`;
   dom.dashReady.classList.toggle("cooling", player.dashCd > 0);
+  dom.buildName.textContent = player.currentBuildName || ""; // D-20: persist active build name
 }
 
 function openLevelUp() {
