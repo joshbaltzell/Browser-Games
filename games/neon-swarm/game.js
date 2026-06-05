@@ -305,6 +305,65 @@ function triggerSlowmo(target, duration) {
   timeScale = Math.min(timeScale, target); // snap down immediately
 }
 
+function executeDash() {
+  // Guard: cooldown not ready (D-02, D-14)
+  if (player.dashCd > 0) return;
+
+  // Compute movement vector exactly as updatePlayer() does (D-06)
+  let dx = 0, dy = 0;
+  if (keys.has("up"))    dy -= 1;
+  if (keys.has("down"))  dy += 1;
+  if (keys.has("left"))  dx -= 1;
+  if (keys.has("right")) dx += 1;
+
+  // No-direction guard: no keys held = no dash (D-24, D-25)
+  if (dx === 0 && dy === 0) return;
+
+  // Normalize direction
+  const len = Math.hypot(dx, dy);
+  const nx = dx / len;
+  const ny = dy / len;
+
+  // Record origin before moving (needed for afterimage intermediate positions)
+  const ox = player.x;
+  const oy = player.y;
+
+  // Teleport 120px instantly (D-07)
+  player.x += nx * 120;
+  player.y += ny * 120;
+
+  // Boundary clamp (D-08)
+  player.x = Math.max(player.radius, Math.min(W - player.radius, player.x));
+  player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
+
+  // Set invuln and cooldown (D-10, D-11)
+  player.invuln = 0.35;
+  player.dashCd = 1.5;
+
+  // Spawn 3 afterimages at 25%, 50%, 75% along dash path (D-15, D-16)
+  for (const f of [0.25, 0.5, 0.75]) {
+    afterimages.push({
+      x: ox + (player.x - ox) * f,
+      y: oy + (player.y - oy) * f,
+      radius: player.radius,
+      alpha: 0.5,
+      life: 0.25,
+      maxLife: 0.25,
+      color: COLORS.cyan,
+    });
+  }
+
+  // Small cyan burst at origin for extra juice
+  spawnParticles(ox, oy, COLORS.cyan, 6);
+}
+
+function updateAfterimages(dt) {
+  for (const image of afterimages) {
+    image.life -= dt;
+  }
+  afterimages = afterimages.filter((a) => a.life > 0);
+}
+
 function unlockAudio() {
   try {
     if (audioCtx === null) {
