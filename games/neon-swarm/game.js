@@ -71,6 +71,49 @@ const UPGRADES = [
   { id: "lifesteal", icon: "🩸", name: "Vampirism", desc: "Heal +0.5 HP for every kill", accent: "#ff3b6b", apply: (p) => (p.lifesteal += 0.5) },
 ];
 
+// Run modifier definitions. Each `apply` mutates the player and/or globals.
+// Displayed as cards before each run; one is always chosen.
+const MODIFIERS = [
+  {
+    id: "glasscannon",
+    icon: "💥",
+    name: "Glass Cannon",
+    desc: "2\xd7 damage — but 50% HP, no regeneration",
+    accent: COLORS.pink,
+    apply(p) {
+      p.damage *= 2;
+      p.maxHp = 60;
+      p.hp = 60;
+      p.regen = 0;
+      p.glassCannonMode = true;
+    },
+  },
+  {
+    id: "headstart",
+    icon: "🚀",
+    name: "Headstart",
+    desc: "Start at Level 5 with 3 random upgrades",
+    accent: COLORS.gold,
+    apply(p) { applyHeadstart(p); },
+  },
+  {
+    id: "bullethell",
+    icon: "🌀",
+    name: "Bullet Hell",
+    desc: "Enemy fire 3\xd7 — but XP drops are 2\xd7",
+    accent: COLORS.purple,
+    apply() { bulletHellMode = true; },
+  },
+  {
+    id: "standard",
+    icon: "▶",
+    name: "Standard Run",
+    desc: "No modifiers — the baseline game",
+    accent: COLORS.white,
+    apply() {},
+  },
+];
+
 // ----------------------------------------------------------------------------
 // Canvas & global state
 // ----------------------------------------------------------------------------
@@ -92,7 +135,7 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-// Game states: "start" | "playing" | "levelup" | "gameover"
+// Game states: "start" | "modifier" | "playing" | "levelup" | "gameover"
 let gameState = "start";
 
 let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue;
@@ -107,6 +150,8 @@ let overdriveTimer, overdriveFactors;
 let surgeTimer, surgeState, surgeWarningTimer, surgeType, surgeFlash;
 let audioCtx = null;
 let lastHitSound = 0;
+let selectedModifier = null; // D-10: which modifier the player picked this run
+let bulletHellMode = false;  // D-11: set true by Bullet Hell modifier
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -120,6 +165,9 @@ const dom = {
   gameover: document.getElementById("gameover"),
   upgradeCards: document.getElementById("upgrade-cards"),
   finalStats: document.getElementById("final-stats"),
+  modifier: document.getElementById("modifier"),
+  modifierCards: document.getElementById("modifier-cards"),
+  modifierLabel: document.getElementById("modifier-label"),
 };
 
 function initGame() {
@@ -152,6 +200,7 @@ function initGame() {
     critMult: 2,
     orbitals: 0,
     lifesteal: 0,
+    glassCannonMode: false, // set true by Glass Cannon modifier — disables regen
   };
   enemies = [];
   bullets = [];
@@ -183,6 +232,9 @@ function initGame() {
   surgeWarningTimer = 0;
   surgeType = null;
   surgeFlash = 0;
+  // Modifier state reset — actual selection + apply happens after initGame (T05).
+  selectedModifier = null;
+  bulletHellMode = false;
 }
 
 // ----------------------------------------------------------------------------
@@ -205,6 +257,9 @@ window.addEventListener("keydown", (e) => {
   if (gameState === "levelup" && ["1", "2", "3"].includes(k)) {
     chooseUpgrade(Number(k) - 1);
   }
+  if (gameState === "modifier" && ["1", "2", "3", "4"].includes(k)) {
+    chooseModifier(Number(k) - 1);
+  }
 });
 window.addEventListener("keyup", (e) => {
   const k = e.key.toLowerCase();
@@ -213,8 +268,8 @@ window.addEventListener("keyup", (e) => {
 // Lose focus -> stop drifting.
 window.addEventListener("blur", () => keys.clear());
 
-document.getElementById("start-btn").addEventListener("click", startGame);
-document.getElementById("restart-btn").addEventListener("click", startGame);
+document.getElementById("start-btn").addEventListener("click", openModifierSelection);
+document.getElementById("restart-btn").addEventListener("click", openModifierSelection);
 
 // ----------------------------------------------------------------------------
 // Helpers
@@ -484,7 +539,9 @@ function updatePlayer(dt) {
   player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
 
   if (player.invuln > 0) player.invuln -= dt;
-  if (player.regen > 0 && player.hp < player.maxHp) {
+  // Glass Cannon suppresses all regeneration — guard so even later Regen/Vitality
+  // upgrade picks produce no healing under this modifier.
+  if (player.regen > 0 && player.hp < player.maxHp && !player.glassCannonMode) {
     player.hp = Math.min(player.maxHp, player.hp + player.regen * dt);
   }
 }
@@ -619,15 +676,21 @@ function updateEnemies(dt) {
 }
 
 function fireEnemyShot(e) {
-  const a = Math.atan2(player.y - e.y, player.x - e.x);
-  eBullets.push({
-    x: e.x, y: e.y,
-    vx: Math.cos(a) * e.projSpeed,
-    vy: Math.sin(a) * e.projSpeed,
-    radius: 6,
-    damage: e.projDamage,
-    life: 3.2,
-  });
+  // Bullet Hell: 3-shot burst with slight spread; otherwise 1 shot straight at player.
+  const a0 = Math.atan2(player.y - e.y, player.x - e.x);
+  const count = bulletHellMode ? 3 : 1;
+  const spread = 0.12; // radians between shots in a burst
+  for (let i = 0; i < count; i++) {
+    const a = a0 + (i - (count - 1) / 2) * spread;
+    eBullets.push({
+      x: e.x, y: e.y,
+      vx: Math.cos(a) * e.projSpeed,
+      vy: Math.sin(a) * e.projSpeed,
+      radius: 6,
+      damage: e.projDamage,
+      life: 3.2,
+    });
+  }
 }
 
 // Orbiting drones: rotate around the player and shred anything they brush
@@ -745,7 +808,9 @@ function applySplash(b, primary, dealt) {
 // bonus and scatter their XP across several gems, so clearing one reads as a
 // real payoff — and the faster leveling is the main lever that eases the run.
 function dropLoot(e) {
-  const total = e.xp >= 2 ? Math.ceil(e.xp * 1.5) : e.xp;
+  // Bullet Hell doubles the XP value going into gems; power-up drop chance unchanged.
+  const baseXp = bulletHellMode ? e.xp * 2 : e.xp;
+  const total = baseXp >= 2 ? Math.ceil(baseXp * 1.5) : baseXp;
   const count = Math.min(8, Math.max(1, Math.round(total / 1.5)));
   const base = Math.floor(total / count);
   let remainder = total - base * count;
@@ -1529,15 +1594,81 @@ function endGame() {
   dom.gameover.classList.remove("hidden");
 }
 
-function startGame() {
+// Headstart helper: silently grant 3 random distinct upgrades and set the
+// player to Level 5 with the correct next-level XP threshold.
+// Level 5 xpToNext derivation — initial xpToNext = 4, apply 4 times:
+//   4 → round(4*1.2+2) = 7 → round(7*1.2+2) = 10 → round(10*1.2+2) = 14 → round(14*1.2+2) = 19
+function applyHeadstart(p) {
+  // Apply 3 distinct random upgrades (no repeats — splice ensures uniqueness).
+  const pool = [...UPGRADES];
+  for (let i = 0; i < 3 && pool.length; i++) {
+    const pick = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+    pick.apply(p);
+  }
+  // Set player to Level 5 with xpToNext = 19 (computed above).
+  p.level = 5;
+  p.xp = 0;
+  p.xpToNext = 19;
+}
+
+// Show the modifier selection overlay. Calls initGame() first so the player is
+// freshly reset before any modifier apply() mutates it.
+function openModifierSelection() {
   unlockAudio();
-  initGame();
+  initGame(); // clean slate — modifier apply runs after selection (T05)
+  gameState = "modifier";
+  dom.start.classList.add("hidden");
+  dom.gameover.classList.add("hidden");
+
+  // Populate cards — same markup pattern as openLevelUp().
+  dom.modifierCards.innerHTML = "";
+  MODIFIERS.forEach((m, i) => {
+    const el = document.createElement("div");
+    el.className = "upgrade";
+    el.style.setProperty("--accent", m.accent);
+    el.innerHTML = `
+      <div class="u-icon">${m.icon}</div>
+      <p class="u-name">${m.name}</p>
+      <p class="u-desc">${m.desc}</p>
+      <span class="u-key">${i + 1}</span>
+    `;
+    el.addEventListener("click", () => chooseModifier(i));
+    dom.modifierCards.appendChild(el);
+  });
+
+  dom.modifier.classList.remove("hidden");
+}
+
+// Apply the chosen modifier and begin the run.
+function chooseModifier(index) {
+  const m = MODIFIERS[index];
+  if (!m) return;
+  selectedModifier = m;
+  dom.modifier.classList.add("hidden");
+  applyAndStart();
+}
+
+// Apply the selected modifier's effects and transition to "playing".
+// initGame() already ran in openModifierSelection(), so we do NOT call it again.
+function applyAndStart() {
+  if (selectedModifier) selectedModifier.apply(player);
+
   gameState = "playing";
   dom.start.classList.add("hidden");
   dom.gameover.classList.add("hidden");
   dom.levelup.classList.add("hidden");
+  dom.modifier.classList.add("hidden");
   dom.hud.classList.remove("hidden");
   lastTime = performance.now();
+
+  // Show modifier name in HUD for non-standard runs (D-12, D-15).
+  if (selectedModifier && selectedModifier.id !== "standard") {
+    dom.modifierLabel.textContent = selectedModifier.name;
+    dom.modifierLabel.classList.remove("hidden");
+  } else {
+    dom.modifierLabel.textContent = "";
+    dom.modifierLabel.classList.add("hidden");
+  }
 }
 
 // ----------------------------------------------------------------------------
