@@ -34,6 +34,13 @@ const ENEMY_TYPES = {
   sentinel: { radius: 12, speed: 66, hp: 7, damage: 5, xp: 3, color: "#7c83ff", minTime: 150, ranged: true, shootRange: 330, shootInterval: 2.2, projDamage: 7, projSpeed: 220 },
 };
 
+const POWERUP_TYPES = {
+  bomb:      { color: "#ff9f43", icon: "\u{1F4A3}", label: "BOMB" },
+  freeze:    { color: "#7ee8fa", icon: "❄️",  label: "FREEZE" },
+  overdrive: { color: "#00e5ff", icon: "⚡",  label: "OVERDRIVE" },
+};
+const POWERUP_KEYS = Object.keys(POWERUP_TYPES);
+
 // Upgrade pool. Each `apply` mutates the player; some are repeatable.
 const UPGRADES = [
   { id: "damage", icon: "⚔️", name: "Sharper Shots", desc: "+35% projectile damage", accent: COLORS.pink, apply: (p) => (p.damage *= 1.35) },
@@ -81,6 +88,7 @@ let timeScale, slowmoTimer, slowmoTarget;
 let floaters;
 let levelUpFlash;
 let combo, comboTimer;
+let powerups;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -148,6 +156,7 @@ function initGame() {
   levelUpFlash = 0;
   combo = 0;
   comboTimer = 0;
+  powerups = [];
 }
 
 // ----------------------------------------------------------------------------
@@ -306,6 +315,7 @@ function update(rawDt) {
   updateBullets(dt);
   updateEBullets(dt);
   updateGems(dt);
+  updatePowerups(dt);
   flushSpawnQueue();
   updateParticles(dt);
   updateBlasts(dt);
@@ -565,6 +575,13 @@ function dropLoot(e) {
       vy: 0,
     });
   }
+  // Rare power-up drop: 1.5% on normal kills, 5.5% on tough kills (xp >= 2).
+  // Hard cap of 2 on screen so they never pile up.
+  const dropChance = e.xp >= 2 ? 0.055 : 0.015;
+  if (powerups.length < 2 && Math.random() < dropChance) {
+    const type = POWERUP_KEYS[Math.floor(Math.random() * POWERUP_KEYS.length)];
+    powerups.push({ x: e.x, y: e.y, type, pulse: 0 });
+  }
 }
 
 function killEnemy(e) {
@@ -608,6 +625,36 @@ function updateGems(dt) {
   gems = gems.filter((g) => !g.collected);
   enemies = enemies.filter((e) => e.hp > 0);
 }
+
+function updatePowerups(dt) {
+  const pr2 = player.pickupRange ** 2;
+  for (const p of powerups) {
+    p.pulse += dt;
+    const d2 = (p.x - player.x) ** 2 + (p.y - player.y) ** 2;
+    if (d2 < pr2) {
+      const ang = Math.atan2(player.y - p.y, player.x - p.x);
+      const pull = 220 + (1 - d2 / pr2) * 360;
+      p.x += Math.cos(ang) * pull * dt;
+      p.y += Math.sin(ang) * pull * dt;
+    }
+    if (d2 < (18 + player.radius) ** 2) {
+      p.collected = true;
+      activatePowerup(p.type);
+    }
+  }
+  powerups = powerups.filter((p) => !p.collected);
+}
+
+function activatePowerup(type) {
+  if (type === "bomb") activateBomb();
+  else if (type === "freeze") activateFreeze();
+  else if (type === "overdrive") activateOverdrive();
+}
+
+// Placeholder stubs — replaced in Tasks 7-9.
+function activateBomb() {}
+function activateFreeze() {}
+function activateOverdrive() {}
 
 function gainXp(amount) {
   const mult = 1 + Math.min(0.5, combo * 0.02);
@@ -674,6 +721,7 @@ function render() {
 
   drawParticles();
   drawGems();
+  drawPowerups();
   drawEBullets();
   drawBullets();
   drawEnemies();
@@ -855,6 +903,48 @@ function drawGems() {
     ctx.translate(g.x, g.y);
     ctx.rotate(elapsed * 2);
     ctx.fillRect(-g.radius * 0.7, -g.radius * 0.7, g.radius * 1.4, g.radius * 1.4);
+    ctx.restore();
+  }
+}
+
+function drawHexagon(x, y, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (i * Math.PI) / 3 - Math.PI / 6;
+    if (i === 0) ctx.moveTo(x + r * Math.cos(a), y + r * Math.sin(a));
+    else ctx.lineTo(x + r * Math.cos(a), y + r * Math.sin(a));
+  }
+  ctx.closePath();
+}
+
+function drawPowerups() {
+  for (const p of powerups) {
+    const def = POWERUP_TYPES[p.type];
+    const pulse = 1 + 0.2 * Math.sin(p.pulse * Math.PI * 4); // 2 Hz
+    ctx.save();
+    // Pulsing outer ring.
+    ctx.strokeStyle = def.color;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = def.color;
+    ctx.shadowBlur = 18;
+    drawHexagon(p.x, p.y, 24 * pulse);
+    ctx.stroke();
+    // Semi-transparent filled body.
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = def.color + "44";
+    drawHexagon(p.x, p.y, 18);
+    ctx.fill();
+    ctx.strokeStyle = def.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Icon.
+    ctx.shadowBlur = 0;
+    ctx.font = "14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    ctx.globalAlpha = 1;
+    ctx.fillText(def.icon, p.x, p.y);
     ctx.restore();
   }
 }
