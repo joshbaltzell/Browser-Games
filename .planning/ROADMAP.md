@@ -107,7 +107,7 @@ Plans:
   6. Selected modifier persists for the run and can be seen in the HUD
 
 Plans:
-- [ ] 06-01-PLAN.md: Modifier data structure, selection modal UI, application in initGame()
+- [x] 06-01-PLAN.md: Modifier data structure, selection modal UI, application in initGame()
 
 ### Phase 7: Chain Lightning Upgrade
 **Goal**: Add Chain Lightning as a new upgrade that makes bullets arc to a second enemy on impact, creating spectacular crowd-clearing chain reactions
