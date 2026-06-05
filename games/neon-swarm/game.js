@@ -772,6 +772,7 @@ function resolveBulletHits() {
         );
         if (e.hp <= 0) killEnemy(e);
         applySplash(b, e, dealt);
+        if (player.chainCount > 0) applyChainLightning(b, e, player.chainCount);
         if (b.pierce > 0) {
           b.pierce--;
           (b.hit || (b.hit = new Set())).add(e);
