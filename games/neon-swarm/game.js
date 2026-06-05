@@ -73,6 +73,23 @@ const UPGRADES = [
   { id: "laststand", icon: "🛡️", name: "Last Stand", desc: "Once per run: survive a killing blow with 5 HP and trigger a Bomb", accent: COLORS.gold, apply: (p) => { p.lastStandCharges = Math.min((p.lastStandCharges || 0) + 1, 2); } },
 ];
 
+// Named-build definitions. Ordered most-specific first — the first matching
+// entry wins (D-23). Conditions read player-state fields directly and use
+// (counts.X || 0) guards so missing keys never produce NaN.
+const BUILD_NAMES = [
+  { name: "PLAGUE DOCTOR",  condition: (p, c) => p.lifesteal > 0 && p.orbitals >= 2 && p.regen > 0 },
+  { name: "DEMOLISHER",     condition: (p, c) => (c.damage || 0) >= 2 && p.critChance >= 0.24 && p.splashRadius > 42 },
+  { name: "GATLING",        condition: (p, c) => (c.firerate || 0) >= 2 && (c.damage || 0) >= 2 },
+  { name: "RAILGUNNER",     condition: (p, c) => (c.pierce || 0) >= 2 && p.projectileCount >= 2 },
+  { name: "SNIPER",         condition: (p, c) => (c.pierce || 0) >= 3 },
+  { name: "SCATTER CANNON", condition: (p, c) => p.projectileCount >= 4 },
+  { name: "DRONE COMMANDER",condition: (p, c) => p.orbitals >= 3 },
+  { name: "BLITZ",          condition: (p, c) => (c.speed || 0) >= 2 && p.projectileCount >= 2 },
+  // STORM CALLER is optional — only fires if Phase 7 chain is ever implemented.
+  // The (|| 0) guard keeps it silent until player.chainCount exists.
+  { name: "STORM CALLER",   condition: (p, c) => (c.pierce || 0) >= 2 && (p.chainCount || 0) >= 1 },
+];
+
 // Run modifier definitions. Each `apply` mutates the player and/or globals.
 // Displayed as cards before each run; one is always chosen.
 const MODIFIERS = [
@@ -171,6 +188,7 @@ const dom = {
   modifierCards: document.getElementById("modifier-cards"),
   modifierLabel: document.getElementById("modifier-label"),
   dashReady: document.getElementById("dash-ready"),
+  buildName: document.getElementById("build-name"),  // D-22: persistent build-name HUD element
 };
 
 function initGame() {
@@ -207,6 +225,8 @@ function initGame() {
     chainCount: 0,
     lastStandCharges: 0,
     glassCannonMode: false, // set true by Glass Cannon modifier — disables regen
+    upgradeCounts: {},       // maps upgrade id -> times picked this run (D-01, D-03)
+    currentBuildName: null,  // active named build, or null if none yet (D-18)
   };
   enemies = [];
   bullets = [];
@@ -1131,7 +1151,7 @@ function updateParticles(dt) {
   particles = particles.filter((p) => p.life > 0);
 }
 
-function spawnFloater(x, y, text, color, size) {
+function spawnFloater(x, y, text, color, size, lifeOverride = 0.8) {
   if (floaters.length >= 60) floaters.shift();
   floaters.push({
     x: x + rand(-10, 10),
@@ -1142,8 +1162,8 @@ function spawnFloater(x, y, text, color, size) {
     alpha: 1,
     vy: -55,
     vx: rand(-14, 14),
-    life: 0.8,
-    maxLife: 0.8,
+    life: lifeOverride,
+    maxLife: lifeOverride,
   });
 }
 
@@ -1157,6 +1177,29 @@ function updateFloaters(dt) {
     f.alpha = Math.max(0, f.life / f.maxLife);
   }
   floaters = floaters.filter((f) => f.life > 0);
+}
+
+// Large centered 2-second gold floater for the build name flash (D-15, D-16, D-17).
+function spawnBuildFloater(name) {
+  spawnFloater(W / 2, H / 2 - 40, name, COLORS.gold, 26, 2.0);
+}
+
+// Detect the first matching build name after an upgrade pick (D-14, D-23, D-24).
+// Sets player.currentBuildName and flashes the floater only when the name changes.
+// Never clears currentBuildName if no build matches — builds are never downgraded.
+function checkBuildName() {
+  const counts = player.upgradeCounts;
+  for (const build of BUILD_NAMES) {
+    if (build.condition(player, counts)) {
+      if (build.name !== player.currentBuildName) {
+        player.currentBuildName = build.name;
+        spawnBuildFloater(build.name);
+        if (dom.buildName) dom.buildName.textContent = build.name;
+      }
+      return; // first match wins
+    }
+  }
+  // No build matched — leave player.currentBuildName as-is (D-24)
 }
 
 // ----------------------------------------------------------------------------
@@ -1726,6 +1769,7 @@ function updateHud() {
   const s = Math.floor(elapsed % 60);
   dom.timer.textContent = `${m}:${s.toString().padStart(2, "0")}`;
   dom.dashReady.classList.toggle("cooling", player.dashCd > 0);
+  dom.buildName.textContent = player.currentBuildName || ""; // D-20: persist active build name
 }
 
 function openLevelUp() {
@@ -1763,6 +1807,10 @@ function chooseUpgrade(index) {
   const u = currentUpgrades[index];
   if (!u) return;
   u.apply(player);
+  // Track how many times each upgrade has been picked this run (D-02)
+  player.upgradeCounts[u.id] = (player.upgradeCounts[u.id] || 0) + 1;
+  // Detect named builds immediately after applying the upgrade (D-13)
+  checkBuildName();
   pendingLevels--;
   dom.levelup.classList.add("hidden");
   if (pendingLevels > 0) {

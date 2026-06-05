@@ -1,46 +1,47 @@
-# Phase 07-01 Execution Summary
+# Phase 10-01 Execution Summary
 
-**Plan:** 07-01-PLAN.md — Chain Lightning Upgrade
+**Plan:** 10-01-PLAN.md — Build Names (FLAIR-01)
 **Executed:** 2026-06-05
 **Status:** Complete — all 6 tasks committed
 
 ## Tasks Completed
 
-### T01 — Upgrade definition + chainCount
-- Added chain entry as 14th item in UPGRADES array with id "chain", icon "⚡", name "Chain Lightning", desc containing "150px" and "55% damage", accent COLORS.cyan, apply increments p.chainCount via || 0 guard.
-- Added chainCount: 0 to initGame()'s player object alongside pierce/critChance/orbitals/lifesteal.
+### T01 — Player state for upgrade tracking
+- Added `upgradeCounts: {}` and `currentBuildName: null` to the player object literal in `initGame()`.
+- Both reset automatically each run (the player object is fully rebuilt by `initGame()`).
 
-### T02 — lightningArcs state array + updateLightningArcs lifecycle
-- Added lightningArcs to global let declaration alongside blasts/spawnQueue.
-- Added lightningArcs = [] reset in initGame().
-- Added updateLightningArcs(dt) mirroring updateBlasts pattern — decrements life, filters expired.
-- Wired updateLightningArcs(dt) into update() immediately after updateBlasts(dt).
+### T02 — spawnFloater lifeOverride param
+- Extended `spawnFloater` with optional sixth param `lifeOverride = 0.8`.
+- `life` and `maxLife` in the pushed floater object now use `lifeOverride` instead of hard-coded `0.8`.
+- All existing call sites omit the argument and retain their 0.8s fade.
 
-### T03 — applyChainLightning() core hop logic
-- Placed directly after applySplash().
-- Uses a Set seeded with primary to prevent re-targeting.
-- Each hop: nearest enemy to previous target within 150px, damage = b.damage * 0.55^hop (no crit scaling), flash=0.1, cyan particle burst (4 particles), killEnemy() if hp <= 0, spawnLightningArc() call. Chain stops if nothing in range.
+### T03 — BUILD_NAMES array + checkBuildName() + spawnBuildFloater()
+- Added `BUILD_NAMES` constant array with 9 entries (8 required + optional dormant STORM CALLER).
+- All `upgradeCounts` lookups use `(counts.X || 0)` guards; STORM CALLER uses `(player.chainCount || 0)`.
+- Added `spawnBuildFloater(name)` — calls `spawnFloater(W/2, H/2-40, name, COLORS.gold, 26, 2.0)`.
+- Added `checkBuildName()` — iterates BUILD_NAMES, finds first match, sets `player.currentBuildName`,
+  calls `spawnBuildFloater` only when the name changes. Never clears name if no match (D-24).
 
-### T04 — spawnLightningArc() pre-jittered polyline
-- Placed directly after updateLightningArcs().
-- Enforces 12-arc cap (shifts oldest on overflow).
-- Generates 6-point polyline: start + 4 interior points (t=0.2/0.4/0.6/0.8) offset +-15px perpendicular + end. Points computed once at creation.
-- Pushes { x1, y1, x2, y2, points, life: 0.15, maxLife: 0.15 }.
+### T04 — chooseUpgrade wiring
+- Added `player.upgradeCounts[u.id] = (player.upgradeCounts[u.id] || 0) + 1;` after `u.apply(player)`.
+- Added `checkBuildName()` call immediately after the increment, before `pendingLevels--`.
 
-### T05 — Hook into resolveBulletHits()
-- Added guard call immediately after applySplash(b, e, dealt) and before the pierce/break block.
+### T05 — Large centered build-name flash floater
+- Implemented as `spawnBuildFloater(name)` in T03. Called from `checkBuildName()` on new build detection.
+- Uses lifeOverride 2.0 for 2s display; existing floater update/draw pipeline handles all animation.
 
-### T06 — drawLightningArcs() + render() integration
-- Added drawLightningArcs() after drawBlasts() — cyan stroke, shadowBlur 14, lineWidth 1.5, per-arc alpha fade, save/restore.
-- Called from render() inside the shake-translate block after drawBullets().
+### T06 — Persistent HUD element
+- Added `<div id="build-name" style="...10px monospace gold...">` to `index.html` inside `#hud` after `.hud-stats`.
+- Added `buildName: document.getElementById("build-name")` to the `dom` object in `game.js`.
+- Added `dom.buildName.textContent = player.currentBuildName || ""` at end of `updateHud()`.
 
 ## Files Modified
-- games/neon-swarm/game.js (sole modified file)
+- `games/neon-swarm/game.js` — BUILD_NAMES, spawnBuildFloater, checkBuildName, player state, chooseUpgrade, dom ref, updateHud.
+- `games/neon-swarm/index.html` — `#build-name` HUD div added.
 
 ## Commits
-- ca0ee7b T01: feat(neon-swarm): add Chain Lightning upgrade definition and chainCount
-- 4cc6150 T02: feat(neon-swarm): add lightningArcs array and updateLightningArcs lifecycle
-- 028a100 T03: feat(neon-swarm): implement applyChainLightning() — hop logic with falloff damage
-- e750ce1 T04: feat(neon-swarm): implement spawnLightningArc() — pre-jittered polyline with 12-arc cap
-- f98b783 T05: feat(neon-swarm): hook applyChainLightning into resolveBulletHits()
-- 5a22e45 T06: feat(neon-swarm): implement drawLightningArcs() and wire into render()
+- de4163c T01: feat(neon-swarm): add upgradeCounts and currentBuildName to player state
+- 6f27e30 T02: feat(neon-swarm): add optional lifeOverride param to spawnFloater
+- 553a425 T03: feat(neon-swarm): define BUILD_NAMES and checkBuildName() detection
+- 04e71fa T04: feat(neon-swarm): wire upgradeCounts increment and checkBuildName in chooseUpgrade
+- fe0858f T06: feat(neon-swarm): add persistent build-name HUD element and dom wiring
