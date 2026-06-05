@@ -444,6 +444,7 @@ function update(rawDt) {
   updatePlayer(dt);
   updateShooting(dt);
   updateSpawning(dt);
+  updateSurges(dt);
   updateEnemies(dt);
   updateOrbitals(dt);
   updateBullets(dt);
@@ -535,6 +536,46 @@ function updateSpawning(dt) {
     // on-screen count to protect framerate (you'll be overwhelmed long before).
     const burst = 1 + Math.floor(elapsed / 90);
     for (let i = 0; i < burst && enemies.length < 300; i++) spawnEnemy();
+  }
+}
+
+// Three-state surge machine: idle → warning → spawning → idle.
+// Surges begin only after the 60s warm-up (D-01); the first fires ~105s in
+// (surgeTimer starts at 45, after the 60s gate opens). Subsequent surges use a
+// rand(30,50)s cooldown (D-02).
+function updateSurges(dt) {
+  if (elapsed < 60) return; // D-01: no surges in the first minute
+
+  if (surgeState === "idle") {
+    surgeTimer -= dt;
+    if (surgeTimer <= 0) {
+      // Filter to surge types whose minTime has been reached (D-06).
+      const avail = SURGE_TYPES.filter(s => elapsed >= s.minTime);
+      if (avail.length === 0) {
+        surgeTimer = 5; // nothing available yet — retry soon
+        return;
+      }
+      surgeType = avail[Math.floor(Math.random() * avail.length)]; // D-19
+      surgeState = "warning"; // D-04
+      surgeWarningTimer = 3.0; // D-08, D-09
+    }
+  } else if (surgeState === "warning") {
+    surgeWarningTimer -= dt; // D-09
+    // Drive discretionary edge-pulse (sinusoidal flicker tied to real elapsed time).
+    surgeFlash = 0.5 + 0.5 * Math.sin(elapsed * 8);
+    if (surgeWarningTimer <= 0) {
+      // Fire the burst — cap at 200 total (enemies + queued) to prevent overload (D-07).
+      for (let i = 0; i < surgeType.count && (enemies.length + spawnQueue.length) < 200; i++) {
+        spawnSurgeEnemy(surgeType.enemyKey); // D-15, D-16
+      }
+      surgeState = "spawning"; // transitional
+    }
+  } else if (surgeState === "spawning") {
+    // One-frame transition: reset to idle and set next cooldown (D-17).
+    surgeState = "idle";
+    surgeType = null;
+    surgeFlash = 0;
+    surgeTimer = rand(30, 50); // D-02
   }
 }
 
