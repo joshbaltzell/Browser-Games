@@ -91,6 +91,8 @@ let combo, comboTimer;
 let powerups;
 let freezeTimer;
 let overdriveTimer, overdriveFactors;
+let audioCtx = null;
+let lastHitSound = 0;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -221,6 +223,72 @@ function triggerSlowmo(target, duration) {
   slowmoTimer = duration;
   timeScale = Math.min(timeScale, target); // snap down immediately
 }
+
+function unlockAudio() {
+  try {
+    if (audioCtx === null) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+  } catch (e) {
+    // AudioContext not supported — audioCtx stays null, all sounds are no-ops.
+  }
+}
+
+function playTone(opts) {
+  if (!audioCtx) return;
+  try {
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const type    = opts.type    || "sine";
+    const freq    = opts.freq    || 440;
+    const endFreq = opts.endFreq;
+    const dur     = opts.dur     || 0.1;
+    const gain    = Math.min(0.3, opts.gain !== undefined ? opts.gain : 0.1);
+    const now     = audioCtx.currentTime;
+
+    const osc = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now);
+    if (endFreq !== undefined) {
+      if (freq > 0 && endFreq > 0) {
+        osc.frequency.exponentialRampToValueAtTime(endFreq, now + dur);
+      } else {
+        osc.frequency.linearRampToValueAtTime(endFreq, now + dur);
+      }
+    }
+
+    // Attack/decay envelope — prevents clicks and pops.
+    gainNode.gain.setValueAtTime(0.0001, now);
+    gainNode.gain.linearRampToValueAtTime(gain, now + 0.005);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+    osc.start(now);
+    osc.stop(now + dur);
+  } catch (e) {
+    // Silently swallow any unexpected audio error — never break the game loop.
+  }
+}
+
+// Sound event functions — each is a thin wrapper around playTone().
+function sndShoot()     { playTone({ type: "sine",     freq: 440, endFreq: 300, dur: 0.08, gain: 0.08 }); }
+function sndHit() {
+  const now = performance.now();
+  if (now - lastHitSound < 50) return; // throttle: max one hit sound per 50ms (D-24)
+  lastHitSound = now;
+  playTone({ type: "triangle", freq: 120, dur: 0.06, gain: 0.12 });
+}
+function sndKill(loud)  { playTone({ type: "sine",     freq: 220, endFreq: 80,  dur: 0.12, gain: loud ? 0.22 : 0.15 }); }
+function sndLevelUp()   { playTone({ type: "sine",     freq: 440, endFreq: 880, dur: 0.4,  gain: 0.18 }); }
+function sndBomb()      { playTone({ type: "sine",     freq: 60,  endFreq: 20,  dur: 0.5,  gain: 0.3  }); }
+function sndFreeze()    { playTone({ type: "sawtooth", freq: 600, endFreq: 150, dur: 0.3,  gain: 0.12 }); }
+function sndOverdrive() { playTone({ type: "square",   freq: 200, dur: 0.2,  gain: 0.1  }); }
+function sndPlayerHit() { playTone({ type: "triangle", freq: 80,  dur: 0.1,  gain: 0.2  }); }
 
 // ----------------------------------------------------------------------------
 // Spawning
@@ -392,6 +460,7 @@ function updateShooting(dt) {
       life: 1.6,
     });
   }
+  sndShoot(); // D-13: one pew per volley (safe: updateShooting only called from update(), which only runs while gameState==="playing")
 }
 
 function updateSpawning(dt) {
@@ -442,6 +511,7 @@ function updateEnemies(dt) {
       shake = 10;
       triggerSlowmo(0.05, 0.08);
       spawnParticles(player.x, player.y, COLORS.pink, 12);
+      sndPlayerHit(); // D-20
     }
   }
 }
@@ -494,6 +564,7 @@ function updateEBullets(dt) {
       shake = 9;
       triggerSlowmo(0.05, 0.08);
       spawnParticles(player.x, player.y, "#ff4dd2", 12);
+      sndPlayerHit(); // D-20
       b.life = 0;
     }
   }
@@ -522,6 +593,7 @@ function resolveBulletHits() {
         const dealt = b.crit ? b.damage * player.critMult : b.damage;
         e.hp -= dealt;
         e.flash = 0.1;
+        sndHit(); // D-14 (throttled internally to 50ms)
         spawnParticles(b.x, b.y, b.crit ? COLORS.gold : e.color, b.crit ? 8 : 4, [30, b.crit ? 170 : 110]);
         spawnFloater(
           b.x, e.y - e.radius - 2,
@@ -601,6 +673,7 @@ function killEnemy(e) {
   combo++;
   comboTimer = COMBO_DECAY;
   spawnParticles(e.x, e.y, e.color, 14);
+  sndKill(e.xp >= 3); // D-15: louder for high-XP enemies (brutes/sentinels)
   spawnFloater(e.x, e.y - e.radius - 8, "DEAD", e.color, 14);
   dropLoot(e);
   if (player.lifesteal > 0) player.hp = Math.min(player.maxHp, player.hp + player.lifesteal);
@@ -664,6 +737,7 @@ function activatePowerup(type) {
 }
 
 function activateBomb() {
+  sndBomb(); // D-17
   const dmg = player.damage * 8;
   for (const e of enemies) {
     if (e.hp <= 0) continue;
@@ -678,13 +752,14 @@ function activateBomb() {
   spawnParticles(W / 2, H / 2, "#ff9f43", 30, [100, 500]);
 }
 function activateFreeze() {
+  sndFreeze(); // D-18
   freezeTimer = 3.0;
 }
 function activateOverdrive() {
   if (overdriveTimer > 0) {
     // Already active: just refresh the duration without re-applying multipliers.
     overdriveTimer = 5.0;
-    return;
+    return; // D-19: do NOT replay the buzz on refresh/extend
   }
   // Apply the boost multiplicatively and remember the exact factors so we can
   // divide them straight back out on expiry. This way an upgrade picked up
@@ -694,6 +769,7 @@ function activateOverdrive() {
   player.fireInterval *= overdriveFactors.fire;
   player.projectileSpeed *= overdriveFactors.speed;
   overdriveTimer = 5.0;
+  sndOverdrive(); // D-19: only on fresh activation (after the early-return above)
 }
 
 function deactivateOverdrive() {
@@ -1075,6 +1151,7 @@ function openLevelUp() {
   gameState = "levelup";
   triggerSlowmo(0.3, 0.3);
   levelUpFlash = 0.35;
+  sndLevelUp(); // D-16
   // Pick 3 distinct upgrades at random.
   const pool = [...UPGRADES];
   const picks = [];
@@ -1129,6 +1206,7 @@ function endGame() {
 }
 
 function startGame() {
+  unlockAudio();
   initGame();
   gameState = "playing";
   dom.start.classList.add("hidden");
