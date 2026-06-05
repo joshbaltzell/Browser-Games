@@ -1052,6 +1052,53 @@ function drawHexagon(x, y, r) {
   ctx.closePath();
 }
 
+// Shape helpers for enemy type dispatch — each defines a closed path only.
+// The caller is responsible for fill, stroke, save/restore, and shadow setup.
+// This mirrors the drawHexagon contract used by drawPowerups. (D-15)
+
+// Equilateral triangle inscribed in radius r with one vertex at `angle` (pointing toward player).
+function drawTriangle(ctx, x, y, r, angle) {
+  ctx.beginPath();
+  ctx.moveTo(x + r * Math.cos(angle),               y + r * Math.sin(angle));
+  ctx.lineTo(x + r * Math.cos(angle + TAU / 3),     y + r * Math.sin(angle + TAU / 3));
+  ctx.lineTo(x + r * Math.cos(angle + 2 * TAU / 3), y + r * Math.sin(angle + 2 * TAU / 3));
+  ctx.closePath();
+}
+
+// Regular hexagon inscribed in radius r — parameterized version of drawHexagon (takes ctx). (D-03)
+function drawHexShape(ctx, x, y, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (i * Math.PI) / 3 - Math.PI / 6;
+    if (i === 0) ctx.moveTo(x + r * Math.cos(a), y + r * Math.sin(a));
+    else         ctx.lineTo(x + r * Math.cos(a), y + r * Math.sin(a));
+  }
+  ctx.closePath();
+}
+
+// Diamond: square rotated 45°, vertices at top/right/bottom/left on radius r. (D-04, D-11)
+function drawDiamond(ctx, x, y, r) {
+  ctx.beginPath();
+  ctx.moveTo(x,     y - r);
+  ctx.lineTo(x + r, y    );
+  ctx.lineTo(x,     y + r);
+  ctx.lineTo(x - r, y    );
+  ctx.closePath();
+}
+
+// Irregular lumpy pentagon — fixed per-vertex radius variation so shape is stable frame-to-frame. (D-05)
+const BLOB_VARIATION = [1.0, 0.82, 0.95, 0.80, 0.90];
+function drawBlob(ctx, x, y, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a  = i * TAU / 5 - Math.PI / 2;
+    const rr = r * BLOB_VARIATION[i];
+    if (i === 0) ctx.moveTo(x + rr * Math.cos(a), y + rr * Math.sin(a));
+    else         ctx.lineTo(x + rr * Math.cos(a), y + rr * Math.sin(a));
+  }
+  ctx.closePath();
+}
+
 function drawPowerups() {
   for (const p of powerups) {
     const def = POWERUP_TYPES[p.type];
