@@ -1805,6 +1805,10 @@ function chooseUpgrade(index) {
   const u = currentUpgrades[index];
   if (!u) return;
   u.apply(player);
+  // Track how many times each upgrade has been picked this run (D-02)
+  player.upgradeCounts[u.id] = (player.upgradeCounts[u.id] || 0) + 1;
+  // Detect named builds immediately after applying the upgrade (D-13)
+  checkBuildName();
   pendingLevels--;
   dom.levelup.classList.add("hidden");
   if (pendingLevels > 0) {
