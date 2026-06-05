@@ -70,6 +70,7 @@ const UPGRADES = [
   { id: "orbital", icon: "🛰️", name: "Orbital Drone", desc: "+1 drone orbiting you, shredding nearby foes", accent: "#b388ff", apply: (p) => (p.orbitals += 1) },
   { id: "lifesteal", icon: "🩸", name: "Vampirism", desc: "Heal +0.5 HP for every kill", accent: "#ff3b6b", apply: (p) => (p.lifesteal += 0.5) },
   { id: "chain", icon: "⚡", name: "Chain Lightning", desc: "Shots arc to nearest enemy within 150px for 55% damage", accent: COLORS.cyan, apply: (p) => (p.chainCount = (p.chainCount || 0) + 1) },
+  { id: "laststand", icon: "🛡️", name: "Last Stand", desc: "Once per run: survive a killing blow with 5 HP and trigger a Bomb", accent: COLORS.gold, apply: (p) => { p.lastStandCharges = Math.min((p.lastStandCharges || 0) + 1, 2); } },
 ];
 
 // Run modifier definitions. Each `apply` mutates the player and/or globals.
@@ -202,6 +203,7 @@ function initGame() {
     orbitals: 0,
     lifesteal: 0,
     chainCount: 0,
+    lastStandCharges: 0,
     glassCannonMode: false, // set true by Glass Cannon modifier — disables regen
   };
   enemies = [];
@@ -675,6 +677,12 @@ function updateEnemies(dt) {
       triggerSlowmo(0.05, 0.08);
       spawnParticles(player.x, player.y, COLORS.pink, 12);
       sndPlayerHit(); // D-20
+      // Last Stand interception: survive lethal hit with 5 HP and trigger bomb-save (D-05, D-11)
+      if (player.hp <= 0 && player.lastStandCharges > 0) {
+        player.lastStandCharges--;
+        player.hp = 5;
+        triggerLastStand();
+      }
     }
   }
 }
@@ -735,6 +743,12 @@ function updateEBullets(dt) {
       spawnParticles(player.x, player.y, "#ff4dd2", 12);
       sndPlayerHit(); // D-20
       b.life = 0;
+      // Last Stand interception: survive lethal projectile hit with 5 HP (D-04, D-05, D-11)
+      if (player.hp <= 0 && player.lastStandCharges > 0) {
+        player.lastStandCharges--;
+        player.hp = 5;
+        triggerLastStand();
+      }
     }
   }
   eBullets = eBullets.filter((b) => b.life > 0);
@@ -989,6 +1003,15 @@ function activateBomb() {
   // Central burst so the screen-clear reads as an explosion.
   spawnParticles(W / 2, H / 2, "#ff9f43", 30, [100, 500]);
 }
+function triggerLastStand() {
+  activateBomb();            // screen-clear explosion (overridden below for drama)
+  shake = 30;                // slightly more than bomb's 28 (D-06)
+  triggerSlowmo(0.1, 0.4);  // deeper, longer slow-mo than bomb (D-06)
+  spawnFloater(player.x, player.y - 20, "LAST STAND!", COLORS.gold, 28); // large gold floater (D-06)
+  player.invuln = 1.5;       // 1.5s invuln so player isn't immediately re-killed (D-06)
+  levelUpFlash = 0.4;        // white screen-wide flash (D-06, D-12)
+}
+
 function activateFreeze() {
   sndFreeze(); // D-18
   freezeTimer = 3.0;
