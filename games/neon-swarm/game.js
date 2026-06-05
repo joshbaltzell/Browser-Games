@@ -321,6 +321,7 @@ function spawnSporeling(x, y) {
     maxHp: 2 * sc.hp,
     damage: 5 * sc.dmg,
     xp: 1,
+    type: "sporeling",
     color: "#9bf6c9",
     flash: 0,
   });
@@ -329,7 +330,7 @@ function spawnSporeling(x, y) {
 function spawnEnemy() {
   // Pick an unlocked type (uniform among those whose minTime has passed).
   const available = Object.entries(ENEMY_TYPES).filter(([, t]) => elapsed >= t.minTime);
-  const [, def] = available[Math.floor(Math.random() * available.length)];
+  const [typeName, def] = available[Math.floor(Math.random() * available.length)];
   const sc = difficultyScales();
 
   // Spawn just outside a random screen edge.
@@ -349,6 +350,7 @@ function spawnEnemy() {
     maxHp: def.hp * sc.hp,
     damage: def.damage * sc.dmg,
     xp: def.xp,
+    type: typeName,
     color: def.color,
     flash: 0,
   };
