@@ -90,7 +90,7 @@ let levelUpFlash;
 let combo, comboTimer;
 let powerups;
 let freezeTimer;
-let overdriveTimer, overdriveOriginals;
+let overdriveTimer, overdriveFactors;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -161,7 +161,7 @@ function initGame() {
   powerups = [];
   freezeTimer = 0;
   overdriveTimer = 0;
-  overdriveOriginals = null;
+  overdriveFactors = null;
 }
 
 // ----------------------------------------------------------------------------
@@ -663,7 +663,6 @@ function activatePowerup(type) {
   else if (type === "overdrive") activateOverdrive();
 }
 
-// Placeholder stubs — replaced in Tasks 7-9.
 function activateBomb() {
   const dmg = player.damage * 8;
   for (const e of enemies) {
@@ -687,20 +686,21 @@ function activateOverdrive() {
     overdriveTimer = 5.0;
     return;
   }
-  overdriveOriginals = {
-    fireInterval: player.fireInterval,
-    projectileSpeed: player.projectileSpeed,
-  };
-  player.fireInterval *= 0.5;
-  player.projectileSpeed *= 1.4;
+  // Apply the boost multiplicatively and remember the exact factors so we can
+  // divide them straight back out on expiry. This way an upgrade picked up
+  // mid-Overdrive (e.g. Rapid Fire, Hot Rounds) survives instead of being
+  // clobbered by a stale absolute snapshot taken before that upgrade existed.
+  overdriveFactors = { fire: 0.5, speed: 1.4 };
+  player.fireInterval *= overdriveFactors.fire;
+  player.projectileSpeed *= overdriveFactors.speed;
   overdriveTimer = 5.0;
 }
 
 function deactivateOverdrive() {
-  if (!overdriveOriginals) return;
-  player.fireInterval = overdriveOriginals.fireInterval;
-  player.projectileSpeed = overdriveOriginals.projectileSpeed;
-  overdriveOriginals = null;
+  if (!overdriveFactors) return;
+  player.fireInterval /= overdriveFactors.fire;
+  player.projectileSpeed /= overdriveFactors.speed;
+  overdriveFactors = null;
 }
 
 function gainXp(amount) {
