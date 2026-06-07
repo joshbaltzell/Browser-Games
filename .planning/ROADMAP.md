@@ -180,3 +180,51 @@ Plans:
 | 8. Death Bomb | 0/1 | Not started | - |
 | 9. Invuln Dash | 0/1 | Not started | - |
 | 10. Build Names | 0/1 | Not started | - |
+
+## Phases 12–31: v3.0 Feature Expansion
+
+- [ ] **Phase 12: last-stand-cinematic** — Trigger a slow-motion cinematic freeze on Last Stand activation for dramatic impact (JUICE, LOW)
+- [ ] **Phase 13: dash-damage** — Player deals burst damage to enemies passed through during a dash (COMBAT, LOW)
+- [ ] **Phase 14: kill-streak-milestones** — Award bonus XP and a floater at 10/25/50/100 kill streak milestones (BUILD, MEDIUM)
+- [ ] **Phase 15: parry-window** — Brief invuln window on dash-into-bullet timing grants a parry bonus (COMBAT, MEDIUM)
+- [ ] **Phase 16: secret-synergies** — Unlock hidden passive bonuses when specific upgrade combinations are reached (META, LOW)
+- [ ] **Phase 17: death-splat-trails** — Enemies leave brief splat trail particles on death (JUICE, LOW)
+- [ ] **Phase 18: grid-reactivity** — Background grid distorts and pulses in response to explosions and player movement (JUICE, LOW)
+- [ ] **Phase 19: dash-aftershock** — Dash landing triggers a small radial shockwave that pushes nearby enemies (JUICE, LOW)
+- [ ] **Phase 20: heartbeat-pulse** — Screen vignette pulses red in rhythm with a heartbeat SFX when HP is critically low (JUICE, LOW)
+- [ ] **Phase 21: damage-numbers** — Floating damage numbers appear above enemies on each hit (JUICE, LOW)
+- [ ] **Phase 22: ascension-depth** — Track and display total ascension depth across runs as a persistent meta-score (META, LOW)
+- [ ] **Phase 23: bounty-system** — Designated bounty enemies spawn with a marker; killing them grants large XP and a rare upgrade offer (COMBAT, MEDIUM)
+- [ ] **Phase 24: slipstream-branch** — New upgrade branch that amplifies dash-based combat rewards (BUILD, MEDIUM)
+- [ ] **Phase 25: cursed-modifiers** — Optional cursed modifiers add severe drawbacks in exchange for high XP multipliers (META, MEDIUM)
+- [ ] **Phase 26: brute-stagger** — Brutes briefly stagger and flash when hit with rapid fire above a threshold (ENEMY, MEDIUM)
+- [ ] **Phase 27: spore-contagion** — Spore enemies release a contagion cloud on death that spreads a DOT to nearby enemies (ENEMY, MEDIUM)
+- [ ] **Phase 28: kill-threshold-perks** — Passive perks unlock mid-run when cumulative kill counts cross defined thresholds (PROGRESSION, LOW)
+- [ ] **Phase 29: modifier-drafting** — Pre-run modifier selection expands to a 3-pick draft from a randomized pool (META, MEDIUM)
+- [ ] **Phase 30: void-strider-branch** — High-risk upgrade branch that trades HP for extreme damage and speed scaling (BUILD, HIGH)
+- [ ] **Phase 31: corruptor-enemy** — New Corruptor enemy that disables one of the player's active upgrades until killed (ENEMY, MEDIUM)
+
+## v3.0 Progress
+
+| Phase | Title | Category | Complexity | Status |
+|-------|-------|----------|------------|--------|
+| 12 | last-stand-cinematic | JUICE | LOW | Not started |
+| 13 | dash-damage | COMBAT | LOW | Not started |
+| 14 | kill-streak-milestones | BUILD | MEDIUM | Not started |
+| 15 | parry-window | COMBAT | MEDIUM | Not started |
+| 16 | secret-synergies | META | LOW | Not started |
+| 17 | death-splat-trails | JUICE | LOW | Not started |
+| 18 | grid-reactivity | JUICE | LOW | Not started |
+| 19 | dash-aftershock | JUICE | LOW | Not started |
+| 20 | heartbeat-pulse | JUICE | LOW | Not started |
+| 21 | damage-numbers | JUICE | LOW | Not started |
+| 22 | ascension-depth | META | LOW | Not started |
+| 23 | bounty-system | COMBAT | MEDIUM | Not started |
+| 24 | slipstream-branch | BUILD | MEDIUM | Not started |
+| 25 | cursed-modifiers | META | MEDIUM | Not started |
+| 26 | brute-stagger | ENEMY | MEDIUM | Not started |
+| 27 | spore-contagion | ENEMY | MEDIUM | Not started |
+| 28 | kill-threshold-perks | PROGRESSION | LOW | Not started |
+| 29 | modifier-drafting | META | MEDIUM | Not started |
+| 30 | void-strider-branch | BUILD | HIGH | Not started |
+| 31 | corruptor-enemy | ENEMY | MEDIUM | Not started |
