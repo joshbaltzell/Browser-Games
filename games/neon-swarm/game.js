@@ -29,6 +29,15 @@ const SPLAT_COLORS = {
   sentinel: '#7c83ff',
 };
 const SPLAT_CAP = 80;
+function pointToSegmentDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
 const COMBO_DECAY = 2.5; // seconds before streak resets after last kill
 const ASCENSION_CHECK_TIMES = [120, 240, 360];
 // Timer display max durations — must stay in sync with activateFreeze() and
@@ -181,6 +190,40 @@ const SKILL_TREE = [
       },
     ]
   },
+  {
+    id: 'slipstream',
+    label: 'SLIPSTREAM',
+    color: '#00b894',
+    nodes: [
+      {
+        id: 'slip_strike',
+        name: 'Slip Strike',
+        icon: '⚡',
+        desc: 'Dash through enemies stuns for 0.5s',
+        cost: 1,
+        requires: null,
+        apply(p) { p.slipStrike = true; }
+      },
+      {
+        id: 'razor_wire',
+        name: 'Razor Wire',
+        icon: '🔪',
+        desc: 'Dash leaves a 40px damage trail for 1.5s',
+        cost: 2,
+        requires: 'slip_strike',
+        apply(p) { p.razorWire = true; }
+      },
+      {
+        id: 'slip_nova',
+        name: 'Slip Nova',
+        icon: '💥',
+        desc: 'Dash into 5+ enemies: 250px explosion, no teleport',
+        cost: 3,
+        requires: 'razor_wire',
+        apply(p) { p.slipNova = true; }
+      }
+    ]
+  },
 ];
 
 const FUSION_SKILLS = [
@@ -292,6 +335,7 @@ resize();
 let gameState = "start";
 
 let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue, lightningArcs, afterimages, splats;
+let wireTrails = [];
 let elapsed, kills, spawnTimer, spawnInterval, shootTimer, shake, pendingLevels;
 let timeScale, slowmoTimer, slowmoTarget;
 let floaters;
@@ -415,6 +459,9 @@ function initGame() {
     phantomSwarmTimer:    0,
     phantomSwarmOrbitals: 0,
     voidLeechTimer:       0,
+    slipStrike: false,
+    razorWire:  false,
+    slipNova:   false,
   };
   enemies = [];
   bullets = [];
@@ -470,6 +517,7 @@ function initGame() {
   dom.ascensionBadge.textContent = "";
   dom.ascensionBadge.classList.add("hidden");
   dom.ascensionResult.classList.add("hidden");
+  wireTrails = [];
   // Phase 23: Bounty System
   bountyTarget = null;
   bountyTimer = 0;
@@ -575,6 +623,27 @@ function executeDash() {
   const ox = player.x;
   const oy = player.y;
 
+  // Slip Nova: if 5+ enemies lie along the dash cylinder, explode instead of teleporting
+  if (player.slipNova) {
+    const dashDist = 120;
+    let destX = player.x + nx * dashDist;
+    let destY = player.y + ny * dashDist;
+    destX = Math.max(player.radius, Math.min(W - player.radius, destX));
+    destY = Math.max(player.radius, Math.min(H - player.radius, destY));
+    let novaCount = 0;
+    for (const e of enemies) {
+      if (pointToSegmentDist(e.x, e.y, player.x, player.y, destX, destY) < 30 + e.radius) novaCount++;
+    }
+    if (novaCount >= 5) {
+      const mx = (player.x + destX) / 2;
+      const my = (player.y + destY) / 2;
+      triggerExplosion(mx, my, 250, player.damage * 4);
+      player.dashCd = player.ownedSkills.has('phaserunner') ? 0.75 : 1.5;
+      player.invuln = 0.3;
+      return;
+    }
+  }
+
   // Teleport 120px instantly (D-07)
   player.x += nx * 120;
   player.y += ny * 120;
@@ -658,6 +727,25 @@ function executeDash() {
   player.dashCd = player.ownedSkills.has('phaserunner') ? 0.75 : 1.5;
   if (player.ownedSkills.has('phaserunner')) shootTimer = Math.max(0, (shootTimer || 0) - 0.2);
   if (player.triggeredSynergies && player.triggeredSynergies.has('void_leech')) player.voidLeechTimer = 8.0;
+
+  // Slip Strike: stun enemies in the dash cylinder
+  if (player.slipStrike) {
+    for (const e of enemies) {
+      if (pointToSegmentDist(e.x, e.y, ox, oy, player.x, player.y) < player.radius + e.radius) {
+        e.stunTimer = 0.5;
+      }
+    }
+  }
+
+  // Razor Wire: push a damage trail along the dash path
+  if (player.razorWire) {
+    wireTrails.push({
+      x1: ox, y1: oy,
+      x2: player.x, y2: player.y,
+      life: 1.5, maxLife: 1.5,
+      damage: player.damage * 0.8
+    });
+  }
 
   // Spawn 3 afterimages at 25%, 50%, 75% along dash path (D-15, D-16)
   const afterimageColor = player.comboMilestone === 'rampage' ? '#ffffff'
@@ -1070,6 +1158,7 @@ function update(rawDt) {
   updateOrbitals(dt);
   updateBullets(dt);
   updateEBullets(dt);
+  updateWireTrails(dt);
   updateGems(dt);
   updatePowerups(dt);
   flushSpawnQueue();
@@ -1771,6 +1860,25 @@ function flushSpawnQueue() {
   spawnQueue.length = 0;
 }
 
+function updateWireTrails(dt) {
+  for (let i = wireTrails.length - 1; i >= 0; i--) {
+    const w = wireTrails[i];
+    w.life -= dt;
+    if (w.life <= 0) { wireTrails.splice(i, 1); continue; }
+    for (const e of enemies) {
+      if (e.stunTimer > 0) continue;
+      if (pointToSegmentDist(e.x, e.y, w.x1, w.y1, w.x2, w.y2) < 40 + e.radius) {
+        if (!e.wireCd || e.wireCd <= 0) {
+          e.hp -= w.damage * dt;
+          e.wireCd = 0.1;
+          if (e.hp <= 0) killEnemy(e);
+        }
+      }
+      if (e.wireCd > 0) e.wireCd -= dt;
+    }
+  }
+}
+
 function updateBlasts(dt) {
   for (const s of blasts) s.life -= dt;
   blasts = blasts.filter((s) => s.life > 0);
@@ -2400,6 +2508,24 @@ function render() {
     ctx.arc(player.x, player.y, 200, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+  }
+
+  // Render razor wire trails
+  if (wireTrails.length > 0) {
+    for (const w of wireTrails) {
+      const alpha = w.life / w.maxLife;
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.85;
+      ctx.strokeStyle = '#00b894';
+      ctx.lineWidth = 3 * alpha + 1;
+      ctx.shadowColor = '#00b894';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(w.x1, w.y1);
+      ctx.lineTo(w.x2, w.y2);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   drawPlayer();
