@@ -1853,6 +1853,24 @@ function triggerStagger(e) {
 }
 
 function killEnemy(e, killerBullet) {
+  // Phase 27: Spore Contagion — detonate if this enemy was infected by a chain
+  if (e.infected) {
+    triggerExplosion(e.x, e.y, 50, e.infectedDmg);
+    spawnParticles(e.x, e.y, '#39d98a', 16, [50, 150]);
+    if (blasts.length < 48) blasts.push({ x: e.x, y: e.y, r: 50, life: 0.22, maxLife: 0.22, crit: false });
+    const nextDmg = e.infectedDmg * 0.6;
+    if (nextDmg >= 1) {
+      for (const nb of enemies) {
+        if (nb === e || nb.hp <= 0) continue;
+        if (nb.type !== 'spore' && nb.type !== 'sporeling') continue;
+        if (Math.hypot(nb.x - e.x, nb.y - e.y) <= 60) {
+          nb.infected = true;
+          nb.infectedDmg = nextDmg;
+          spawnParticles(nb.x, nb.y, '#39d98a', 5);
+        }
+      }
+    }
+  }
   // Phase 23: Bounty claim
   if (e === bountyTarget) {
     e.xp *= 5;
@@ -1895,6 +1913,19 @@ function killEnemy(e, killerBullet) {
   if (player.lifesteal > 0) player.hp = Math.min(player.maxHp, player.hp + lifeAmount);
   if (player.ownedSkills.has('fullauto')) shootTimer = Math.max(0, (shootTimer || 0) - 0.1);
   if (e.split) for (let i = 0; i < e.split; i++) spawnSporeling(e.x, e.y);
+  // Phase 27: Spore Contagion — when a Sporeling dies, infect nearby Spores/Sporelings
+  if (e.type === 'sporeling') {
+    const startDmg = e.xp * 12;
+    for (const nb of enemies) {
+      if (nb === e || nb.hp <= 0) continue;
+      if (nb.type !== 'spore' && nb.type !== 'sporeling') continue;
+      if (Math.hypot(nb.x - e.x, nb.y - e.y) <= 60) {
+        nb.infected = true;
+        nb.infectedDmg = startDmg;
+        spawnParticles(nb.x, nb.y, '#39d98a', 5);
+      }
+    }
+  }
 
   // BERSERK: Blood Surge — invuln stacking on kill below 50% HP
   if (player.berserkerResilience && player.hp < player.maxHp * 0.5) {
@@ -2896,6 +2927,17 @@ function drawEnemies() {
       ctx.beginPath();
       ctx.arc(e.x, e.y, e.radius * 0.4, 0, TAU);
       ctx.fill();
+    }
+    // Phase 27: Spore Contagion — green pulse ring on infected enemies
+    if (e.infected) {
+      const pulseAlpha = 0.4 + 0.35 * Math.abs(Math.sin(elapsed * 6));
+      ctx.save();
+      ctx.strokeStyle = `rgba(57,217,138,${pulseAlpha.toFixed(2)})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.radius + 4, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
     }
     // Tiny HP hint for tougher enemies. (D-10)
     if (e.maxHp > 6 && e.hp < e.maxHp) {
