@@ -354,7 +354,7 @@ kbd {
 .skill-title { font-size:1.3rem; font-weight:700; letter-spacing:.1em; color:#fff; }
 #skill-points-display { font-size:1.05rem; font-weight:700; color:#ffd32a; letter-spacing:.08em; animation:ptsPulse 1.2s ease-in-out infinite; }
 .skill-close-hint { font-size:.68rem; color:rgba(255,255,255,.4); font-style:italic; }
-.skill-branches { display:grid; grid-template-columns:repeat(7,1fr); gap:.6rem; margin-bottom:1.25rem; }
+.skill-branches { display:grid; grid-template-columns:repeat(8,1fr); gap:.6rem; margin-bottom:1.25rem; }
 .skill-branch { display:flex; flex-direction:column; align-items:stretch; }
 .skill-branch-label { font-size:.68rem; font-weight:700; letter-spacing:.12em; text-align:center; margin-bottom:.45rem; text-transform:uppercase; }
 .skill-node { padding:.45rem .5rem; border-radius:9px; border:1px solid rgba(255,255,255,.07); cursor:not-allowed; transition:all .15s; text-align:center; position:relative; }

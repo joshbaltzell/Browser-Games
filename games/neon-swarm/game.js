@@ -224,12 +224,24 @@ const SKILL_TREE = [
       }
     ]
   },
+  {
+    id: 'voidstrider',
+    label: 'VOID STRIDER',
+    color: '#6c5ce7',
+    nodes: [
+      { id: 'vs_shockwave',   name: 'Shockwave',   icon: '💥', desc: 'Dash arrival: 60px explosion 1.5× dmg',                   cost: 1, requires: null,           apply(p) { p.vsShockwave   = true; } },
+      { id: 'vs_afterburn',   name: 'Afterburn',   icon: '🔥', desc: 'Afterimages deal 0.5× dmg on contact for 0.25s',          cost: 1, requires: null,           apply(p) { p.vsAfterburn   = true; } },
+      { id: 'vs_voidstep',    name: 'Void Step',   icon: '👁️', desc: 'Dash travel path deals 2× dmg within 30px',               cost: 2, requires: null,           apply(p) { p.vsVoidstep    = true; } },
+      { id: 'vs_singularity', name: 'Singularity', icon: '🌀', desc: 'On arrival: pull enemies within 100px then Shockwave 3×', cost: 3, requires: 'vs_shockwave', apply(p) { p.vsSingularity = true; } },
+    ]
+  },
 ];
 
 const FUSION_SKILLS = [
   { id:'chainlightning', name:'Chain Lightning', icon:'⚡', desc:'Arc to nearest enemy within 150px for 55% dmg', cost:3, reqs:['splitshot','explosives'],  apply(p){p.chainCount=(p.chainCount||0)+1;} },
   { id:'orbitaldrones',  name:'Orbital Drones',  icon:'🛰️', desc:'+2 orbital drones shredding nearby foes',       cost:3, reqs:['splitshot','regen'],        apply(p){p.orbitals+=2;} },
   { id:'laststand',      name:'Last Stand',      icon:'🛡️', desc:'Survive lethal hit once with 5 HP + bomb',     cost:3, reqs:['regen','overcollect'],      apply(p){p.lastStandCharges=Math.min((p.lastStandCharges||0)+1,2);} },
+  { id:'void_dancer',    name:'VOID DANCER',     icon:'🌌', desc:'Every dash arrival: Death Dance explosion (80px, 3× dmg) + instant shoot reset', cost:3, reqs:['phaserunner','vs_singularity'], apply(p){p.voidDancer=true;} },
 ];
 
 // Named-build definitions. Ordered most-specific first — the first matching
@@ -537,6 +549,12 @@ function initGame() {
     slipStrike: false,
     razorWire:  false,
     slipNova:   false,
+    // VOID STRIDER branch flags
+    vsShockwave:   false,
+    vsAfterburn:   false,
+    vsVoidstep:    false,
+    vsSingularity: false,
+    voidDancer:    false,
     shotsFired: 0,
     doubletapActive: false,
     cursedActive: false,
@@ -781,6 +799,44 @@ function executeDash() {
     }
   }
 
+  // Void Step: deal 2× damage to enemies within 30px of the dash travel path (Phase 30)
+  if (player.vsVoidstep) {
+    for (const e of enemies) {
+      if (e.hp <= 0) continue;
+      if (pointToSegmentDist(e.x, e.y, ox, oy, player.x, player.y) < 30 + e.radius) {
+        e.hp -= player.damage * 2;
+        if (e.hp <= 0) killEnemy(e);
+      }
+    }
+  }
+
+  // Singularity: pull enemies within 100px then Shockwave × 3 (Phase 30)
+  if (player.vsSingularity) {
+    for (const e of enemies) {
+      const dist = Math.hypot(e.x - player.x, e.y - player.y);
+      if (dist < 100 && dist > 0) {
+        const ux = (player.x - e.x) / dist;
+        const uy = (player.y - e.y) / dist;
+        e.x = Math.max(e.radius, Math.min(W - e.radius, e.x + ux * 200 * 0.15));
+        e.y = Math.max(e.radius, Math.min(H - e.radius, e.y + uy * 200 * 0.15));
+      }
+    }
+    triggerExplosion(player.x, player.y, 60, player.damage * 1.5);
+    triggerExplosion(player.x, player.y, 60, player.damage * 1.5);
+    triggerExplosion(player.x, player.y, 60, player.damage * 1.5);
+  }
+
+  // Shockwave (single): only when owned without Singularity (Phase 30)
+  if (player.vsShockwave && !player.vsSingularity) {
+    triggerExplosion(player.x, player.y, 60, player.damage * 1.5);
+  }
+
+  // Void Dancer: Death Dance–scale explosion + instant shoot reset (Phase 30)
+  if (player.voidDancer) {
+    triggerExplosion(player.x, player.y, 80, player.damage * 3);
+    shootTimer = 0;
+  }
+
   // Dash landing shockwave (Phase 19)
   const shockR = player.ownedSkills.has('phaserunner') ? 130 : 80;
   blasts.push({ x: player.x, y: player.y, r: shockR, life: 0.25, maxLife: 0.25, crit: false, color: '#00e5ff' });
@@ -855,6 +911,7 @@ function executeDash() {
       life: 0.25,
       maxLife: 0.25,
       color: afterimageColor,
+      ...(player.vsAfterburn ? { damageActive: true, damageTimer: 0.25, hitEnemies: new Set() } : {})
     });
   }
 
@@ -920,8 +977,12 @@ function executeDash() {
 }
 
 function updateAfterimages(dt) {
-  for (const image of afterimages) {
-    image.life -= dt;
+  for (const a of afterimages) {
+    a.life -= dt;
+    if (a.damageTimer !== undefined) {
+      a.damageTimer -= dt;
+      if (a.damageTimer <= 0) a.damageActive = false;
+    }
   }
   afterimages = afterimages.filter((a) => a.life > 0);
 }
@@ -1534,6 +1595,19 @@ function updateEnemies(dt) {
         e.weakSpotExposed = false;
       }
       continue;
+    }
+
+    // Afterburn: damage enemy if it overlaps an active afterimage (Phase 30)
+    if (afterimages.length > 0 && e.hp > 0) {
+      for (const a of afterimages) {
+        if (!a.damageActive) continue;
+        if (a.hitEnemies && a.hitEnemies.has(e)) continue;
+        if (Math.hypot(e.x - a.x, e.y - a.y) < e.radius + a.radius) {
+          e.hp -= player.damage * 0.5;
+          if (a.hitEnemies) a.hitEnemies.add(e);
+          if (e.hp <= 0) { killEnemy(e); break; }
+        }
+      }
     }
 
     // Black Hole — pull all enemies toward center, skip all other AI
