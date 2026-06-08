@@ -582,6 +582,41 @@ function executeDash() {
     }
   }
 
+  // Dash landing shockwave (Phase 19)
+  const shockR = player.ownedSkills.has('phaserunner') ? 130 : 80;
+  blasts.push({ x: player.x, y: player.y, r: shockR, life: 0.25, maxLife: 0.25, crit: false, color: '#00e5ff' });
+
+  // Phase Runner: 4 diagonal spark particles at landing (Phase 19)
+  if (player.ownedSkills.has('phaserunner')) {
+    for (const angleDeg of [45, 135, 225, 315]) {
+      const rad = angleDeg * Math.PI / 180;
+      particles.push({
+        x: player.x,
+        y: player.y,
+        vx: Math.cos(rad) * 120,
+        vy: Math.sin(rad) * 120,
+        life: 0.35,
+        maxLife: 0.35,
+        radius: 3,
+        color: '#00e5ff',
+      });
+    }
+  }
+
+  // Landing click sound (Phase 19)
+  if (!muted && audioCtx) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 600;
+    gain.gain.value = 0.15;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(audioCtx.currentTime);
+    osc.stop(audioCtx.currentTime + 0.06);
+    osc.onended = () => gain.disconnect();
+  }
+
   // Set invuln and cooldown (D-10, D-11)
   player.invuln = 0.35;
   player.dashCd = player.ownedSkills.has('phaserunner') ? 0.75 : 1.5;
@@ -2532,7 +2567,7 @@ function drawBlasts() {
   for (const s of blasts) {
     const k = 1 - s.life / s.maxLife;      // 0 -> 1 across its lifetime
     const r = s.r * (0.4 + 0.6 * k);       // ring expands outward
-    const color = s.crit ? COLORS.gold : "#ff9f43";
+    const color = s.color ?? (s.crit ? COLORS.gold : "#ff9f43");
     ctx.save();
     ctx.lineWidth = 2.5;
     ctx.strokeStyle = color;
