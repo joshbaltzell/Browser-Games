@@ -1589,7 +1589,8 @@ function gainXp(amount) {
     player.skillPoints += pendingLevels;
     const pts = pendingLevels;
     pendingLevels = 0;
-    spawnFloater('+' + pts + (pts === 1 ? ' SKILL POINT' : ' SKILL POINTS') + '!', W/2, H/2 - 60, '#ffd32a', 28, 1.2);
+    sndLevelUp();
+    spawnFloater(W/2, H/2 - 60, '+' + pts + (pts === 1 ? ' SKILL POINT' : ' SKILL POINTS') + '!', '#ffd32a', 28, 1.2);
     openSkillTree();
   }
 }
@@ -2570,6 +2571,7 @@ function applyHeadstart(p) {
   });
   p.level = 5;
   p.xpToNext = 19;
+  checkBuildName();
 }
 
 // Show the modifier selection overlay. Calls initGame() first so the player is
