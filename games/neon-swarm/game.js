@@ -303,6 +303,7 @@ let temporalMines, mineFreezeBubbles;
 let blackHoleActive, blackHoleTimer;
 let soulHarvestTimer;
 let specterDecoys;
+let gridEffects;
 let surgeTimer, surgeState, surgeWarningTimer, surgeType, surgeFlash;
 let audioCtx = null;
 let lastHitSound = 0;
@@ -444,6 +445,7 @@ function initGame() {
   lastStandSnapTimer = 0;
   lastStandLerpTimer = 0;
   splats = [];
+  gridEffects = [];
 }
 
 // ----------------------------------------------------------------------------
@@ -977,6 +979,7 @@ function update(rawDt) {
   updateBlasts(dt);
   updateLightningArcs(dt);
   updateFloaters(dt);
+  updateGridEffects(dt);
   if (levelUpFlash > 0) levelUpFlash = Math.max(0, levelUpFlash - rawDt * 3.5);
   if (comboTimer > 0) {
     comboTimer -= rawDt;
@@ -1370,6 +1373,9 @@ function triggerExplosion(x, y, radius, damage) {
   spawnParticles(x, y, "#ff9f43", 7, [60, 200]);
   if (blasts.length < 48) {
     blasts.push({ x, y, r: radius, life: 0.22, maxLife: 0.22, crit: false });
+  }
+  if (gridEffects.length < 20) {
+    gridEffects.push({ x, y, radius: 0, maxRadius: 180, age: 0, maxAge: 0.6, color: "#ff9f43", type: 'pulse' });
   }
 }
 
@@ -1789,6 +1795,7 @@ function triggerLastStand() {
 function activateFreeze() {
   sndFreeze(); // D-18
   freezeTimer = 3.0;
+  gridEffects.push({ x: 0, y: 0, radius: 0, maxRadius: 0, age: 0, maxAge: 3.0, color: "#78dcff", type: 'tint' });
 }
 function activateOverdrive() {
   if (overdriveTimer > 0) {
@@ -2212,24 +2219,72 @@ function render() {
   drawPowerupTimers();
 }
 
+function updateGridEffects(dt) {
+  for (const e of gridEffects) {
+    e.age += dt;
+    if (e.type === 'pulse') e.radius = (e.age / e.maxAge) * e.maxRadius;
+  }
+  gridEffects = gridEffects.filter(e => e.age < e.maxAge);
+}
+
 function drawBackground() {
-  // Subtle moving grid for depth.
   ctx.fillStyle = "#05050c";
   ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = "rgba(0, 229, 255, 0.05)";
-  ctx.lineWidth = 1;
+
   const grid = 48;
   const ox = (elapsed * 12) % grid;
-  ctx.beginPath();
-  for (let x = -ox; x < W; x += grid) {
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, H);
+
+  // Global tint from 'tint' effects (e.g. Freeze)
+  let tintAlpha = 0;
+  let tintR = 0, tintG = 229, tintB = 255;
+  for (const e of gridEffects) {
+    if (e.type === 'tint') {
+      const a = (1 - e.age / e.maxAge) * 0.7;
+      if (a > tintAlpha) { tintAlpha = a; tintR = 120; tintG = 220; tintB = 255; }
+    }
   }
-  for (let y = -ox; y < H; y += grid) {
-    ctx.moveTo(0, y);
-    ctx.lineTo(W, y);
+  const baseAlpha = 0.05 + tintAlpha * 0.17;
+  const baseColor = `rgba(${tintR},${tintG},${tintB},${baseAlpha.toFixed(3)})`;
+
+  ctx.lineWidth = 1;
+  for (let lx = -ox; lx < W; lx += grid) {
+    let extra = 0;
+    for (const e of gridEffects) {
+      if (e.type === 'pulse' && e.radius > 0) {
+        const dist = Math.abs(lx - e.x);
+        if (dist <= e.radius) extra += (1 - dist / e.radius) * 0.20;
+      }
+    }
+    extra = Math.min(extra, 0.50);
+    ctx.strokeStyle = extra > 0 ? `rgba(255,180,80,${(baseAlpha + extra).toFixed(3)})` : baseColor;
+    ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, H); ctx.stroke();
   }
-  ctx.stroke();
+  for (let ly = -ox; ly < H; ly += grid) {
+    let extra = 0;
+    for (const e of gridEffects) {
+      if (e.type === 'pulse' && e.radius > 0) {
+        const dist = Math.abs(ly - e.y);
+        if (dist <= e.radius) extra += (1 - dist / e.radius) * 0.20;
+      }
+    }
+    extra = Math.min(extra, 0.50);
+    ctx.strokeStyle = extra > 0 ? `rgba(255,180,80,${(baseAlpha + extra).toFixed(3)})` : baseColor;
+    ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(W, ly); ctx.stroke();
+  }
+
+  // Death Dance proximity glow: red lines near player when active
+  const deathDanceActive = player.deathDance && player.hp < player.maxHp * 0.25;
+  if (deathDanceActive) {
+    const ddAlpha = (0.18 * (0.7 + 0.3 * Math.sin(elapsed * 4))).toFixed(3);
+    ctx.strokeStyle = `rgba(255,59,107,${ddAlpha})`;
+    ctx.lineWidth = 1;
+    for (let lx = -ox; lx < W; lx += grid) {
+      if (Math.abs(lx - player.x) <= 150) { ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, H); ctx.stroke(); }
+    }
+    for (let ly = -ox; ly < H; ly += grid) {
+      if (Math.abs(ly - player.y) <= 150) { ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(W, ly); ctx.stroke(); }
+    }
+  }
 }
 
 function glowCircle(x, y, r, color, blur = 14) {
