@@ -13,12 +13,12 @@ highest-impact changes first (audio, then visual clarity, then new mechanics).
 - [x] **Phase 2: Enemy Shape Vocabulary** — Distinct geometric silhouette per enemy type (completed 2026-06-05)
 - [x] **Phase 3: Sentinel Telegraph** — Targeting reticle 0.8s before Sentinel fires (completed 2026-06-05)
 - [x] **Phase 4: Power-up Timer Display** — Countdown timer + bar for Freeze and Overdrive duration (completed 2026-06-05)
-- [ ] **Phase 5: Wave Surge Announcements** — 3s pre-warning before specific enemy burst events
-- [ ] **Phase 6: Run Modifier Cards** — Pre-game modifier selection (Glass Cannon / Headstart / Bullet Hell / None)
-- [ ] **Phase 7: Chain Lightning Upgrade** — Bullets arc to nearest second enemy on hit
-- [ ] **Phase 8: Death Bomb (Last Stand) Upgrade** — Survive lethal hit once, trigger Bomb
-- [ ] **Phase 9: Invuln Dash** — Shift key dash with invuln frames and 1.5s cooldown
-- [ ] **Phase 10: Build Names** — Detect upgrade combos, flash build title
+- [x] **Phase 5: Wave Surge Announcements** — 3s pre-warning before specific enemy burst events (completed 2026-06-06)
+- [x] **Phase 6: Run Modifier Cards** — Pre-game modifier selection (Glass Cannon / Headstart / Bullet Hell / None) (completed 2026-06-08)
+- [x] **Phase 7: Chain Lightning Upgrade** — Bullets arc to nearest second enemy on hit (completed 2026-06-05)
+- [x] **Phase 8: Death Bomb (Last Stand) Upgrade** — Survive lethal hit once, trigger Bomb (completed 2026-06-06)
+- [x] **Phase 9: Invuln Dash** — Shift key dash with invuln frames and 1.5s cooldown (completed 2026-06-06)
+- [x] **Phase 10: Build Names** — Detect upgrade combos, flash build title (completed 2026-06-06)
 
 ## Phase Details
 
@@ -174,12 +174,12 @@ Plans:
 | 2. Enemy Shapes | 1/1 | Complete   | 2026-06-05 |
 | 3. Sentinel Telegraph | 1/1 | Complete   | 2026-06-05 |
 | 4. Power-up Timer | 1/1 | Complete   | 2026-06-05 |
-| 5. Wave Surges | 0/1 | Not started | - |
-| 6. Run Modifiers | 0/1 | Not started | - |
+| 5. Wave Surges | 1/1 | Complete   | 2026-06-06 |
+| 6. Run Modifiers | 1/1 | Complete   | 2026-06-08 |
 | 7. Chain Lightning | 1/1 | Complete   | 2026-06-05 |
-| 8. Death Bomb | 0/1 | Not started | - |
-| 9. Invuln Dash | 0/1 | Not started | - |
-| 10. Build Names | 0/1 | Not started | - |
+| 8. Death Bomb | 1/1 | Complete   | 2026-06-06 |
+| 9. Invuln Dash | 1/1 | Complete   | 2026-06-06 |
+| 10. Build Names | 1/1 | Complete   | 2026-06-06 |
 
 ## Phases 12–31: v3.0 Feature Expansion
 

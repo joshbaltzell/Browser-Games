@@ -26,6 +26,7 @@
       <span id="kills">0 kills</span>
       <span id="modifier-label" class="hidden"></span>
       <span id="dash-ready">⚡ DASH</span>
+      <span id="skill-pts-hud" class="hidden">★ <span id="skill-pts-count">0</span> pts — [T]</span>
       <button id="mute-btn" title="Toggle mute">🔊</button>
     </div>
     <div id="build-name" style="margin-top:6px;font:700 10px monospace;letter-spacing:0.12em;color:#fffb96;text-shadow:0 0 8px rgba(0,0,0,0.8)"></div>
@@ -47,12 +48,19 @@
     </div>
   </div>
 
-  <!-- Level-up screen -->
-  <div id="levelup" class="overlay hidden">
-    <div class="panel">
-      <h2 class="levelup-title">LEVEL UP!</h2>
-      <p class="subtitle">Choose an upgrade</p>
-      <div id="upgrade-cards" class="upgrade-cards"></div>
+  <!-- Skill tree screen -->
+  <div id="skilltree" class="overlay hidden">
+    <div class="panel skill-panel">
+      <div class="skill-header">
+        <span class="skill-title">SKILL TREE</span>
+        <span id="skill-points-display">SKILL POINTS: 0</span>
+        <span class="skill-close-hint">Points save automatically — [ESC] to close &nbsp;·&nbsp; [T] to reopen</span>
+      </div>
+      <div id="skill-branches" class="skill-branches"></div>
+      <div class="skill-fusion-label">✦ FUSION</div>
+      <div id="skill-fusions" class="skill-fusion-row"></div>
+      <div class="skill-stats-label">YOUR STATS</div>
+      <div id="skill-stats" class="skill-stats-row"></div>
     </div>
   </div>
 
