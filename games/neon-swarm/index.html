@@ -26,6 +26,7 @@
       <span id="kills">0 kills</span>
       <span id="modifier-label" class="hidden"></span>
       <span id="dash-ready">⚡ DASH</span>
+      <span id="ascension-badge" class="hidden" style="color:#fffb96;font-weight:bold;letter-spacing:1px;"></span>
       <span id="skill-pts-hud" class="hidden">★ <span id="skill-pts-count">0</span> pts — [T]</span>
       <button id="mute-btn" title="Toggle mute">🔊</button>
     </div>
@@ -75,11 +76,25 @@
     </div>
   </div>
 
+  <!-- Ascension prompt screen -->
+  <div id="ascension" class="overlay hidden">
+    <div class="panel">
+      <h2 class="levelup-title" id="ascension-title">ASCENSION I</h2>
+      <p class="subtitle" id="ascension-stats">+25% enemy HP &nbsp;|&nbsp; +15% enemy speed &nbsp;|&nbsp; +50% XP</p>
+      <p class="subtitle" id="ascension-cumulative" style="font-size:0.78em;opacity:0.7;"></p>
+      <div style="display:flex;gap:12px;justify-content:center;margin-top:18px;">
+        <button id="ascend-btn" class="btn btn-ascend">ASCEND &nbsp;[Enter]</button>
+        <button id="skip-btn" class="btn">SKIP &nbsp;[Esc]</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Game over screen -->
   <div id="gameover" class="overlay hidden">
     <div class="panel">
       <h2 class="gameover-title">GAME OVER</h2>
       <div id="final-stats" class="final-stats"></div>
+      <p id="ascension-result" class="hidden" style="color:#fffb96;margin-top:6px;"></p>
       <button id="restart-btn" class="btn">Play again</button>
       <a class="back-link" href="../../index.html">&larr; Back to games</a>
     </div>

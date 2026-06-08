@@ -30,6 +30,7 @@ const SPLAT_COLORS = {
 };
 const SPLAT_CAP = 80;
 const COMBO_DECAY = 2.5; // seconds before streak resets after last kill
+const ASCENSION_CHECK_TIMES = [120, 240, 360];
 // Timer display max durations — must stay in sync with activateFreeze() and
 // activateOverdrive() which set freezeTimer/overdriveTimer to these values.
 const FREEZE_MAX_DURATION = 3.0;    // matches activateFreeze():    freezeTimer = 3.0
@@ -313,6 +314,9 @@ let bulletHellMode = false;  // D-11: set true by Bullet Hell modifier
 let lastStandFreezeTimer = 0, lastStandSnapTimer = 0, lastStandLerpTimer = 0;
 let heartbeatPhase = 0;
 let heartbeatPeriod = 1.2;
+let ascensionLevel = 0;
+let ascensionNextIdx = 0;
+let ascensionPromptActive = false;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -338,6 +342,11 @@ const dom = {
   dashReady: document.getElementById("dash-ready"),
   buildName: document.getElementById("build-name"),
   muteBtn: document.getElementById("mute-btn"),
+  ascension:      document.getElementById("ascension"),
+  ascendBtn:      document.getElementById("ascend-btn"),
+  skipBtn:        document.getElementById("skip-btn"),
+  ascensionBadge: document.getElementById("ascension-badge"),
+  ascensionResult: document.getElementById("ascension-result"),
 };
 
 dom.muteBtn.addEventListener("click", () => {
@@ -450,6 +459,12 @@ function initGame() {
   gridEffects = [];
   heartbeatPhase = 0;
   heartbeatPeriod = 1.2;
+  ascensionLevel = 0;
+  ascensionNextIdx = 0;
+  ascensionPromptActive = false;
+  dom.ascensionBadge.textContent = "";
+  dom.ascensionBadge.classList.add("hidden");
+  dom.ascensionResult.classList.add("hidden");
 }
 
 // ----------------------------------------------------------------------------
@@ -482,6 +497,10 @@ window.addEventListener("keydown", (e) => {
   if (gameState === "modifier" && ["1", "2", "3", "4"].includes(k)) {
     chooseModifier(Number(k) - 1);
   }
+  if (ascensionPromptActive) {
+    if (e.key === "Enter")  { acceptAscension(); e.preventDefault(); }
+    if (e.key === "Escape") { skipAscension();   e.preventDefault(); }
+  }
 });
 window.addEventListener("keyup", (e) => {
   const k = e.key.toLowerCase();
@@ -492,6 +511,8 @@ window.addEventListener("blur", () => keys.clear());
 
 document.getElementById("start-btn").addEventListener("click", openModifierSelection);
 document.getElementById("restart-btn").addEventListener("click", openModifierSelection);
+dom.ascendBtn.addEventListener("click", acceptAscension);
+dom.skipBtn.addEventListener("click", skipAscension);
 
 // ----------------------------------------------------------------------------
 // Helpers
@@ -884,9 +905,9 @@ function spawnSporeling(x, y) {
     x: x + rand(-12, 12),
     y: y + rand(-12, 12),
     radius: 7,
-    speed: 150 * sc.speed,
-    hp: 2 * sc.hp,
-    maxHp: 2 * sc.hp,
+    speed: 150 * sc.speed * Math.pow(1.15, ascensionLevel),
+    hp: 2 * sc.hp * Math.pow(1.25, ascensionLevel),
+    maxHp: 2 * sc.hp * Math.pow(1.25, ascensionLevel),
     damage: 5 * sc.dmg,
     xp: 1,
     type: "sporeling",
@@ -910,12 +931,14 @@ function spawnEnemy() {
   else if (side === 2) { x = rand(0, W); y = H + margin; }
   else { x = -margin; y = rand(0, H); }
 
+  const ascHpMult  = Math.pow(1.25, ascensionLevel);
+  const ascSpdMult = Math.pow(1.15, ascensionLevel);
   const e = {
     x, y,
     radius: def.radius,
-    speed: def.speed * sc.speed,
-    hp: def.hp * sc.hp,
-    maxHp: def.hp * sc.hp,
+    speed: def.speed * sc.speed * ascSpdMult,
+    hp: def.hp * sc.hp * ascHpMult,
+    maxHp: def.hp * sc.hp * ascHpMult,
     damage: def.damage * sc.dmg,
     xp: def.xp,
     type: typeName,
@@ -950,12 +973,14 @@ function spawnSurgeEnemy(enemyKey) {
   else if (side === 2) { x = rand(0, W); y = H + margin; }
   else { x = -margin; y = rand(0, H); }
 
+  const ascHpMult2  = Math.pow(1.25, ascensionLevel);
+  const ascSpdMult2 = Math.pow(1.15, ascensionLevel);
   const e = {
     x, y,
     radius: def.radius,
-    speed: def.speed * sc.speed,
-    hp: def.hp * sc.hp,
-    maxHp: def.hp * sc.hp,
+    speed: def.speed * sc.speed * ascSpdMult2,
+    hp: def.hp * sc.hp * ascHpMult2,
+    maxHp: def.hp * sc.hp * ascHpMult2,
     damage: def.damage * sc.dmg,
     xp: def.xp,
     type: enemyKey,
@@ -1012,6 +1037,16 @@ function update(rawDt) {
   }
 
   const dt = rawDt * timeScale; // scaled simulation time
+
+  // Phase 22: Ascension prompt trigger — check once per frame before advancing time
+  if (!ascensionPromptActive) {
+    const nextCheckTime = ASCENSION_CHECK_TIMES[ascensionNextIdx];
+    if (nextCheckTime !== undefined && elapsed >= nextCheckTime) {
+      showAscensionPrompt();
+    }
+  }
+  // Freeze all simulation while ascension prompt is open
+  if (ascensionPromptActive) return;
 
   elapsed += dt;
   if (shake > 0) shake = Math.max(0, shake - dt * 60);
@@ -1575,7 +1610,8 @@ function dropLoot(e) {
   const base = Math.floor(total / count);
   let remainder = total - base * count;
   for (let i = 0; i < count; i++) {
-    const val = base + (remainder-- > 0 ? 1 : 0);
+    const rawVal = base + (remainder-- > 0 ? 1 : 0);
+    const val = Math.round(rawVal * Math.pow(1.5, ascensionLevel));
     const spread = count > 1 ? 18 : 0;
     gems.push({
       x: e.x + rand(-spread, spread),
@@ -2053,6 +2089,40 @@ function spawnDmgNum(x, y, dmg, color) {
     maxLife,
   });
 }
+
+// ── Phase 22: Ascension Depth ────────────────────────────────────────
+function showAscensionPrompt() {
+  ascensionPromptActive = true;
+  const romanMap = ["I", "II", "III"];
+  dom.ascension.querySelector("#ascension-title").textContent = "ASCENSION " + romanMap[ascensionNextIdx];
+  const cumEl = dom.ascension.querySelector("#ascension-cumulative");
+  if (ascensionLevel > 0) {
+    const cumHp  = (Math.pow(1.25, ascensionLevel + 1)).toFixed(2);
+    const cumSpd = (Math.pow(1.15, ascensionLevel + 1)).toFixed(2);
+    const cumXp  = (Math.pow(1.5,  ascensionLevel + 1)).toFixed(2);
+    cumEl.textContent = "If accepted — cumulative: ×" + cumHp + " HP  ×" + cumSpd + " speed  ×" + cumXp + " XP";
+  } else {
+    cumEl.textContent = "";
+  }
+  dom.ascension.classList.remove("hidden");
+}
+
+function acceptAscension() {
+  ascensionLevel++;
+  ascensionNextIdx++;
+  ascensionPromptActive = false;
+  dom.ascension.classList.add("hidden");
+  const romanMap = ["I", "II", "III"];
+  dom.ascensionBadge.textContent = "[" + romanMap[ascensionLevel - 1] + "]";
+  dom.ascensionBadge.classList.remove("hidden");
+}
+
+function skipAscension() {
+  ascensionNextIdx++;
+  ascensionPromptActive = false;
+  dom.ascension.classList.add("hidden");
+}
+// ── end Phase 22 ─────────────────────────────────────────────────────
 
 function openSkillTree() {
   gameState = 'skilltree';
@@ -3120,6 +3190,13 @@ function endGame() {
     <div class="row"><span>Level reached</span><b>${player.level}</b></div>
     <div class="row"><span>Enemies slain</span><b>${kills}</b></div>
   `;
+  if (ascensionLevel > 0) {
+    const romanMap = ["I", "II", "III"];
+    dom.ascensionResult.textContent = "Ascension: [" + romanMap[ascensionLevel - 1] + "]";
+    dom.ascensionResult.classList.remove("hidden");
+  } else {
+    dom.ascensionResult.classList.add("hidden");
+  }
   dom.gameover.classList.remove("hidden");
 }
 

@@ -390,3 +390,5 @@ kbd {
 /* HUD skill points badge */
 #skill-pts-hud { color:#ffd32a; font-weight:700; font-size:.75rem; letter-spacing:.06em; animation:hudBadge 1.1s ease-in-out infinite; pointer-events:none; }
 @keyframes hudBadge { 0%,100%{opacity:1;text-shadow:0 0 6px #ffd32a}50%{opacity:.55;text-shadow:none} }
+.btn-ascend { color: #fffb96; border-color: #fffb96; }
+.btn-ascend:hover { background: rgba(255, 251, 150, 0.15); }
