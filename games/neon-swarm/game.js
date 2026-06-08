@@ -597,6 +597,43 @@ function executeDash() {
     if (cloneMode) spawnFloater(ox, oy, 'CLONE!', '#b388ff', 20);
     spawnParticles(ox, oy, '#b388ff', cloneMode ? 12 : 6);
   }
+
+  // PARRY: dash through a Sentinel bullet within 0.1s of its birth to deflect it
+  let parried = false;
+  let parryCx = player.x, parryCy = player.y;
+  for (const b of eBullets) {
+    if (!b.deflectable) continue;
+    if (elapsed - b.birthTime > 0.1) continue;
+    const segDx = player.x - ox, segDy = player.y - oy;
+    const segLen2 = segDx * segDx + segDy * segDy;
+    let t = 0;
+    if (segLen2 > 0) t = Math.max(0, Math.min(1, ((b.x - ox) * segDx + (b.y - oy) * segDy) / segLen2));
+    const closestX = ox + t * segDx;
+    const closestY = oy + t * segDy;
+    const dist2 = (b.x - closestX) ** 2 + (b.y - closestY) ** 2;
+    const hitRadius = player.radius + b.radius;
+    if (dist2 >= hitRadius * hitRadius) continue;
+    b.deflectable = false;
+    b.deflected = true;
+    b.damage *= 3;
+    b.playerOwned = true;
+    const speed = Math.hypot(b.vx, b.vy);
+    const toAng = Math.atan2(b.owner.y - b.y, b.owner.x - b.x);
+    b.vx = Math.cos(toAng) * speed;
+    b.vy = Math.sin(toAng) * speed;
+    parryCx = closestX;
+    parryCy = closestY;
+    parried = true;
+  }
+
+  if (parried) {
+    for (const e of enemies) {
+      if (Math.hypot(e.x - parryCx, e.y - parryCy) < 80) e.stunTimer = 0.5;
+    }
+    blasts.push({ x: parryCx, y: parryCy, r: 55, life: 0.28, maxLife: 0.28, crit: true });
+    spawnFloater(player.x, player.y - 30, 'PARRY!', COLORS.gold, 24);
+    playTone({ type: "sine", freq: 1200, endFreq: 900, dur: 0.12, gain: 0.14 });
+  }
 }
 
 function updateAfterimages(dt) {
@@ -1099,6 +1136,7 @@ function updateEnemies(dt) {
   for (const e of enemies) {
     if (e.orbCd > 0) e.orbCd -= dt;
     if (e.flash > 0) e.flash -= dt;
+    if (e.stunTimer > 0) { e.stunTimer -= dt; continue; }
 
     // Black Hole — pull all enemies toward center, skip all other AI
     if (blackHoleActive) {
@@ -1193,6 +1231,9 @@ function fireEnemyShot(e) {
       radius: 6,
       damage: e.projDamage,
       life: 3.2,
+      birthTime: elapsed,
+      deflectable: true,
+      owner: e,
     });
   }
 }
@@ -1227,6 +1268,21 @@ function updateEBullets(dt) {
     b.y += b.vy * dt;
     b.life -= dt;
     if (b.x < -30 || b.x > W + 30 || b.y < -30 || b.y > H + 30) b.life = 0;
+    if (b.playerOwned) {
+      for (const e of enemies) {
+        if (e.hp <= 0) continue;
+        if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 < (b.radius + e.radius) ** 2) {
+          e.hp -= b.damage;
+          e.flash = 0.1;
+          spawnParticles(b.x, b.y, COLORS.gold, 6, [40, 140]);
+          spawnFloater(b.x, e.y - e.radius - 2, String(Math.round(b.damage)), COLORS.gold, 16);
+          if (e.hp <= 0) killEnemy(e);
+          b.life = 0;
+          break;
+        }
+      }
+      continue;
+    }
     if (player.invuln <= 0 && (b.x - player.x) ** 2 + (b.y - player.y) ** 2 < (b.radius + player.radius) ** 2) {
       if (player.spectralShieldCharges > 0) {
         player.spectralShieldCharges--;
