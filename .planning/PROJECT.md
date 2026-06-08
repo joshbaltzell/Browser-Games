@@ -10,20 +10,25 @@ The game is effortlessly fun from the first second — movement, evasion, and bu
 
 ## Current State
 
-**Shipped:** v2.0 Juice & Depth (2026-06-08)  
-**File:** `games/neon-swarm/game.js` — ~2,658 lines  
+**Shipped:** v3.0 Feature Expansion (2026-06-08)  
+**File:** `games/neon-swarm/game.js` — ~3,966 lines  
 **Tech stack:** Vanilla JS + Canvas 2D, Web Audio API, no dependencies
 
 **What's in the game:**
-- 5 enemy types with distinct geometric silhouettes
-- 3 original power-ups + 4 new power-ups (Temporal Mine, Black Hole, Spectral Shield, Soul Harvest)
-- 6-branch skill tree (Gunner, Destroyer, Ghost, Leech, Berserk, Specter) + 3 Fusion Skills
-- Pre-run modifier selection (Glass Cannon, Headstart, Bullet Hell, Standard)
-- Chain Lightning and Last Stand upgrade mechanics
-- Shift-key invuln dash with afterimage trail
-- 18+ named build combinations with floater + HUD display
-- Wave surge announcements with pacing rhythm
-- Synthesized audio for all game events
+- 6 enemy types: chaser, darter, brute (stagger mechanic), spore (contagion chains), sentinel, corruptor (gem corruption)
+- 3 original power-ups + 4 v2.0 power-ups (Temporal Mine, Black Hole, Spectral Shield, Soul Harvest)
+- 8-branch skill tree (Gunner, Destroyer, Ghost, Leech, Berserk, Specter, Slipstream, Void Strider) + 4 Fusion Skills + VOID DANCER
+- Two-step modifier draft: 6 positives × 4 negatives (pick one of each per run)
+- Kill-streak milestones (RUSH/FRENZY/RAMPAGE) + kill-threshold perks (5 named milestones)
+- Ascension system: 3 mid-run difficulty checkpoints
+- Bounty target system with arc timer + elite spawns
+- Dash cylinder damage + landing shockwave + Void Strider arrival explosions
+- Brute stagger (burst-damage window) + Spore contagion chains
+- Floating damage numbers, death splat trails, reactive background grid
+- Low-HP heartbeat pulse vignette
+- 5 secret synergies unlocked by specific upgrade combos
+- Parry window on dash-into-bullet timing
+- Wave surge announcements, synthesized audio for all events
 
 ## Requirements
 
@@ -39,16 +44,19 @@ The game is effortlessly fun from the first second — movement, evasion, and bu
 - ✓ **UPGR-02**: Last Stand upgrade (survive lethal hit) — v2.0
 - ✓ **CTRL-01**: Shift dash with invuln frames and HUD cooldown — v2.0
 - ✓ **FLAIR-01**: Build name detection and persistent HUD label — v2.0
+- ✓ **JUICE-01**: Last Stand cinematic freeze frame on activation — v3.0
+- ✓ **COMBAT-01**: Dash deals burst damage to enemies passed through — v3.0
+- ✓ **BUILD-01**: Kill streak milestones with XP bonuses — v3.0
+- ✓ **ENEMY-01**: Brute stagger on rapid fire above threshold — v3.0
+- ✓ **ENEMY-02**: Spore contagion chain on Sporeling death — v3.0
+- ✓ **META-02**: Bounty enemies with large XP reward and rare offer — v3.0
+- ✓ **META-03**: Two-step modifier draft (positive + negative pick) — v3.0
 
-### Active (v3.0 candidates)
+### Active (v4.0 candidates)
 
-- [ ] **JUICE-01**: Last Stand cinematic freeze frame on activation
-- [ ] **COMBAT-01**: Dash deals burst damage to enemies passed through
-- [ ] **BUILD-01**: Kill streak milestones with XP bonuses
-- [ ] **ENEMY-01**: Brute stagger on rapid fire above threshold
-- [ ] **ENEMY-02**: Spore contagion cloud on death
-- [ ] **META-02**: Bounty enemies with large XP reward and rare offer
-- [ ] **META-03**: Modifier drafting — 3-pick draft from randomized pool
+- [ ] Polish pass: review all new systems for edge cases and visual consistency
+- [ ] Balance pass: ascension scaling, kill-threshold perk values
+- [ ] Additional enemy types or boss mechanics
 
 ### Out of Scope
 
@@ -65,8 +73,9 @@ The game is effortlessly fun from the first second — movement, evasion, and bu
 - **Runtime:** Vanilla JS + Canvas 2D. No frameworks, no build step, no npm. Must run from `file://`.
 - **Single file:** All game logic is in `games/neon-swarm/game.js` (~2,658 lines). HTML in `index.html`, minimal CSS in `style.css`.
 - **Architecture pattern:** Constants → Canvas/State → Input → Spawning → Update → Collision → Render → UI → Main Loop.
-- **Skill tree:** 6 branches + 3 fusion skills. T1=1pt, T2=1pt, T3=2pt, T4=3pt. 7pts to max one branch.
-- **Modifier system:** selectedModifier + bulletHellMode globals reset in initGame(); applied after selection in applyAndStart().
+- **Skill tree:** 8 branches + 4 fusion skills (including VOID DANCER). T1=1pt, T2=1–2pt, T3=2–3pt. CSS grid 8 columns.
+- **Modifier system:** Two-step draft — openModifierDraft() → choosePositiveModifier() → openNegativePick() → chooseNegativeModifier() → applyAndStart(). POSITIVE_MODIFIERS (6) + NEGATIVE_MODIFIERS (4).
+- **Globals added in v3.0:** maxPowerupsOnScreen, gemXpMult, milestoneIndex, ascensionLevel, bountyTarget, wireTrails, gridEffects, activeCurses, droughtTimer, lockoutTimer.
 
 ## Constraints
 
@@ -87,7 +96,12 @@ The game is effortlessly fun from the first second — movement, evasion, and bu
 | Fusion Skills require cross-branch prerequisites | Encourages diverse builds | ✓ Good — creates interesting decision points |
 | Phase 11 SKILL_TREE replaces flat UPGRADES | Better build identity, skill point economy | ✓ Good — richer strategic depth |
 | applyHeadstart uses random SKILL_TREE shuffle | Satisfies "randomly applied" ROADMAP spec | ✓ Good — each Headstart run feels different |
+| Slipstream as 7th branch (Phase 24) | Dash-combat depth without rewriting dash | ✓ Good — Slip Nova creates high-skill moments |
+| Void Strider as 8th branch (Phase 30) | Offensive dash identity separate from Slipstream | ✓ Good — Singularity + Void Dancer create a power fantasy |
+| Two-step draft replaces Phase 25 toggle UI (Phase 29) | Cleaner UX, more strategic (positive + negative pick) | ✓ Good — reduces UI clutter, increases decision clarity |
+| Corruptor threatens progression not HP (Phase 31) | Novel threat vector distinct from all other enemies | ✓ Good — forces target priority consideration |
+| CURSES (Phase 25) and NEGATIVE_MODIFIERS (Phase 29) coexist | CURSES are passive effects; NEGATIVE_MODIFIERS are UI-selected | — Pending review — slight overlap on droughtTimer |
 
 ---
 
-*Last updated: 2026-06-08 after v2.0 Juice & Depth milestone*
+*Last updated: 2026-06-08 after v3.0 Feature Expansion milestone*

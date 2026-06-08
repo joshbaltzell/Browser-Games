@@ -2,15 +2,15 @@
 
 ## Milestones
 
-- ✅ **v2.0 Juice & Depth** — Phases 1–10 (shipped 2026-06-08)
-- 📋 **v3.0 Feature Expansion** — Phases 12–31 (planned)
+- ✅ **v2.0 Juice & Depth** — Phases 1–11 (shipped 2026-06-08)
+- ✅ **v3.0 Feature Expansion** — Phases 12–31 (shipped 2026-06-08)
 
 ---
 
 ## Phases
 
 <details>
-<summary>✅ v2.0 Juice & Depth (Phases 1–10) — SHIPPED 2026-06-08</summary>
+<summary>✅ v2.0 Juice & Depth (Phases 1–11) — SHIPPED 2026-06-08</summary>
 
 - [x] Phase 1: Web Audio — synthesized sounds for all game events (completed 2026-06-05)
 - [x] Phase 2: Enemy Shape Vocabulary — distinct geometric silhouette per enemy type (completed 2026-06-05)
@@ -28,30 +28,39 @@ Full phase details: `.planning/milestones/v2.0-ROADMAP.md`
 
 </details>
 
+<details>
+<summary>✅ v3.0 Feature Expansion (Phases 12–31) — SHIPPED 2026-06-08</summary>
+
+- [x] Phase 12: last-stand-cinematic — slow-motion cinematic freeze on Last Stand activation (completed 2026-06-08)
+- [x] Phase 13: dash-damage — cylinder sweep burst damage through enemies in dash path (completed 2026-06-08)
+- [x] Phase 14: kill-streak-milestones — RUSH/FRENZY/RAMPAGE combo tiers (completed 2026-06-08)
+- [x] Phase 15: parry-window — dash-into-bullet invuln parry bonus (completed 2026-06-08)
+- [x] Phase 16: secret-synergies — 5 hidden passive combos (completed 2026-06-08)
+- [x] Phase 17: death-splat-trails — type-colored splat particles on enemy death (completed 2026-06-08)
+- [x] Phase 18: grid-reactivity — background grid ripples on explosions (completed 2026-06-08)
+- [x] Phase 19: dash-aftershock — radial shockwave blast ring at dash landing (completed 2026-06-08)
+- [x] Phase 20: heartbeat-pulse — red vignette + 55Hz heartbeat at critical HP (completed 2026-06-08)
+- [x] Phase 21: damage-numbers — floating damage floaters above enemies on hit (completed 2026-06-08)
+- [x] Phase 22: ascension-depth — 3 mid-run checkpoints scaling difficulty (completed 2026-06-08)
+- [x] Phase 23: bounty-system — live bounty target with arc timer + elite spawns (completed 2026-06-08)
+- [x] Phase 24: slipstream-branch — 7th skill tree branch (Slip Strike, Razor Wire, Slip Nova) (completed 2026-06-08)
+- [x] Phase 25: cursed-modifiers — curse stacking (speed/blind/lockout/drought) + Masochist badge (completed 2026-06-08)
+- [x] Phase 26: brute-stagger — burst-damage window triggers 0.8s stagger + 4× weak-spot hit (completed 2026-06-08)
+- [x] Phase 27: spore-contagion — Sporeling death infects nearby enemies; chain explosions (completed 2026-06-08)
+- [x] Phase 28: kill-threshold-perks — VETERAN/SLAYER/DESTROYER/WARLORD/LEGEND at kill milestones (completed 2026-06-08)
+- [x] Phase 29: modifier-drafting — two-step positive+negative modifier draft (completed 2026-06-08)
+- [x] Phase 30: void-strider-branch — 8th skill tree branch + VOID DANCER fusion (completed 2026-06-08)
+- [x] Phase 31: corruptor-enemy — Corruptor corrupts XP gems on death (completed 2026-06-08)
+
+Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
+
+</details>
+
 ---
 
-### 📋 v3.0 Feature Expansion (Phases 12–31)
+### 📋 v4.0 (Unplanned)
 
-- [ ] **Phase 12: last-stand-cinematic** — Trigger a slow-motion cinematic freeze on Last Stand activation for dramatic impact
-- [ ] **Phase 13: dash-damage** — Player deals burst damage to enemies passed through during a dash
-- [ ] **Phase 14: kill-streak-milestones** — Award bonus XP and a floater at 10/25/50/100 kill streak milestones
-- [ ] **Phase 15: parry-window** — Brief invuln window on dash-into-bullet timing grants a parry bonus
-- [ ] **Phase 16: secret-synergies** — Unlock hidden passive bonuses when specific upgrade combinations are reached
-- [ ] **Phase 17: death-splat-trails** — Enemies leave brief splat trail particles on death
-- [ ] **Phase 18: grid-reactivity** — Background grid distorts and pulses in response to explosions and player movement
-- [ ] **Phase 19: dash-aftershock** — Dash landing triggers a small radial shockwave that pushes nearby enemies
-- [ ] **Phase 20: heartbeat-pulse** — Screen vignette pulses red in rhythm with a heartbeat SFX when HP is critically low
-- [ ] **Phase 21: damage-numbers** — Floating damage numbers appear above enemies on each hit
-- [ ] **Phase 22: ascension-depth** — Track and display total ascension depth across runs as a persistent meta-score
-- [ ] **Phase 23: bounty-system** — Designated bounty enemies spawn with a marker; killing them grants large XP and a rare upgrade offer
-- [ ] **Phase 24: slipstream-branch** — New upgrade branch that amplifies dash-based combat rewards
-- [ ] **Phase 25: cursed-modifiers** — Optional cursed modifiers add severe drawbacks in exchange for high XP multipliers
-- [ ] **Phase 26: brute-stagger** — Brutes briefly stagger and flash when hit with rapid fire above a threshold
-- [ ] **Phase 27: spore-contagion** — Spore enemies release a contagion cloud on death that spreads a DOT to nearby enemies
-- [ ] **Phase 28: kill-threshold-perks** — Passive perks unlock mid-run when cumulative kill counts cross defined thresholds
-- [ ] **Phase 29: modifier-drafting** — Pre-run modifier selection expands to a 3-pick draft from a randomized pool
-- [ ] **Phase 30: void-strider-branch** — High-risk upgrade branch that trades HP for extreme damage and speed scaling
-- [ ] **Phase 31: corruptor-enemy** — New Corruptor enemy that disables one of the player's active upgrades until killed
+No phases planned yet. Start with `/gsd:new-milestone`.
 
 ---
 
@@ -69,24 +78,24 @@ Full phase details: `.planning/milestones/v2.0-ROADMAP.md`
 | 8. Death Bomb | v2.0 | 1/1 | Complete | 2026-06-06 |
 | 9. Invuln Dash | v2.0 | 1/1 | Complete | 2026-06-06 |
 | 10. Build Names | v2.0 | 1/1 | Complete | 2026-06-06 |
-| 11. Skill Tree | v2.0 bonus | 1/1 | Complete | 2026-06-08 |
-| 12. last-stand-cinematic | v3.0 | 0/1 | Not started | — |
-| 13. dash-damage | v3.0 | 0/1 | Not started | — |
-| 14. kill-streak-milestones | v3.0 | 0/1 | Not started | — |
-| 15. parry-window | v3.0 | 0/1 | Not started | — |
-| 16. secret-synergies | v3.0 | 0/1 | Not started | — |
-| 17. death-splat-trails | v3.0 | 0/1 | Not started | — |
-| 18. grid-reactivity | v3.0 | 0/1 | Not started | — |
-| 19. dash-aftershock | v3.0 | 0/1 | Not started | — |
-| 20. heartbeat-pulse | v3.0 | 0/1 | Not started | — |
-| 21. damage-numbers | v3.0 | 0/1 | Not started | — |
-| 22. ascension-depth | v3.0 | 0/1 | Not started | — |
-| 23. bounty-system | v3.0 | 0/1 | Not started | — |
-| 24. slipstream-branch | v3.0 | 0/1 | Not started | — |
-| 25. cursed-modifiers | v3.0 | 0/1 | Not started | — |
-| 26. brute-stagger | v3.0 | 0/1 | Not started | — |
-| 27. spore-contagion | v3.0 | 0/1 | Not started | — |
-| 28. kill-threshold-perks | v3.0 | 0/1 | Not started | — |
-| 29. modifier-drafting | v3.0 | 0/1 | Not started | — |
-| 30. void-strider-branch | v3.0 | 0/1 | Not started | — |
-| 31. corruptor-enemy | v3.0 | 0/1 | Not started | — |
+| 11. Skill Tree | v2.0 | 1/1 | Complete | 2026-06-08 |
+| 12. last-stand-cinematic | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 13. dash-damage | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 14. kill-streak-milestones | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 15. parry-window | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 16. secret-synergies | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 17. death-splat-trails | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 18. grid-reactivity | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 19. dash-aftershock | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 20. heartbeat-pulse | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 21. damage-numbers | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 22. ascension-depth | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 23. bounty-system | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 24. slipstream-branch | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 25. cursed-modifiers | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 26. brute-stagger | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 27. spore-contagion | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 28. kill-threshold-perks | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 29. modifier-drafting | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 30. void-strider-branch | v3.0 | 1/1 | Complete | 2026-06-08 |
+| 31. corruptor-enemy | v3.0 | 1/1 | Complete | 2026-06-08 |

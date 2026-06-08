@@ -1,5 +1,38 @@
 # Milestones — Neon Swarm / Browser Games
 
+## v3.0 — Feature Expansion
+
+**Status:** ✅ SHIPPED 2026-06-08  
+**Timeline:** 2026-06-08 (single session)  
+**Phases:** 20 (phases 12–31) | **Plans:** 20 | **LOC:** ~3,966 (game.js, +1,308 from v2.0)  
+**Files changed:** 10 files, +1,605 insertions −196 deletions
+
+### Delivered
+
+Expanded Neon Swarm from a polished prototype into a feature-complete auto-shooter: 2 new skill branches (Slipstream + Void Strider), a two-step modifier draft with 10 modifiers, kill-threshold perks, brute stagger, spore contagion, ascension system, bounty targets, damage numbers, and the Corruptor enemy.
+
+### Key Accomplishments
+
+1. **Dash Damage + Aftershock** — Dash cylinder sweep deals burst damage (Phases 13+19); landing shockwave pushes nearby enemies
+2. **Kill-Streak Milestones** — RUSH/FRENZY/RAMPAGE streak tiers with speed/fire/damage boosts (Phase 14)
+3. **Secret Synergies** — 5 hidden passive bonuses unlocked by specific upgrade combinations (Phase 16)
+4. **Ascension Depth** — 3 mid-run checkpoints scaling enemy HP, speed, and XP rewards (Phase 22)
+5. **Bounty System** — Live bounty target with arc-timer crown; elite spawns; large XP + rare powerup (Phase 23)
+6. **Slipstream Branch** — 7th skill tree branch: Slip Strike, Razor Wire, Slip Nova; teal wire trails (Phase 24)
+7. **Cursed Modifiers** — Curse stacking (speed/blind/lockout/drought) with Masochist badge (Phase 25)
+8. **Brute Stagger** — Burst-damage window triggers 0.8s stagger + 4× weak-spot hit (Phase 26)
+9. **Spore Contagion** — Sporeling deaths infect nearby Spores; chain explosions with 0.6× decay (Phase 27)
+10. **Kill-Threshold Perks** — VETERAN/SLAYER/DESTROYER/WARLORD/LEGEND at 50/150/350/700/1200 kills (Phase 28)
+11. **Two-Step Modifier Draft** — Positive pick (6 pool) + negative pick (4 pool) replaces toggle UI (Phase 29)
+12. **Void Strider Branch** — 8th branch: Shockwave, Afterburn, Void Step, Singularity + VOID DANCER fusion (Phase 30)
+13. **Corruptor Enemy** — Hot-pink inverted triangle spawns at 100s; corrupts gems on death — flee 5s at halved value (Phase 31)
+
+### Archives
+
+- `.planning/milestones/v3.0-ROADMAP.md`
+
+
+
 ## v2.0 — Juice & Depth
 
 **Status:** ✅ SHIPPED 2026-06-08  
