@@ -44,21 +44,6 @@ const GAMES = [
       </svg>`,
   },
   {
-    title: "Dungeon Explorer",
-    description:
-      "Descend a procedurally generated dungeon floor by floor. Dodge enemies, grab loot, and push your score as deep as you dare.",
-    path: "games/dungeon-explorer/index.html",
-    tags: ["Roguelike", "Dungeon", "Pixel"],
-    accent: "#00d4ff",
-    art: `
-      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect x="20" y="16" width="80" height="48" rx="3" fill="none" stroke="#0f3460" stroke-width="3" />
-        <rect x="30" y="26" width="14" height="14" rx="2" fill="#00d4ff" />
-        <rect x="54" y="34" width="10" height="10" rx="1" fill="#fffb96" />
-        <rect x="78" y="44" width="14" height="14" rx="2" fill="#ff5d73" />
-      </svg>`,
-  },
-  {
     title: "Tetra Storm",
     description:
       "Stack falling neon tetrominoes, clear lines, and chase the four-line Tetra. The blocks fall faster every level — how long can you keep the storm at bay?",
@@ -73,22 +58,6 @@ const GAMES = [
         <rect x="53" y="32" width="14" height="14" rx="2" fill="#b388ff" />
         <rect x="39" y="48" width="14" height="14" rx="2" fill="#7a5cff" />
         <rect x="53" y="48" width="14" height="14" rx="2" fill="#7a5cff" />
-      </svg>`,
-  },
-  {
-    title: "Word Forge",
-    description:
-      "Crack the hidden five-letter word in six guesses. Green is right, amber is close, grey is gone. A quick, cerebral daily-style brain-teaser.",
-    path: "games/word-forge/index.html",
-    tags: ["Word", "Puzzle", "Logic"],
-    accent: "#06ffa5",
-    art: `
-      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect x="13" y="32" width="16" height="16" rx="3" fill="#06ffa5" />
-        <rect x="33" y="32" width="16" height="16" rx="3" fill="#2a2a40" />
-        <rect x="53" y="32" width="16" height="16" rx="3" fill="#ffb703" />
-        <rect x="73" y="32" width="16" height="16" rx="3" fill="#2a2a40" />
-        <rect x="93" y="32" width="16" height="16" rx="3" fill="#06ffa5" />
       </svg>`,
   },
   {
