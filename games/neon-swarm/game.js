@@ -1434,6 +1434,7 @@ function triggerExplosion(x, y, radius, damage) {
     if ((e.x - x) ** 2 + (e.y - y) ** 2 < r2) {
       e.hp -= damage;
       e.flash = 0.1;
+      spawnDmgNum(e.x, e.y, damage, '#ff9f43');
       if (e.hp <= 0) killEnemy(e);
     }
   }
@@ -1485,12 +1486,7 @@ function resolveBulletHits() {
         e.flash = 0.1;
         sndHit(); // D-14 (throttled internally to 50ms)
         spawnParticles(b.x, b.y, b.crit ? COLORS.gold : e.color, b.crit ? 8 : 4, [30, b.crit ? 170 : 110]);
-        spawnFloater(
-          b.x, e.y - e.radius - 2,
-          b.crit ? Math.round(dealt) + "!" : String(Math.round(dealt)),
-          b.crit ? COLORS.gold : "#ffffff",
-          b.crit ? 20 : 13
-        );
+        spawnDmgNum(e.x, e.y - e.radius - 2, dealt, b.crit ? '#fffb96' : '#ffffff');
         if (e.hp <= 0) killEnemy(e, b);
         applySplash(b, e, dealt);
         if (player.chainCount > 0) applyChainLightning(b, e, player.chainCount);
@@ -1520,6 +1516,7 @@ function applySplash(b, primary, dealt) {
       if ((o.x - b.x) ** 2 + (o.y - b.y) ** 2 < sr2) {
         o.hp -= splash;
         o.flash = 0.1;
+        spawnDmgNum(o.x, o.y, splash, '#ff9f43');
         if (o.hp <= 0) killEnemy(o);
       }
     }
@@ -1557,6 +1554,7 @@ function applyChainLightning(b, primary, hops) {
     const dmg = b.damage * Math.pow(0.55, hop);
     next.hp -= dmg;
     next.flash = 0.1;
+    spawnDmgNum(next.x, next.y, dmg, '#00e5ff');
     if (player.triggeredSynergies.has('thunderclap')) next.stunTimer = Math.max(next.stunTimer || 0, 0.5);
     spawnParticles(next.x, next.y, COLORS.cyan, 4, [40, 120]);
     if (next.hp <= 0) killEnemy(next);
@@ -2018,7 +2016,12 @@ function updateFloaters(dt) {
     f.vy *= 0.94;
     f.vx *= 0.94;
     f.life -= dt;
-    f.alpha = Math.max(0, f.life / f.maxLife);
+    if (f.type === 'dmgNum') {
+      const fadeStart = f.maxLife * 0.4;
+      f.alpha = f.life <= fadeStart ? f.life / fadeStart : 1;
+    } else {
+      f.alpha = Math.max(0, f.life / f.maxLife);
+    }
   }
   floaters = floaters.filter((f) => f.life > 0);
 }
@@ -2026,6 +2029,29 @@ function updateFloaters(dt) {
 // Large centered 2-second gold floater for the build name flash (D-15, D-16, D-17).
 function spawnBuildFloater(name) {
   spawnFloater(W / 2, H / 2 - 40, name, COLORS.gold, 26, 2.0);
+}
+
+function spawnDmgNum(x, y, dmg, color) {
+  const MAX_DMG_NUMS = 40;
+  const size = Math.min(24, Math.max(11, 10 + dmg * 0.4));
+  const maxLife = 0.9;
+  const existing = floaters.filter(f => f.type === 'dmgNum');
+  if (existing.length >= MAX_DMG_NUMS) {
+    const idx = floaters.indexOf(existing[0]);
+    if (idx !== -1) floaters.splice(idx, 1);
+  }
+  floaters.push({
+    type: 'dmgNum',
+    x: x + rand(-6, 6),
+    y: y - 10,
+    text: Math.round(dmg),
+    color,
+    size,
+    vy: -35,
+    vx: rand(-8, 8),
+    life: maxLife,
+    maxLife,
+  });
 }
 
 function openSkillTree() {
@@ -2942,7 +2968,7 @@ function drawFloaters() {
     ctx.globalAlpha = f.alpha;
     ctx.font = `bold ${f.size}px monospace`;
     ctx.fillStyle = f.color;
-    ctx.fillText(f.text, f.x, f.y);
+    ctx.fillText(f.type === 'dmgNum' ? String(Math.round(f.text)) : f.text, f.x, f.y);
   }
   ctx.restore();
 }
