@@ -57,6 +57,8 @@ const ENEMY_TYPES = {
   spore: { radius: 16, speed: 80, hp: 8, damage: 11, xp: 2, color: "#39d98a", minTime: 120, split: 2 },
   // Sentinel: hangs back at range and spits projectiles you have to dodge.
   sentinel: { radius: 12, speed: 66, hp: 7, damage: 5, xp: 3, color: "#7c83ff", minTime: 150, ranged: true, shootRange: 330, shootInterval: 2.2, projDamage: 7, projSpeed: 220 },
+  // Corruptor: slow tank that corrupts XP gems on death — threatening progression not HP.
+  corruptor: { radius: 14, speed: 60, hp: 9, damage: 10, xp: 3, color: '#fd79a8', minTime: 100 },
 };
 
 // Surge event table. `minTime` mirrors the ENEMY_TYPES gate so a surge is only
@@ -2085,6 +2087,23 @@ function killEnemy(e, killerBullet) {
     player.hp = Math.min(player.maxHp, player.hp + 8);
     spawnParticles(player.x, player.y, '#55efc4', 4, [20, 80]);
   }
+
+  // Corruptor death: corrupt all on-screen XP gems (Phase 31)
+  if (e.type === 'corruptor') {
+    for (const g of gems) {
+      if (g.corrupted) continue;
+      g.corrupted = true;
+      g.value = Math.max(1, Math.floor(g.value * 0.5));
+      g.color = '#e17055';
+      g.corruptedTimer = 5.0;
+      const dx = g.x - player.x;
+      const dy = g.y - player.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      g.vx = (dx / dist) * 80;
+      g.vy = (dy / dist) * 80;
+    }
+    spawnFloater(e.x, e.y - 20, 'CORRUPTION!', '#fd79a8', 20);
+  }
 }
 
 function spawnSplats(e, bullet) {
@@ -2184,6 +2203,18 @@ function spawnLightningArc(x1, y1, x2, y2) {
 function updateGems(dt) {
   const pr2 = player.pickupRange ** 2;
   for (const g of gems) {
+    // Corruption flee movement (Phase 31)
+    if (g.corrupted && g.corruptedTimer > 0) {
+      g.corruptedTimer -= dt;
+      g.x += g.vx * dt;
+      g.y += g.vy * dt;
+      if (g.corruptedTimer <= 0) { g.vx = 0; g.vy = 0; }
+      const MARGIN = 50;
+      if (g.x < -MARGIN || g.x > W + MARGIN || g.y < -MARGIN || g.y > H + MARGIN) {
+        g.flownAway = true;
+        continue;
+      }
+    }
     const d2 = (g.x - player.x) ** 2 + (g.y - player.y) ** 2;
     if (d2 < pr2) {
       // Magnetize toward player, accelerating as it gets closer.
@@ -2199,7 +2230,7 @@ function updateGems(dt) {
       gainXp((xpAmount + bonusXp) * gemXpMult);
     }
   }
-  gems = gems.filter((g) => !g.collected);
+  gems = gems.filter((g) => !g.collected && !g.flownAway);
   enemies = enemies.filter((e) => e.hp > 0);
 }
 
@@ -3061,6 +3092,34 @@ function drawEnemies() {
     } else if (e.type === "spore") {
       // Irregular lumpy blob. (D-05)
       glowShape(() => drawBlob(ctx, e.x, e.y, e.radius), color, 12);
+    } else if (e.type === "corruptor") {
+      // Inverted triangle with chaos spiral — hot pink, visually threatening.
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      const cr = e.radius;
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color + '33';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-cr, -cr * 0.8);
+      ctx.lineTo( cr, -cr * 0.8);
+      ctx.lineTo(  0,  cr * 1.0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Spiral chaos symbol inside
+      ctx.strokeStyle = '#fd79a8';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      for (let i = 0; i <= 48; i++) {
+        const angle = (i / 48) * Math.PI * 3.5;
+        const rad = (i / 48) * (cr * 0.55);
+        const sx = Math.cos(angle) * rad;
+        const sy = Math.sin(angle) * rad;
+        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+      ctx.restore();
     } else {
       // Chasers, sporelings, and any enemy without a type fall back to circle. (D-01, D-06)
       glowCircle(e.x, e.y, e.radius, color, 12);
@@ -3261,10 +3320,11 @@ function drawOrbitals() {
 
 function drawGems() {
   for (const g of gems) {
+    const gemColor = g.color || COLORS.cyan;
     ctx.save();
-    ctx.shadowColor = COLORS.cyan;
+    ctx.shadowColor = gemColor;
     ctx.shadowBlur = 12;
-    ctx.fillStyle = COLORS.cyan;
+    ctx.fillStyle = gemColor;
     ctx.translate(g.x, g.y);
     ctx.rotate(elapsed * 2);
     ctx.fillRect(-g.radius * 0.7, -g.radius * 0.7, g.radius * 1.4, g.radius * 1.4);
