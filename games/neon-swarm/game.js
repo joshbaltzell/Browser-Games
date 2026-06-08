@@ -269,44 +269,69 @@ const SECRET_SYNERGIES = [
 
 // Run modifier definitions. Each `apply` mutates the player and/or globals.
 // Displayed as cards before each run; one is always chosen.
-const MODIFIERS = [
+const POSITIVE_MODIFIERS = [
   {
-    id: "glasscannon",
-    icon: "💥",
-    name: "Glass Cannon",
-    desc: "2\xd7 damage — but 50% HP, no regeneration",
+    id: "glasscannon", icon: "💥", name: "Glass Cannon",
+    desc: "2× damage — but 50% HP, no regeneration",
     accent: COLORS.pink,
-    apply(p) {
-      p.damage *= 2;
-      p.maxHp = 60;
-      p.hp = 60;
-      p.regen = 0;
-      p.glassCannonMode = true;
-    },
+    apply(p) { p.damage *= 2; p.maxHp = 60; p.hp = 60; p.regen = 0; p.glassCannonMode = true; },
   },
   {
-    id: "headstart",
-    icon: "🚀",
-    name: "Headstart",
+    id: "headstart", icon: "🚀", name: "Headstart",
     desc: "Start at Level 5 with 3 random upgrades",
     accent: COLORS.gold,
     apply(p) { applyHeadstart(p); },
   },
   {
-    id: "bullethell",
-    icon: "🌀",
-    name: "Bullet Hell",
-    desc: "Enemy fire 3\xd7 — but XP drops are 2\xd7",
+    id: "bullethell", icon: "🌀", name: "Bullet Hell",
+    desc: "Enemy fire 3× — XP drops worth 2×",
     accent: COLORS.purple,
     apply() { bulletHellMode = true; },
   },
   {
-    id: "standard",
-    icon: "▶",
-    name: "Standard Run",
-    desc: "No modifiers — the baseline game",
-    accent: COLORS.white,
-    apply() {},
+    id: "doubletap", icon: "🎯", name: "Double Tap",
+    desc: "Every 5th bullet is a guaranteed critical hit",
+    accent: COLORS.gold,
+    apply(p) { p.doubletapActive = true; },
+  },
+  {
+    id: "magnetfield", icon: "🧲", name: "Magnet Field",
+    desc: "Pickup range starts ×2",
+    accent: COLORS.cyan,
+    apply(p) { p.pickupRange *= 2; },
+  },
+  {
+    id: "rapidspawner", icon: "⚡", name: "Rapid Spawner",
+    desc: "Enemies spawn 30% faster — XP drops worth 1.5×",
+    accent: COLORS.cyan,
+    apply() { spawnInterval *= 0.7; rapidSpawnerActive = true; },
+  },
+];
+
+const NEGATIVE_MODIFIERS = [
+  {
+    id: "glassbody", icon: "🫀", name: "Glass Body",
+    desc: "Max HP is 40 — even lower than Glass Cannon",
+    accent: COLORS.pink,
+    apply(p) { p.maxHp = 40; p.hp = 40; },
+  },
+  {
+    id: "slowboots", icon: "🐢", name: "Slow Boots",
+    desc: "Movement speed ×0.8",
+    accent: COLORS.purple,
+    apply(p) { p.speed *= 0.8; },
+  },
+  {
+    id: "cursed", icon: "💀", name: "Cursed",
+    desc: "Your first skill point costs 2",
+    accent: COLORS.pink,
+    apply(p) { p.cursedActive = true; },
+  },
+  {
+    id: "powerupdrought", icon: "🌵", name: "Powerup Drought",
+    desc: "Powerup drops ×0.3 for the first 90s",
+    accent: COLORS.gold,
+    apply() { droughtTimer = 90; },
   },
 ];
 
@@ -381,7 +406,11 @@ let audioCtx = null;
 let lastHitSound = 0;
 let muted = false;
 let selectedModifier = null; // D-10: which modifier the player picked this run
+let selectedNegativeModifier = null;
 let bulletHellMode = false;  // D-11: set true by Bullet Hell modifier
+let rapidSpawnerActive = false;
+let _currentPositivePicks = [];
+let _currentNegativePicks = [];
 let chosenModifiers = [];
 let activeCurses = [];
 let hudBlind = false;
@@ -431,6 +460,8 @@ const dom = {
   modifier: document.getElementById("modifier"),
   modifierCards: document.getElementById("modifier-cards"),
   modifierLabel: document.getElementById("modifier-label"),
+  modifier2: document.getElementById("modifier2"),
+  modifier2Cards: document.getElementById("modifier2-cards"),
   dashReady: document.getElementById("dash-ready"),
   buildName: document.getElementById("build-name"),
   muteBtn: document.getElementById("mute-btn"),
@@ -506,6 +537,10 @@ function initGame() {
     slipStrike: false,
     razorWire:  false,
     slipNova:   false,
+    shotsFired: 0,
+    doubletapActive: false,
+    cursedActive: false,
+    cursedCostPaid: false,
   };
   enemies = [];
   bullets = [];
@@ -544,7 +579,9 @@ function initGame() {
   surgeFlash = 0;
   // Modifier state reset — actual selection + apply happens after initGame (T05).
   selectedModifier = null;
+  selectedNegativeModifier = null;
   bulletHellMode = false;
+  rapidSpawnerActive = false;
   temporalMines    = [];
   mineFreezeBubbles = [];
   blackHoleActive  = false;
@@ -605,17 +642,13 @@ window.addEventListener("keydown", (e) => {
   if (gameState === "skilltree" && e.key === "Escape") {
     closeSkillTree();
   }
-  if (gameState === "modifier") {
-    if (["1", "2", "3", "4"].includes(k)) {
-      const idx = Number(k) - 1;
-      const m = MODIFIERS[idx];
-      if (m) toggleModifier(m.id);
-      e.preventDefault();
-    }
-    if (k === "5" || e.key === "Enter") {
-      confirmModifiers();
-      e.preventDefault();
-    }
+  if (gameState === "modifier" && ["1","2","3"].includes(k)) {
+    choosePositiveModifier(Number(k) - 1);
+    e.preventDefault();
+  }
+  if (gameState === "modifier2" && ["1","2","3","4"].includes(k)) {
+    chooseNegativeModifier(Number(k) - 1);
+    e.preventDefault();
   }
   if (ascensionPromptActive) {
     if (e.key === "Enter")  { acceptAscension(); e.preventDefault(); }
@@ -629,8 +662,8 @@ window.addEventListener("keyup", (e) => {
 // Lose focus -> stop drifting.
 window.addEventListener("blur", () => keys.clear());
 
-document.getElementById("start-btn").addEventListener("click", openModifierSelection);
-document.getElementById("restart-btn").addEventListener("click", openModifierSelection);
+document.getElementById("start-btn").addEventListener("click", openModifierDraft);
+document.getElementById("restart-btn").addEventListener("click", openModifierDraft);
 dom.ascendBtn.addEventListener("click", acceptAscension);
 dom.skipBtn.addEventListener("click", skipAscension);
 
@@ -1399,6 +1432,7 @@ function updateShooting(dt) {
   for (let i = 0; i < bulletsToFire; i++) {
     const offset = (i - (bulletsToFire - 1) / 2) * spread;
     const a = baseAngle + offset;
+    const isCrit = Math.random() < player.critChance;
     bullets.push({
       x: player.x,
       y: player.y,
@@ -1407,12 +1441,16 @@ function updateShooting(dt) {
       radius: player.projectileRadius,
       damage: effectiveBulletDamage,
       color: bulletColor,
-      crit: Math.random() < player.critChance,
+      crit: isCrit,
       pierce: player.pierce,
       hit: null,
       life: 1.6,
       hopCount: 0,
     });
+    player.shotsFired++;
+    if (player.doubletapActive && player.shotsFired % 5 === 0) {
+      bullets[bullets.length - 1].crit = true;
+    }
   }
   sndShoot(); // D-13: one pew per volley (safe: updateShooting only called from update(), which only runs while gameState==="playing")
 }
@@ -1830,8 +1868,10 @@ function applyChainLightning(b, primary, hops) {
 // bonus and scatter their XP across several gems, so clearing one reads as a
 // real payoff — and the faster leveling is the main lever that eases the run.
 function dropLoot(e) {
-  // Bullet Hell doubles the XP value going into gems; power-up drop chance unchanged.
-  const baseXp = bulletHellMode ? e.xp * 2 : e.xp;
+  // Bullet Hell and Rapid Spawner multiply XP values going into gems.
+  let baseXp = e.xp;
+  if (bulletHellMode) baseXp *= 2;
+  if (rapidSpawnerActive) baseXp *= 1.5;
   const total = baseXp >= 2 ? Math.ceil(baseXp * 1.5) : baseXp;
   const count = Math.min(8, Math.max(1, Math.round(total / 1.5)));
   const base = Math.floor(total / count);
@@ -2321,6 +2361,11 @@ function gainXp(amount) {
     pendingLevels++;
   }
   if (pendingLevels > 0 && gameState === 'playing') {
+    // Cursed negative: first skill point award is consumed
+    if (player.cursedActive && !player.cursedCostPaid) {
+      player.cursedCostPaid = true;
+      pendingLevels = Math.max(0, pendingLevels - 1);
+    }
     player.skillPoints += pendingLevels;
     const pts = pendingLevels;
     pendingLevels = 0;
@@ -3657,103 +3702,105 @@ function applyHeadstart(p) {
 
 // Show the modifier selection overlay. Calls initGame() first so the player is
 // freshly reset before any modifier apply() mutates it.
-function openModifierSelection() {
+function openModifierDraft() {
   unlockAudio();
   initGame();
   gameState = "modifier";
   dom.start.classList.add("hidden");
   dom.gameover.classList.add("hidden");
 
+  // Draw 3 random positive modifiers without replacement
+  const pool = [...POSITIVE_MODIFIERS];
+  _currentPositivePicks = [];
+  for (let i = 0; i < 3; i++) {
+    const idx = Math.floor(Math.random() * pool.length);
+    _currentPositivePicks.push(pool.splice(idx, 1)[0]);
+  }
+
   dom.modifierCards.innerHTML = "";
-  MODIFIERS.forEach((m, i) => {
+  _currentPositivePicks.forEach((m, i) => {
     const el = document.createElement("div");
     el.className = "upgrade";
     el.style.setProperty("--accent", m.accent);
-    el.dataset.modifierId = m.id;
-    el.innerHTML = `
-      <div class="u-icon">${m.icon}</div>
+    el.innerHTML = `<div class="u-icon">${m.icon}</div>
       <div class="u-name">${m.name}</div>
       <div class="u-desc">${m.desc}</div>
-      <div class="u-key">${i + 1}</div>
-    `;
-    el.addEventListener("click", () => toggleModifier(m.id));
+      <div class="u-key">${i + 1}</div>`;
+    el.addEventListener("click", () => choosePositiveModifier(i));
     dom.modifierCards.appendChild(el);
   });
 
-  let confirmBtn = dom.modifier.querySelector(".modifier-confirm-btn");
-  if (!confirmBtn) {
-    confirmBtn = document.createElement("button");
-    confirmBtn.className = "modifier-confirm-btn";
-    confirmBtn.textContent = "START RUN";
-    confirmBtn.addEventListener("click", confirmModifiers);
-    dom.modifier.querySelector(".panel").appendChild(confirmBtn);
-  }
-
-  updateModifierPreview();
   dom.modifier.classList.remove("hidden");
 }
 
-function toggleModifier(id) {
-  const cards = dom.modifierCards.querySelectorAll(".upgrade");
-  const card = [...cards].find(c => c.dataset.modifierId === id);
-  if (!card) return;
-  card.classList.toggle("selected");
-  updateModifierPreview();
-}
-
-function updateModifierPreview() {
-  const selected = [...dom.modifierCards.querySelectorAll(".upgrade.selected")]
-    .map(c => c.dataset.modifierId)
-    .filter(id => id !== "standard");
-  const count = selected.length;
-  let preview = dom.modifier.querySelector(".modifier-preview");
-  if (!preview) {
-    preview = document.createElement("p");
-    preview.className = "modifier-preview";
-    const panel = dom.modifier.querySelector(".panel");
-    panel.insertBefore(preview, panel.querySelector(".modifier-confirm-btn"));
-  }
-  if (count === 0) preview.textContent = "No modifier — standard run";
-  else if (count === 1) preview.textContent = "1 modifier — no curse";
-  else if (count === 2) preview.textContent = "2 modifiers — 1 CURSE";
-  else preview.textContent = "3 modifiers — 2 CURSES";
-}
-
-function confirmModifiers() {
-  const selectedIds = [...dom.modifierCards.querySelectorAll(".upgrade.selected")]
-    .map(c => c.dataset.modifierId);
-  const nonStandard = selectedIds.filter(id => id !== "standard");
-  if (nonStandard.length > 0) {
-    chosenModifiers = nonStandard.map(id => MODIFIERS.find(m => m.id === id)).filter(Boolean);
-  } else {
-    chosenModifiers = [MODIFIERS.find(m => m.id === "standard")];
-  }
-  selectedModifier = chosenModifiers[0] || null;
+function choosePositiveModifier(index) {
+  const m = _currentPositivePicks[index];
+  if (!m) return;
+  selectedModifier = m;
+  chosenModifiers = [m];
   dom.modifier.classList.add("hidden");
+  openNegativePick();
+}
+
+function openNegativePick() {
+  gameState = "modifier2";
+
+  // Draw 3 random negative modifiers without replacement
+  const pool = [...NEGATIVE_MODIFIERS];
+  _currentNegativePicks = [];
+  for (let i = 0; i < 3; i++) {
+    const idx = Math.floor(Math.random() * pool.length);
+    _currentNegativePicks.push(pool.splice(idx, 1)[0]);
+  }
+
+  dom.modifier2Cards.innerHTML = "";
+  _currentNegativePicks.forEach((m, i) => {
+    const el = document.createElement("div");
+    el.className = "upgrade";
+    el.style.setProperty("--accent", m.accent);
+    el.innerHTML = `<div class="u-icon">${m.icon}</div>
+      <div class="u-name">${m.name}</div>
+      <div class="u-desc">${m.desc}</div>
+      <div class="u-key">${i + 1}</div>`;
+    el.addEventListener("click", () => chooseNegativeModifier(i));
+    dom.modifier2Cards.appendChild(el);
+  });
+
+  // "Standard Run" skip as slot 4
+  const skip = document.createElement("div");
+  skip.className = "upgrade";
+  skip.style.setProperty("--accent", COLORS.white);
+  skip.innerHTML = `<div class="u-icon">▶</div>
+    <div class="u-name">Standard Run</div>
+    <div class="u-desc">No curse — baseline penalties</div>
+    <div class="u-key">4</div>`;
+  skip.addEventListener("click", () => chooseNegativeModifier(3));
+  dom.modifier2Cards.appendChild(skip);
+
+  dom.modifier2.classList.remove("hidden");
+}
+
+function chooseNegativeModifier(index) {
+  selectedNegativeModifier = index < 3 ? (_currentNegativePicks[index] || null) : null;
+  dom.modifier2.classList.add("hidden");
   applyAndStart();
 }
 
 function applyAndStart() {
-  chosenModifiers.forEach(m => { if (m) m.apply(player); });
-
-  const nonStandard = chosenModifiers.filter(m => m && m.id !== "standard");
-  const curseCount = nonStandard.length >= 3 ? 2 : nonStandard.length >= 2 ? 1 : 0;
-  if (curseCount > 0) {
-    const shuffled = [...CURSES].sort(() => Math.random() - 0.5);
-    shuffled.slice(0, curseCount).forEach(c => c.apply());
-  }
+  if (selectedModifier) selectedModifier.apply(player);
+  if (selectedNegativeModifier) selectedNegativeModifier.apply(player);
 
   gameState = "playing";
   dom.start.classList.add("hidden");
   dom.gameover.classList.add("hidden");
   dom.skilltree.classList.add("hidden");
   dom.modifier.classList.add("hidden");
+  dom.modifier2.classList.add("hidden");
   dom.hud.classList.remove("hidden");
   lastTime = performance.now();
 
-  const nonStandardMods = chosenModifiers.filter(m => m && m.id !== "standard");
-  if (nonStandardMods.length > 0) {
-    dom.modifierLabel.textContent = nonStandardMods.map(m => m.name).join(", ");
+  if (selectedModifier && selectedModifier.id !== "standard") {
+    dom.modifierLabel.textContent = selectedModifier.name;
     dom.modifierLabel.classList.remove("hidden");
   } else {
     dom.modifierLabel.textContent = "";
