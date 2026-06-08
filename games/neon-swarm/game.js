@@ -317,6 +317,11 @@ let heartbeatPeriod = 1.2;
 let ascensionLevel = 0;
 let ascensionNextIdx = 0;
 let ascensionPromptActive = false;
+let bountyTarget = null;
+let bountyTimer = 0;
+let bountyInterval = 30;
+let bountyElapsed = 0;
+let eliteSpawnCount = 0;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -465,6 +470,12 @@ function initGame() {
   dom.ascensionBadge.textContent = "";
   dom.ascensionBadge.classList.add("hidden");
   dom.ascensionResult.classList.add("hidden");
+  // Phase 23: Bounty System
+  bountyTarget = null;
+  bountyTimer = 0;
+  bountyInterval = 30;
+  bountyElapsed = 0;
+  eliteSpawnCount = 0;
 }
 
 // ----------------------------------------------------------------------------
@@ -1083,6 +1094,16 @@ function update(rawDt) {
       }
     }
   }
+  // Phase 23: Bounty interval
+  bountyElapsed += dt;
+  if (bountyElapsed >= bountyInterval) {
+    if (enemies.length > 0) {
+      pickNewBounty();
+    } else {
+      bountyElapsed = 0;
+    }
+  }
+
   if (freezeTimer > 0) freezeTimer -= rawDt;
   if (overdriveTimer > 0) {
     overdriveTimer -= rawDt;
@@ -1285,6 +1306,14 @@ function updateSurges(dt) {
 }
 
 function updateEnemies(dt) {
+  // Phase 23: Bounty countdown
+  if (bountyTarget && bountyTimer > 0) {
+    bountyTimer -= dt;
+    if (bountyTimer <= 0) {
+      bountyTarget = null;
+    }
+  }
+
   for (const e of enemies) {
     if (e.orbCd > 0) e.orbCd -= dt;
     if (e.flash > 0) e.flash -= dt;
@@ -1358,6 +1387,11 @@ function updateEnemies(dt) {
         triggerSlowmo(0.05, 0.08);
         spawnParticles(player.x, player.y, COLORS.pink, 12);
         sndPlayerHit(); // D-20
+        // Phase 23: Bounty kills player penalty (contact damage)
+        if (player.hp <= 0 && bountyTarget !== null && e === bountyTarget) {
+          eliteSpawnCount = 3;
+          bountyTarget = null;
+        }
         // Last Stand interception: survive lethal hit with 5 HP and trigger bomb-save (D-05, D-11)
         if (player.hp <= 0 && player.lastStandCharges > 0) {
           player.lastStandCharges--;
@@ -1450,6 +1484,11 @@ function updateEBullets(dt) {
         spawnParticles(player.x, player.y, "#ff4dd2", 12);
         sndPlayerHit(); // D-20
         b.life = 0;
+        // Phase 23: Bounty kills player via projectile
+        if (player.hp <= 0 && bountyTarget !== null && b.owner === bountyTarget) {
+          eliteSpawnCount = 3;
+          bountyTarget = null;
+        }
         // Last Stand interception: survive lethal projectile hit with 5 HP (D-04, D-05, D-11)
         if (player.hp <= 0 && player.lastStandCharges > 0) {
           player.lastStandCharges--;
@@ -1632,6 +1671,15 @@ function dropLoot(e) {
 }
 
 function killEnemy(e, killerBullet) {
+  // Phase 23: Bounty claim
+  if (e === bountyTarget) {
+    e.xp *= 5;
+    spawnFloater(e.x, e.y - e.radius - 10, 'BOUNTY!', '#FFD700', 22);
+    const puKeys = Object.keys(POWERUP_TYPES);
+    const puType = puKeys[Math.floor(Math.random() * puKeys.length)];
+    powerups.push({ x: e.x, y: e.y, type: puType, radius: 12, life: 12 });
+    bountyTarget = null;
+  }
   kills++;
   combo++;
   comboTimer = COMBO_DECAY;
@@ -1700,9 +1748,26 @@ function spawnSplats(e, bullet) {
   }
 }
 
+function pickNewBounty() {
+  bountyElapsed = 0;
+  if (enemies.length === 0) return;
+  const idx = Math.floor(Math.random() * enemies.length);
+  bountyTarget = enemies[idx];
+  bountyTimer = 12;
+}
+
 function flushSpawnQueue() {
   if (!spawnQueue.length) return;
-  for (const e of spawnQueue) enemies.push(e);
+  for (const e of spawnQueue) {
+    enemies.push(e);
+    // Phase 23: Elite spawn penalty
+    if (eliteSpawnCount > 0) {
+      e.hp *= 3;
+      e.maxHp = e.hp;
+      e.color = '#FFD700';
+      eliteSpawnCount--;
+    }
+  }
   spawnQueue.length = 0;
 }
 
@@ -2314,6 +2379,7 @@ function render() {
   drawBullets();
   drawLightningArcs();
   drawEnemies();
+  drawBountyTarget();
   drawSentinelTelegraphs(); // VIS-02: shrinking reticle at player pos before Sentinel fires
   drawBlasts();
   drawOrbitals();
@@ -3103,6 +3169,47 @@ function drawCombo() {
   ctx.fillRect(cx - barW / 2, cy + size / 2 + 5, barW, 4);
   ctx.fillStyle = color;
   ctx.fillRect(cx - barW / 2, cy + size / 2 + 5, barW * progress, 4);
+  ctx.restore();
+}
+
+function drawBountyTarget() {
+  if (!bountyTarget || bountyTimer <= 0) return;
+  const e = bountyTarget;
+  const cx = e.x;
+  const cy = e.y;
+
+  const arcFraction = bountyTimer / 12;
+  const arcColor = bountyTimer < 3 ? '#FF4444' : '#FFD700';
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, e.radius + 8, -Math.PI / 2, -Math.PI / 2 + arcFraction * Math.PI * 2);
+  ctx.strokeStyle = arcColor;
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.restore();
+
+  const crownCy = cy - e.radius - 14;
+  const pulse = 1 + 0.08 * Math.sin(elapsed * 6);
+  const outerR = 10 * pulse;
+  const innerR = 4 * pulse;
+  const points = 5;
+  ctx.save();
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const angle = (i * Math.PI) / points - Math.PI / 2;
+    const r = i % 2 === 0 ? outerR : innerR;
+    const px = cx + r * Math.cos(angle);
+    const py = crownCy + r * Math.sin(angle);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#FFD700';
+  ctx.fill();
+  ctx.strokeStyle = '#FFA500';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
   ctx.restore();
 }
 
