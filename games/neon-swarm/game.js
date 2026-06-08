@@ -371,6 +371,7 @@ function initGame() {
     specterClone: false,
     // Spectral Shield (powerup)
     spectralShieldCharges: 0,
+    comboMilestone: 'none', // 'none' | 'rush' | 'frenzy' | 'rampage'
   };
   enemies = [];
   bullets = [];
@@ -558,6 +559,10 @@ function executeDash() {
   if (player.ownedSkills.has('phaserunner')) shootTimer = Math.max(0, (shootTimer || 0) - 0.2);
 
   // Spawn 3 afterimages at 25%, 50%, 75% along dash path (D-15, D-16)
+  const afterimageColor = player.comboMilestone === 'rampage' ? '#ffffff'
+                        : player.comboMilestone === 'frenzy'  ? '#ff8800'
+                        : player.comboMilestone === 'rush'    ? '#00ff88'
+                        : COLORS.cyan;
   for (const f of [0.25, 0.5, 0.75]) {
     afterimages.push({
       x: ox + (player.x - ox) * f,
@@ -566,7 +571,7 @@ function executeDash() {
       alpha: 0.5,
       life: 0.25,
       maxLife: 0.25,
-      color: COLORS.cyan,
+      color: afterimageColor,
     });
   }
 
@@ -909,7 +914,16 @@ function update(rawDt) {
   if (levelUpFlash > 0) levelUpFlash = Math.max(0, levelUpFlash - rawDt * 3.5);
   if (comboTimer > 0) {
     comboTimer -= rawDt;
-    if (comboTimer <= 0) combo = 0;
+    if (comboTimer <= 0) {
+      combo = 0;
+      if (player.comboMilestone !== 'none') {
+        if (player.baseSpeed !== undefined)     player.speed           = player.baseSpeed;
+        if (player.baseFire !== undefined)      player.fireInterval    = player.baseFire;
+        if (player.baseDamage !== undefined)    player.damage          = player.baseDamage;
+        if (player.baseProjSpeed !== undefined) player.projectileSpeed = player.baseProjSpeed;
+        player.comboMilestone = 'none';
+      }
+    }
   }
   if (freezeTimer > 0) freezeTimer -= rawDt;
   if (overdriveTimer > 0) {
@@ -1410,6 +1424,25 @@ function killEnemy(e) {
   kills++;
   combo++;
   comboTimer = COMBO_DECAY;
+  // Kill-streak milestone activation (Phase 14)
+  if (combo >= 50 && player.comboMilestone === 'frenzy') {
+    player.comboMilestone = 'rampage';
+    player.baseDamage = player.damage;
+    player.baseProjSpeed = player.projectileSpeed;
+    player.damage *= 1.5;
+    player.projectileSpeed *= 1.4;
+    floaters.push({ x: player.x, y: player.y - 30, text: 'RAMPAGE!', color: '#ffffff', life: 1.4, vy: -60, size: 22 });
+  } else if (combo >= 25 && player.comboMilestone === 'rush') {
+    player.comboMilestone = 'frenzy';
+    player.baseFire = player.fireInterval;
+    player.fireInterval *= 0.7;
+    floaters.push({ x: player.x, y: player.y - 30, text: 'FRENZY!', color: '#ff8800', life: 1.4, vy: -60, size: 22 });
+  } else if (combo >= 10 && player.comboMilestone === 'none') {
+    player.comboMilestone = 'rush';
+    player.baseSpeed = player.speed;
+    player.speed *= 1.2;
+    floaters.push({ x: player.x, y: player.y - 30, text: 'RUSH!', color: '#00ff88', life: 1.4, vy: -60, size: 22 });
+  }
   spawnParticles(e.x, e.y, e.color, 14);
   sndKill(e.xp >= 3); // D-15: louder for high-XP enemies (brutes/sentinels)
   spawnFloater(e.x, e.y - e.radius - 8, "DEAD", e.color, 14);
@@ -2089,6 +2122,22 @@ function drawPlayer() {
     }
     ctx.restore();
   }
+
+  // RAMPAGE white bloom aura (Phase 14)
+  if (player.comboMilestone === 'rampage') {
+    const auraPulse = 0.05 + 0.10 * Math.abs(Math.sin(elapsed * 6));
+    const auraR = player.radius + 20;
+    const grad = ctx.createRadialGradient(player.x, player.y, player.radius * 0.5, player.x, player.y, auraR);
+    grad.addColorStop(0, `rgba(255,255,255,${(auraPulse * 0.6).toFixed(3)})`);
+    grad.addColorStop(1, `rgba(255,255,255,0)`);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, auraR, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawEnemies() {
@@ -2594,6 +2643,14 @@ function drawCombo() {
   ctx.textBaseline = "middle";
   ctx.fillStyle = color;
   ctx.fillText(`COMBO \xd7${combo}`, cx, cy);
+
+  // Milestone state label (Phase 14)
+  if (player.comboMilestone !== 'none') {
+    const milestoneColors = { rush: '#00ff88', frenzy: '#ff8800', rampage: '#ffffff' };
+    ctx.font = 'bold 13px monospace';
+    ctx.fillStyle = milestoneColors[player.comboMilestone];
+    ctx.fillText(player.comboMilestone.toUpperCase(), cx, cy + size / 2 + 4);
+  }
 
   // Decay bar showing time left in streak.
   const barW = 120;
