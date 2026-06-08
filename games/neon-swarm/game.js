@@ -203,6 +203,18 @@ const BUILD_NAMES = [
   { name:'DEMOLISHER',      check: p => p.ownedSkills.has('sharpshots') && p.ownedSkills.has('explosives') },
 ];
 
+// ----------------------------------------------------------------------------
+// Secret Synergies — hidden cross-skill combos discovered through play
+// ----------------------------------------------------------------------------
+const SECRET_SYNERGIES = [
+  { id: 'bullet_storm',    reqs: ['fullauto', 'phaserunner', 'fleetfeet'],  name: 'BULLET STORM' },
+  { id: 'death_defied',    reqs: ['berserker_death_dance', 'bloodrite'],    name: 'DEATH DEFIED' },
+  { id: 'thunderclap',     reqs: ['chainlightning', 'executioner'],          name: 'THUNDERCLAP' },
+  { id: 'phantom_swarm',   reqs: ['orbitaldrones', 'specter_phantom'],       name: 'PHANTOM SWARM' },
+  { id: 'void_leech',      reqs: ['phaserunner', 'vampirism'],               name: 'VOID LEECH' },
+  { id: 'glass_berserker', reqs: ['berserker_death_dance', 'bloodrite'],     name: 'GLASS BERSERKER' },
+];
+
 // Run modifier definitions. Each `apply` mutates the player and/or globals.
 // Displayed as cards before each run; one is always chosen.
 const MODIFIERS = [
@@ -304,6 +316,7 @@ const dom = {
   skillBranches: document.getElementById('skill-branches'),
   skillFusions: document.getElementById('skill-fusions'),
   skillStats: document.getElementById('skill-stats'),
+  skillCodex: document.getElementById('skill-codex'),
   skillPtsHud: document.getElementById('skill-pts-hud'),
   skillPtsCount: document.getElementById('skill-pts-count'),
   gameover: document.getElementById("gameover"),
@@ -372,6 +385,11 @@ function initGame() {
     // Spectral Shield (powerup)
     spectralShieldCharges: 0,
     comboMilestone: 'none', // 'none' | 'rush' | 'frenzy' | 'rampage'
+    triggeredSynergies:   new Set(),
+    bulletStormTimer:     0,
+    phantomSwarmTimer:    0,
+    phantomSwarmOrbitals: 0,
+    voidLeechTimer:       0,
   };
   enemies = [];
   bullets = [];
@@ -557,6 +575,7 @@ function executeDash() {
   player.invuln = 0.35;
   player.dashCd = player.ownedSkills.has('phaserunner') ? 0.75 : 1.5;
   if (player.ownedSkills.has('phaserunner')) shootTimer = Math.max(0, (shootTimer || 0) - 0.2);
+  if (player.triggeredSynergies && player.triggeredSynergies.has('void_leech')) player.voidLeechTimer = 8.0;
 
   // Spawn 3 afterimages at 25%, 50%, 75% along dash path (D-15, D-16)
   const afterimageColor = player.comboMilestone === 'rampage' ? '#ffffff'
@@ -968,6 +987,14 @@ function update(rawDt) {
     if (overdriveTimer <= 0) deactivateOverdrive();
   }
   if (soulHarvestTimer > 0) soulHarvestTimer -= rawDt;
+  if (player.phantomSwarmTimer > 0) {
+    player.phantomSwarmTimer -= rawDt;
+    if (player.phantomSwarmTimer <= 0) {
+      player.orbitals = player.phantomSwarmOrbitals;
+      player.phantomSwarmOrbitals = 0;
+    }
+  }
+  if (player.voidLeechTimer > 0) player.voidLeechTimer -= rawDt;
 
   // Black Hole update
   if (blackHoleActive) {
@@ -1022,6 +1049,11 @@ function updatePlayer(dt) {
 function updateShooting(dt) {
   // BERSERK: compute effective fire interval for this frame (never mutates player.fireInterval)
   let effectiveFireInterval = player.fireInterval;
+  if (player.bulletStormTimer > 0) {
+    effectiveFireInterval = 0.05;
+    player.bulletStormTimer -= dt;
+    if (player.bulletStormTimer < 0) player.bulletStormTimer = 0;
+  }
   const berserkerFuryActive = player.berserkerFury && player.hp < player.maxHp * 0.5;
   const deathDanceActive    = player.deathDance    && player.hp < player.maxHp * 0.25;
   if (deathDanceActive) {
@@ -1058,6 +1090,10 @@ function updateShooting(dt) {
   // BERSERK: Berserker's Edge — +20% damage below 75% HP (bulletDamage computed in updateBullets)
   let effectiveBulletDamage = player.damage;
   if (player.berserkerEdge && player.hp < player.maxHp * 0.75) effectiveBulletDamage *= 1.2;
+  if (player.triggeredSynergies.has('glass_berserker') && player.hp < player.maxHp * 0.25) {
+    effectiveBulletDamage *= 2.0;
+  }
+  const bulletColor = player.bulletStormTimer > 0 ? COLORS.gold : null;
   for (let i = 0; i < bulletsToFire; i++) {
     const offset = (i - (bulletsToFire - 1) / 2) * spread;
     const a = baseAngle + offset;
@@ -1068,6 +1104,7 @@ function updateShooting(dt) {
       vy: Math.sin(a) * player.projectileSpeed,
       radius: player.projectileRadius,
       damage: effectiveBulletDamage,
+      color: bulletColor,
       crit: Math.random() < player.critChance,
       pierce: player.pierce,
       hit: null,
@@ -1209,7 +1246,7 @@ function updateEnemies(dt) {
         // Last Stand interception: survive lethal hit with 5 HP and trigger bomb-save (D-05, D-11)
         if (player.hp <= 0 && player.lastStandCharges > 0) {
           player.lastStandCharges--;
-          player.hp = 5;
+          player.hp = player.triggeredSynergies.has('death_defied') ? player.maxHp : 5;
           triggerLastStand();
         }
       }
@@ -1301,7 +1338,7 @@ function updateEBullets(dt) {
         // Last Stand interception: survive lethal projectile hit with 5 HP (D-04, D-05, D-11)
         if (player.hp <= 0 && player.lastStandCharges > 0) {
           player.lastStandCharges--;
-          player.hp = 5;
+          player.hp = player.triggeredSynergies.has('death_defied') ? player.maxHp : 5;
           triggerLastStand();
         }
       }
@@ -1437,6 +1474,7 @@ function applyChainLightning(b, primary, hops) {
     const dmg = b.damage * Math.pow(0.55, hop);
     next.hp -= dmg;
     next.flash = 0.1;
+    if (player.triggeredSynergies.has('thunderclap')) next.stunTimer = Math.max(next.stunTimer || 0, 0.5);
     spawnParticles(next.x, next.y, COLORS.cyan, 4, [40, 120]);
     if (next.hp <= 0) killEnemy(next);
     spawnLightningArc(source.x, source.y, next.x, next.y);
@@ -1503,7 +1541,9 @@ function killEnemy(e) {
   sndKill(e.xp >= 3); // D-15: louder for high-XP enemies (brutes/sentinels)
   spawnFloater(e.x, e.y - e.radius - 8, "DEAD", e.color, 14);
   dropLoot(e);
-  const lifeAmount = player.lifesteal * (player.bloodRite && player.hp < player.maxHp * 0.4 ? 3 : 1);
+  const bloodRiteMult = (player.bloodRite && player.hp < player.maxHp * 0.4) ? 3 : 1;
+  const voidLeechMult = player.voidLeechTimer > 0 ? 3 : 1;
+  const lifeAmount = player.lifesteal * bloodRiteMult * voidLeechMult;
   if (player.lifesteal > 0) player.hp = Math.min(player.maxHp, player.hp + lifeAmount);
   if (player.ownedSkills.has('fullauto')) shootTimer = Math.max(0, (shootTimer || 0) - 0.1);
   if (e.split) for (let i = 0; i < e.split; i++) spawnSporeling(e.x, e.y);
@@ -1782,6 +1822,39 @@ function activateSoulHarvest() {
   spawnFloater(player.x, player.y - 30, 'SOUL HARVEST', '#55efc4', 22);
 }
 
+// ----------------------------------------------------------------------------
+// Secret Synergy Activations
+// ----------------------------------------------------------------------------
+function activateSynergy(id) {
+  if      (id === 'bullet_storm')    activateBulletStorm();
+  else if (id === 'phantom_swarm')   activatePhantomSwarm();
+  else if (id === 'void_leech')      activateVoidLeech();
+  else if (id === 'glass_berserker') activateGlassBerserker();
+  // death_defied and thunderclap: passive — no activation effect beyond the floater
+}
+
+function activateBulletStorm() {
+  player.bulletStormTimer = 5.0;
+  triggerSlowmo(0.6, 0.3);
+  spawnParticles(player.x, player.y, COLORS.gold, 20);
+}
+
+function activatePhantomSwarm() {
+  player.phantomSwarmOrbitals = player.orbitals;
+  player.orbitals = player.orbitals * 2;
+  player.phantomSwarmTimer = 10.0;
+  spawnParticles(player.x, player.y, '#b388ff', 18);
+}
+
+function activateVoidLeech() {
+  player.voidLeechTimer = 8.0;
+  spawnParticles(player.x, player.y, '#a29bfe', 16);
+}
+
+function activateGlassBerserker() {
+  spawnParticles(player.x, player.y, '#ff3b6b', 20);
+}
+
 function gainXp(amount) {
   const mult = 1 + Math.min(0.5, combo * 0.02);
   player.xp += amount * mult;
@@ -1956,6 +2029,18 @@ function renderSkillTree() {
     chip.innerHTML = '<span class="s-value">' + s.val + '</span><span class="s-label">' + s.label + '</span>';
     dom.skillStats.appendChild(chip);
   });
+
+  // Synergy Codex
+  if (dom.skillCodex) {
+    dom.skillCodex.innerHTML = '';
+    for (const syn of SECRET_SYNERGIES) {
+      const discovered = player.triggeredSynergies.has(syn.id);
+      const entry = document.createElement('div');
+      entry.className = 'skill-codex-entry' + (discovered ? '' : ' locked');
+      entry.textContent = discovered ? syn.name : '???';
+      dom.skillCodex.appendChild(entry);
+    }
+  }
 }
 
 function buySkill(nodeId, isFusion) {
@@ -1972,6 +2057,15 @@ function buySkill(nodeId, isFusion) {
   player.skillPoints -= node.cost;
   player.ownedSkills.add(node.id);
   node.apply(player);
+  // Secret synergy check — fires at most once per synergy per run
+  for (const syn of SECRET_SYNERGIES) {
+    if (player.triggeredSynergies.has(syn.id)) continue;
+    if (syn.reqs.every(r => player.ownedSkills.has(r))) {
+      player.triggeredSynergies.add(syn.id);
+      activateSynergy(syn.id);
+      spawnFloater(W / 2, H / 2 - 60, syn.name, '#ffe066', 28, 2.5);
+    }
+  }
   checkBuildName();
   renderSkillTree();
   if (player.skillPoints === 0) setTimeout(closeSkillTree, 600);
@@ -2724,6 +2818,9 @@ function drawPowerupTimers() {
   if (freezeTimer > 0)    active.push({ icon: "❄️",  label: "FREEZE",    color: "#7ee8fa", timer: freezeTimer,    max: FREEZE_MAX_DURATION });
   if (overdriveTimer > 0) active.push({ icon: "⚡",  label: "OVERDRIVE", color: "#ffe066", timer: overdriveTimer, max: OVERDRIVE_MAX_DURATION });
   if (soulHarvestTimer > 0) active.push({ icon: '💚', label: 'SOUL HARVEST', color: '#55efc4', timer: soulHarvestTimer, max: SOUL_HARVEST_MAX_DURATION });
+  if (player.bulletStormTimer > 0)  active.push({ icon: '⚡', label: 'BULLET STORM',  color: COLORS.gold, timer: player.bulletStormTimer,  max: 5.0  });
+  if (player.phantomSwarmTimer > 0) active.push({ icon: '🛰', label: 'PHANTOM SWARM', color: '#b388ff',   timer: player.phantomSwarmTimer, max: 10.0 });
+  if (player.voidLeechTimer > 0)    active.push({ icon: '🩸', label: 'VOID LEECH',    color: '#a29bfe',   timer: player.voidLeechTimer,    max: 8.0  });
   if (active.length === 0) return;
 
   ctx.save();
