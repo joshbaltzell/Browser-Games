@@ -517,6 +517,41 @@ function executeDash() {
   player.x = Math.max(player.radius, Math.min(W - player.radius, player.x));
   player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
 
+  // Phase 13: Dash Damage — cylinder sweep from origin to final position
+  {
+    const segDx = player.x - ox;
+    const segDy = player.y - oy;
+    const segLenSq = segDx * segDx + segDy * segDy;
+
+    const clipped = [];
+    for (const e of enemies) {
+      if (e.hp <= 0) continue;
+      const t = segLenSq > 0
+        ? Math.max(0, Math.min(1, ((e.x - ox) * segDx + (e.y - oy) * segDy) / segLenSq))
+        : 0;
+      const closestX = ox + t * segDx;
+      const closestY = oy + t * segDy;
+      const dist = Math.hypot(e.x - closestX, e.y - closestY);
+      if (dist < 30 + e.radius) clipped.push(e);
+    }
+
+    if (clipped.length > 0) {
+      const mult = clipped.length >= 3 ? 3.0 : clipped.length === 2 ? 2.0 : 1.0;
+      const dashDamage = player.damage * mult;
+      const toKill = new Set();
+
+      for (const e of clipped) {
+        e.hp -= dashDamage;
+        spawnParticles(e.x, e.y, e.color, 8, [40, 160]);
+        if (player.lifesteal > 0) player.hp = Math.min(player.maxHp, player.hp + player.lifesteal);
+        if (e.hp <= 0) toKill.add(e);
+      }
+
+      for (const e of toKill) killEnemy(e);
+      if (toKill.size > 0) enemies = enemies.filter(e => !toKill.has(e));
+    }
+  }
+
   // Set invuln and cooldown (D-10, D-11)
   player.invuln = 0.35;
   player.dashCd = player.ownedSkills.has('phaserunner') ? 0.75 : 1.5;
@@ -527,7 +562,7 @@ function executeDash() {
     afterimages.push({
       x: ox + (player.x - ox) * f,
       y: oy + (player.y - oy) * f,
-      radius: player.radius,
+      radius: 30,
       alpha: 0.5,
       life: 0.25,
       maxLife: 0.25,
