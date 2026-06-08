@@ -289,6 +289,7 @@ let lastHitSound = 0;
 let muted = false;
 let selectedModifier = null; // D-10: which modifier the player picked this run
 let bulletHellMode = false;  // D-11: set true by Bullet Hell modifier
+let lastStandFreezeTimer = 0, lastStandSnapTimer = 0, lastStandLerpTimer = 0;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -412,6 +413,9 @@ function initGame() {
   blackHoleTimer   = 0;
   soulHarvestTimer = 0;
   specterDecoys    = [];
+  lastStandFreezeTimer = 0;
+  lastStandSnapTimer = 0;
+  lastStandLerpTimer = 0;
 }
 
 // ----------------------------------------------------------------------------
@@ -818,6 +822,32 @@ function update(rawDt) {
   if (slowmoTimer > 0) {
     slowmoTimer -= rawDt;
     if (slowmoTimer <= 0) slowmoTarget = 1;
+  }
+
+  // Last Stand cinematic sequence — all timers on rawDt so freeze ends on wall-clock time
+  if (lastStandFreezeTimer > 0) {
+    lastStandFreezeTimer -= rawDt;
+    if (lastStandFreezeTimer <= 0) {
+      lastStandFreezeTimer = 0;
+      timeScale = 3.0;
+      slowmoTarget = 3.0;
+      lastStandSnapTimer = 0.3;
+    }
+  } else if (lastStandSnapTimer > 0) {
+    lastStandSnapTimer -= rawDt;
+    if (lastStandSnapTimer <= 0) {
+      lastStandSnapTimer = 0;
+      slowmoTarget = 1.0;
+      lastStandLerpTimer = 0.5;
+    }
+  } else if (lastStandLerpTimer > 0) {
+    lastStandLerpTimer -= rawDt;
+    timeScale += (1.0 - timeScale) * (rawDt / 0.5);
+    if (lastStandLerpTimer <= 0) {
+      lastStandLerpTimer = 0;
+      timeScale = 1.0;
+      slowmoTarget = 1.0;
+    }
   }
 
   const dt = rawDt * timeScale; // scaled simulation time
@@ -1507,12 +1537,64 @@ function activateBomb() {
   spawnParticles(W / 2, H / 2, "#ff9f43", 30, [100, 500]);
 }
 function triggerLastStand() {
-  activateBomb();            // screen-clear explosion (overridden below for drama)
-  shake = 30;                // slightly more than bomb's 28 (D-06)
-  triggerSlowmo(0.1, 0.4);  // deeper, longer slow-mo than bomb (D-06)
-  spawnFloater(player.x, player.y - 20, "LAST STAND!", COLORS.gold, 28); // large gold floater (D-06)
-  player.invuln = 1.5;       // 1.5s invuln so player isn't immediately re-killed (D-06)
-  levelUpFlash = 0.4;        // white screen-wide flash (D-06, D-12)
+  // Cinematic freeze: halt time, arm sequence timers, cancel any prior slowmo
+  lastStandFreezeTimer = 0.4;
+  lastStandSnapTimer = 0;
+  lastStandLerpTimer = 0;
+  timeScale = 0;
+  slowmoTimer = 0;
+  slowmoTarget = 0;
+
+  // Screen-clear damage without the bomb sound (sweep replaces it below)
+  {
+    const dmg = player.damage * 8;
+    for (const e of enemies) {
+      if (e.hp <= 0) continue;
+      e.hp -= dmg;
+      spawnParticles(e.x, e.y, e.color, 8, [60, 220]);
+      if (e.hp <= 0) killEnemy(e);
+    }
+    enemies = enemies.filter((e) => e.hp > 0);
+    spawnParticles(W / 2, H / 2, "#ff9f43", 30, [100, 500]);
+  }
+
+  // Six white lightning cracks radiating from the player at 60° intervals
+  const crackAngles = [0, 60, 120, 180, 240, 300];
+  for (const deg of crackAngles) {
+    const rad = deg * Math.PI / 180;
+    const x2 = player.x + Math.cos(rad) * 180;
+    const y2 = player.y + Math.sin(rad) * 180;
+    const dx = x2 - player.x, dy = y2 - player.y;
+    const perp = rad + Math.PI / 2;
+    const points = [{ x: player.x, y: player.y }];
+    for (const t of [0.25, 0.5, 0.75]) {
+      points.push({
+        x: player.x + dx * t + Math.cos(perp) * rand(-15, 15),
+        y: player.y + dy * t + Math.sin(perp) * rand(-15, 15),
+      });
+    }
+    points.push({ x: x2, y: y2 });
+    lightningArcs.push({ x1: player.x, y1: player.y, x2, y2, points, life: 0.6, maxLife: 0.6, color: COLORS.white });
+  }
+
+  // Triangle-wave audio sweep 100→400 Hz replacing the bomb sound
+  if (!muted && audioCtx) {
+    const osc = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+    osc.frequency.linearRampToValueAtTime(400, audioCtx.currentTime + 0.4);
+    gainNode.gain.setValueAtTime(0.25, audioCtx.currentTime);
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.4);
+  }
+
+  shake = 30;
+  spawnFloater(player.x, player.y - 20, "LAST STAND!", COLORS.gold, 28);
+  player.invuln = 1.5;
+  levelUpFlash = 0.4;
 }
 
 function activateFreeze() {
@@ -1814,6 +1896,21 @@ function render() {
   drawBlackHole();
   drawTemporalMines();
   drawSpecterDecoys();
+
+  // Last Stand radial bloom: fades from opaque to invisible over the 0.4s freeze
+  if (lastStandFreezeTimer > 0) {
+    ctx.save();
+    ctx.globalAlpha = lastStandFreezeTimer / 0.4;
+    const bloom = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, 200);
+    bloom.addColorStop(0, "rgba(255,255,255,0.85)");
+    bloom.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = bloom;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 200, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   drawPlayer();
 
   ctx.restore();
@@ -2129,11 +2226,16 @@ function drawBlasts() {
 function drawLightningArcs() {
   if (lightningArcs.length === 0) return;
   ctx.save();
-  ctx.strokeStyle = COLORS.cyan;
-  ctx.shadowColor = COLORS.cyan;
-  ctx.shadowBlur = 14;
   ctx.lineWidth = 1.5;
+  let currentColor = null;
   for (const arc of lightningArcs) {
+    const c = arc.color || COLORS.cyan;
+    if (c !== currentColor) {
+      currentColor = c;
+      ctx.strokeStyle = c;
+      ctx.shadowColor = c;
+      ctx.shadowBlur = 14;
+    }
     ctx.globalAlpha = arc.life / arc.maxLife;
     ctx.beginPath();
     ctx.moveTo(arc.points[0].x, arc.points[0].y);
