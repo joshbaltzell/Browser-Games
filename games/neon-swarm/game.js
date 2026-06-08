@@ -398,6 +398,17 @@ let bountyTimer = 0;
 let bountyInterval = 30;
 let bountyElapsed = 0;
 let eliteSpawnCount = 0;
+// --- Kill Threshold Perks (Phase 28) ---
+const KILL_MILESTONES = [
+  { kills:   50, name: 'VETERAN',   effect(p){ maxPowerupsOnScreen += 1; } },
+  { kills:  150, name: 'SLAYER',    effect(p){ gemXpMult *= 1.1; } },
+  { kills:  350, name: 'DESTROYER', effect(p){ p.damage *= 1.05; } },
+  { kills:  700, name: 'WARLORD',   effect(p){ p.dashCdBase = Math.max(0.4, (p.dashCdBase || 1.5) - 0.2); p.dashCd = p.dashCdBase; } },
+  { kills: 1200, name: 'LEGEND',    effect(p){ p.bombProc = 0.05; } },
+];
+let milestoneIndex = 0;
+let maxPowerupsOnScreen = 2;
+let gemXpMult = 1;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -507,6 +518,9 @@ function initGame() {
   spawnQueue = [];
   elapsed = 0;
   kills = 0;
+  milestoneIndex = 0;
+  maxPowerupsOnScreen = 2;
+  gemXpMult = 1;
   spawnTimer = 0;
   spawnInterval = 1.2;
   shootTimer = 0;
@@ -1839,7 +1853,7 @@ function dropLoot(e) {
   // Hard cap of 2 on screen so they never pile up.
   const dropChance = e.xp >= 2 ? 0.055 : 0.015;
   const effectiveDropChance = (droughtTimer > 0) ? dropChance * 0.2 : dropChance;
-  if (powerups.length < 2 && Math.random() < effectiveDropChance) {
+  if (powerups.length < maxPowerupsOnScreen && Math.random() < effectiveDropChance) {
     const type = POWERUP_KEYS[Math.floor(Math.random() * POWERUP_KEYS.length)];
     powerups.push({ x: e.x, y: e.y, type, pulse: 0 });
   }
@@ -1881,6 +1895,18 @@ function killEnemy(e, killerBullet) {
     bountyTarget = null;
   }
   kills++;
+  // Kill threshold milestone check (Phase 28)
+  while (milestoneIndex < KILL_MILESTONES.length &&
+         kills >= KILL_MILESTONES[milestoneIndex].kills) {
+    const m = KILL_MILESTONES[milestoneIndex];
+    m.effect(player);
+    spawnFloater(player.x, player.y - 40, m.name, '#ffd700', 28, 1.4);
+    milestoneIndex++;
+  }
+  // LEGEND bomb proc
+  if (player.bombProc && Math.random() < player.bombProc) {
+    powerups.push({ x: e.x, y: e.y, type: 'bomb', pulse: 0 });
+  }
   combo++;
   comboTimer = COMBO_DECAY;
   spawnSplats(e, killerBullet);
@@ -2056,7 +2082,7 @@ function updateGems(dt) {
       g.collected = true;
       const xpAmount = g.value || 1;
       const bonusXp = (player.overcollect && player.hp >= player.maxHp) ? xpAmount * 0.5 : 0;
-      gainXp(xpAmount + bonusXp);
+      gainXp((xpAmount + bonusXp) * gemXpMult);
     }
   }
   gems = gems.filter((g) => !g.collected);
