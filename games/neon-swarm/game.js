@@ -1101,6 +1101,12 @@ function spawnEnemy() {
     e.projSpeed = def.projSpeed;
   }
   if (activeCurses.includes('speed_curse')) e.speed *= 1.5;
+  if (typeName === 'brute') {
+    e.damageWindow = [];
+    e.staggerTimer = 0;
+    e.staggerCooldown = 0;
+    e.weakSpotExposed = false;
+  }
   enemies.push(e);
 }
 
@@ -1144,6 +1150,12 @@ function spawnSurgeEnemy(enemyKey) {
     e.projSpeed = def.projSpeed;
   }
   if (activeCurses.includes('speed_curse')) e.speed *= 1.5;
+  if (enemyKey === 'brute') {
+    e.damageWindow = [];
+    e.staggerTimer = 0;
+    e.staggerCooldown = 0;
+    e.weakSpotExposed = false;
+  }
   spawnQueue.push(e);
 }
 
@@ -1458,6 +1470,19 @@ function updateEnemies(dt) {
     if (e.orbCd > 0) e.orbCd -= dt;
     if (e.flash > 0) e.flash -= dt;
     if (e.stunTimer > 0) { e.stunTimer -= dt; continue; }
+    // Brute stagger: decrement cooldown
+    if (e.type === 'brute' && e.staggerCooldown > 0) {
+      e.staggerCooldown = Math.max(0, e.staggerCooldown - dt);
+    }
+    // Brute stagger: decrement active stagger timer; skip movement while staggered
+    if (e.type === 'brute' && e.staggerTimer > 0) {
+      e.staggerTimer -= dt;
+      if (e.staggerTimer <= 0) {
+        e.staggerTimer = 0;
+        e.weakSpotExposed = false;
+      }
+      continue;
+    }
 
     // Black Hole — pull all enemies toward center, skip all other AI
     if (blackHoleActive) {
@@ -1695,7 +1720,16 @@ function resolveBulletHits() {
       const rr = (b.radius + e.radius) ** 2;
       if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 < rr) {
         const execMult = player.ownedSkills.has('executioner') ? Math.pow(1.6, b.hopCount || 0) : 1;
-        const dealt = (b.crit ? b.damage * player.critMult : b.damage) * execMult;
+        let dealt = (b.crit ? b.damage * player.critMult : b.damage) * execMult;
+        // Brute stagger: track burst-damage window
+        if (e.type === 'brute' && e.staggerCooldown <= 0) {
+          e.damageWindow.push({ dmg: dealt, t: elapsed });
+          e.damageWindow = e.damageWindow.filter(entry => elapsed - entry.t <= 0.4);
+          const windowSum = e.damageWindow.reduce((acc, entry) => acc + entry.dmg, 0);
+          if (windowSum >= 8) { triggerStagger(e); e.damageWindow = []; }
+        }
+        // Brute weak-spot: 4× damage, consumed on hit
+        if (e.type === 'brute' && e.weakSpotExposed) { dealt *= 4; e.weakSpotExposed = false; }
         e.hp -= dealt;
         e.flash = 0.1;
         sndHit(); // D-14 (throttled internally to 50ms)
@@ -1809,6 +1843,13 @@ function dropLoot(e) {
     const type = POWERUP_KEYS[Math.floor(Math.random() * POWERUP_KEYS.length)];
     powerups.push({ x: e.x, y: e.y, type, pulse: 0 });
   }
+}
+
+function triggerStagger(e) {
+  e.staggerTimer    = 0.8;
+  e.staggerCooldown = 3.0;
+  e.weakSpotExposed = true;
+  sndHit();
 }
 
 function killEnemy(e, killerBullet) {
@@ -2824,7 +2865,20 @@ function drawEnemies() {
       glowShape(() => drawTriangle(ctx, e.x, e.y, e.radius, ang), color, 12);
     } else if (e.type === "brute") {
       // Heavier blur on brutes reads as more solid/massive. (D-03)
-      glowShape(() => drawHexShape(ctx, e.x, e.y, e.radius), color, 14);
+      if (e.staggerTimer > 0) {
+        const bruteColor = '#ffffff';
+        const bruteAlpha = Math.sin(elapsed * 20) > 0 ? 1.0 : 0.35;
+        ctx.save(); ctx.globalAlpha = bruteAlpha;
+        glowShape(() => drawHexShape(ctx, e.x, e.y, e.radius), bruteColor, 14);
+        ctx.restore();
+      } else {
+        glowShape(() => drawHexShape(ctx, e.x, e.y, e.radius), color, 14);
+      }
+      if (e.weakSpotExposed) {
+        const pulse = Math.sin(elapsed * 12);
+        ctx.save(); ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2.5; ctx.globalAlpha = 0.85 + pulse * 0.15;
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.radius * 0.45 + pulse * 2, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      }
     } else if (e.type === "sentinel") {
       // Diamond silhouette; white core dot drawn below. (D-04)
       glowShape(() => drawDiamond(ctx, e.x, e.y, e.radius), color, 12);
