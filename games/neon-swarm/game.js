@@ -311,6 +311,8 @@ let muted = false;
 let selectedModifier = null; // D-10: which modifier the player picked this run
 let bulletHellMode = false;  // D-11: set true by Bullet Hell modifier
 let lastStandFreezeTimer = 0, lastStandSnapTimer = 0, lastStandLerpTimer = 0;
+let heartbeatPhase = 0;
+let heartbeatPeriod = 1.2;
 
 const dom = {
   hud: document.getElementById("hud"),
@@ -446,6 +448,8 @@ function initGame() {
   lastStandLerpTimer = 0;
   splats = [];
   gridEffects = [];
+  heartbeatPhase = 0;
+  heartbeatPeriod = 1.2;
 }
 
 // ----------------------------------------------------------------------------
@@ -786,6 +790,21 @@ function unlockAudio() {
   }
 }
 
+function playHeartbeat() {
+  if (!audioCtx || muted) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(55, audioCtx.currentTime);
+  const hpRatio = Math.max(0, player.hp / (player.maxHp * 0.3));
+  gain.gain.setValueAtTime(0.12 * (1 - hpRatio), audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.08);
+  osc.start(audioCtx.currentTime);
+  osc.stop(audioCtx.currentTime + 0.08);
+}
+
 function playTone(opts) {
   if (!audioCtx || muted) return;
   try {
@@ -1115,6 +1134,19 @@ function updateShooting(dt) {
   }
   if (!deathDanceActive && player.deathDanceWasActive) {
     player.deathDanceWasActive = false;
+  }
+
+  // Heartbeat pulse — active below 30% HP
+  if (player.hp < player.maxHp * 0.3) {
+    const hpRatio = player.hp / (player.maxHp * 0.3);
+    heartbeatPeriod = 0.35 + hpRatio * 0.85;
+    heartbeatPhase += dt;
+    if (heartbeatPhase >= heartbeatPeriod) {
+      heartbeatPhase = 0;
+      playHeartbeat();
+    }
+  } else {
+    heartbeatPhase = 0;
   }
 
   shootTimer -= dt;
@@ -2247,6 +2279,25 @@ function render() {
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
+  }
+
+  // Heartbeat pulse overlay
+  if (gameState === 'playing' && player.hp < player.maxHp * 0.3) {
+    const hpRatio = player.hp / (player.maxHp * 0.3);
+    const pulseIntensity = Math.max(0, Math.sin(heartbeatPhase / heartbeatPeriod * Math.PI)) * 0.18;
+    if (pulseIntensity > 0) {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const innerR = canvas.height * 0.3;
+      const outerR = Math.sqrt(cx * cx + cy * cy);
+      const hbGrad = ctx.createRadialGradient(cx, cy, innerR, cx, cy, outerR);
+      hbGrad.addColorStop(0, 'rgba(180,0,0,0)');
+      hbGrad.addColorStop(1, `rgba(180,0,0,${pulseIntensity.toFixed(3)})`);
+      ctx.save();
+      ctx.fillStyle = hbGrad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    }
   }
 
   drawSurgeWarning();
