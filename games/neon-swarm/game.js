@@ -310,6 +310,33 @@ const MODIFIERS = [
   },
 ];
 
+const CURSES = [
+  {
+    id: 'speed_curse',
+    name: 'SPEED CURSE',
+    desc: 'Enemies move 50% faster',
+    apply() { activeCurses.push('speed_curse'); },
+  },
+  {
+    id: 'blind',
+    name: 'BLIND',
+    desc: 'HUD hidden except HP bar',
+    apply() { activeCurses.push('blind'); hudBlind = true; },
+  },
+  {
+    id: 'lockout',
+    name: 'LOCKOUT',
+    desc: 'Skill tree locked for first 60s',
+    apply() { activeCurses.push('lockout'); lockoutTimer = 60; },
+  },
+  {
+    id: 'powerup_drought',
+    name: 'DROUGHT',
+    desc: 'Powerup drop rate ×0.2 for first 90s',
+    apply() { activeCurses.push('powerup_drought'); droughtTimer = 90; },
+  },
+];
+
 // ----------------------------------------------------------------------------
 // Canvas & global state
 // ----------------------------------------------------------------------------
@@ -355,6 +382,11 @@ let lastHitSound = 0;
 let muted = false;
 let selectedModifier = null; // D-10: which modifier the player picked this run
 let bulletHellMode = false;  // D-11: set true by Bullet Hell modifier
+let chosenModifiers = [];
+let activeCurses = [];
+let hudBlind = false;
+let lockoutTimer = 0;
+let droughtTimer = 0;
 let lastStandFreezeTimer = 0, lastStandSnapTimer = 0, lastStandLerpTimer = 0;
 let heartbeatPhase = 0;
 let heartbeatPeriod = 1.2;
@@ -396,6 +428,7 @@ const dom = {
   skipBtn:        document.getElementById("skip-btn"),
   ascensionBadge: document.getElementById("ascension-badge"),
   ascensionResult: document.getElementById("ascension-result"),
+  curseChips: document.getElementById("curse-chips"),
 };
 
 dom.muteBtn.addEventListener("click", () => {
@@ -518,6 +551,11 @@ function initGame() {
   dom.ascensionBadge.classList.add("hidden");
   dom.ascensionResult.classList.add("hidden");
   wireTrails = [];
+  chosenModifiers = [];
+  activeCurses = [];
+  hudBlind = false;
+  lockoutTimer = 0;
+  droughtTimer = 0;
   // Phase 23: Bounty System
   bountyTarget = null;
   bountyTimer = 0;
@@ -553,8 +591,17 @@ window.addEventListener("keydown", (e) => {
   if (gameState === "skilltree" && e.key === "Escape") {
     closeSkillTree();
   }
-  if (gameState === "modifier" && ["1", "2", "3", "4"].includes(k)) {
-    chooseModifier(Number(k) - 1);
+  if (gameState === "modifier") {
+    if (["1", "2", "3", "4"].includes(k)) {
+      const idx = Number(k) - 1;
+      const m = MODIFIERS[idx];
+      if (m) toggleModifier(m.id);
+      e.preventDefault();
+    }
+    if (k === "5" || e.key === "Enter") {
+      confirmModifiers();
+      e.preventDefault();
+    }
   }
   if (ascensionPromptActive) {
     if (e.key === "Enter")  { acceptAscension(); e.preventDefault(); }
@@ -1053,6 +1100,7 @@ function spawnEnemy() {
     e.projDamage = def.projDamage * sc.dmg;
     e.projSpeed = def.projSpeed;
   }
+  if (activeCurses.includes('speed_curse')) e.speed *= 1.5;
   enemies.push(e);
 }
 
@@ -1095,6 +1143,7 @@ function spawnSurgeEnemy(enemyKey) {
     e.projDamage = def.projDamage * sc.dmg;
     e.projSpeed = def.projSpeed;
   }
+  if (activeCurses.includes('speed_curse')) e.speed *= 1.5;
   spawnQueue.push(e);
 }
 
@@ -1194,6 +1243,8 @@ function update(rawDt) {
   }
 
   if (freezeTimer > 0) freezeTimer -= rawDt;
+  if (lockoutTimer > 0) lockoutTimer -= dt;
+  if (droughtTimer > 0) droughtTimer -= dt;
   if (overdriveTimer > 0) {
     overdriveTimer -= rawDt;
     if (overdriveTimer <= 0) deactivateOverdrive();
@@ -1753,7 +1804,8 @@ function dropLoot(e) {
   // Rare power-up drop: 1.5% on normal kills, 5.5% on tough kills (xp >= 2).
   // Hard cap of 2 on screen so they never pile up.
   const dropChance = e.xp >= 2 ? 0.055 : 0.015;
-  if (powerups.length < 2 && Math.random() < dropChance) {
+  const effectiveDropChance = (droughtTimer > 0) ? dropChance * 0.2 : dropChance;
+  if (powerups.length < 2 && Math.random() < effectiveDropChance) {
     const type = POWERUP_KEYS[Math.floor(Math.random() * POWERUP_KEYS.length)];
     powerups.push({ x: e.x, y: e.y, type, pulse: 0 });
   }
@@ -2298,6 +2350,11 @@ function skipAscension() {
 // ── end Phase 22 ─────────────────────────────────────────────────────
 
 function openSkillTree() {
+  if (lockoutTimer > 0) {
+    const secs = Math.ceil(lockoutTimer);
+    spawnFloater(W / 2, H / 2 - 40, `LOCKED — ${secs}s`, '#ff4444', 18);
+    return;
+  }
   gameState = 'skilltree';
   renderSkillTree();
   dom.skilltree.classList.remove('hidden');
@@ -3398,7 +3455,22 @@ function drawPowerupTimers() {
 // HUD & UI overlays
 // ----------------------------------------------------------------------------
 function updateHud() {
+  // Curse chips — always visible even under BLIND so player knows active curses.
+  if (dom.curseChips) {
+    if (activeCurses.length === 0) {
+      dom.curseChips.classList.add("hidden");
+    } else {
+      dom.curseChips.classList.remove("hidden");
+      dom.curseChips.innerHTML = activeCurses
+        .map(id => {
+          const c = CURSES.find(x => x.id === id);
+          return `<span class="curse-chip">${c ? c.name : id}</span>`;
+        })
+        .join("");
+    }
+  }
   dom.hpFill.style.width = Math.max(0, (player.hp / player.maxHp) * 100) + "%";
+  if (hudBlind) return;
   dom.xpFill.style.width = (player.xp / player.xpToNext) * 100 + "%";
   dom.level.textContent = player.level;
   dom.kills.textContent = kills + (kills === 1 ? " kill" : " kills");
@@ -3430,6 +3502,12 @@ function endGame() {
   } else {
     dom.ascensionResult.classList.add("hidden");
   }
+  if (activeCurses.length >= 2) {
+    localStorage.setItem('masochist', '1');
+  }
+  if (localStorage.getItem('masochist') === '1') {
+    dom.finalStats.innerHTML += `<div class="masochist-badge">MASOCHIST</div>`;
+  }
   dom.gameover.classList.remove("hidden");
 }
 
@@ -3459,43 +3537,89 @@ function applyHeadstart(p) {
 // freshly reset before any modifier apply() mutates it.
 function openModifierSelection() {
   unlockAudio();
-  initGame(); // clean slate — modifier apply runs after selection (T05)
+  initGame();
   gameState = "modifier";
   dom.start.classList.add("hidden");
   dom.gameover.classList.add("hidden");
 
-  // Populate modifier cards.
   dom.modifierCards.innerHTML = "";
   MODIFIERS.forEach((m, i) => {
     const el = document.createElement("div");
     el.className = "upgrade";
     el.style.setProperty("--accent", m.accent);
+    el.dataset.modifierId = m.id;
     el.innerHTML = `
       <div class="u-icon">${m.icon}</div>
-      <p class="u-name">${m.name}</p>
-      <p class="u-desc">${m.desc}</p>
-      <span class="u-key">${i + 1}</span>
+      <div class="u-name">${m.name}</div>
+      <div class="u-desc">${m.desc}</div>
+      <div class="u-key">${i + 1}</div>
     `;
-    el.addEventListener("click", () => chooseModifier(i));
+    el.addEventListener("click", () => toggleModifier(m.id));
     dom.modifierCards.appendChild(el);
   });
 
+  let confirmBtn = dom.modifier.querySelector(".modifier-confirm-btn");
+  if (!confirmBtn) {
+    confirmBtn = document.createElement("button");
+    confirmBtn.className = "modifier-confirm-btn";
+    confirmBtn.textContent = "START RUN";
+    confirmBtn.addEventListener("click", confirmModifiers);
+    dom.modifier.querySelector(".panel").appendChild(confirmBtn);
+  }
+
+  updateModifierPreview();
   dom.modifier.classList.remove("hidden");
 }
 
-// Apply the chosen modifier and begin the run.
-function chooseModifier(index) {
-  const m = MODIFIERS[index];
-  if (!m) return;
-  selectedModifier = m;
+function toggleModifier(id) {
+  const cards = dom.modifierCards.querySelectorAll(".upgrade");
+  const card = [...cards].find(c => c.dataset.modifierId === id);
+  if (!card) return;
+  card.classList.toggle("selected");
+  updateModifierPreview();
+}
+
+function updateModifierPreview() {
+  const selected = [...dom.modifierCards.querySelectorAll(".upgrade.selected")]
+    .map(c => c.dataset.modifierId)
+    .filter(id => id !== "standard");
+  const count = selected.length;
+  let preview = dom.modifier.querySelector(".modifier-preview");
+  if (!preview) {
+    preview = document.createElement("p");
+    preview.className = "modifier-preview";
+    const panel = dom.modifier.querySelector(".panel");
+    panel.insertBefore(preview, panel.querySelector(".modifier-confirm-btn"));
+  }
+  if (count === 0) preview.textContent = "No modifier — standard run";
+  else if (count === 1) preview.textContent = "1 modifier — no curse";
+  else if (count === 2) preview.textContent = "2 modifiers — 1 CURSE";
+  else preview.textContent = "3 modifiers — 2 CURSES";
+}
+
+function confirmModifiers() {
+  const selectedIds = [...dom.modifierCards.querySelectorAll(".upgrade.selected")]
+    .map(c => c.dataset.modifierId);
+  const nonStandard = selectedIds.filter(id => id !== "standard");
+  if (nonStandard.length > 0) {
+    chosenModifiers = nonStandard.map(id => MODIFIERS.find(m => m.id === id)).filter(Boolean);
+  } else {
+    chosenModifiers = [MODIFIERS.find(m => m.id === "standard")];
+  }
+  selectedModifier = chosenModifiers[0] || null;
   dom.modifier.classList.add("hidden");
   applyAndStart();
 }
 
-// Apply the selected modifier's effects and transition to "playing".
-// initGame() already ran in openModifierSelection(), so we do NOT call it again.
 function applyAndStart() {
-  if (selectedModifier) selectedModifier.apply(player);
+  chosenModifiers.forEach(m => { if (m) m.apply(player); });
+
+  const nonStandard = chosenModifiers.filter(m => m && m.id !== "standard");
+  const curseCount = nonStandard.length >= 3 ? 2 : nonStandard.length >= 2 ? 1 : 0;
+  if (curseCount > 0) {
+    const shuffled = [...CURSES].sort(() => Math.random() - 0.5);
+    shuffled.slice(0, curseCount).forEach(c => c.apply());
+  }
 
   gameState = "playing";
   dom.start.classList.add("hidden");
@@ -3505,9 +3629,9 @@ function applyAndStart() {
   dom.hud.classList.remove("hidden");
   lastTime = performance.now();
 
-  // Show modifier name in HUD for non-standard runs (D-12, D-15).
-  if (selectedModifier && selectedModifier.id !== "standard") {
-    dom.modifierLabel.textContent = selectedModifier.name;
+  const nonStandardMods = chosenModifiers.filter(m => m && m.id !== "standard");
+  if (nonStandardMods.length > 0) {
+    dom.modifierLabel.textContent = nonStandardMods.map(m => m.name).join(", ");
     dom.modifierLabel.classList.remove("hidden");
   } else {
     dom.modifierLabel.textContent = "";
