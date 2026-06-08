@@ -21,6 +21,14 @@ const COLORS = {
   purple: "#b388ff",
   white: "#ffffff",
 };
+const SPLAT_COLORS = {
+  chaser:   '#ff3b6b',
+  darter:   '#ff9f43',
+  brute:    '#c850ff',
+  spore:    '#39d98a',
+  sentinel: '#7c83ff',
+};
+const SPLAT_CAP = 80;
 const COMBO_DECAY = 2.5; // seconds before streak resets after last kill
 // Timer display max durations — must stay in sync with activateFreeze() and
 // activateOverdrive() which set freezeTimer/overdriveTimer to these values.
@@ -282,7 +290,7 @@ resize();
 // Game states: "start" | "modifier" | "playing" | "skilltree" | "gameover"
 let gameState = "start";
 
-let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue, lightningArcs, afterimages;
+let player, enemies, bullets, gems, particles, eBullets, blasts, spawnQueue, lightningArcs, afterimages, splats;
 let elapsed, kills, spawnTimer, spawnInterval, shootTimer, shake, pendingLevels;
 let timeScale, slowmoTimer, slowmoTarget;
 let floaters;
@@ -435,6 +443,7 @@ function initGame() {
   lastStandFreezeTimer = 0;
   lastStandSnapTimer = 0;
   lastStandLerpTimer = 0;
+  splats = [];
 }
 
 // ----------------------------------------------------------------------------
@@ -963,6 +972,7 @@ function update(rawDt) {
   updatePowerups(dt);
   flushSpawnQueue();
   updateParticles(dt);
+  updateSplats(dt);
   updateAfterimages(dt);
   updateBlasts(dt);
   updateLightningArcs(dt);
@@ -1408,7 +1418,7 @@ function resolveBulletHits() {
           b.crit ? COLORS.gold : "#ffffff",
           b.crit ? 20 : 13
         );
-        if (e.hp <= 0) killEnemy(e);
+        if (e.hp <= 0) killEnemy(e, b);
         applySplash(b, e, dealt);
         if (player.chainCount > 0) applyChainLightning(b, e, player.chainCount);
         if (b.pierce > 0) {
@@ -1514,10 +1524,11 @@ function dropLoot(e) {
   }
 }
 
-function killEnemy(e) {
+function killEnemy(e, killerBullet) {
   kills++;
   combo++;
   comboTimer = COMBO_DECAY;
+  spawnSplats(e, killerBullet);
   // Kill-streak milestone activation (Phase 14)
   if (combo >= 50 && player.comboMilestone === 'frenzy') {
     player.comboMilestone = 'rampage';
@@ -1565,6 +1576,20 @@ function killEnemy(e) {
   if (soulHarvestTimer > 0) {
     player.hp = Math.min(player.maxHp, player.hp + 8);
     spawnParticles(player.x, player.y, '#55efc4', 4, [20, 80]);
+  }
+}
+
+function spawnSplats(e, bullet) {
+  const color = SPLAT_COLORS[e.type] || e.color;
+  const count = e.xp >= 4 ? 3 : 1;
+  const baseAngle = bullet ? Math.atan2(bullet.vy, bullet.vx) : Math.random() * TAU;
+  const spreadRad = (25 * Math.PI) / 180;
+  for (let i = 0; i < count; i++) {
+    if (splats.length >= SPLAT_CAP) splats.shift();
+    const angle = baseAngle + rand(-spreadRad, spreadRad);
+    const speed = rand(80, 180);
+    const maxLife = rand(0.6, 1.0);
+    splats.push({ x: e.x, y: e.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, color, life: maxLife, maxLife });
   }
 }
 
@@ -1885,6 +1910,17 @@ function updateParticles(dt) {
   particles = particles.filter((p) => p.life > 0);
 }
 
+function updateSplats(dt) {
+  for (const s of splats) {
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    s.vx *= 0.88;
+    s.vy *= 0.88;
+    s.life -= dt;
+  }
+  splats = splats.filter((s) => s.life > 0);
+}
+
 function spawnFloater(x, y, text, color, size, lifeOverride = 0.8) {
   if (floaters.length >= 60) floaters.shift();
   floaters.push({
@@ -2101,6 +2137,7 @@ function render() {
   }
 
   drawParticles();
+  drawSplats();
   drawGems();
   drawPowerups();
   drawEBullets();
@@ -2734,6 +2771,26 @@ function drawParticles() {
     ctx.fill();
     ctx.restore();
   }
+}
+
+function drawSplats() {
+  if (!splats.length) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (const s of splats) {
+    const alpha = 0.7 * Math.max(0, s.life / s.maxLife);
+    if (alpha <= 0) continue;
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = s.color;
+    ctx.shadowColor = s.color;
+    ctx.shadowBlur = 8;
+    ctx.lineWidth = s.color === SPLAT_COLORS.darter ? 4 : s.color === SPLAT_COLORS.brute ? 7 : 5;
+    ctx.beginPath();
+    ctx.moveTo(s.x - s.vx * 0.1, s.y - s.vy * 0.1);
+    ctx.lineTo(s.x, s.y);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawFloaters() {
