@@ -12,3 +12,7 @@ Thumbs.db
 node_modules/
 npm-debug.log*
 *.log
+
+# AI planning artifacts (local only)
+.planning/
+.claude/
