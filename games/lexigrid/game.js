@@ -9,6 +9,7 @@ var undoSnapshot = null;
 var resetConfirmPending = false;
 var resetConfirmTimer = null;
 var VOWELS = { A:1, E:1, I:1, O:1, U:1 };
+var lastTrayFocusIndex = 0;
 
 // ── Letter Values ─────────────────────────────────────────────────────────────
 var LETTER_VALUES = {
@@ -92,6 +93,11 @@ function loadPuzzle(puzzle) {
   detectWords();
   render();
   showScreen('screen-game');
+
+  // Focus the first tray tile so keyboard play can begin immediately
+  lastTrayFocusIndex = 0;
+  var firstTrayTile = document.querySelector('#tray .tile');
+  if (firstTrayTile) firstTrayTile.focus();
 
   var undoBtn = document.getElementById('btn-undo');
   undoBtn.disabled = true;
@@ -368,6 +374,10 @@ function showResults() {
   };
 
   showScreen('screen-results');
+
+  // Move focus to Copy to Share for keyboard users completing the puzzle
+  var copyBtn = document.querySelector('.btn-copy');
+  if (copyBtn) copyBtn.focus();
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -958,6 +968,234 @@ function checkCompletion() {
     showResults();
   }
 }
+
+// ── Keyboard Navigation ───────────────────────────────────────────────────────
+// All handlers use event delegation to survive innerHTML rebuilds in render().
+// Strategy:
+//   - Arrow keys: delegated on #grid (single keydown listener)
+//   - Tab cycling in tray: delegated on #tray (single keydown listener)
+//   - Space (tray select / grid place-or-select): delegated on document, checks target
+//   - Delete (return tile to tray): delegated on document, checks target
+//   - Escape (deselect): delegated on document
+// No user-agent / input-type sniffing anywhere.
+
+// Arrow key navigation within the grid
+document.addEventListener('keydown', function(e) {
+  var key = e.key;
+  if (key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'ArrowLeft' && key !== 'ArrowRight') return;
+
+  var cell = e.target.closest('#grid .cell');
+  if (!cell) return;
+
+  e.preventDefault();
+
+  var row = parseInt(cell.dataset.row);
+  var col = parseInt(cell.dataset.col);
+  var newRow = row;
+  var newCol = col;
+
+  if (key === 'ArrowRight') newCol = Math.min(3, col + 1);
+  else if (key === 'ArrowLeft') newCol = Math.max(0, col - 1);
+  else if (key === 'ArrowDown') newRow = Math.min(3, row + 1);
+  else if (key === 'ArrowUp') newRow = Math.max(0, row - 1);
+
+  if (newRow === row && newCol === col) return;
+
+  var targetCell = document.querySelector('#grid [data-row="' + newRow + '"][data-col="' + newCol + '"]');
+  if (targetCell) targetCell.focus();
+});
+
+// Tab cycling within the tray (wraps last->first and first->last with Shift+Tab)
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Tab') return;
+
+  var tile = e.target.closest('#tray .tile');
+  if (!tile) return;
+
+  e.preventDefault();
+
+  var trayTiles = Array.from(document.querySelectorAll('#tray .tile'));
+  if (trayTiles.length === 0) return;
+
+  var currentIdx = trayTiles.indexOf(tile);
+  var nextIdx;
+  if (e.shiftKey) {
+    nextIdx = currentIdx <= 0 ? trayTiles.length - 1 : currentIdx - 1;
+  } else {
+    nextIdx = currentIdx >= trayTiles.length - 1 ? 0 : currentIdx + 1;
+  }
+
+  lastTrayFocusIndex = nextIdx;
+  trayTiles[nextIdx].focus();
+});
+
+// Space: select a tray tile, place a selected tile into an empty cell, or select a grid tile
+document.addEventListener('keydown', function(e) {
+  if (e.key !== ' ') return;
+
+  var trayTile = e.target.closest('#tray .tile');
+  if (trayTile) {
+    e.preventDefault();
+    var trayTiles = Array.from(document.querySelectorAll('#tray .tile'));
+    var idx = trayTiles.indexOf(trayTile);
+    if (idx === -1) return;
+    lastTrayFocusIndex = idx;
+
+    // Toggle selection (same as click on tray tile)
+    if (selectedTile && selectedTile.source === 'tray' && selectedTile.index === idx) {
+      selectedTile = null;
+    } else {
+      selectedTile = { source: 'tray', index: idx, letter: trayTile.dataset.letter, value: parseInt(trayTile.dataset.value) };
+    }
+    render();
+    // Re-focus the tile at the same DOM position after render
+    var newTrayTiles = Array.from(document.querySelectorAll('#tray .tile'));
+    if (newTrayTiles[lastTrayFocusIndex]) newTrayTiles[lastTrayFocusIndex].focus();
+    return;
+  }
+
+  var cell = e.target.closest('#grid .cell');
+  if (!cell) return;
+  e.preventDefault();
+
+  var row = parseInt(cell.dataset.row);
+  var col = parseInt(cell.dataset.col);
+
+  // Anchor guard
+  if (gridState[row][col] && gridState[row][col].isAnchor) return;
+
+  var hasTile = gridState[row][col] !== null;
+
+  if (hasTile) {
+    // Space on occupied non-anchor cell
+    if (selectedTile && selectedTile.source === 'tray') return; // tray tile selected + occupied cell → ignore (mirrors click)
+
+    if (selectedTile && selectedTile.source === 'grid') {
+      var sr = selectedTile.index.row, sc = selectedTile.index.col;
+      if (sr === row && sc === col) {
+        // Deselect same cell
+        selectedTile = null;
+        render();
+        var sameCell = document.querySelector('#grid [data-row="' + row + '"][data-col="' + col + '"]');
+        if (sameCell) sameCell.focus();
+        return;
+      }
+      // Swap two grid tiles
+      var tmp = gridState[sr][sc];
+      gridState[sr][sc] = gridState[row][col];
+      gridState[row][col] = tmp;
+      selectedTile = null;
+      var prevSwap = new Set(foundWords);
+      detectWords();
+      render();
+      var nkSwap = []; foundWords.forEach(function(k) { if (!prevSwap.has(k)) nkSwap.push(k); });
+      injectWordFeedback(nkSwap);
+      // Focus destination cell
+      var destCell = document.querySelector('#grid [data-row="' + row + '"][data-col="' + col + '"]');
+      if (destCell) destCell.focus();
+      return;
+    }
+
+    // No selection: select this grid tile
+    selectedTile = { source: 'grid', index: { row: row, col: col }, letter: gridState[row][col].letter, value: gridState[row][col].value };
+    render();
+    var selectCell = document.querySelector('#grid [data-row="' + row + '"][data-col="' + col + '"]');
+    if (selectCell) selectCell.focus();
+    return;
+  }
+
+  // Empty cell
+  if (selectedTile) {
+    if (selectedTile.source === 'tray') {
+      // Place tray tile into this cell
+      saveUndo();
+      gridState[row][col] = { letter: selectedTile.letter, value: selectedTile.value, isAnchor: false };
+      trayState.splice(selectedTile.index, 1);
+      selectedTile = null;
+      var prevPlace = new Set(foundWords);
+      detectWords();
+      render();
+      playPlacementThud();
+      animateTilePlacement(row, col);
+      var nkPlace = []; foundWords.forEach(function(k) { if (!prevPlace.has(k)) nkPlace.push(k); });
+      injectWordFeedback(nkPlace);
+      checkCompletion();
+      // Focus the destination cell after placement
+      var placedCell = document.querySelector('#grid [data-row="' + row + '"][data-col="' + col + '"]');
+      if (placedCell) placedCell.focus();
+    } else if (selectedTile.source === 'grid') {
+      // Move grid tile to empty cell
+      var msr = selectedTile.index.row, msc = selectedTile.index.col;
+      gridState[row][col] = gridState[msr][msc];
+      gridState[msr][msc] = null;
+      selectedTile = null;
+      var prevMove = new Set(foundWords);
+      detectWords();
+      render();
+      var nkMove = []; foundWords.forEach(function(k) { if (!prevMove.has(k)) nkMove.push(k); });
+      injectWordFeedback(nkMove);
+      // Focus destination cell
+      var movedCell = document.querySelector('#grid [data-row="' + row + '"][data-col="' + col + '"]');
+      if (movedCell) movedCell.focus();
+    }
+  }
+});
+
+// Escape: deselect and return focus to last tray tile
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  if (!selectedTile) return;
+
+  e.preventDefault();
+  selectedTile = null;
+  render();
+
+  var trayTiles = Array.from(document.querySelectorAll('#tray .tile'));
+  if (trayTiles.length === 0) return;
+  var focusIdx = Math.min(lastTrayFocusIndex, trayTiles.length - 1);
+  trayTiles[focusIdx].focus();
+});
+
+// Delete: return a focused non-anchor grid tile back to the tray
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+
+  var cell = e.target.closest('#grid .cell');
+  if (!cell) return;
+
+  var row = parseInt(cell.dataset.row);
+  var col = parseInt(cell.dataset.col);
+
+  if (!gridState[row][col]) return; // empty cell — nothing to delete
+  if (gridState[row][col].isAnchor) return; // anchor guard
+
+  e.preventDefault();
+
+  // Clear selection if it pointed to this cell
+  if (selectedTile && selectedTile.source === 'grid' &&
+      selectedTile.index.row === row && selectedTile.index.col === col) {
+    selectedTile = null;
+  }
+
+  trayState.push({ letter: gridState[row][col].letter, value: gridState[row][col].value });
+  gridState[row][col] = null;
+  detectWords();
+  render();
+
+  // Focus the first tray tile
+  lastTrayFocusIndex = 0;
+  var firstTile = document.querySelector('#tray .tile');
+  if (firstTile) firstTile.focus();
+});
+
+// Track last focused tray tile index (update on focus events within #tray)
+document.addEventListener('focusin', function(e) {
+  var tile = e.target.closest('#tray .tile');
+  if (!tile) return;
+  var trayTiles = Array.from(document.querySelectorAll('#tray .tile'));
+  var idx = trayTiles.indexOf(tile);
+  if (idx !== -1) lastTrayFocusIndex = idx;
+});
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
