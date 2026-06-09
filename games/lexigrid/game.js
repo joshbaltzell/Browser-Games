@@ -376,7 +376,6 @@ function showResults() {
   showScreen('screen-results');
 
   // Move focus to Copy to Share for keyboard users completing the puzzle
-  var copyBtn = document.querySelector('.btn-copy');
   if (copyBtn) copyBtn.focus();
 }
 
@@ -426,20 +425,24 @@ function render() {
   }
   grid.innerHTML = gridHtml;
 
-  var vowelTiles = trayState.filter(function(t) { return VOWELS[t.letter]; })
-    .slice().sort(function(a, b) { return a.value - b.value; });
-  var consonantTiles = trayState.filter(function(t) { return !VOWELS[t.letter]; })
-    .slice().sort(function(a, b) { return a.value - b.value; });
-  var sortedTray = vowelTiles.concat(consonantTiles);
+  var vowelItems = [], consonantItems = [];
+  for (var ti2 = 0; ti2 < trayState.length; ti2++) {
+    var tItem = { tile: trayState[ti2], origIndex: ti2 };
+    if (VOWELS[trayState[ti2].letter]) { vowelItems.push(tItem); } else { consonantItems.push(tItem); }
+  }
+  vowelItems.sort(function(a, b) { return a.tile.value - b.tile.value; });
+  consonantItems.sort(function(a, b) { return a.tile.value - b.tile.value; });
+  var sortedTray = vowelItems.concat(consonantItems);
   var seed = puzzleIdCharSum();
   var trayHtml = '';
-  sortedTray.forEach(function(t, i) {
+  sortedTray.forEach(function(item, i) {
+    var t = item.tile, origIdx = item.origIndex;
     var offset = ((seed + i * 37) % 3) + 1;
-    trayHtml += '<div class="tile" data-letter="' + t.letter + '" data-value="' + t.value + '" tabindex="0" aria-label="' + t.letter.toUpperCase() + ', ' + t.value + ' points" style="margin-top:' + offset + 'px">' +
+    trayHtml += '<div class="tile" data-letter="' + t.letter + '" data-value="' + t.value + '" data-tray-index="' + origIdx + '" tabindex="0" aria-label="' + t.letter.toUpperCase() + ', ' + t.value + ' points" style="margin-top:' + offset + 'px">' +
       '<span class="tile-letter">' + t.letter + '</span>' +
       '<span class="tile-point">' + t.value + '</span>' +
       '</div>';
-    if (i === vowelTiles.length - 1 && consonantTiles.length > 0) {
+    if (i === vowelItems.length - 1 && consonantItems.length > 0) {
       trayHtml += '<div class="tray-separator"></div>';
     }
   });
@@ -448,16 +451,7 @@ function render() {
   if (selectedTile) {
     var sel = null;
     if (selectedTile.source === 'tray') {
-      var trayTilesEl = Array.from(tray.querySelectorAll('.tile'));
-      var selectedEntry = trayState[selectedTile.index];
-      if (selectedEntry) {
-        for (var ti = 0; ti < trayTilesEl.length; ti++) {
-          if (trayTilesEl[ti].dataset.letter === selectedEntry.letter) {
-            sel = trayTilesEl[ti];
-            break;
-          }
-        }
-      }
+      sel = tray.querySelector('.tile[data-tray-index="' + selectedTile.index + '"]');
     } else {
       var selCell = grid.querySelector('[data-row="' + selectedTile.index.row + '"][data-col="' + selectedTile.index.col + '"]');
       sel = selCell ? selCell.querySelector('.tile') : null;
@@ -478,7 +472,7 @@ function render() {
       badgesHtml += '<span class="found-word">' + word + '</span>';
     }
   });
-  wordsList.innerHTML = badgesHtml;
+  if (wordsList.innerHTML !== badgesHtml) wordsList.innerHTML = badgesHtml;
 }
 
 function getBonusCell(r, c) {
@@ -732,9 +726,8 @@ document.addEventListener('click', function(e) {
   var inGrid = cell && !!cell.closest('#grid');
 
   if (inTray) {
-    var trayTiles = Array.from(document.querySelectorAll('#tray .tile'));
-    var idx = trayTiles.indexOf(tile);
-    if (idx === -1) return;
+    var idx = parseInt(tile.dataset.trayIndex);
+    if (isNaN(idx)) return;
 
     if (selectedTile && selectedTile.source === 'tray' && selectedTile.index === idx) {
       selectedTile = null;
@@ -833,8 +826,7 @@ document.addEventListener('pointerdown', function(e) {
     idx = { row: cellRow, col: cellCol };
   } else {
     source = 'tray';
-    var trayTiles = Array.from(document.querySelectorAll('#tray .tile'));
-    idx = trayTiles.indexOf(tile);
+    idx = parseInt(tile.dataset.trayIndex);
   }
 
   var letter = tile.dataset.letter;
@@ -1037,9 +1029,11 @@ document.addEventListener('keydown', function(e) {
   if (trayTile) {
     e.preventDefault();
     var trayTiles = Array.from(document.querySelectorAll('#tray .tile'));
-    var idx = trayTiles.indexOf(trayTile);
-    if (idx === -1) return;
-    lastTrayFocusIndex = idx;
+    var domIdx = trayTiles.indexOf(trayTile);
+    if (domIdx === -1) return;
+    lastTrayFocusIndex = domIdx;
+    var idx = parseInt(trayTile.dataset.trayIndex);
+    if (isNaN(idx)) return;
 
     // Toggle selection (same as click on tray tile)
     if (selectedTile && selectedTile.source === 'tray' && selectedTile.index === idx) {
@@ -1145,6 +1139,7 @@ document.addEventListener('keydown', function(e) {
 document.addEventListener('keydown', function(e) {
   if (e.key !== 'Escape') return;
   if (!selectedTile) return;
+  if (!document.getElementById('screen-game').classList.contains('active')) return;
 
   e.preventDefault();
   selectedTile = null;

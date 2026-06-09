@@ -71,7 +71,7 @@ h1 {
   gap: var(--md);
   border-radius: 4px;
   margin-bottom: var(--md);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .score-label,
