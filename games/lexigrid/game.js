@@ -5,6 +5,10 @@ var selectedTile = null;
 var foundWords = new Set();
 var currentPuzzle = null;
 var wordFoundCount = 0;
+var undoSnapshot = null;
+var resetConfirmPending = false;
+var resetConfirmTimer = null;
+var VOWELS = { A:1, E:1, I:1, O:1, U:1 };
 
 // ── Letter Values ─────────────────────────────────────────────────────────────
 var LETTER_VALUES = {
@@ -14,6 +18,13 @@ var LETTER_VALUES = {
 
 function letterValue(ch) {
   return LETTER_VALUES[ch.toUpperCase()] || 1;
+}
+
+function puzzleIdCharSum() {
+  if (!currentPuzzle) return 0;
+  var s = 0;
+  for (var i = 0; i < currentPuzzle.id.length; i++) s += currentPuzzle.id.charCodeAt(i);
+  return s;
 }
 
 // ── Screen System ─────────────────────────────────────────────────────────────
@@ -30,6 +41,9 @@ function loadPuzzle(puzzle) {
   selectedTile = null;
   foundWords = new Set();
   wordFoundCount = 0;
+  undoSnapshot = null;
+  resetConfirmPending = false;
+  if (resetConfirmTimer) { clearTimeout(resetConfirmTimer); resetConfirmTimer = null; }
 
   gridState = [];
   for (var r = 0; r < 4; r++) {
@@ -63,6 +77,53 @@ function loadPuzzle(puzzle) {
   detectWords();
   render();
   showScreen('screen-game');
+
+  var undoBtn = document.getElementById('btn-undo');
+  undoBtn.disabled = true;
+  undoBtn.onclick = function() {
+    if (!undoSnapshot) return;
+    gridState = undoSnapshot.gridState;
+    trayState = undoSnapshot.trayState;
+    foundWords = undoSnapshot.foundWords;
+    undoSnapshot = null;
+    undoBtn.disabled = true;
+    render();
+  };
+
+  var resetBtn = document.getElementById('btn-reset');
+  resetBtn.textContent = 'Reset';
+  resetBtn.className = '';
+  resetBtn.onclick = function() {
+    if (!resetConfirmPending) {
+      resetConfirmPending = true;
+      resetBtn.textContent = 'Sure?';
+      resetBtn.classList.add('reset-confirm');
+      resetConfirmTimer = setTimeout(function() {
+        resetConfirmPending = false;
+        resetBtn.textContent = 'Reset';
+        resetBtn.classList.remove('reset-confirm');
+      }, 3000);
+    } else {
+      clearTimeout(resetConfirmTimer);
+      resetConfirmPending = false;
+      resetBtn.textContent = 'Reset';
+      resetBtn.classList.remove('reset-confirm');
+      for (var r = 0; r < 4; r++) {
+        for (var c = 0; c < 4; c++) {
+          if (gridState[r][c] && !gridState[r][c].isAnchor) {
+            trayState.push({ letter: gridState[r][c].letter, value: gridState[r][c].value });
+            gridState[r][c] = null;
+          }
+        }
+      }
+      selectedTile = null;
+      undoSnapshot = null;
+      document.getElementById('btn-undo').disabled = true;
+      foundWords = new Set();
+      detectWords();
+      render();
+    }
+  };
 }
 
 // ── Home Screen ───────────────────────────────────────────────────────────────
@@ -338,20 +399,38 @@ function render() {
   }
   grid.innerHTML = gridHtml;
 
+  var vowelTiles = trayState.filter(function(t) { return VOWELS[t.letter]; })
+    .slice().sort(function(a, b) { return a.value - b.value; });
+  var consonantTiles = trayState.filter(function(t) { return !VOWELS[t.letter]; })
+    .slice().sort(function(a, b) { return a.value - b.value; });
+  var sortedTray = vowelTiles.concat(consonantTiles);
+  var seed = puzzleIdCharSum();
   var trayHtml = '';
-  trayState.forEach(function(t) {
-    trayHtml += '<div class="tile" data-letter="' + t.letter + '" data-value="' + t.value + '">' +
+  sortedTray.forEach(function(t, i) {
+    var offset = ((seed + i * 37) % 3) + 1;
+    trayHtml += '<div class="tile" data-letter="' + t.letter + '" data-value="' + t.value + '" style="margin-top:' + offset + 'px">' +
       '<span class="tile-letter">' + t.letter + '</span>' +
       '<span class="tile-point">' + t.value + '</span>' +
       '</div>';
+    if (i === vowelTiles.length - 1 && consonantTiles.length > 0) {
+      trayHtml += '<div class="tray-separator"></div>';
+    }
   });
   tray.innerHTML = trayHtml;
 
   if (selectedTile) {
     var sel = null;
     if (selectedTile.source === 'tray') {
-      var trayTiles = tray.querySelectorAll('.tile');
-      sel = trayTiles[selectedTile.index] || null;
+      var trayTilesEl = Array.from(tray.querySelectorAll('.tile'));
+      var selectedEntry = trayState[selectedTile.index];
+      if (selectedEntry) {
+        for (var ti = 0; ti < trayTilesEl.length; ti++) {
+          if (trayTilesEl[ti].dataset.letter === selectedEntry.letter) {
+            sel = trayTilesEl[ti];
+            break;
+          }
+        }
+      }
     } else {
       var selCell = grid.querySelector('[data-row="' + selectedTile.index.row + '"][data-col="' + selectedTile.index.col + '"]');
       sel = selCell ? selCell.querySelector('.tile') : null;
@@ -486,6 +565,45 @@ function getWordDirection(cells) {
   if (dr > 0  && dc === 0) return { type: 'sienna',    arrow: '↓', label: 'Vertical'   };
   if (dr < 0  && dc === 0) return { type: 'backwards', arrow: '↑', label: 'Backwards'  };
   return { type: 'diagonal', arrow: dr > 0 ? (dc > 0 ? '↘' : '↙') : (dc > 0 ? '↗' : '↖'), label: 'Diagonal' };
+}
+
+function saveUndo() {
+  undoSnapshot = {
+    gridState: gridState.map(function(row) {
+      return row.map(function(cell) {
+        return cell ? { letter: cell.letter, value: cell.value, isAnchor: cell.isAnchor } : null;
+      });
+    }),
+    trayState: trayState.map(function(t) { return { letter: t.letter, value: t.value }; }),
+    foundWords: new Set(foundWords)
+  };
+  document.getElementById('btn-undo').disabled = false;
+}
+
+function playPlacementThud() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 80;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.35, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.08);
+  } catch(e) {}
+}
+
+function animateTilePlacement(row, col) {
+  var cellEl = document.querySelector('[data-row="' + row + '"][data-col="' + col + '"]');
+  if (!cellEl) return;
+  var tileEl = cellEl.querySelector('.tile');
+  if (!tileEl) return;
+  tileEl.classList.remove('tile--placing');
+  void tileEl.offsetWidth;
+  tileEl.classList.add('tile--placing');
 }
 
 function playFirstWordChime() {
@@ -643,12 +761,15 @@ document.addEventListener('click', function(e) {
 
     if (selectedTile) {
       if (selectedTile.source === 'tray') {
+        saveUndo();
         gridState[row][col] = { letter: selectedTile.letter, value: selectedTile.value, isAnchor: false };
         trayState.splice(selectedTile.index, 1);
         selectedTile = null;
         var prev2 = new Set(foundWords);
         detectWords();
         render();
+        playPlacementThud();
+        animateTilePlacement(row, col);
         var nk2 = []; foundWords.forEach(function(k) { if (!prev2.has(k)) nk2.push(k); });
         injectWordFeedback(nk2);
         checkCompletion();
@@ -772,11 +893,14 @@ document.addEventListener('pointerup', function(e) {
 
     var targetHasTile = gridState[row][col] !== null;
 
+    var dragPlacedRow = -1, dragPlacedCol = -1, dragFromTray = false;
     if (!targetHasTile) {
       if (ds.source === 'tray') {
+        saveUndo();
         gridState[row][col] = { letter: ds.letter, value: ds.value, isAnchor: false };
         trayState.splice(ds.index, 1);
         stateChanged = true;
+        dragPlacedRow = row; dragPlacedCol = col; dragFromTray = true;
       } else {
         var sr = ds.index.row, sc = ds.index.col;
         gridState[row][col] = gridState[sr][sc];
@@ -800,6 +924,10 @@ document.addEventListener('pointerup', function(e) {
   }
   render();
   if (stateChanged) {
+    if (typeof dragFromTray !== 'undefined' && dragFromTray) {
+      playPlacementThud();
+      animateTilePlacement(dragPlacedRow, dragPlacedCol);
+    }
     var nk4 = []; foundWords.forEach(function(k) { if (!prev4.has(k)) nk4.push(k); });
     injectWordFeedback(nk4);
     checkCompletion();
