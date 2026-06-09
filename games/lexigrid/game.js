@@ -1197,8 +1197,32 @@ document.addEventListener('focusin', function(e) {
   if (idx !== -1) lastTrayFocusIndex = idx;
 });
 
+// ── High-Contrast Mode ────────────────────────────────────────────────────────
+// Apply saved preference before any screen renders to prevent palette flash.
+// Toggle handler is wired once here — #btn-hc is static in index.html and
+// survives all render() / showScreen() calls without re-binding.
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
+  // Apply saved HC preference BEFORE first render so every screen paints correctly.
+  if (localStorage.getItem('lexigrid_highContrast') === '1') {
+    document.body.classList.add('high-contrast');
+  }
+
   showScreen('screen-home');
   renderHomeScreen();
+
+  // Wire the HC toggle button (once — button lives in static HTML, not rebuilt by render).
+  var hcBtn = document.getElementById('btn-hc');
+  if (hcBtn) {
+    // Initialise aria-pressed to match the restored preference.
+    hcBtn.setAttribute('aria-pressed', document.body.classList.contains('high-contrast') ? 'true' : 'false');
+
+    hcBtn.onclick = function() {
+      document.body.classList.toggle('high-contrast');
+      var on = document.body.classList.contains('high-contrast');
+      hcBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      localStorage.setItem('lexigrid_highContrast', on ? '1' : '0');
+    };
+  }
 });
