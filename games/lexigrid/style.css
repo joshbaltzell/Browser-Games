@@ -1,0 +1,228 @@
+:root {
+  --oak: #8B6343;
+  --mahogany: #5C3317;
+  --cream: #F5E6C0;
+  --ink: #2A1A08;
+  --grid-line: #3D2010;
+  --select-glow: #C8830A;
+  --amber-bonus: #D4820A;
+  --copper-bonus: #A0522D;
+  --bonus-label: #FFF8E0;
+  --score-fg: #F5E6C0;
+  --found-gold: #F0C040;
+  --page-bg: #6B4226;
+
+  --xs: 4px;
+  --sm: 8px;
+  --md: 16px;
+  --lg: 24px;
+  --xl: 32px;
+  --2xl: 48px;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: var(--page-bg);
+  font-family: Georgia, 'Times New Roman', serif;
+  color: var(--ink);
+}
+
+#game-wrapper {
+  max-width: 420px;
+  margin: var(--2xl) auto;
+  background: var(--oak);
+  border-radius: 8px;
+  padding: var(--xl) var(--lg);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+.hub-back {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--cream);
+  text-decoration: none;
+  opacity: 0.7;
+  margin-bottom: var(--sm);
+}
+
+.hub-back:hover {
+  opacity: 1;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--cream);
+  margin: 0 0 var(--md) 0;
+  letter-spacing: 0.05em;
+}
+
+/* Score Bar */
+#score-bar {
+  height: 48px;
+  background: var(--mahogany);
+  padding: 0 var(--md);
+  display: flex;
+  align-items: center;
+  gap: var(--md);
+  border-radius: 4px;
+  margin-bottom: var(--md);
+  overflow: hidden;
+}
+
+.score-label,
+.words-label {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--score-fg);
+  white-space: nowrap;
+}
+
+#score-value,
+#words-count {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--score-fg);
+  min-width: 32px;
+}
+
+#found-words-list {
+  display: flex;
+  gap: var(--xs);
+  overflow-x: auto;
+  flex: 1;
+  scrollbar-width: none;
+}
+
+#found-words-list::-webkit-scrollbar {
+  display: none;
+}
+
+.found-word {
+  display: inline-block;
+  background: var(--cream);
+  color: var(--ink);
+  padding: var(--xs) var(--sm);
+  font-size: 11px;
+  font-weight: 400;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* Grid */
+#grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  background: var(--mahogany);
+  border-radius: 4px;
+  padding: 4px;
+  margin-bottom: var(--md);
+}
+
+.cell {
+  position: relative;
+  min-width: 64px;
+  min-height: 64px;
+  width: min(16vw, 72px);
+  height: min(16vw, 72px);
+  background: var(--cream);
+  border-radius: 3px;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cell--bonus-letter {
+  background: var(--amber-bonus);
+}
+
+.cell--bonus-word {
+  background: var(--copper-bonus);
+}
+
+.bonus-label {
+  position: absolute;
+  bottom: var(--xs);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--bonus-label);
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+/* Tiles */
+.tile {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  background: var(--cream);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 3px 0 rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.25);
+  touch-action: none;
+}
+
+.tile-letter {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--ink);
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.tile-point {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.tile--selected {
+  box-shadow: 0 0 0 3px var(--select-glow), 0 3px 0 rgba(0,0,0,0.4);
+}
+
+.tile--found {
+  background: color-mix(in srgb, var(--found-gold) 40%, var(--cream) 60%);
+}
+
+.cell--drag-over {
+  outline: 2px dashed var(--select-glow);
+  outline-offset: -2px;
+}
+
+/* Tray */
+#tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sm);
+  justify-content: center;
+  min-height: 80px;
+  background: var(--mahogany);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,0.4);
+  border-radius: 4px;
+  padding: var(--sm) var(--md);
+  align-items: center;
+}
+
+/* Drag ghost */
+.drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 999;
+  opacity: 0.85;
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+}
