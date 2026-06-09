@@ -741,3 +741,39 @@ h1 {
   border-color: var(--found-gold);
   opacity: 1;
 }
+
+/* -- Phase 36: Coffee Ring -- */
+
+#screen-game .screen-wrapper {
+  position: relative;
+}
+
+.coffee-ring {
+  position: absolute;
+  width: 96px;
+  height: 84px;
+  opacity: 0.08;
+  z-index: 1;
+  pointer-events: auto;
+  background: radial-gradient(ellipse 48px 42px at center, transparent 60%, rgba(44, 20, 6, 0.55) 62%, rgba(44, 20, 6, 0.55) 66%, transparent 68%);
+}
+
+.coffee-ring:hover::after {
+  content: "Someone was here.";
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-family: Georgia, 'Times New Roman', serif;
+  color: var(--cream);
+  background: var(--mahogany);
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+body.high-contrast .coffee-ring {
+  opacity: 0.04;
+}
