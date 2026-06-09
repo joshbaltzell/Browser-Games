@@ -796,3 +796,106 @@ body.high-contrast #btn-undo:focus-visible,
 body.high-contrast #btn-reset:focus-visible {
   outline-color: #ffff00;
 }
+
+/* -- Phase 36: High Contrast -- */
+
+#btn-hc {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 11px;
+  font-weight: 700;
+  background: transparent;
+  color: var(--cream);
+  border: 1px solid rgba(245, 230, 192, 0.35);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#btn-hc[aria-pressed="true"] {
+  background: var(--found-gold);
+  color: var(--ink);
+  border-color: var(--found-gold);
+}
+
+body.high-contrast {
+  --page-bg: #1a1a1a;
+  --oak: #1a1a1a;
+  --cream: #ffffff;
+  --ink: #000000;
+  --mahogany: #000000;
+  --score-fg: #ffffff;
+  --select-glow: #ffff00;
+  --found-gold: #ffff00;
+  --amber-bonus: #333300;
+  --copper-bonus: #220033;
+}
+
+/* Tile face */
+body.high-contrast .tile {
+  background: #ffffff;
+}
+body.high-contrast .tile-letter,
+body.high-contrast .tile-point {
+  color: #000000;
+}
+
+/* Found tile */
+body.high-contrast .tile--found {
+  background: #ffff00;
+}
+
+/* Selected tile ring */
+body.high-contrast .tile--selected {
+  box-shadow: 0 0 0 3px #ffff00, 0 3px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* Anchor tile (replaces hardcoded gradient) */
+body.high-contrast .tile--anchor {
+  background: #000000;
+}
+body.high-contrast .tile--anchor .tile-letter,
+body.high-contrast .tile--anchor .tile-point {
+  color: #ffffff;
+}
+
+/* Bonus cells */
+body.high-contrast .cell--bonus-letter {
+  background: #333300;
+}
+body.high-contrast .cell--bonus-word {
+  background: #220033;
+}
+body.high-contrast .bonus-label {
+  color: #ffff00;
+}
+
+/* Score bar */
+body.high-contrast #score-bar {
+  background: #000000;
+}
+
+/* Found-word chips */
+body.high-contrast .found-word {
+  background: #ffff00;
+  color: #000000;
+}
+
+/* Postcard */
+body.high-contrast .postcard {
+  background: #ffffff;
+}
+body.high-contrast .score-char,
+body.high-contrast .postcard__title,
+body.high-contrast .postcard__words-label,
+body.high-contrast .postcard__words-list {
+  color: #000000;
+}
+
+/* HC button active in HC mode */
+body.high-contrast #btn-hc[aria-pressed="true"] {
+  background: #ffff00;
+  color: #000000;
+  border-color: #ffff00;
+}
