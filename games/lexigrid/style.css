@@ -777,3 +777,22 @@ h1 {
 body.high-contrast .coffee-ring {
   opacity: 0.04;
 }
+
+/* -- Phase 36: Keyboard Focus -- */
+
+.cell:focus-visible,
+.tile:focus-visible,
+#btn-hc:focus-visible,
+#btn-undo:focus-visible,
+#btn-reset:focus-visible {
+  outline: 2px solid #D4A017;
+  outline-offset: 2px;
+}
+
+body.high-contrast .cell:focus-visible,
+body.high-contrast .tile:focus-visible,
+body.high-contrast #btn-hc:focus-visible,
+body.high-contrast #btn-undo:focus-visible,
+body.high-contrast #btn-reset:focus-visible {
+  outline-color: #ffff00;
+}
