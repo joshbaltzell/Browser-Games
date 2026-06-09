@@ -4,6 +4,7 @@ var trayState = [];
 var selectedTile = null;
 var foundWords = new Set();
 var currentPuzzle = null;
+var wordFoundCount = 0;
 
 // ── Letter Values ─────────────────────────────────────────────────────────────
 var LETTER_VALUES = {
@@ -28,6 +29,7 @@ function loadPuzzle(puzzle) {
   currentPuzzle = puzzle;
   selectedTile = null;
   foundWords = new Set();
+  wordFoundCount = 0;
 
   gridState = [];
   for (var r = 0; r < 4; r++) {
@@ -474,6 +476,95 @@ function computeScore() {
   return total;
 }
 
+// ── Word Feedback ─────────────────────────────────────────────────────────────
+function getWordDirection(cells) {
+  if (cells.length < 2) return { type: 'amber', arrow: '→', label: 'Horizontal' };
+  var dr = cells[1].row - cells[0].row;
+  var dc = cells[1].col - cells[0].col;
+  if (dr === 0 && dc > 0)  return { type: 'amber',     arrow: '→', label: 'Horizontal' };
+  if (dr === 0 && dc < 0)  return { type: 'backwards', arrow: '←', label: 'Backwards'  };
+  if (dr > 0  && dc === 0) return { type: 'sienna',    arrow: '↓', label: 'Vertical'   };
+  if (dr < 0  && dc === 0) return { type: 'backwards', arrow: '↑', label: 'Backwards'  };
+  return { type: 'diagonal', arrow: dr > 0 ? (dc > 0 ? '↘' : '↙') : (dc > 0 ? '↗' : '↖'), label: 'Diagonal' };
+}
+
+function playFirstWordChime() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 523;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.5);
+  } catch (e) {}
+}
+
+function injectWordFeedback(newKeys) {
+  if (!newKeys.length) return;
+
+  var isFirst = (wordFoundCount === 0);
+  wordFoundCount += newKeys.length;
+
+  newKeys.forEach(function(key, keyIdx) {
+    var colon = key.indexOf(':');
+    var cells = key.substring(colon + 1).split('|').map(function(s) {
+      var p = s.split(',');
+      return { row: parseInt(p[0]), col: parseInt(p[1]) };
+    });
+
+    var dir = getWordDirection(cells);
+
+    cells.forEach(function(cell, i) {
+      var cellEl = document.querySelector('[data-row="' + cell.row + '"][data-col="' + cell.col + '"]');
+      if (!cellEl) return;
+
+      var bloom = document.createElement('span');
+      bloom.className = 'bloom-overlay bloom-' + dir.type;
+      bloom.style.animationDelay = (i * 0.08).toFixed(2) + 's';
+      cellEl.appendChild(bloom);
+
+      if (isFirst && keyIdx === 0) {
+        var shimmer = document.createElement('span');
+        shimmer.className = 'bloom-overlay bloom-shimmer';
+        shimmer.style.animationDelay = (0.2 + i * 0.08).toFixed(2) + 's';
+        cellEl.appendChild(shimmer);
+      }
+    });
+
+    var midIdx = Math.floor(cells.length / 2);
+    var midCell = cells[midIdx];
+    var midEl = document.querySelector('[data-row="' + midCell.row + '"][data-col="' + midCell.col + '"]');
+    if (midEl) {
+      var badge = document.createElement('span');
+      badge.className = 'dir-badge';
+      badge.textContent = dir.arrow;
+      badge.style.animationDelay = (midIdx * 0.08).toFixed(2) + 's';
+      midEl.appendChild(badge);
+      (function(b) {
+        setTimeout(function() { if (b.parentNode) b.parentNode.removeChild(b); }, 2100);
+      }(badge));
+    }
+
+    if (isFirst && keyIdx === 0) {
+      var firstCell = cells[0];
+      var firstEl = document.querySelector('[data-row="' + firstCell.row + '"][data-col="' + firstCell.col + '"]');
+      if (firstEl) {
+        var lbl = document.createElement('span');
+        lbl.className = 'dir-label';
+        lbl.textContent = dir.arrow + ' ' + dir.label + '!';
+        firstEl.appendChild(lbl);
+        setTimeout(function() { if (lbl.parentNode) lbl.parentNode.removeChild(lbl); }, 2600);
+      }
+      playFirstWordChime();
+    }
+  });
+}
+
 // ── Interaction ───────────────────────────────────────────────────────────────
 var dragState = null;
 var isDragging = false;
@@ -532,8 +623,11 @@ document.addEventListener('click', function(e) {
         gridState[sr][sc] = gridState[row][col];
         gridState[row][col] = tmp;
         selectedTile = null;
+        var prev1 = new Set(foundWords);
         detectWords();
         render();
+        var nk1 = []; foundWords.forEach(function(k) { if (!prev1.has(k)) nk1.push(k); });
+        injectWordFeedback(nk1);
         return;
       }
 
@@ -552,16 +646,22 @@ document.addEventListener('click', function(e) {
         gridState[row][col] = { letter: selectedTile.letter, value: selectedTile.value, isAnchor: false };
         trayState.splice(selectedTile.index, 1);
         selectedTile = null;
+        var prev2 = new Set(foundWords);
         detectWords();
         render();
+        var nk2 = []; foundWords.forEach(function(k) { if (!prev2.has(k)) nk2.push(k); });
+        injectWordFeedback(nk2);
         checkCompletion();
       } else if (selectedTile.source === 'grid') {
         var sr = selectedTile.index.row, sc = selectedTile.index.col;
         gridState[row][col] = gridState[sr][sc];
         gridState[sr][sc] = null;
         selectedTile = null;
+        var prev3 = new Set(foundWords);
         detectWords();
         render();
+        var nk3 = []; foundWords.forEach(function(k) { if (!prev3.has(k)) nk3.push(k); });
+        injectWordFeedback(nk3);
       }
     }
   }
@@ -694,11 +794,16 @@ document.addEventListener('pointerup', function(e) {
     }
   }
 
+  var prev4 = new Set(foundWords);
   if (stateChanged) {
     detectWords();
   }
   render();
-  if (stateChanged) checkCompletion();
+  if (stateChanged) {
+    var nk4 = []; foundWords.forEach(function(k) { if (!prev4.has(k)) nk4.push(k); });
+    injectWordFeedback(nk4);
+    checkCompletion();
+  }
 });
 
 // ── Completion Check ──────────────────────────────────────────────────────────
