@@ -75,6 +75,29 @@ const GAMES = [
         <circle cx="78" cy="34" r="6" fill="#ffd27a" />
       </svg>`,
   },
+  {
+    title: "LexiGrid",
+    description:
+      "A cozy word puzzle: arrange letter tiles on a warm oak board, find hidden words in every direction, and earn your highest score.",
+    path: "games/lexigrid/index.html",
+    tags: ["Word", "Puzzle", "Cozy"],
+    accent: "#C8830A",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="22" y="14" width="18" height="18" rx="3" fill="#F5E6C0" />
+        <rect x="44" y="14" width="18" height="18" rx="3" fill="#F5E6C0" />
+        <rect x="66" y="14" width="18" height="18" rx="3" fill="#F5E6C0" />
+        <rect x="88" y="14" width="18" height="18" rx="3" fill="#F5E6C0" />
+        <rect x="22" y="36" width="18" height="18" rx="3" fill="#F5E6C0" />
+        <rect x="44" y="36" width="18" height="18" rx="3" fill="#D4820A" />
+        <rect x="66" y="36" width="18" height="18" rx="3" fill="#F5E6C0" />
+        <rect x="88" y="36" width="18" height="18" rx="3" fill="#F5E6C0" />
+        <rect x="22" y="58" width="18" height="18" rx="3" fill="#F5E6C0" />
+        <rect x="44" y="58" width="18" height="18" rx="3" fill="#F5E6C0" />
+        <rect x="66" y="58" width="18" height="18" rx="3" fill="#A0522D" />
+        <rect x="88" y="58" width="18" height="18" rx="3" fill="#F5E6C0" />
+      </svg>`,
+  },
 ];
 
 function buildCard(game) {

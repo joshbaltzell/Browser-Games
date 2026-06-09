@@ -5,7 +5,11 @@ var PUZZLES = [
     title: "Morning Brew",
     difficulty: 1,
     gridSize: 4,
-    letters: ['C', 'A', 'T', 'E', 'R', 'N', 'S', 'P'],
+    letters: ['A', 'T', 'E', 'R', 'N', 'S', 'P'],
+    anchors: [
+      { row: 0, col: 0, letter: 'C' },
+      { row: 3, col: 3, letter: 'E' }
+    ],
     bonusCells: [
       { row: 0, col: 2, type: "2xL" },
       { row: 3, col: 0, type: "2xW" }
@@ -19,8 +23,7 @@ var PUZZLES = [
       'CREST', 'RECANT', 'CANTER', 'NECTAR'
     ],
     maxScore: 200,
-    anchors: [],
-    dedication: null
+    dedication: "For anyone who needed a quiet morning."
   },
   {
     id: "medium-001",
@@ -29,6 +32,7 @@ var PUZZLES = [
     difficulty: 2,
     gridSize: 4,
     letters: ['B', 'L', 'O', 'W', 'I', 'N', 'G', 'D', 'A', 'R', 'K'],
+    anchors: [],
     bonusCells: [
       { row: 1, col: 1, type: "2xL" },
       { row: 0, col: 3, type: "2xW" },
@@ -43,7 +47,6 @@ var PUZZLES = [
       'BLAND', 'DRINK', 'BRINK', 'BROWN', 'BLOWN', 'GROWN', 'DROWN', 'BRAND'
     ],
     maxScore: 300,
-    anchors: [],
     dedication: null
   },
   {
@@ -53,6 +56,7 @@ var PUZZLES = [
     difficulty: 3,
     gridSize: 4,
     letters: ['F', 'E', 'A', 'S', 'T', 'I', 'V', 'L', 'Y', 'H', 'U', 'M'],
+    anchors: [],
     bonusCells: [
       { row: 0, col: 0, type: "2xW" },
       { row: 1, col: 3, type: "2xL" },
@@ -68,7 +72,6 @@ var PUZZLES = [
       'FLUTE', 'FILTH', 'FLAME'
     ],
     maxScore: 500,
-    anchors: [],
     dedication: null
   }
 ];

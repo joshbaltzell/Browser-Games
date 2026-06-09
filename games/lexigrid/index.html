@@ -7,21 +7,72 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="game-wrapper">
-    <a class="hub-back" href="../../index.html">&larr; Browser Games</a>
-    <h1>LexiGrid</h1>
 
-    <div id="score-bar">
-      <span class="score-label">Score:</span>
-      <span id="score-value">0</span>
-      <span class="words-label">Words:</span>
-      <span id="words-count">0</span>
-      <div id="found-words-list"></div>
+  <!-- Home Screen -->
+  <div id="screen-home" class="screen">
+    <div class="screen-wrapper">
+      <a class="hub-back" href="../../index.html">&larr; Browser Games</a>
+      <h1>LexiGrid</h1>
+      <div class="daily-card">
+        <div class="daily-card__header">
+          <span class="daily-card__date"></span>
+          <span class="difficulty-badge" data-level="1"></span>
+        </div>
+        <h2 class="daily-card__title"></h2>
+        <a class="btn-play" role="button" href="#">Play Today's Puzzle</a>
+      </div>
+      <a class="library-link" href="#">Browse all puzzles &rarr;</a>
     </div>
+  </div>
 
-    <div id="grid"></div>
+  <!-- Library Screen -->
+  <div id="screen-library" class="screen">
+    <div class="screen-wrapper">
+      <a class="back-link" href="#">&larr; Home</a>
+      <h2 class="screen-title">Puzzle Library</h2>
+      <div id="library-sections"></div>
+    </div>
+  </div>
 
-    <div id="tray"></div>
+  <!-- Game Screen -->
+  <div id="screen-game" class="screen">
+    <div class="screen-wrapper">
+      <div id="score-bar">
+        <span class="score-label">Score:</span>
+        <span id="score-value">0</span>
+        <span class="words-label">Words:</span>
+        <span id="words-count">0</span>
+        <div id="found-words-list"></div>
+      </div>
+      <div id="grid"></div>
+      <div id="tray"></div>
+    </div>
+  </div>
+
+  <!-- Results Screen -->
+  <div id="screen-results" class="screen">
+    <div class="screen-wrapper">
+      <div class="postcard">
+        <div class="postcard__header">
+          <p class="postcard__title"></p>
+          <div class="postcard__stamp">
+            <span class="stamp-inner">
+              <span>LEXI</span><span>GRID</span>
+            </span>
+          </div>
+        </div>
+        <div class="postcard__score-block"></div>
+        <div class="postcard__words">
+          <p class="postcard__words-label">Words found:</p>
+          <p class="postcard__words-list"></p>
+        </div>
+        <div class="postcard__actions">
+          <button class="btn-copy">Copy to Share</button>
+          <button class="btn-play-again">Play Again</button>
+          <button class="btn-home">Home</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="dictionary.js"></script>

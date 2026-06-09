@@ -1,8 +1,8 @@
 // ── State ────────────────────────────────────────────────────────────────────
-var gridState = [];       // [4][4] — null | {letter, value, isAnchor}
-var trayState = [];       // [{letter, value}]
-var selectedTile = null;  // {source:'tray'|'grid', index, letter, value} | null
-var foundWords = new Set(); // dedup keys — reset each detectWords() call
+var gridState = [];
+var trayState = [];
+var selectedTile = null;
+var foundWords = new Set();
 var currentPuzzle = null;
 
 // ── Letter Values ─────────────────────────────────────────────────────────────
@@ -15,16 +15,281 @@ function letterValue(ch) {
   return LETTER_VALUES[ch.toUpperCase()] || 1;
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
-function initGame() {
-  currentPuzzle = PUZZLES[0];
+// ── Screen System ─────────────────────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(function(s) {
+    s.classList.remove('active');
+  });
+  document.getElementById(id).classList.add('active');
+}
+
+// ── Puzzle Load ───────────────────────────────────────────────────────────────
+function loadPuzzle(puzzle) {
+  currentPuzzle = puzzle;
+  selectedTile = null;
+  foundWords = new Set();
+
   gridState = [];
   for (var r = 0; r < 4; r++) {
     gridState[r] = [null, null, null, null];
   }
-  trayState = currentPuzzle.letters.map(function(ch) {
+
+  if (puzzle.anchors && puzzle.anchors.length) {
+    puzzle.anchors.forEach(function(a) {
+      gridState[a.row][a.col] = { letter: a.letter, value: letterValue(a.letter), isAnchor: true };
+    });
+  }
+
+  trayState = puzzle.letters.map(function(ch) {
     return { letter: ch, value: letterValue(ch) };
   });
+
+  var oldDed = document.querySelector('#screen-game .puzzle-dedication');
+  if (oldDed) oldDed.remove();
+
+  if (puzzle.dedication) {
+    var ded = document.createElement('p');
+    ded.className = 'puzzle-dedication';
+    ded.textContent = puzzle.dedication;
+    var tray = document.getElementById('tray');
+    tray.parentNode.insertBefore(ded, tray.nextSibling);
+    setTimeout(function() {
+      ded.classList.add('dedication--visible');
+    }, 3000);
+  }
+
+  detectWords();
+  render();
+  showScreen('screen-game');
+}
+
+// ── Home Screen ───────────────────────────────────────────────────────────────
+function renderHomeScreen() {
+  var today = new Date().toISOString().slice(0, 10);
+  var todayPuzzle = null;
+  for (var i = 0; i < PUZZLES.length; i++) {
+    if (PUZZLES[i].date === today) { todayPuzzle = PUZZLES[i]; break; }
+  }
+
+  var difficultyNames = { 1: 'Easy', 2: 'Medium', 3: 'Hard' };
+
+  if (!todayPuzzle) {
+    var card = document.querySelector('.daily-card');
+    card.innerHTML = '<p style="color:var(--cream);font-size:14px;">No puzzle today — browse the library.</p>';
+    return;
+  }
+
+  var dateObj = new Date(today + 'T12:00:00');
+  var dateStr = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  document.querySelector('.daily-card__date').textContent = dateStr;
+
+  var badge = document.querySelector('.difficulty-badge');
+  badge.setAttribute('data-level', todayPuzzle.difficulty);
+  badge.textContent = difficultyNames[todayPuzzle.difficulty] || '';
+
+  document.querySelector('.daily-card__title').textContent = todayPuzzle.title;
+
+  var yesterday = new Date(new Date(today + 'T12:00:00').getTime() - 86400000).toISOString().slice(0, 10);
+  var yesterdayPuzzle = null;
+  for (var j = 0; j < PUZZLES.length; j++) {
+    if (PUZZLES[j].date === yesterday) { yesterdayPuzzle = PUZZLES[j]; break; }
+  }
+
+  var oldYest = document.querySelector('.daily-card__yesterday');
+  if (oldYest) oldYest.remove();
+
+  if (yesterdayPuzzle) {
+    var stored = JSON.parse(localStorage.getItem('lexigrid_result_' + yesterdayPuzzle.id) || 'null');
+    if (stored) {
+      var yestEl = document.createElement('p');
+      yestEl.className = 'daily-card__yesterday';
+      yestEl.textContent = 'Yesterday: ' + stored.score + ' pts';
+      var titleEl = document.querySelector('.daily-card__title');
+      titleEl.parentNode.insertBefore(yestEl, titleEl.nextSibling);
+    }
+  }
+
+  var playBtn = document.querySelector('#screen-home .btn-play');
+  playBtn.onclick = function(e) { e.preventDefault(); loadPuzzle(todayPuzzle); };
+
+  var libLink = document.querySelector('.library-link');
+  libLink.onclick = function(e) { e.preventDefault(); showScreen('screen-library'); renderLibraryScreen(); };
+}
+
+// ── Library Screen ────────────────────────────────────────────────────────────
+function renderLibraryScreen() {
+  var difficultyNames = { 1: 'Easy', 2: 'Medium', 3: 'Hard' };
+  var sections = { 1: [], 2: [], 3: [] };
+
+  PUZZLES.forEach(function(p) {
+    if (sections[p.difficulty]) sections[p.difficulty].push(p);
+  });
+
+  var container = document.getElementById('library-sections');
+  container.innerHTML = '';
+
+  [1, 2, 3].forEach(function(diff) {
+    var puzzlesInDiff = sections[diff];
+    if (!puzzlesInDiff.length) return;
+
+    var section = document.createElement('div');
+    section.className = 'library-section';
+    section.setAttribute('data-difficulty', diff);
+
+    var label = document.createElement('h3');
+    label.className = 'library-section__label';
+    label.textContent = difficultyNames[diff];
+    section.appendChild(label);
+
+    var ul = document.createElement('ul');
+    ul.className = 'library-list';
+
+    puzzlesInDiff.forEach(function(p) {
+      var stored = JSON.parse(localStorage.getItem('lexigrid_result_' + p.id) || 'null');
+      var li = document.createElement('li');
+      li.className = 'library-item';
+      li.setAttribute('data-puzzle-id', p.id);
+
+      var left = document.createElement('div');
+      left.className = 'library-item__left';
+
+      var badgeEl = document.createElement('span');
+      badgeEl.className = 'difficulty-badge';
+      badgeEl.setAttribute('data-level', p.difficulty);
+      badgeEl.textContent = difficultyNames[p.difficulty];
+      left.appendChild(badgeEl);
+
+      var titleEl = document.createElement('span');
+      titleEl.className = 'library-item__title';
+      titleEl.textContent = p.title;
+      left.appendChild(titleEl);
+
+      var right = document.createElement('div');
+      right.className = 'library-item__right';
+
+      if (stored) {
+        var best = document.createElement('span');
+        best.className = 'library-item__best';
+        best.textContent = 'Best: ' + stored.score + ' pts';
+        right.appendChild(best);
+
+        var check = document.createElement('span');
+        check.className = 'completion-check';
+        check.textContent = '✓';
+        right.appendChild(check);
+      }
+
+      var playBtn = document.createElement('a');
+      playBtn.className = 'btn-play-small';
+      playBtn.href = '#';
+      playBtn.textContent = 'Play';
+      (function(puzzle) {
+        playBtn.onclick = function(e) { e.preventDefault(); loadPuzzle(puzzle); };
+      }(p));
+      right.appendChild(playBtn);
+
+      li.appendChild(left);
+      li.appendChild(right);
+      ul.appendChild(li);
+    });
+
+    section.appendChild(ul);
+    container.appendChild(section);
+  });
+
+  var backLink = document.querySelector('#screen-library .back-link');
+  backLink.onclick = function(e) { e.preventDefault(); showScreen('screen-home'); renderHomeScreen(); };
+}
+
+// ── Persistence ───────────────────────────────────────────────────────────────
+function savePuzzleResult() {
+  if (!currentPuzzle) return;
+  var score = computeScore();
+  var key = 'lexigrid_result_' + currentPuzzle.id;
+  var stored = JSON.parse(localStorage.getItem(key) || 'null');
+  if (!stored || score > stored.score) {
+    var wordSet = new Set();
+    foundWords.forEach(function(k) {
+      wordSet.add(k.substring(0, k.indexOf(':')));
+    });
+    localStorage.setItem(key, JSON.stringify({
+      score: score,
+      maxScore: currentPuzzle.maxScore,
+      date: currentPuzzle.date,
+      words: Array.from(wordSet)
+    }));
+  }
+}
+
+// ── Results Screen ────────────────────────────────────────────────────────────
+function showResults() {
+  var score = computeScore();
+  var puzzle = currentPuzzle;
+
+  document.querySelector('.postcard__title').textContent = puzzle.title;
+
+  var scoreStr = String(score);
+  var charCodeSum = 0;
+  for (var i = 0; i < puzzle.id.length; i++) {
+    charCodeSum += puzzle.id.charCodeAt(i);
+  }
+  var scoreBlock = document.querySelector('.postcard__score-block');
+  scoreBlock.innerHTML = '';
+  for (var ci = 0; ci < scoreStr.length; ci++) {
+    var span = document.createElement('span');
+    span.className = 'score-char';
+    span.textContent = scoreStr[ci];
+    var rot = ((charCodeSum + ci * 7) % 9) - 4;
+    var ty = ((charCodeSum + ci * 13) % 7) - 3;
+    span.style.transform = 'rotate(' + rot + 'deg) translateY(' + ty + 'px)';
+    scoreBlock.appendChild(span);
+  }
+
+  var wordSet = new Set();
+  foundWords.forEach(function(k) {
+    wordSet.add(k.substring(0, k.indexOf(':')));
+  });
+  var wordArr = Array.from(wordSet).sort();
+  document.querySelector('.postcard__words-list').textContent = wordArr.join(' · ');
+
+  var oldPcDed = document.querySelector('.postcard__dedication');
+  if (oldPcDed) oldPcDed.remove();
+  if (puzzle.dedication) {
+    var pcDed = document.createElement('p');
+    pcDed.className = 'postcard__dedication';
+    pcDed.textContent = puzzle.dedication;
+    var actionsEl = document.querySelector('.postcard__actions');
+    actionsEl.parentNode.insertBefore(pcDed, actionsEl);
+    setTimeout(function() {
+      pcDed.classList.add('dedication--visible');
+    }, 3000);
+  }
+
+  var copyBtn = document.querySelector('.btn-copy');
+  copyBtn.textContent = 'Copy to Share';
+  copyBtn.onclick = function() {
+    var text = 'LexiGrid · ' + puzzle.title + ' · Score: ' + score + ' · ' + wordSet.size + ' words found';
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(function() {
+        copyBtn.textContent = 'Copied!';
+        setTimeout(function() { copyBtn.textContent = 'Copy to Share'; }, 1500);
+      });
+    } else {
+      copyBtn.textContent = 'Copied!';
+      setTimeout(function() { copyBtn.textContent = 'Copy to Share'; }, 1500);
+    }
+  };
+
+  document.querySelector('.btn-play-again').onclick = function() {
+    loadPuzzle(currentPuzzle);
+  };
+
+  document.querySelector('.btn-home').onclick = function() {
+    showScreen('screen-home');
+    renderHomeScreen();
+  };
+
+  showScreen('screen-results');
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -32,7 +297,6 @@ function render() {
   var grid = document.getElementById('grid');
   var tray = document.getElementById('tray');
 
-  // Build set of cell keys belonging to found words for .tile--found
   var foundCellKeys = new Set();
   foundWords.forEach(function(key) {
     var colon = key.indexOf(':');
@@ -41,7 +305,6 @@ function render() {
     });
   });
 
-  // Build grid HTML
   var gridHtml = '';
   for (var r = 0; r < 4; r++) {
     for (var c = 0; c < 4; c++) {
@@ -57,8 +320,11 @@ function render() {
       var cell = gridState[r][c];
       if (cell) {
         var isFound = foundCellKeys.has(r + ',' + c);
-        var tileClass = 'tile' + (isFound ? ' tile--found' : '');
-        tileHtml = '<div class="' + tileClass + '" data-letter="' + cell.letter + '" data-value="' + cell.value + '">' +
+        var tileClass = 'tile';
+        if (isFound) tileClass += ' tile--found';
+        if (cell.isAnchor) tileClass += ' tile--anchor';
+        tileHtml = '<div class="' + tileClass + '" data-letter="' + cell.letter + '" data-value="' + cell.value + '"' +
+          (cell.isAnchor ? ' data-anchor="true"' : '') + '>' +
           '<span class="tile-letter">' + cell.letter + '</span>' +
           '<span class="tile-point">' + cell.value + '</span>' +
           '</div>';
@@ -70,7 +336,6 @@ function render() {
   }
   grid.innerHTML = gridHtml;
 
-  // Build tray HTML
   var trayHtml = '';
   trayState.forEach(function(t) {
     trayHtml += '<div class="tile" data-letter="' + t.letter + '" data-value="' + t.value + '">' +
@@ -80,7 +345,6 @@ function render() {
   });
   tray.innerHTML = trayHtml;
 
-  // Apply .tile--selected after innerHTML rebuild
   if (selectedTile) {
     var sel = null;
     if (selectedTile.source === 'tray') {
@@ -93,11 +357,9 @@ function render() {
     if (sel) sel.classList.add('tile--selected');
   }
 
-  // Update score bar
   document.getElementById('score-value').textContent = computeScore();
   document.getElementById('words-count').textContent = foundWords.size;
 
-  // Update found-words list (unique word strings)
   var wordsList = document.getElementById('found-words-list');
   var seen = new Set();
   var badgesHtml = '';
@@ -121,27 +383,9 @@ function getBonusCell(r, c) {
 
 // ── Word Detection ────────────────────────────────────────────────────────────
 /*
- * CORE-10 Dedup Rules — canonical reference for this engine
- *
- * Dedup key format: word + ':' + cells.map(c => c.row+','+c.col).join('|')
- * Example: "CAT:0,0|0,1|0,2"
- *
- * Rule A — Same word string, different cell paths → scores separately.
- *   e.g. "CAT" placed at row 0 and again at row 2 produces two distinct keys
- *   and contributes two separate scores.
- *
- * Rule B — Identical cell-path for the same word → deduplicated (Set ignores).
- *   e.g. Scanning "CAT" forward and "TAC" backward over the exact same three
- *   physical cells produces the same key for each word ("CAT:..." ≠ "TAC:...")
- *   so they ARE counted separately. A palindrome like "ABA" scanned forward and
- *   backward over the same cells shares the same key and is deduplicated to 1.
- *
- * Edge-case scenarios:
- *   1. Same word at two separate locations → 2 separate keys → scores twice.
- *   2. A palindrome read forward and backward over the same cells → same key → scores once.
- *   3. Two different words sharing a cell (crossing words) → different keys → both score.
- *   4. A 3-letter word that is a substring of a 5-letter word on the same path → each has its
- *      own key (different cell arrays) → both score independently.
+ * Dedup key: word + ':' + cells.map(c => c.row+','+c.col).join('|')
+ * Same word, different cell path → separate keys → scores separately.
+ * Identical cell-path for same word → same key → deduplicated.
  */
 function detectWords() {
   foundWords = new Set();
@@ -234,7 +478,6 @@ function computeScore() {
 var dragState = null;
 var isDragging = false;
 
-// Delegated click handler for tap-to-select / place / swap / deselect
 document.addEventListener('click', function(e) {
   if (isDragging) {
     isDragging = false;
@@ -246,7 +489,9 @@ document.addEventListener('click', function(e) {
 
   if (!tile && !cell) return;
 
-  // Tray tile: has no .cell ancestor
+  // Anchor guard
+  if (tile && tile.dataset.anchor === 'true') return;
+
   var inTray = tile && !cell;
   var inGrid = cell && !!cell.closest('#grid');
 
@@ -256,7 +501,7 @@ document.addEventListener('click', function(e) {
     if (idx === -1) return;
 
     if (selectedTile && selectedTile.source === 'tray' && selectedTile.index === idx) {
-      selectedTile = null; // deselect (rule 5)
+      selectedTile = null;
     } else {
       selectedTile = { source: 'tray', index: idx, letter: tile.dataset.letter, value: parseInt(tile.dataset.value) };
     }
@@ -267,20 +512,22 @@ document.addEventListener('click', function(e) {
   if (inGrid) {
     var row = parseInt(cell.dataset.row);
     var col = parseInt(cell.dataset.col);
+
+    // Anchor guard for grid cell
+    if (gridState[row][col] && gridState[row][col].isAnchor) return;
+
     var hasTile = gridState[row][col] !== null;
 
     if (hasTile) {
-      // Rule 6: tray selection onto occupied cell → no-op
       if (selectedTile && selectedTile.source === 'tray') return;
 
       if (selectedTile && selectedTile.source === 'grid') {
         var sr = selectedTile.index.row, sc = selectedTile.index.col;
         if (sr === row && sc === col) {
-          selectedTile = null; // deselect (rule 5)
+          selectedTile = null;
           render();
           return;
         }
-        // Swap (rule 4)
         var tmp = gridState[sr][sc];
         gridState[sr][sc] = gridState[row][col];
         gridState[row][col] = tmp;
@@ -290,7 +537,6 @@ document.addEventListener('click', function(e) {
         return;
       }
 
-      // Select this grid tile (rule 3)
       selectedTile = {
         source: 'grid',
         index: { row: row, col: col },
@@ -301,17 +547,15 @@ document.addEventListener('click', function(e) {
       return;
     }
 
-    // Empty cell
     if (selectedTile) {
       if (selectedTile.source === 'tray') {
-        // Place tray tile (rule 2)
         gridState[row][col] = { letter: selectedTile.letter, value: selectedTile.value, isAnchor: false };
         trayState.splice(selectedTile.index, 1);
         selectedTile = null;
         detectWords();
         render();
+        checkCompletion();
       } else if (selectedTile.source === 'grid') {
-        // Move grid tile to empty cell
         var sr = selectedTile.index.row, sc = selectedTile.index.col;
         gridState[row][col] = gridState[sr][sc];
         gridState[sr][sc] = null;
@@ -323,27 +567,30 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// Pointer Events drag-and-drop
 document.addEventListener('pointerdown', function(e) {
   var tile = e.target.closest('.tile');
   if (!tile) return;
 
+  // Anchor guard
+  if (tile.dataset.anchor === 'true') return;
+
   var cell = tile.closest('.cell');
-  var source, idx, letter, value;
+  var source, idx;
 
   if (cell) {
-    // Grid tile
+    var cellRow = parseInt(cell.dataset.row);
+    var cellCol = parseInt(cell.dataset.col);
+    if (gridState[cellRow][cellCol] && gridState[cellRow][cellCol].isAnchor) return;
     source = 'grid';
-    idx = { row: parseInt(cell.dataset.row), col: parseInt(cell.dataset.col) };
+    idx = { row: cellRow, col: cellCol };
   } else {
-    // Tray tile
     source = 'tray';
     var trayTiles = Array.from(document.querySelectorAll('#tray .tile'));
     idx = trayTiles.indexOf(tile);
   }
 
-  letter = tile.dataset.letter;
-  value = parseInt(tile.dataset.value);
+  var letter = tile.dataset.letter;
+  var value = parseInt(tile.dataset.value);
 
   var ghost = tile.cloneNode(true);
   ghost.classList.add('drag-ghost');
@@ -382,12 +629,10 @@ document.addEventListener('pointermove', function(e) {
   var el = document.elementFromPoint(e.clientX, e.clientY);
   var targetCell = el ? el.closest('.cell') : null;
 
-  // Clear old hover
   if (dragState.lastHoverCell && dragState.lastHoverCell !== targetCell) {
     dragState.lastHoverCell.classList.remove('cell--drag-over');
   }
 
-  // Apply hover on empty cells only
   if (targetCell && !targetCell.querySelector('.tile') && targetCell.closest('#grid')) {
     targetCell.classList.add('cell--drag-over');
     dragState.lastHoverCell = targetCell;
@@ -403,15 +648,13 @@ document.addEventListener('pointerup', function(e) {
   var ds = dragState;
   dragState = null;
 
-  // Clear hover
   if (ds.lastHoverCell) {
     ds.lastHoverCell.classList.remove('cell--drag-over');
   }
 
-  // Remove ghost
   ghost.remove();
 
-  if (!isDragging) return; // no movement — let click handler fire
+  if (!isDragging) return;
 
   var el = document.elementFromPoint(e.clientX, e.clientY);
   var targetCell = el ? el.closest('.cell') : null;
@@ -420,10 +663,16 @@ document.addEventListener('pointerup', function(e) {
   if (targetCell && targetCell.closest('#grid')) {
     var row = parseInt(targetCell.dataset.row);
     var col = parseInt(targetCell.dataset.col);
+
+    // Anchor guard for drop target
+    if (gridState[row][col] && gridState[row][col].isAnchor) {
+      render();
+      return;
+    }
+
     var targetHasTile = gridState[row][col] !== null;
 
     if (!targetHasTile) {
-      // Drop on empty cell
       if (ds.source === 'tray') {
         gridState[row][col] = { letter: ds.letter, value: ds.value, isAnchor: false };
         trayState.splice(ds.index, 1);
@@ -435,29 +684,33 @@ document.addEventListener('pointerup', function(e) {
         stateChanged = true;
       }
     } else {
-      // Drop on occupied cell
       if (ds.source === 'grid') {
-        // Swap grid tiles
         var sr = ds.index.row, sc = ds.index.col;
         var tmp = gridState[sr][sc];
         gridState[sr][sc] = gridState[row][col];
         gridState[row][col] = tmp;
         stateChanged = true;
       }
-      // tray → occupied: no-op
     }
   }
-  // Outside grid: cancel, no state change
 
   if (stateChanged) {
     detectWords();
   }
   render();
+  if (stateChanged) checkCompletion();
 });
+
+// ── Completion Check ──────────────────────────────────────────────────────────
+function checkCompletion() {
+  if (trayState.length === 0) {
+    savePuzzleResult();
+    showResults();
+  }
+}
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
-  initGame();
-  detectWords();
-  render();
+  showScreen('screen-home');
+  renderHomeScreen();
 });
