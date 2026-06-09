@@ -396,19 +396,21 @@ function render() {
 
       var tileHtml = '';
       var cell = gridState[r][c];
+      var cellAriaLabel = 'Row ' + (r + 1) + ', Column ' + (c + 1);
       if (cell) {
         var isFound = foundCellKeys.has(r + ',' + c);
         var tileClass = 'tile';
         if (isFound) tileClass += ' tile--found';
         if (cell.isAnchor) tileClass += ' tile--anchor';
         tileHtml = '<div class="' + tileClass + '" data-letter="' + cell.letter + '" data-value="' + cell.value + '"' +
-          (cell.isAnchor ? ' data-anchor="true"' : '') + '>' +
+          (cell.isAnchor ? ' data-anchor="true"' : '') + ' tabindex="0" aria-label="' + cell.letter.toUpperCase() + ', ' + cell.value + ' points">' +
           '<span class="tile-letter">' + cell.letter + '</span>' +
           '<span class="tile-point">' + cell.value + '</span>' +
           '</div>';
+        cellAriaLabel += ', ' + cell.letter.toUpperCase();
       }
 
-      gridHtml += '<div class="' + cellClass + '" data-row="' + r + '" data-col="' + c + '">' +
+      gridHtml += '<div class="' + cellClass + '" data-row="' + r + '" data-col="' + c + '" tabindex="0" aria-label="' + cellAriaLabel + '">' +
         tileHtml + bonusLabel + '</div>';
     }
   }
@@ -423,7 +425,7 @@ function render() {
   var trayHtml = '';
   sortedTray.forEach(function(t, i) {
     var offset = ((seed + i * 37) % 3) + 1;
-    trayHtml += '<div class="tile" data-letter="' + t.letter + '" data-value="' + t.value + '" style="margin-top:' + offset + 'px">' +
+    trayHtml += '<div class="tile" data-letter="' + t.letter + '" data-value="' + t.value + '" tabindex="0" aria-label="' + t.letter.toUpperCase() + ', ' + t.value + ' points" style="margin-top:' + offset + 'px">' +
       '<span class="tile-letter">' + t.letter + '</span>' +
       '<span class="tile-point">' + t.value + '</span>' +
       '</div>';
