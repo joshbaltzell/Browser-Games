@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: LexiGrid
 status: executing
-last_updated: "2026-06-09T21:51:14.452Z"
+last_updated: "2026-06-09T22:00:00.000Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 10
-  completed_plans: 5
-  percent: 14
+  completed_plans: 7
+  percent: 43
 ---
 
 # Project State
@@ -24,9 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 36 (aesthetic-accessibility) — EXECUTING
-Plan: 3 of 3
+Phase: 36 (aesthetic-accessibility) — COMPLETE
 Plan 36-01: COMPLETE (2026-06-09)
+Plan 36-02: COMPLETE (2026-06-09)
+Plan 36-03: COMPLETE (2026-06-09)
 Phase 35: COMPLETE (2026-06-09, Playwright verified)
 Last activity: 2026-06-09
 
@@ -53,6 +54,9 @@ Last activity: 2026-06-09
 - Hub card: added to hub.js GAMES array with SVG tile grid art and #C8830A accent
 - Puzzle authoring tool gated behind `?design=1` URL param — client-side only, outputs JSON
 - All game logic previously in Neon Swarm stays in neon-swarm/game.js — do not touch
+- HC applied via body.high-contrast class; localStorage key lexigrid_highContrast read before first render to prevent palette flash
+- Single onclick binding for #btn-hc in DOMContentLoaded bootstrap — button is static HTML, survives render() rebuilds
+- body.high-contrast redefines CSS custom properties so all var()-consuming elements update automatically; only hardcoded-gradient elements need explicit overrides
 
 ### Pending Todos
 

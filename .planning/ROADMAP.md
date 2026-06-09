@@ -67,7 +67,7 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 | 33 | Screens & Puzzle Data | Players can navigate home, library, and results screens with real puzzle data | PUZZLE-01, PUZZLE-02, PUZZLE-03, PUZZLE-04, SCREEN-01, SCREEN-02, SCREEN-03, SCREEN-04, SCREEN-05 | 5 |
 | 34 | Word Feedback | Players receive immediate, animated feedback for every word they form | FEED-01, FEED-02, FEED-03, FEED-04, FEED-05 | 4 |
 | 35 | Tile Interaction Polish | Tile placement feels tactile and controllable with sound, animation, and undo | TILE-01, TILE-02, TILE-03, TILE-04, TILE-05 | 4 |
-| 36 | Aesthetic & Accessibility | 2/3 | In Progress|  |
+| 36 | Aesthetic & Accessibility | 3/3 | Complete | 2026-06-09 |
 | 37 | Designer Mode | Puzzle authors can build and export new puzzles using an in-browser tool | AUTH-01 | 3 |
 | 38 | Animated Primer | First-time players understand how to play through a silent CSS tutorial | ON-01 | 3 |
 
@@ -133,10 +133,10 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 2. All grid cells and tray tiles have `tabindex="0"` and visible `focus-visible` amber outlines; arrow keys move grid focus, Tab cycles tray tiles, Space selects/places, Escape deselects, Delete returns a placed tile to the tray
 3. High-contrast toggle in the score bar applies WCAG AA overrides (`#1a1a1a` background, `#ffffff` tiles, `#ffff00` highlights) and persists the preference to localStorage
 4. All interactions are fully operable without a mouse — a player can complete an entire puzzle using only keyboard input
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans executed
 - [x] 36-01-PLAN.md — Coffee ring ambient Easter egg (seeded CSS stain + hover tooltip)
 - [x] 36-02-PLAN.md — Full keyboard navigation (arrows, Tab, Space/Escape/Delete, ARIA, focus mgmt)
-- [ ] 36-03-PLAN.md — WCAG AA high-contrast mode (score-bar toggle + persisted body override)
+- [x] 36-03-PLAN.md — WCAG AA high-contrast mode (score-bar toggle + persisted body override)
 **UI hint:** yes
 
 ### Phase 37: Designer Mode
@@ -201,6 +201,6 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 | 33. screens-puzzle-data | v4.0 | 2/2 | Complete | 2026-06-09 |
 | 34. word-feedback | v4.0 | 1/1 | Complete | 2026-06-09 |
 | 35. tile-interaction-polish | v4.0 | 1/1 | Complete | 2026-06-09 |
-| 36. aesthetic-accessibility | v4.0 | 0/3 | Planned | - |
+| 36. aesthetic-accessibility | v4.0 | 3/3 | Complete | 2026-06-09 |
 | 37. designer-mode | v4.0 | 0/? | Not started | - |
 | 38. animated-primer | v4.0 | 0/? | Not started | - |

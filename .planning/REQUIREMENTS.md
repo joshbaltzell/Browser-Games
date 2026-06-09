@@ -61,7 +61,7 @@
 ## Accessibility
 
 - [x] **ACC-01**: Arrow keys move grid cell focus; Tab cycles tray tiles; Space selects focused tray tile or places selected tile on focused empty cell; Escape deselects; Delete/Backspace returns placed tile to tray; `:focus-visible` amber `outline: 3px solid #c8830a; outline-offset: 2px` always shown (never suppressed); `tabindex="0"` on all grid cells and tray tiles
-- [ ] **ACC-02**: High-contrast toggle button in score bar flips `data-hc` on `<body>`; `[data-hc='1']` CSS block overrides custom properties: `#1a1a1a` background, `#ffffff` tiles, `#ffff00` word highlights, `#00ffff` 2×L, `#ff8800` 2×W — all WCAG AA contrast; preference persisted to `localStorage['lexigrid_hc']`
+- [x] **ACC-02**: High-contrast toggle button in score bar flips `data-hc` on `<body>`; `[data-hc='1']` CSS block overrides custom properties: `#1a1a1a` background, `#ffffff` tiles, `#ffff00` word highlights, `#00ffff` 2×L, `#ff8800` 2×W — all WCAG AA contrast; preference persisted to `localStorage['lexigrid_hc']`
 
 ## Onboarding *(built last — depends on all other features)*
 
@@ -129,5 +129,5 @@
 | AEST-01 | Phase 36 | Pending |
 | AUTH-01 | Phase 37 | Pending |
 | ACC-01 | Phase 36 | Complete |
-| ACC-02 | Phase 36 | Pending |
+| ACC-02 | Phase 36 | Complete |
 | ON-01 | Phase 38 | Pending |
