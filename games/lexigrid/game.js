@@ -74,6 +74,21 @@ function loadPuzzle(puzzle) {
     }, 3000);
   }
 
+  var oldRing = document.querySelector('#screen-game .coffee-ring');
+  if (oldRing) oldRing.remove();
+
+  var seed = 0;
+  for (var i = 0; i < puzzle.id.length; i++) seed += puzzle.id.charCodeAt(i);
+  var x = 15 + (seed % 70);
+  var y = 15 + ((seed * 7) % 70);
+  var ring = document.createElement('div');
+  ring.className = 'coffee-ring';
+  ring.setAttribute('aria-hidden', 'true');
+  ring.style.left = x + '%';
+  ring.style.top = y + '%';
+  var wrapper = document.querySelector('#screen-game .screen-wrapper');
+  wrapper.insertBefore(ring, wrapper.firstChild);
+
   detectWords();
   render();
   showScreen('screen-game');
