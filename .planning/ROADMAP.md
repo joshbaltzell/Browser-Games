@@ -4,7 +4,7 @@
 
 - ✅ **v2.0 Juice & Depth** — Phases 1–11 (shipped 2026-06-08)
 - ✅ **v3.0 Feature Expansion** — Phases 12–31 (shipped 2026-06-08)
-- 🔵 **v4.0 LexiGrid** — Phases 32–38 (in progress)
+- ✅ **v4.0 LexiGrid** — Phases 32–38 (shipped 2026-06-10)
 
 ---
 
@@ -147,9 +147,9 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 1. Visiting `?design=1` (or long-pressing the game title for 2 seconds) reveals the designer panel with grid size picker, word list textarea, bonus cell assignment, and difficulty selector
 2. Clicking "Compute Max Score" runs the full word-detection engine against the author's word list and reports reachability and the computed maxScore value
 3. The panel outputs a formatted `JSON.stringify(puzzleObj, null, 2)` into a copyable `<pre>` block that can be pasted directly into the puzzle data array
-**Plans:** 2 plans
-- [ ] 37-01-PLAN.md — Panel shell: #screen-designer + styles, designerGrid model + 4-state cell cycle, ?design=1 / long-press entry, Back to Home
-- [ ] 37-02-PLAN.md — Solver + export: buildDesignerPuzzle, global-swap Compute Max Score, JSON output, Copy JSON, Play Test
+**Plans:** 2/2 plans complete
+- [x] 37-01-PLAN.md — Panel shell: #screen-designer + styles, designerGrid model + 4-state cell cycle, ?design=1 / long-press entry, Back to Home
+- [x] 37-02-PLAN.md — Solver + export: buildDesignerPuzzle, global-swap Compute Max Score, JSON output, Copy JSON, Play Test
 
 ### Phase 38: Animated Primer
 **Goal:** First-time players understand all core mechanics through a 30-second silent CSS tutorial before touching the real game.
@@ -159,7 +159,9 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 1. On first launch, a CSS-animated tutorial overlay appears over a hardcoded 3×3 dummy grid and walks through 5 steps: tile placement, word formation, backwards word with arrow badge, diagonal word, and rearrangement with score jump
 2. Each animation step is driven entirely by `@keyframes` with `animation-delay` offsets — no JavaScript animation logic required
 3. A "Got it — Play" skip button is always visible; once clicked (or after the sequence completes), the tutorial never appears again for that browser (gated by `localStorage.getItem('lexigrid_tutorialSeen')`)
-**Plans:** TBD
+**Plans:** 2/2 plans complete
+- [x] 38-01-PLAN.md — Static structure + CSS animations: #screen-tutorial, 3×3 dummy grid, 5 @keyframes steps, captions, score swap, skip button
+- [x] 38-02-PLAN.md — Bootstrap wiring: first-branch localStorage guard, skip-button + animationend dismissal
 **UI hint:** yes
 
 ---
@@ -204,5 +206,5 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 | 34. word-feedback | v4.0 | 1/1 | Complete | 2026-06-09 |
 | 35. tile-interaction-polish | v4.0 | 1/1 | Complete | 2026-06-09 |
 | 36. aesthetic-accessibility | v4.0 | 3/3 | Complete | 2026-06-09 |
-| 37. designer-mode | v4.0 | 0/? | Not started | - |
-| 38. animated-primer | v4.0 | 0/? | Not started | - |
+| 37. designer-mode | v4.0 | 2/2 | Complete | 2026-06-09 |
+| 38. animated-primer | v4.0 | 2/2 | Complete | 2026-06-10 |

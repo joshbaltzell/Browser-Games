@@ -159,7 +159,11 @@ function renderHomeScreen() {
 
   if (!todayPuzzle) {
     var card = document.querySelector('.daily-card');
-    card.innerHTML = '<p style="color:var(--cream);font-size:14px;">No puzzle today — browse the library.</p>';
+    card.innerHTML = '<p style="color:var(--cream);font-size:14px;">No puzzle today &mdash; <a href="#" style="color:var(--amber);text-decoration:underline;cursor:pointer;">browse the library</a>.</p>';
+    var noTodayLink = card.querySelector('a');
+    if (noTodayLink) {
+      noTodayLink.onclick = function(e) { e.preventDefault(); showScreen('screen-library'); renderLibraryScreen(); };
+    }
     return;
   }
 
@@ -1242,19 +1246,22 @@ document.addEventListener('DOMContentLoaded', function() {
   // author workflow is never gated by the tutorial. Return early so the
   // home-screen and designer branches never run on first load.
   if (!localStorage.getItem('lexigrid_tutorialSeen') && !new URLSearchParams(location.search).get('design')) {
+    // With prefers-reduced-motion, all animations are disabled and every caption/bloom
+    // appears at once — a cluttered static screen. Skip straight to home instead.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      dismissTutorial();
+      return;
+    }
     showScreen('screen-tutorial');
     var skipBtn = document.getElementById('btn-tutorial-skip');
     if (skipBtn) { skipBtn.onclick = function() { dismissTutorial(); }; }
-    var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!prefersReduced) {
-      var step5El = document.querySelector('.tutorial-step--5');
-      if (step5El) {
-        step5El.addEventListener('animationend', function handler(e) {
-          if (e.target !== step5El) return;
-          step5El.removeEventListener('animationend', handler);
-          dismissTutorial();
-        });
-      }
+    var step5El = document.querySelector('.tutorial-step--5');
+    if (step5El) {
+      step5El.addEventListener('animationend', function handler(e) {
+        if (e.target !== step5El) return;
+        step5El.removeEventListener('animationend', handler);
+        dismissTutorial();
+      });
     }
     return;
   }

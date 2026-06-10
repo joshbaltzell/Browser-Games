@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: LexiGrid
-status: executing
-last_updated: "2026-06-09T22:00:00.000Z"
-last_activity: 2026-06-09
+status: complete
+last_updated: "2026-06-10T00:00:00.000Z"
+last_activity: 2026-06-10
 progress:
   total_phases: 7
-  completed_phases: 2
-  total_plans: 10
-  completed_plans: 7
-  percent: 43
+  completed_phases: 7
+  total_plans: 14
+  completed_plans: 14
+  percent: 100
 ---
 
 # Project State
@@ -20,16 +20,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** Each game is effortlessly fun from the first interaction, with a distinct visual identity and zero installation friction.
-**Current focus:** Phase 36 — aesthetic-accessibility
+**Current focus:** v4.0 LexiGrid — COMPLETE (shipped 2026-06-10)
 
 ## Current Position
 
-Phase: 36 (aesthetic-accessibility) — COMPLETE
-Plan 36-01: COMPLETE (2026-06-09)
-Plan 36-02: COMPLETE (2026-06-09)
-Plan 36-03: COMPLETE (2026-06-09)
-Phase 35: COMPLETE (2026-06-09, Playwright verified)
-Last activity: 2026-06-09
+Phase 38 (animated-primer): COMPLETE (2026-06-10)
+Phase 37 (designer-mode): COMPLETE (2026-06-09)
+Phase 36 (aesthetic-accessibility): COMPLETE (2026-06-09)
+All 7 v4.0 phases complete. Milestone shipped.
+Last activity: 2026-06-10
 
 ## Accumulated Context
 
