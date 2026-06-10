@@ -784,7 +784,8 @@ body.high-contrast .coffee-ring {
 .tile:focus-visible,
 #btn-hc:focus-visible,
 #btn-undo:focus-visible,
-#btn-reset:focus-visible {
+#btn-reset:focus-visible,
+#btn-tutorial-skip:focus-visible {
   outline: 2px solid #D4A017;
   outline-offset: 2px;
 }
@@ -793,7 +794,8 @@ body.high-contrast .cell:focus-visible,
 body.high-contrast .tile:focus-visible,
 body.high-contrast #btn-hc:focus-visible,
 body.high-contrast #btn-undo:focus-visible,
-body.high-contrast #btn-reset:focus-visible {
+body.high-contrast #btn-reset:focus-visible,
+body.high-contrast #btn-tutorial-skip:focus-visible {
   outline-color: #ffff00;
 }
 
@@ -1071,4 +1073,373 @@ body.high-contrast #btn-hc[aria-pressed="true"] {
   font-size: 14px;
   margin-top: var(--md);
   color: var(--score-fg);
+}
+
+/* ── Phase 38: Animated Primer ── */
+
+/* --- Layout -------------------------------------------------- */
+
+#screen-tutorial .screen-wrapper {
+  background: var(--oak);
+  border-radius: 8px;
+  padding: var(--xl) var(--lg);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  position: relative;
+}
+
+#tutorial-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  background: var(--mahogany);
+  border-radius: 4px;
+  padding: 4px;
+  margin-bottom: var(--lg);
+  max-width: 240px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#tutorial-caption {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--cream);
+  text-align: center;
+  margin-top: var(--sm);
+  min-height: 1.5em;
+  position: relative;
+}
+
+#tutorial-caption span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  opacity: 0;
+}
+
+#btn-tutorial-skip {
+  min-height: 44px;
+  margin-top: var(--md);
+}
+
+/* --- Step panels default (invisible) -------------------------- */
+
+.tutorial-step {
+  opacity: 0;
+}
+
+/* --- Bloom overlays: hidden by default in tutorial ------------ */
+
+.tutorial-bloom--step2,
+.tutorial-bloom--step3,
+.tutorial-bloom--step4 {
+  opacity: 0;
+}
+
+/* --- Direction badges: hidden by default in tutorial ---------- */
+
+.tutorial-badge--step3,
+.tutorial-badge--step4 {
+  opacity: 0;
+}
+
+/* --- Step 1: flying tile -------------------------------------- */
+
+.tutorial-tile-fly {
+  position: absolute;
+  /* Position over the empty cell [1,0] in the 3×3 grid.
+     The grid is centered at max-width 240px. Each cell is ~73px (240/3 = 80 minus 8px gap).
+     Cell [1,0] is bottom-left of the 2nd row. We animate from below. */
+  pointer-events: none;
+}
+
+/* --- Step 5: score swap --------------------------------------- */
+
+.tutorial-score-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 2em;
+}
+
+#tutorial-score-a,
+#tutorial-score-b {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--score-fg);
+  position: absolute;
+  opacity: 0;
+}
+
+/* --- Step tiles: shimmer targets (Step 5) --------------------- */
+
+.tutorial-tile--step5-a,
+.tutorial-tile--step5-b,
+.tutorial-tile--step5-c {
+  /* Base .tile styling inherited; shimmer applied via step-5 keyframe */
+}
+
+/* --- @keyframes: 5 step sequences ----------------------------- */
+
+@keyframes tut-step-1 {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes tut-step-2 {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes tut-step-3 {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes tut-step-4 {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes tut-step-5 {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+/* Step 1: tile flies up into the empty cell */
+@keyframes tut-tile-fly {
+  0%   { transform: translateY(60px); opacity: 0; }
+  25%  { transform: translateY(0) scale(1.12); opacity: 1; }
+  55%  { transform: translateY(0) scale(0.93); }
+  100% { transform: translateY(0) scale(1.0); opacity: 1; }
+}
+
+/* Step 2: bloom-amber highlight pulse in tutorial context */
+@keyframes tut-bloom-step2 {
+  0%   { opacity: 0; transform: scale(0.8); }
+  20%  { opacity: 1; transform: scale(1.0); }
+  75%  { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+
+/* Step 3: bloom-backwards wipe in tutorial context */
+@keyframes tut-bloom-step3 {
+  0%   { opacity: 0; transform: scaleX(0); transform-origin: right center; }
+  20%  { opacity: 1; transform: scaleX(1); }
+  75%  { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+
+/* Step 3 badge (←) */
+@keyframes tut-badge-step3 {
+  0%   { opacity: 0; transform: translate(-50%, -60%) scale(1.3); }
+  20%  { opacity: 1; transform: translate(-50%, -50%) scale(1.0); }
+  75%  { opacity: 0.9; }
+  100% { opacity: 0; }
+}
+
+/* Step 4: diagonal bloom pulse */
+@keyframes tut-bloom-step4 {
+  0%   { opacity: 0; transform: scale(0.8); }
+  20%  { opacity: 1; transform: scale(1.0); }
+  75%  { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+
+/* Step 4 badge (↘) */
+@keyframes tut-badge-step4 {
+  0%   { opacity: 0; transform: translate(-50%, -60%) scale(1.3); }
+  20%  { opacity: 1; transform: translate(-50%, -50%) scale(1.0); }
+  75%  { opacity: 0.9; }
+  100% { opacity: 0; }
+}
+
+/* Step 5: tile shimmer (selected glow pulse) */
+@keyframes tut-tile-shimmer {
+  0%   { box-shadow: 0 3px 0 rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.25); }
+  30%  { box-shadow: 0 0 0 3px var(--select-glow), 0 3px 0 rgba(0,0,0,0.4); }
+  70%  { box-shadow: 0 0 0 3px var(--select-glow), 0 3px 0 rgba(0,0,0,0.4); }
+  100% { box-shadow: 0 3px 0 rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.25); }
+}
+
+/* Score swap */
+@keyframes tut-score-out {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  40%  { opacity: 1; }
+  60%  { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+@keyframes tut-score-in {
+  0%   { opacity: 0; }
+  50%  { opacity: 0; }
+  70%  { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+/* --- @keyframes: 5 caption fades ----------------------------- */
+
+@keyframes tut-cap-1 {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes tut-cap-2 {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes tut-cap-3 {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes tut-cap-4 {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes tut-cap-5 {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+/* --- Apply step animations ------------------------------------ */
+
+.tutorial-step--1 {
+  animation: tut-step-1 5s ease-in-out 0s forwards;
+}
+.tutorial-step--2 {
+  animation: tut-step-2 5s ease-in-out 6s forwards;
+}
+.tutorial-step--3 {
+  animation: tut-step-3 5s ease-in-out 12s forwards;
+}
+.tutorial-step--4 {
+  animation: tut-step-4 5s ease-in-out 18s forwards;
+}
+.tutorial-step--5 {
+  animation: tut-step-5 5s ease-in-out 24s forwards;
+}
+
+/* Flying tile (Step 1) */
+.tutorial-tile-fly .tile {
+  animation: tut-tile-fly 1.2s ease-in-out 0s forwards;
+}
+
+/* Step 2 blooms */
+.tutorial-bloom--step2 {
+  animation: tut-bloom-step2 4s ease-in-out 6s forwards;
+}
+
+/* Step 3 blooms (backwards wipe) */
+.tutorial-bloom--step3 {
+  animation: tut-bloom-step3 4s ease-in-out 12s forwards;
+  transform-origin: right center;
+}
+
+/* Step 3 badge */
+.tutorial-badge--step3 {
+  animation: tut-badge-step3 4s ease-in-out 12s forwards;
+}
+
+/* Step 4 blooms (diagonal) */
+.tutorial-bloom--step4 {
+  animation: tut-bloom-step4 4s ease-in-out 18s forwards;
+}
+
+/* Step 4 badge */
+.tutorial-badge--step4 {
+  animation: tut-badge-step4 4s ease-in-out 18s forwards;
+}
+
+/* Step 5: tile shimmer on selected tiles */
+.tutorial-tile--step5-a,
+.tutorial-tile--step5-b,
+.tutorial-tile--step5-c {
+  animation: tut-tile-shimmer 4s ease-in-out 24s forwards;
+}
+
+/* --- Apply caption animations --------------------------------- */
+
+.tutorial-caption--1 {
+  animation: tut-cap-1 5s ease-in-out 0s forwards;
+}
+.tutorial-caption--2 {
+  animation: tut-cap-2 5s ease-in-out 6s forwards;
+}
+.tutorial-caption--3 {
+  animation: tut-cap-3 5s ease-in-out 12s forwards;
+}
+.tutorial-caption--4 {
+  animation: tut-cap-4 5s ease-in-out 18s forwards;
+}
+.tutorial-caption--5 {
+  animation: tut-cap-5 5s ease-in-out 24s forwards;
+}
+
+/* --- Apply score swap (Step 5, delay 24s) --------------------- */
+
+#tutorial-score-a {
+  animation: tut-score-out 5s ease-in-out 24s forwards;
+}
+
+#tutorial-score-b {
+  animation: tut-score-in 5s ease-in-out 24s forwards;
+}
+
+/* --- Reduced motion: show everything statically --------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  #screen-tutorial .tutorial-step,
+  #screen-tutorial [class*="tutorial-caption--"],
+  #screen-tutorial .tutorial-bloom--step2,
+  #screen-tutorial .tutorial-bloom--step3,
+  #screen-tutorial .tutorial-bloom--step4,
+  #screen-tutorial .tutorial-badge--step3,
+  #screen-tutorial .tutorial-badge--step4,
+  #screen-tutorial .tutorial-tile-fly .tile,
+  #screen-tutorial .tutorial-tile--step5-a,
+  #screen-tutorial .tutorial-tile--step5-b,
+  #screen-tutorial .tutorial-tile--step5-c,
+  #tutorial-score-a,
+  #tutorial-score-b {
+    animation: none;
+    opacity: 1;
+  }
+
+  /* Stack captions with spacing instead of absolute overlay */
+  #tutorial-caption span {
+    position: static;
+    display: block;
+    margin-bottom: var(--xs);
+  }
+
+  /* Show score-b (the final value) when motion is off */
+  #tutorial-score-a {
+    opacity: 0;
+  }
 }

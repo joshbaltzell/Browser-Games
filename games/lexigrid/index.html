@@ -127,6 +127,95 @@
     </div>
   </div>
 
+  <!-- Tutorial Screen (Phase 38) -->
+  <div id="screen-tutorial" class="screen" role="region" aria-label="How to play tutorial">
+    <div class="screen-wrapper">
+      <h2 class="screen-title">How to Play</h2>
+
+      <!--
+        3×3 dummy grid — decorative, aria-hidden.
+        Layout (row-major):
+          [0] C  [1] A  [2] T   ← top row "CAT" (Step 2 forward, Step 3 backward)
+          [3] _  [4] A  [5] E   ← [3] empty; Step 1 places tile here
+          [6] P  [7] E  [8] T
+        Diagonal top-right→center→bottom-left: T(2)→A(4)→P(6) = "TAP" (Step 4)
+      -->
+      <div id="tutorial-grid" aria-hidden="true">
+        <!-- Row 1 -->
+        <div class="cell">
+          <div class="tile"><span class="tile-letter">C</span><span class="tile-point">3</span></div>
+          <span class="bloom-overlay bloom-amber tutorial-bloom--step2"></span>
+          <span class="bloom-overlay bloom-backwards tutorial-bloom--step3"></span>
+        </div>
+        <div class="cell">
+          <div class="tile"><span class="tile-letter">A</span><span class="tile-point">1</span></div>
+          <span class="bloom-overlay bloom-amber tutorial-bloom--step2"></span>
+          <span class="bloom-overlay bloom-backwards tutorial-bloom--step3"></span>
+          <span class="dir-badge tutorial-badge--step3">&#8592;</span>
+        </div>
+        <div class="cell">
+          <div class="tile"><span class="tile-letter">T</span><span class="tile-point">1</span></div>
+          <span class="bloom-overlay bloom-amber tutorial-bloom--step2"></span>
+          <span class="bloom-overlay bloom-backwards tutorial-bloom--step3"></span>
+          <span class="bloom-overlay bloom-diagonal tutorial-bloom--step4"></span>
+        </div>
+        <!-- Row 2 -->
+        <div class="cell" id="tutorial-cell-place">
+          <!-- Empty — Step 1 places a tile here via the step panel overlay -->
+        </div>
+        <div class="cell">
+          <div class="tile tutorial-tile--step5-a"><span class="tile-letter">A</span><span class="tile-point">1</span></div>
+          <span class="bloom-overlay bloom-diagonal tutorial-bloom--step4"></span>
+          <span class="dir-badge tutorial-badge--step4">&#8600;</span>
+        </div>
+        <div class="cell">
+          <div class="tile tutorial-tile--step5-b"><span class="tile-letter">E</span><span class="tile-point">1</span></div>
+        </div>
+        <!-- Row 3 -->
+        <div class="cell">
+          <div class="tile tutorial-tile--step5-c"><span class="tile-letter">P</span><span class="tile-point">3</span></div>
+          <span class="bloom-overlay bloom-diagonal tutorial-bloom--step4"></span>
+        </div>
+        <div class="cell">
+          <div class="tile"><span class="tile-letter">E</span><span class="tile-point">1</span></div>
+        </div>
+        <div class="cell">
+          <div class="tile"><span class="tile-letter">T</span><span class="tile-point">1</span></div>
+        </div>
+      </div>
+
+      <!-- Five step animation panels (siblings, not inside the grid) -->
+      <!-- Step 1: tile slides into the empty cell -->
+      <div class="tutorial-step tutorial-step--1" aria-hidden="true">
+        <div class="tutorial-tile-fly">
+          <div class="tile tile--selected"><span class="tile-letter">R</span><span class="tile-point">1</span></div>
+        </div>
+      </div>
+      <!-- Steps 2–5: purely CSS-driven overlays on the grid cells (bloom/badge already inside cells above) -->
+      <div class="tutorial-step tutorial-step--2" aria-hidden="true"></div>
+      <div class="tutorial-step tutorial-step--3" aria-hidden="true"></div>
+      <div class="tutorial-step tutorial-step--4" aria-hidden="true"></div>
+      <!-- Step 5: score swap -->
+      <div class="tutorial-step tutorial-step--5" aria-hidden="true">
+        <div class="tutorial-score-wrap">
+          <span id="tutorial-score-a">0 pts</span>
+          <span id="tutorial-score-b">8 pts</span>
+        </div>
+      </div>
+
+      <!-- Caption: each span fades in/out via its own @keyframes -->
+      <div id="tutorial-caption" aria-live="polite">
+        <span class="tutorial-caption--1">Place a tile</span>
+        <span class="tutorial-caption--2">Form a word</span>
+        <span class="tutorial-caption--3">Words work backwards too</span>
+        <span class="tutorial-caption--4">Even diagonally!</span>
+        <span class="tutorial-caption--5">Rearrange for more points</span>
+      </div>
+
+      <button id="btn-tutorial-skip" class="btn-play">Got it &mdash; Play</button>
+    </div>
+  </div>
+
   <script src="dictionary.js"></script>
   <script src="puzzles.js"></script>
   <script src="game.js"></script>
