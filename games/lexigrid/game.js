@@ -1197,6 +1197,17 @@ document.addEventListener('focusin', function(e) {
 // Toggle handler is wired once here — #btn-hc is static in index.html and
 // survives all render() / showScreen() calls without re-binding.
 
+// ── Tutorial Dismissal ────────────────────────────────────────────────────────
+// Idempotent helper shared by the skip button and the Step-5 animationend
+// listener. On first call: persists the seen-flag and routes home. On any
+// subsequent call (e.g. skip AND animationend both fire): returns immediately.
+function dismissTutorial() {
+  if (localStorage.getItem('lexigrid_tutorialSeen') === '1') { return; }
+  localStorage.setItem('lexigrid_tutorialSeen', '1');
+  showScreen('screen-home');
+  renderHomeScreen();
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   // Apply saved HC preference BEFORE first render so every screen paints correctly.
@@ -1223,6 +1234,19 @@ document.addEventListener('DOMContentLoaded', function() {
       showScreen('screen-home');
       renderHomeScreen();
     };
+  }
+
+  // Tutorial guard: on first visit (no seen-flag and not ?design=1), show the
+  // tutorial instead of the home screen. The ?design=1 exclusion ensures the
+  // author workflow is never gated by the tutorial. Return early so the
+  // home-screen and designer branches never run on first load.
+  if (!localStorage.getItem('lexigrid_tutorialSeen') && !new URLSearchParams(location.search).get('design')) {
+    showScreen('screen-tutorial');
+    var skipBtn = document.getElementById('btn-tutorial-skip');
+    if (skipBtn) { skipBtn.onclick = function() { dismissTutorial(); }; }
+    var step5El = document.querySelector('.tutorial-step--5');
+    if (step5El) { step5El.addEventListener('animationend', function() { dismissTutorial(); }); }
+    return;
   }
 
   // Design mode: ?design=1 routes directly to the designer panel.
