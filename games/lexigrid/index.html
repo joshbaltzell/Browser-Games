@@ -161,7 +161,9 @@
         </div>
         <!-- Row 2 -->
         <div class="cell" id="tutorial-cell-place">
-          <!-- Empty — Step 1 places a tile here via the step panel overlay -->
+          <div class="tutorial-tile-fly" aria-hidden="true">
+            <div class="tile tile--selected"><span class="tile-letter">R</span><span class="tile-point">1</span></div>
+          </div>
         </div>
         <div class="cell">
           <div class="tile tutorial-tile--step5-a"><span class="tile-letter">A</span><span class="tile-point">1</span></div>
@@ -185,12 +187,8 @@
       </div>
 
       <!-- Five step animation panels (siblings, not inside the grid) -->
-      <!-- Step 1: tile slides into the empty cell -->
-      <div class="tutorial-step tutorial-step--1" aria-hidden="true">
-        <div class="tutorial-tile-fly">
-          <div class="tile tile--selected"><span class="tile-letter">R</span><span class="tile-point">1</span></div>
-        </div>
-      </div>
+      <!-- Step 1: opacity panel only — tile fly is rendered inside #tutorial-cell-place -->
+      <div class="tutorial-step tutorial-step--1" aria-hidden="true"></div>
       <!-- Steps 2–5: purely CSS-driven overlays on the grid cells (bloom/badge already inside cells above) -->
       <div class="tutorial-step tutorial-step--2" aria-hidden="true"></div>
       <div class="tutorial-step tutorial-step--3" aria-hidden="true"></div>

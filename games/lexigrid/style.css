@@ -1148,9 +1148,10 @@ body.high-contrast #btn-hc[aria-pressed="true"] {
 
 .tutorial-tile-fly {
   position: absolute;
-  /* Position over the empty cell [1,0] in the 3×3 grid.
-     The grid is centered at max-width 240px. Each cell is ~73px (240/3 = 80 minus 8px gap).
-     Cell [1,0] is bottom-left of the 2nd row. We animate from below. */
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
 }
 
@@ -1279,14 +1280,14 @@ body.high-contrast #btn-hc[aria-pressed="true"] {
   0%   { opacity: 0; }
   10%  { opacity: 1; }
   40%  { opacity: 1; }
-  60%  { opacity: 0; }
+  65%  { opacity: 0; }
   100% { opacity: 0; }
 }
 
 @keyframes tut-score-in {
   0%   { opacity: 0; }
-  50%  { opacity: 0; }
-  70%  { opacity: 1; }
+  45%  { opacity: 0; }
+  65%  { opacity: 1; }
   100% { opacity: 1; }
 }
 

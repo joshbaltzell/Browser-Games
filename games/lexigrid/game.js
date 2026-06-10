@@ -809,6 +809,7 @@ document.addEventListener('click', function(e) {
 });
 
 document.addEventListener('pointerdown', function(e) {
+  if (!document.getElementById('screen-game').classList.contains('active')) return;
   var tile = e.target.closest('.tile');
   if (!tile) return;
 
@@ -1244,8 +1245,17 @@ document.addEventListener('DOMContentLoaded', function() {
     showScreen('screen-tutorial');
     var skipBtn = document.getElementById('btn-tutorial-skip');
     if (skipBtn) { skipBtn.onclick = function() { dismissTutorial(); }; }
-    var step5El = document.querySelector('.tutorial-step--5');
-    if (step5El) { step5El.addEventListener('animationend', function() { dismissTutorial(); }); }
+    var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!prefersReduced) {
+      var step5El = document.querySelector('.tutorial-step--5');
+      if (step5El) {
+        step5El.addEventListener('animationend', function handler(e) {
+          if (e.target !== step5El) return;
+          step5El.removeEventListener('animationend', handler);
+          dismissTutorial();
+        });
+      }
+    }
     return;
   }
 
