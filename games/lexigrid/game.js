@@ -1204,6 +1204,16 @@ document.addEventListener('DOMContentLoaded', function() {
     document.body.classList.add('high-contrast');
   }
 
+  // Design mode: ?design=1 routes directly to the designer panel.
+  // This check runs BEFORE showScreen('screen-home') to prevent a home-screen flash.
+  if (new URLSearchParams(location.search).get('design') === '1') {
+    renderDesignerGrid();
+    showScreen('screen-designer');
+    var titleInput = document.getElementById('designer-title');
+    if (titleInput) titleInput.focus();
+    return;
+  }
+
   showScreen('screen-home');
   renderHomeScreen();
 
@@ -1220,4 +1230,136 @@ document.addEventListener('DOMContentLoaded', function() {
       localStorage.setItem('lexigrid_highContrast', on ? '1' : '0');
     };
   }
+
+  // Long-press on the home title (2000ms) opens the designer panel.
+  // pointerup / pointermove / pointerleave cancels the timer.
+  var homeTitle = document.querySelector('#screen-home h1');
+  if (homeTitle) {
+    var longPressTimer = null;
+    homeTitle.addEventListener('pointerdown', function() {
+      longPressTimer = setTimeout(function() {
+        renderDesignerGrid();
+        showScreen('screen-designer');
+        var titleInput = document.getElementById('designer-title');
+        if (titleInput) titleInput.focus();
+      }, 2000);
+    });
+    homeTitle.addEventListener('pointerup', function() {
+      clearTimeout(longPressTimer);
+    });
+    homeTitle.addEventListener('pointermove', function() {
+      clearTimeout(longPressTimer);
+    });
+    homeTitle.addEventListener('pointerleave', function() {
+      clearTimeout(longPressTimer);
+    });
+  }
+
+  // Back to Home from designer.
+  var designerBack = document.getElementById('btn-designer-back');
+  if (designerBack) {
+    designerBack.onclick = function(e) {
+      e.preventDefault();
+      showScreen('screen-home');
+      renderHomeScreen();
+    };
+  }
+});
+
+// ── Designer Mode (Phase 37) ──────────────────────────────────────────────────
+// Module-level designer authoring state. null until first call to initDesignerGrid().
+var designerGrid = null;
+
+function initDesignerGrid() {
+  designerGrid = [];
+  for (var r = 0; r < 4; r++) {
+    designerGrid[r] = [];
+    for (var c = 0; c < 4; c++) {
+      designerGrid[r][c] = { type: 'empty', letter: '' };
+    }
+  }
+}
+
+function renderDesignerGrid() {
+  if (!designerGrid) initDesignerGrid();
+
+  var container = document.getElementById('designer-grid');
+  if (!container) return;
+
+  var html = '';
+  for (var r = 0; r < 4; r++) {
+    for (var c = 0; c < 4; c++) {
+      var cell = designerGrid[r][c];
+      var cls = 'designer-cell';
+      var inner = '';
+      var ariaLabel = 'Row ' + (r + 1) + ' Column ' + (c + 1);
+
+      if (cell.type === 'anchor') {
+        cls += ' designer-cell--anchor';
+        inner = cell.letter;
+        ariaLabel += ', anchor ' + cell.letter;
+      } else if (cell.type === 'bonus-letter') {
+        cls += ' designer-cell--bonus-letter';
+        inner = '<span class="bonus-label">2&times;L</span>';
+        ariaLabel += ', double letter';
+      } else if (cell.type === 'bonus-word') {
+        cls += ' designer-cell--bonus-word';
+        inner = '<span class="bonus-label">2&times;W</span>';
+        ariaLabel += ', double word';
+      } else {
+        ariaLabel += ', empty';
+      }
+
+      html += '<button class="' + cls + '" type="button" data-row="' + r + '" data-col="' + c + '"' +
+        ' aria-label="' + ariaLabel + '">' + inner + '</button>';
+    }
+  }
+  container.innerHTML = html;
+}
+
+function cycleDesignerCell(row, col) {
+  if (!designerGrid) initDesignerGrid();
+  var cell = designerGrid[row][col];
+
+  if (cell.type === 'empty') {
+    // Prompt for anchor letter; if cancelled or invalid, stay empty.
+    var input = prompt('Enter anchor letter:');
+    if (input === null || input === '') return;
+    // Extract the first alphabetic character and uppercase it.
+    var match = input.match(/[A-Za-z]/);
+    if (!match) return;
+    cell.letter = match[0].toUpperCase();
+    cell.type = 'anchor';
+  } else if (cell.type === 'anchor') {
+    cell.type = 'bonus-letter';
+    cell.letter = '';
+  } else if (cell.type === 'bonus-letter') {
+    cell.type = 'bonus-word';
+  } else if (cell.type === 'bonus-word') {
+    cell.type = 'empty';
+    cell.letter = '';
+  }
+
+  renderDesignerGrid();
+}
+
+// Delegated click listener on #designer-grid (attached once at module scope;
+// survives innerHTML rebuilds because it is on the static container).
+document.addEventListener('click', function(e) {
+  var cell = e.target.closest('#designer-grid .designer-cell');
+  if (!cell) return;
+  var row = parseInt(cell.dataset.row, 10);
+  var col = parseInt(cell.dataset.col, 10);
+  cycleDesignerCell(row, col);
+});
+
+// Delegated keydown listener for keyboard operability (Enter / Space).
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  var cell = e.target.closest('#designer-grid .designer-cell');
+  if (!cell) return;
+  e.preventDefault();
+  var row = parseInt(cell.dataset.row, 10);
+  var col = parseInt(cell.dataset.col, 10);
+  cycleDesignerCell(row, col);
 });

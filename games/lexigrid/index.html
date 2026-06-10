@@ -80,6 +80,53 @@
     </div>
   </div>
 
+  <!-- Designer Screen (Phase 37) -->
+  <div id="screen-designer" class="screen">
+    <div class="screen-wrapper">
+      <a class="back-link" id="btn-designer-back" href="#">Home</a>
+      <h2 class="screen-title">Puzzle Designer</h2>
+
+      <div class="designer-section">
+        <label for="designer-grid">Grid</label>
+        <div class="designer-grid" id="designer-grid"></div>
+      </div>
+
+      <div class="designer-section">
+        <label for="designer-title">Title</label>
+        <input type="text" id="designer-title" placeholder="Puzzle title" />
+
+        <label for="designer-difficulty">Difficulty</label>
+        <select id="designer-difficulty">
+          <option value="1" selected>Easy</option>
+          <option value="2">Medium</option>
+          <option value="3">Hard</option>
+        </select>
+
+        <label for="designer-tray">Tray Letters</label>
+        <input type="text" id="designer-tray" placeholder="A,B,C,D,E,F,G" />
+
+        <label for="designer-words">Word List</label>
+        <textarea id="designer-words" rows="6" placeholder="One word per line"></textarea>
+
+        <label for="designer-dedication">Dedication (optional)</label>
+        <input type="text" id="designer-dedication" placeholder="Optional dedication" />
+      </div>
+
+      <div class="designer-actions">
+        <button id="btn-compute">Compute Max Score</button>
+      </div>
+
+      <div id="designer-feedback"></div>
+
+      <pre id="designer-output">Fill in the grid and word list, then click Compute Max Score.</pre>
+
+      <div class="designer-actions">
+        <button id="btn-copy-json">Copy JSON</button>
+        <button id="btn-play-test">Play Test</button>
+      </div>
+    </div>
+  </div>
+
   <script src="dictionary.js"></script>
   <script src="puzzles.js"></script>
   <script src="game.js"></script>
