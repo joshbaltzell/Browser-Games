@@ -67,7 +67,7 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 | 33 | Screens & Puzzle Data | Players can navigate home, library, and results screens with real puzzle data | PUZZLE-01, PUZZLE-02, PUZZLE-03, PUZZLE-04, SCREEN-01, SCREEN-02, SCREEN-03, SCREEN-04, SCREEN-05 | 5 |
 | 34 | Word Feedback | Players receive immediate, animated feedback for every word they form | FEED-01, FEED-02, FEED-03, FEED-04, FEED-05 | 4 |
 | 35 | Tile Interaction Polish | Tile placement feels tactile and controllable with sound, animation, and undo | TILE-01, TILE-02, TILE-03, TILE-04, TILE-05 | 4 |
-| 36 | Aesthetic & Accessibility | 3/3 | Complete | 2026-06-09 |
+| 36 | Aesthetic & Accessibility | 3/3 | Complete   | 2026-06-09 |
 | 37 | Designer Mode | Puzzle authors can build and export new puzzles using an in-browser tool | AUTH-01 | 3 |
 | 38 | Animated Primer | First-time players understand how to play through a silent CSS tutorial | ON-01 | 3 |
 
@@ -133,7 +133,7 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 2. All grid cells and tray tiles have `tabindex="0"` and visible `focus-visible` amber outlines; arrow keys move grid focus, Tab cycles tray tiles, Space selects/places, Escape deselects, Delete returns a placed tile to the tray
 3. High-contrast toggle in the score bar applies WCAG AA overrides (`#1a1a1a` background, `#ffffff` tiles, `#ffff00` highlights) and persists the preference to localStorage
 4. All interactions are fully operable without a mouse — a player can complete an entire puzzle using only keyboard input
-**Plans:** 3/3 plans executed
+**Plans:** 3/3 plans complete
 - [x] 36-01-PLAN.md — Coffee ring ambient Easter egg (seeded CSS stain + hover tooltip)
 - [x] 36-02-PLAN.md — Full keyboard navigation (arrows, Tab, Space/Escape/Delete, ARIA, focus mgmt)
 - [x] 36-03-PLAN.md — WCAG AA high-contrast mode (score-bar toggle + persisted body override)
@@ -147,7 +147,9 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 1. Visiting `?design=1` (or long-pressing the game title for 2 seconds) reveals the designer panel with grid size picker, word list textarea, bonus cell assignment, and difficulty selector
 2. Clicking "Compute Max Score" runs the full word-detection engine against the author's word list and reports reachability and the computed maxScore value
 3. The panel outputs a formatted `JSON.stringify(puzzleObj, null, 2)` into a copyable `<pre>` block that can be pasted directly into the puzzle data array
-**Plans:** TBD
+**Plans:** 2 plans
+- [ ] 37-01-PLAN.md — Panel shell: #screen-designer + styles, designerGrid model + 4-state cell cycle, ?design=1 / long-press entry, Back to Home
+- [ ] 37-02-PLAN.md — Solver + export: buildDesignerPuzzle, global-swap Compute Max Score, JSON output, Copy JSON, Play Test
 
 ### Phase 38: Animated Primer
 **Goal:** First-time players understand all core mechanics through a 30-second silent CSS tutorial before touching the real game.
