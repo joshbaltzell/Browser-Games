@@ -1204,6 +1204,27 @@ document.addEventListener('DOMContentLoaded', function() {
     document.body.classList.add('high-contrast');
   }
 
+  // Wire buttons that must work regardless of entry path (?design=1 or normal).
+  var hcBtn = document.getElementById('btn-hc');
+  if (hcBtn) {
+    hcBtn.setAttribute('aria-pressed', document.body.classList.contains('high-contrast') ? 'true' : 'false');
+    hcBtn.onclick = function() {
+      document.body.classList.toggle('high-contrast');
+      var on = document.body.classList.contains('high-contrast');
+      hcBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      localStorage.setItem('lexigrid_highContrast', on ? '1' : '0');
+    };
+  }
+
+  var designerBack = document.getElementById('btn-designer-back');
+  if (designerBack) {
+    designerBack.onclick = function(e) {
+      e.preventDefault();
+      showScreen('screen-home');
+      renderHomeScreen();
+    };
+  }
+
   // Design mode: ?design=1 routes directly to the designer panel.
   // This check runs BEFORE showScreen('screen-home') to prevent a home-screen flash.
   if (new URLSearchParams(location.search).get('design') === '1') {
@@ -1217,22 +1238,7 @@ document.addEventListener('DOMContentLoaded', function() {
   showScreen('screen-home');
   renderHomeScreen();
 
-  // Wire the HC toggle button (once — button lives in static HTML, not rebuilt by render).
-  var hcBtn = document.getElementById('btn-hc');
-  if (hcBtn) {
-    // Initialise aria-pressed to match the restored preference.
-    hcBtn.setAttribute('aria-pressed', document.body.classList.contains('high-contrast') ? 'true' : 'false');
-
-    hcBtn.onclick = function() {
-      document.body.classList.toggle('high-contrast');
-      var on = document.body.classList.contains('high-contrast');
-      hcBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-      localStorage.setItem('lexigrid_highContrast', on ? '1' : '0');
-    };
-  }
-
   // Long-press on the home title (2000ms) opens the designer panel.
-  // pointerup / pointermove / pointerleave cancels the timer.
   var homeTitle = document.querySelector('#screen-home h1');
   if (homeTitle) {
     var longPressTimer = null;
@@ -1244,25 +1250,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (titleInput) titleInput.focus();
       }, 2000);
     });
-    homeTitle.addEventListener('pointerup', function() {
-      clearTimeout(longPressTimer);
-    });
-    homeTitle.addEventListener('pointermove', function() {
-      clearTimeout(longPressTimer);
-    });
-    homeTitle.addEventListener('pointerleave', function() {
-      clearTimeout(longPressTimer);
-    });
-  }
-
-  // Back to Home from designer.
-  var designerBack = document.getElementById('btn-designer-back');
-  if (designerBack) {
-    designerBack.onclick = function(e) {
-      e.preventDefault();
-      showScreen('screen-home');
-      renderHomeScreen();
-    };
+    homeTitle.addEventListener('pointerup', function() { clearTimeout(longPressTimer); });
+    homeTitle.addEventListener('pointermove', function() { clearTimeout(longPressTimer); });
+    homeTitle.addEventListener('pointerleave', function() { clearTimeout(longPressTimer); });
+    homeTitle.addEventListener('pointercancel', function() { clearTimeout(longPressTimer); });
   }
 });
 
@@ -1389,10 +1380,10 @@ function buildDesignerPuzzle() {
   var wordsRaw   = wordsEl   ? wordsEl.value           : '';
   var dedicRaw   = dedicEl   ? dedicEl.value.trim()    : '';
 
-  // Parse tray: comma-separated, trim, drop empty, uppercase
+  // Parse tray: comma-separated, trim, uppercase; keep only single alpha chars
   var letters = trayRaw.split(',').map(function(s) {
     return s.trim().toUpperCase();
-  }).filter(function(s) { return s.length > 0; });
+  }).filter(function(s) { return s.length === 1 && /[A-Z]/.test(s); });
 
   // Parse words: one per line, trim, drop empty, uppercase
   var words = wordsRaw.split('\n').map(function(s) {
@@ -1668,17 +1659,20 @@ document.addEventListener('click', function(e) {
       }
     }
 
-    // Success line (neutral color).
+    // Success line (neutral color) — built with DOM nodes to avoid XSS from word-list input.
     feedback.style.color = '';
-    feedback.innerHTML =
-      '<span style="color:var(--score-fg)">' +
-      reachCount + ' word' + (reachCount !== 1 ? 's' : '') + ' reachable. Max score: ' + result.maxScore + '.</span>';
+    feedback.textContent = '';
+    var okSpan = document.createElement('span');
+    okSpan.style.color = 'var(--score-fg)';
+    okSpan.textContent = reachCount + ' word' + (reachCount !== 1 ? 's' : '') + ' reachable. Max score: ' + result.maxScore + '.';
+    feedback.appendChild(okSpan);
 
-    // Append unreachable list if any.
     if (unreachable.length > 0) {
-      feedback.innerHTML +=
-        '<br><span style="color:var(--difficulty-hard)">Not reachable: ' +
-        unreachable.join(', ') + '</span>';
+      feedback.appendChild(document.createElement('br'));
+      var badSpan = document.createElement('span');
+      badSpan.style.color = 'var(--difficulty-hard)';
+      badSpan.textContent = 'Not reachable: ' + unreachable.join(', ');
+      feedback.appendChild(badSpan);
     }
 
     // Build the final puzzle with maxScore filled in and render to #designer-output.
@@ -1738,6 +1732,11 @@ document.addEventListener('click', function(e) {
   if (!e.target || e.target.id !== 'btn-play-test') return;
 
   var puzzle = buildDesignerPuzzle();
+  if (!puzzle.letters || puzzle.letters.length === 0) {
+    var fb = document.getElementById('designer-feedback');
+    if (fb) { fb.style.color = 'var(--difficulty-hard)'; fb.textContent = 'Add tray letters before play-testing.'; }
+    return;
+  }
   // Override id with title-slug + '-test' per UI-SPEC Play Test.
   var slug = (puzzle.title || 'puzzle').toLowerCase()
     .replace(/\s+/g, '-')
