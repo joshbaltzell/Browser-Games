@@ -1363,3 +1363,387 @@ document.addEventListener('keydown', function(e) {
   var col = parseInt(cell.dataset.col, 10);
   cycleDesignerCell(row, col);
 });
+
+// ── Designer: buildDesignerPuzzle ─────────────────────────────────────────────
+// Assembles a schema-correct puzzle object from the current designerGrid state
+// and all form inputs. Matches the real puzzles.js schema exactly:
+//   id (string), date (YYYY-MM-DD), title (string), difficulty (NUMBER 1|2|3),
+//   gridSize (NUMBER 4), letters ([uppercase chars]), anchors ([{row,col,letter}]),
+//   bonusCells ([{row,col,type:'2xL'|'2xW'}]), words ([uppercase strings]),
+//   maxScore (number — 0 until solver fills it), dedication (string|null)
+function buildDesignerPuzzle() {
+  if (!designerGrid) initDesignerGrid();
+
+  var today = new Date().toISOString().slice(0, 10);
+
+  // Form inputs
+  var titleEl   = document.getElementById('designer-title');
+  var diffEl    = document.getElementById('designer-difficulty');
+  var trayEl    = document.getElementById('designer-tray');
+  var wordsEl   = document.getElementById('designer-words');
+  var dedicEl   = document.getElementById('designer-dedication');
+
+  var title      = titleEl   ? titleEl.value.trim()   : '';
+  var difficulty = diffEl    ? parseInt(diffEl.value, 10) : 1;
+  var trayRaw    = trayEl    ? trayEl.value            : '';
+  var wordsRaw   = wordsEl   ? wordsEl.value           : '';
+  var dedicRaw   = dedicEl   ? dedicEl.value.trim()    : '';
+
+  // Parse tray: comma-separated, trim, drop empty, uppercase
+  var letters = trayRaw.split(',').map(function(s) {
+    return s.trim().toUpperCase();
+  }).filter(function(s) { return s.length > 0; });
+
+  // Parse words: one per line, trim, drop empty, uppercase
+  var words = wordsRaw.split('\n').map(function(s) {
+    return s.trim().toUpperCase();
+  }).filter(function(s) { return s.length > 0; });
+
+  // Auto-generate id: slug from title + YYYY-MM-DD suffix
+  var slug = title.toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '');
+  var id = (slug || 'puzzle') + '-' + today;
+
+  // Build anchors and bonusCells from designerGrid
+  var anchors = [];
+  var bonusCells = [];
+  for (var r = 0; r < 4; r++) {
+    for (var c = 0; c < 4; c++) {
+      var cell = designerGrid[r][c];
+      if (cell.type === 'anchor') {
+        anchors.push({ row: r, col: c, letter: cell.letter });
+      } else if (cell.type === 'bonus-letter') {
+        bonusCells.push({ row: r, col: c, type: '2xL' });
+      } else if (cell.type === 'bonus-word') {
+        bonusCells.push({ row: r, col: c, type: '2xW' });
+      }
+    }
+  }
+
+  return {
+    id:         id,
+    date:       today,
+    title:      title,
+    difficulty: difficulty,
+    gridSize:   4,
+    letters:    letters,
+    anchors:    anchors,
+    bonusCells: bonusCells,
+    words:      words,
+    maxScore:   0,
+    dedication: dedicRaw || null
+  };
+}
+
+// ── Designer: computeDesignerMaxScore ─────────────────────────────────────────
+// Brute-force solver: tries permutations of tray letters into empty grid cells,
+// drives the real detectWords()/computeScore() engine by temporarily swapping
+// module globals, then restores them in a guaranteed path.
+//
+// Cap: if tray length > 8, returns { capExceeded: true } immediately.
+//
+// Bounding strategy: we enumerate all C(emptyCount, trayLength) * trayLength!
+// arrangements when tray <= 8 (worst case: 8! * C(16,8) = 40320 * 12870 is too
+// large, so we cap at trayLength <= 8 tiles total and emptyCount is at most 16;
+// in practice anchor tiles reduce empty cells significantly). For tray <= 8 with
+// up to 16 empty cells the product stays within ~100k calls — acceptable sync.
+//
+// Returns:
+//   { capExceeded: false, maxScore: number, reachable: Set<string>, puzzleWords: string[] }
+//   { capExceeded: true }
+function computeDesignerMaxScore() {
+  // 1. Build the candidate puzzle (maxScore = 0; solver fills it).
+  var candidate = buildDesignerPuzzle();
+
+  // 2. Collect tray letters and empty cell positions.
+  var trayLetters = candidate.letters.slice(); // copy
+
+  // Hard cap at 8 tray tiles.
+  if (trayLetters.length > 8) {
+    return { capExceeded: true };
+  }
+
+  // Find all non-anchor cell positions (empty placeable cells).
+  var anchorSet = {};
+  for (var ai = 0; ai < candidate.anchors.length; ai++) {
+    var a = candidate.anchors[ai];
+    anchorSet[a.row + ',' + a.col] = true;
+  }
+  var emptyCells = [];
+  for (var r = 0; r < 4; r++) {
+    for (var c = 0; c < 4; c++) {
+      if (!anchorSet[r + ',' + c]) {
+        emptyCells.push({ row: r, col: c });
+      }
+    }
+  }
+
+  // 3. If no tray letters, just evaluate with anchors-only placement.
+  var bestScore = 0;
+  var reachable = new Set();
+
+  // 4. SAVE current live globals into locals (guaranteed restore path below).
+  var savedGrid    = gridState;
+  var savedPuzzle  = currentPuzzle;
+  var savedTray    = trayState;
+  var savedFound   = foundWords;
+
+  try {
+    // 5. Install the designer puzzle as currentPuzzle so detectWords reads
+    //    its .words and getBonusCell reads its .bonusCells.
+    currentPuzzle = candidate;
+
+    // Helper: build a fresh 4×4 gridState, place anchors, then place the given
+    // tray letters at the given cell positions. Returns the grid (does NOT assign
+    // to the global yet — caller does that before calling detectWords).
+    function buildGrid(anchorList, tileAssignments) {
+      // tileAssignments: array of { row, col, letter }
+      var g = [];
+      for (var rr = 0; rr < 4; rr++) {
+        g[rr] = [null, null, null, null];
+      }
+      for (var ii = 0; ii < anchorList.length; ii++) {
+        var anch = anchorList[ii];
+        g[anch.row][anch.col] = {
+          letter: anch.letter,
+          value: letterValue(anch.letter),
+          isAnchor: true
+        };
+      }
+      for (var jj = 0; jj < tileAssignments.length; jj++) {
+        var t = tileAssignments[jj];
+        g[t.row][t.col] = {
+          letter: t.letter,
+          value: letterValue(t.letter),
+          isAnchor: false
+        };
+      }
+      return g;
+    }
+
+    // Helper: collect bare word strings from the current foundWords Set.
+    function collectFound() {
+      foundWords.forEach(function(key) {
+        var colon = key.indexOf(':');
+        reachable.add(key.substring(0, colon));
+      });
+    }
+
+    // 6. Enumerate all arrangements:
+    //    - Choose which emptyCells receive tray tiles (C(emptyCount, trayLen) selections)
+    //    - For each selection, enumerate all permutations of trayLetters into those cells
+    //    - Evaluate each arrangement with detectWords() + computeScore()
+    //
+    // If no tray letters, evaluate anchors-only configuration once.
+    if (trayLetters.length === 0) {
+      gridState = buildGrid(candidate.anchors, []);
+      detectWords();           // writes foundWords
+      var s = computeScore(); // reads foundWords
+      if (s > bestScore) bestScore = s;
+      collectFound();
+    } else {
+      var trayLen = trayLetters.length;
+      var emptyLen = emptyCells.length;
+
+      // Generate all combinations of `trayLen` indices from `emptyCells`.
+      // We iterate via a combination index array.
+      function evaluateCellSelection(selectedCells, permLetters) {
+        // permLetters is an array of trayLen letters (already permuted).
+        var assignments = [];
+        for (var k = 0; k < trayLen; k++) {
+          assignments.push({
+            row: selectedCells[k].row,
+            col: selectedCells[k].col,
+            letter: permLetters[k]
+          });
+        }
+        gridState = buildGrid(candidate.anchors, assignments);
+        detectWords();            // writes foundWords (global)
+        var sc = computeScore(); // reads foundWords
+        if (sc > bestScore) bestScore = sc;
+        collectFound();
+      }
+
+      // Permutation generator: calls cb for every permutation of arr.
+      function permuteAndEval(arr, selectedCells, start) {
+        if (start === arr.length) {
+          evaluateCellSelection(selectedCells, arr);
+          return;
+        }
+        for (var p = start; p < arr.length; p++) {
+          // swap
+          var tmp = arr[start]; arr[start] = arr[p]; arr[p] = tmp;
+          permuteAndEval(arr, selectedCells, start + 1);
+          // swap back
+          tmp = arr[start]; arr[start] = arr[p]; arr[p] = tmp;
+        }
+      }
+
+      // Combination generator: builds each selection of `trayLen` cells from
+      // `emptyCells`, then calls permuteAndEval for each permutation.
+      function combineCells(start, chosen) {
+        if (chosen.length === trayLen) {
+          // Make a copy of trayLetters for each permutation sub-tree.
+          permuteAndEval(trayLetters.slice(), chosen, 0);
+          return;
+        }
+        var remaining = trayLen - chosen.length;
+        var available = emptyLen - start;
+        if (available < remaining) return; // prune: not enough cells left
+        for (var idx = start; idx < emptyLen; idx++) {
+          chosen.push(emptyCells[idx]);
+          combineCells(idx + 1, chosen);
+          chosen.pop();
+        }
+      }
+
+      combineCells(0, []);
+    }
+  } finally {
+    // 7. RESTORE all live game globals — guaranteed even if an exception occurs.
+    gridState     = savedGrid;
+    currentPuzzle = savedPuzzle;
+    trayState     = savedTray;
+    foundWords    = savedFound;
+  }
+
+  // 8. Return results.
+  return {
+    capExceeded: false,
+    maxScore: bestScore,
+    reachable: reachable,
+    puzzleWords: candidate.words
+  };
+}
+
+// ── Designer: Button wiring (compute, copy, play-test) ───────────────────────
+// Attached once at module scope — all three buttons are static in index.html.
+
+// Enable/disable #btn-compute based on whether tray and word list are both non-empty.
+// Re-evaluated on input events.
+function updateComputeButtonState() {
+  var trayEl  = document.getElementById('designer-tray');
+  var wordsEl = document.getElementById('designer-words');
+  var btn     = document.getElementById('btn-compute');
+  if (!btn) return;
+  var trayEmpty  = !trayEl  || trayEl.value.trim() === '';
+  var wordsEmpty = !wordsEl || wordsEl.value.trim() === '';
+  btn.disabled = trayEmpty || wordsEmpty;
+}
+
+document.addEventListener('input', function(e) {
+  if (e.target && (e.target.id === 'designer-tray' || e.target.id === 'designer-words')) {
+    updateComputeButtonState();
+  }
+});
+
+// #btn-compute click handler
+document.addEventListener('click', function(e) {
+  if (!e.target || e.target.id !== 'btn-compute') return;
+
+  var btn      = document.getElementById('btn-compute');
+  var feedback = document.getElementById('designer-feedback');
+  var output   = document.getElementById('designer-output');
+
+  btn.textContent = 'Computing…';
+  btn.disabled    = true;
+
+  var result = computeDesignerMaxScore();
+
+  if (result.capExceeded) {
+    // Show the brute-force cap warning; leave the output pre unchanged.
+    feedback.style.color = 'var(--difficulty-hard)';
+    feedback.textContent = 'Too many tiles to brute-force — place some anchor tiles to reduce the tray size.';
+  } else {
+    // Build feedback: reachability report.
+    var reachCount = 0;
+    var unreachable = [];
+    for (var wi = 0; wi < result.puzzleWords.length; wi++) {
+      var w = result.puzzleWords[wi];
+      if (result.reachable.has(w)) {
+        reachCount++;
+      } else {
+        unreachable.push(w);
+      }
+    }
+
+    // Success line (neutral color).
+    feedback.style.color = '';
+    feedback.innerHTML =
+      '<span style="color:var(--score-fg)">' +
+      reachCount + ' word' + (reachCount !== 1 ? 's' : '') + ' reachable. Max score: ' + result.maxScore + '.</span>';
+
+    // Append unreachable list if any.
+    if (unreachable.length > 0) {
+      feedback.innerHTML +=
+        '<br><span style="color:var(--difficulty-hard)">Not reachable: ' +
+        unreachable.join(', ') + '</span>';
+    }
+
+    // Build the final puzzle with maxScore filled in and render to #designer-output.
+    var puzzle = buildDesignerPuzzle();
+    puzzle.maxScore = result.maxScore;
+    if (output) output.textContent = JSON.stringify(puzzle, null, 2);
+  }
+
+  btn.textContent = 'Compute Max Score';
+  updateComputeButtonState();
+});
+
+// #btn-copy-json click handler — mirrors the results postcard clipboard pattern.
+document.addEventListener('click', function(e) {
+  if (!e.target || e.target.id !== 'btn-copy-json') return;
+
+  var btn    = document.getElementById('btn-copy-json');
+  var output = document.getElementById('designer-output');
+  var text   = output ? output.textContent : '';
+
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function() {
+      btn.textContent = 'Copied!';
+      setTimeout(function() { btn.textContent = 'Copy JSON'; }, 1500);
+    }).catch(function() {
+      btn.textContent = 'Copy failed — select and copy the text manually.';
+      setTimeout(function() { btn.textContent = 'Copy JSON'; }, 3000);
+    });
+  } else {
+    // Fallback: temporary textarea + execCommand
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity  = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) {
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = 'Copy JSON'; }, 1500);
+      } else {
+        throw new Error('execCommand returned false');
+      }
+    } catch (err) {
+      btn.textContent = 'Copy failed — select and copy the text manually.';
+      setTimeout(function() { btn.textContent = 'Copy JSON'; }, 3000);
+    }
+  }
+});
+
+// #btn-play-test click handler — builds the puzzle (id suffixed -test), then
+// calls loadPuzzle() which resets all game globals and calls showScreen('screen-game').
+document.addEventListener('click', function(e) {
+  if (!e.target || e.target.id !== 'btn-play-test') return;
+
+  var puzzle = buildDesignerPuzzle();
+  // Override id with title-slug + '-test' per UI-SPEC Play Test.
+  var slug = (puzzle.title || 'puzzle').toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '');
+  puzzle.id = (slug || 'puzzle') + '-test';
+
+  loadPuzzle(puzzle);
+  // loadPuzzle() already calls showScreen('screen-game'); do not call it again.
+});
