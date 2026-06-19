@@ -797,6 +797,200 @@ function computeSpawnPoints(room) {
 }
 
 // ----------------------------------------------------------------------------
+// Rendering — maze
+// ----------------------------------------------------------------------------
+
+// renderRoom(room) — draws the tile grid for the given room, centered on canvas.
+// Step order: floor → wall outlines → door glow dots → (optional) debug overlay.
+// Guard: if no room or grid, returns immediately to prevent crash before generateLevel fires.
+function renderRoom(room) {
+  if (!room || !room.grid) return;
+
+  var rows = room.rows;
+  var cols = room.cols;
+
+  // Step 1 — Compute centering (D-17 spec: each tile = TILE_SIZE px)
+  var originX = Math.floor((W - cols * TILE_SIZE) / 2);
+  var originY = Math.floor((H - rows * TILE_SIZE) / 2);
+
+  // Step 2 — Scale-to-fit fallback (guard for Boss rooms or very small canvases)
+  var scale = 1;
+  if (cols * TILE_SIZE > W || rows * TILE_SIZE > H) {
+    scale = Math.min(W / (cols * TILE_SIZE), H / (rows * TILE_SIZE)) * 0.9;
+    ctx.save();
+    ctx.scale(scale, scale);
+    originX = Math.floor((W / scale - cols * TILE_SIZE) / 2);
+    originY = Math.floor((H / scale - rows * TILE_SIZE) / 2);
+  }
+
+  // Step 3 — Draw floor tiles (value 0) in near-black #0d0d1a
+  ctx.fillStyle = "#0d0d1a";
+  for (var fr = 0; fr < rows; fr++) {
+    for (var fc = 0; fc < cols; fc++) {
+      if (room.grid[fr * cols + fc] === 0) {
+        ctx.fillRect(originX + fc * TILE_SIZE, originY + fr * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      }
+    }
+  }
+
+  // Step 4 — Draw wall tile backgrounds (value 1) — same as canvas bg, making walls "invisible"
+  // until the edge outlines in Step 5 reveal them.
+  ctx.fillStyle = "#05050c";
+  for (var wr = 0; wr < rows; wr++) {
+    for (var wc = 0; wc < cols; wc++) {
+      if (room.grid[wr * cols + wc] === 1) {
+        ctx.fillRect(originX + wc * TILE_SIZE, originY + wr * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      }
+    }
+  }
+
+  // Step 5 — Draw wall edge outlines (value 1 only).
+  // Batched: single beginPath() before the outer loop, one stroke() after — T-40-08 mitigation.
+  // Only draw a 0.5px edge where a wall tile borders a floor tile (or out-of-bounds).
+  ctx.strokeStyle = "rgba(0,229,255,0.35)";
+  ctx.lineWidth = 0.5;
+  var dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]]; // N, S, W, E
+  ctx.beginPath();
+  for (var er = 0; er < rows; er++) {
+    for (var ec = 0; ec < cols; ec++) {
+      if (room.grid[er * cols + ec] !== 1) continue; // only wall tiles
+      var tx = originX + ec * TILE_SIZE;
+      var ty = originY + er * TILE_SIZE;
+      for (var di = 0; di < dirs.length; di++) {
+        var dr = dirs[di][0];
+        var dc = dirs[di][1];
+        var nr = er + dr;
+        var nc = ec + dc;
+        // Neighbor is floor/door or out-of-bounds → draw edge segment
+        var neighborIsFloor = (nr < 0 || nr >= rows || nc < 0 || nc >= cols) ||
+                               room.grid[nr * cols + nc] === 0 ||
+                               room.grid[nr * cols + nc] >= 2;
+        if (neighborIsFloor) {
+          if (dr === -1) { ctx.moveTo(tx, ty); ctx.lineTo(tx + TILE_SIZE, ty); }                         // N edge
+          if (dr ===  1) { ctx.moveTo(tx, ty + TILE_SIZE); ctx.lineTo(tx + TILE_SIZE, ty + TILE_SIZE); } // S edge
+          if (dc === -1) { ctx.moveTo(tx, ty); ctx.lineTo(tx, ty + TILE_SIZE); }                         // W edge
+          if (dc ===  1) { ctx.moveTo(tx + TILE_SIZE, ty); ctx.lineTo(tx + TILE_SIZE, ty + TILE_SIZE); } // E edge
+        }
+      }
+    }
+  }
+  ctx.stroke();
+
+  // Step 6 — Draw door glow dots (tile values 2–5: N/E/S/W doors)
+  var pulse = Math.sin(Date.now() / 800);
+  var doorR = 3 + pulse * 1.5;
+  var doorColor = (room.type === "BOSS") ? COLORS.pink : COLORS.cyan;
+  for (var dr2 = 0; dr2 < rows; dr2++) {
+    for (var dc2 = 0; dc2 < cols; dc2++) {
+      if (room.grid[dr2 * cols + dc2] >= 2) {
+        var cx = originX + dc2 * TILE_SIZE + TILE_SIZE / 2;
+        var cy = originY + dr2 * TILE_SIZE + TILE_SIZE / 2;
+        glowCircle(cx, cy, doorR, doorColor, 12);
+      }
+    }
+  }
+
+  // Step 7 — Conditional debug overlay (DEBUG guard + visibility toggle)
+  if (DEBUG && debugOverlayVisible) renderDebugOverlay();
+
+  // Step 8 — Restore scale if applied in Step 2
+  if (scale !== 1) ctx.restore();
+}
+
+// renderDebugOverlay() — draws the D-key debug overlay on top of the tile grid.
+// Only callable when DEBUG===true AND debugOverlayVisible===true (enforced by renderRoom caller).
+// Layers: slot grid → filled slots → connection lines → room labels → current-room highlight → seed readout.
+function renderDebugOverlay() {
+  if (!currentLevel) return;
+  var rooms = currentLevel.rooms;
+
+  // Slot grid dimensions — 4x4 coarse grid over the full canvas
+  var SLOT_W = W / 4;
+  var SLOT_H = H / 4;
+
+  ctx.save();
+
+  // Layer 1: 4x4 slot grid lines (faint white)
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  ctx.lineWidth = 1;
+  for (var r = 0; r <= 4; r++) {
+    ctx.beginPath();
+    ctx.moveTo(0, r * SLOT_H);
+    ctx.lineTo(W, r * SLOT_H);
+    ctx.stroke();
+  }
+  for (var c = 0; c <= 4; c++) {
+    ctx.beginPath();
+    ctx.moveTo(c * SLOT_W, 0);
+    ctx.lineTo(c * SLOT_W, H);
+    ctx.stroke();
+  }
+
+  // Layer 2: Filled slot rects by room type
+  var typeColors = {
+    "START":  "rgba(0,229,255,0.125)",
+    "NORMAL": "rgba(255,255,255,0.04)",
+    "ELITE":  "rgba(179,136,255,0.125)",
+    "SHOP":   "rgba(255,251,150,0.125)",
+    "BOSS":   "rgba(255,59,107,0.125)",
+  };
+  rooms.forEach(function(room) {
+    var sr = Math.floor(room.slotIdx / 4);
+    var sc = room.slotIdx % 4;
+    ctx.fillStyle = typeColors[room.type] || "rgba(255,255,255,0.04)";
+    ctx.fillRect(sc * SLOT_W, sr * SLOT_H, SLOT_W, SLOT_H);
+  });
+
+  // Layer 3: Connection lines between slot centers
+  ctx.globalAlpha = 0.4;
+  ctx.strokeStyle = COLORS.cyan;
+  ctx.lineWidth = 1;
+  Object.keys(currentLevel.connections).forEach(function(connStr) {
+    var parts = connStr.split("-");
+    var idxA = parseInt(parts[0], 10);
+    var idxB = parseInt(parts[1], 10);
+    var rA = Math.floor(idxA / 4);
+    var cA = idxA % 4;
+    var rB = Math.floor(idxB / 4);
+    var cB = idxB % 4;
+    ctx.beginPath();
+    ctx.moveTo(cA * SLOT_W + SLOT_W / 2, rA * SLOT_H + SLOT_H / 2);
+    ctx.lineTo(cB * SLOT_W + SLOT_W / 2, rB * SLOT_H + SLOT_H / 2);
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+
+  // Layer 4: Room-type labels at slot centers
+  ctx.font = "11px \"Segoe UI\", system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  rooms.forEach(function(room) {
+    var sr = Math.floor(room.slotIdx / 4);
+    var sc = room.slotIdx % 4;
+    ctx.fillText(room.type, sc * SLOT_W + SLOT_W / 2, sr * SLOT_H + SLOT_H / 2);
+  });
+
+  // Layer 5: Current room highlight (white stroke rect around current room's slot)
+  if (currentRoom) {
+    var sr2 = Math.floor(currentRoom.slotIdx / 4);
+    var sc2 = currentRoom.slotIdx % 4;
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(sc2 * SLOT_W + 2, sr2 * SLOT_H + 2, SLOT_W - 4, SLOT_H - 4);
+  }
+
+  // Layer 6: Seed readout at top-left
+  ctx.font = "12px \"Segoe UI\", system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(154,154,192,0.8)";
+  ctx.fillText("SEED: " + currentLevel.seed, 8, 8);
+
+  ctx.restore();
+}
+
+// ----------------------------------------------------------------------------
 // Input / audio-unlock gate
 // ----------------------------------------------------------------------------
 function handleFirstGesture() {
@@ -896,22 +1090,22 @@ function renderTitle() {
 }
 
 function renderPlaying() {
-  // Background
+  // Step 1 — Clear to background
   ctx.fillStyle = "#05050c";
   ctx.fillRect(0, 0, W, H);
 
-  // Decorative grid (slightly more visible in playing state)
+  // Step 2 — Decorative grid (retained from Phase 39; recedes behind tile grid)
   ctx.save();
   ctx.globalAlpha = 0.06;
   ctx.strokeStyle = COLORS.cyan;
   ctx.lineWidth = 0.5;
-  for (let y = 0; y < H; y += 40) {
+  for (var y = 0; y < H; y += 40) {
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(W, y);
     ctx.stroke();
   }
-  for (let x = 0; x < W; x += 40) {
+  for (var x = 0; x < W; x += 40) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, H);
@@ -919,22 +1113,8 @@ function renderPlaying() {
   }
   ctx.restore();
 
-  // Center glow orb — pulsing cyan with pink core
-  const pulse = Math.sin(Date.now() / 800);
-  const r = 28 + pulse * 4;
-  glowCircle(W / 2, H / 2, r, COLORS.cyan, 48);
-  glowCircle(W / 2, H / 2, 10, COLORS.pink, 20);
-
-  // Wordmark label above orb
-  ctx.save();
-  ctx.font = "bold 20px 'Segoe UI', system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = "#e8e8ff";
-  ctx.shadowBlur = 0;
-  ctx.fillText("NEON GAUNTLET", W / 2, H / 2 - 72);
-  ctx.restore();
-  // TODO(phase-40): replace placeholder render with maze/room draw calls
+  // Step 3 — Draw the current room tile grid (floor, wall outlines, door glow dots)
+  renderRoom(currentRoom);
 }
 
 function render() {
