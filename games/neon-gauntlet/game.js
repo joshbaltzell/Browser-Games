@@ -403,6 +403,69 @@ function generateLevel(levelNumber, seed) {
     }
   });
 
+  // Place door tiles at border midpoints for each connection direction (Plan 02 — Task 2).
+  level.rooms.forEach(function(room) {
+    placeDoors(room);
+  });
+
+  // Tile-level BFS validation (D-15): ensure every door tile is reachable from room center.
+  // If unreachable, regenerate once with offset seed. (Plan 02 — Task 2).
+  var retryRng = mulberry32(level.seed + 99999);
+  level.rooms.forEach(function(room) {
+    if (!room.grid) return;
+    var rows = room.rows;
+    var cols = room.cols;
+    var centerR = Math.floor(rows / 2);
+    var centerC = Math.floor(cols / 2);
+    var reachable = tileBFS(room.grid, rows, cols, centerR, centerC);
+
+    // Find any door tile in the room.
+    var doorUnreachable = false;
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        var v = room.grid[r * cols + c];
+        if (v >= 2 && v <= 5) {
+          if (!reachable.has(r + "," + c)) {
+            doorUnreachable = true;
+            break;
+          }
+        }
+      }
+      if (doorUnreachable) break;
+    }
+
+    if (doorUnreachable && (room.type === "NORMAL" || room.type === "ELITE")) {
+      // Single retry: re-carve with offset seed.
+      var retrySeed = level.seed + 1000 + room.id;
+      carveRoom(room, mulberry32(retrySeed));
+      placeDoors(room); // re-place doors after re-carve
+      reachable = tileBFS(room.grid, rows, cols, centerR, centerC);
+
+      // Check again after retry.
+      var stillUnreachable = false;
+      for (var r2 = 0; r2 < rows; r2++) {
+        for (var c2 = 0; c2 < cols; c2++) {
+          var v2 = room.grid[r2 * cols + c2];
+          if (v2 >= 2 && v2 <= 5) {
+            if (!reachable.has(r2 + "," + c2)) {
+              stillUnreachable = true;
+              break;
+            }
+          }
+        }
+        if (stillUnreachable) break;
+      }
+      if (stillUnreachable) {
+        console.warn("[Phase40] Room", room.id, "door unreachable after retry — using as-is");
+      }
+    }
+  });
+
+  // Compute player and enemy spawn points for all rooms (Plan 02 — Task 2).
+  level.rooms.forEach(function(room) {
+    if (room.grid) computeSpawnPoints(room);
+  });
+
   // Assign module-level vars
   currentLevel = level;
   currentRoom = level.rooms.find(function(r) { return r.type === "START"; });
@@ -554,6 +617,183 @@ function carveRoom(room, rng) {
       }
     }
   }
+}
+
+// placeDoors(room) — places door tiles (values 2–5) at the border midpoint for each
+// connection direction in room.connections. Also guarantees the immediately-interior
+// tile is floor so the opening is always traversable. D-11.
+// Tile values: 2=door-N, 3=door-E, 4=door-S, 5=door-W (D-01).
+function placeDoors(room) {
+  var rows = room.rows;
+  var cols = room.cols;
+  var midR = Math.floor(rows / 2);
+  var midC = Math.floor(cols / 2);
+
+  room.connections.forEach(function(dir) {
+    var row, col, intRow, intCol, doorVal;
+    if (dir === "N") {
+      row = 0;        col = midC;   doorVal = 2;
+      intRow = 1;     intCol = midC;
+    } else if (dir === "S") {
+      row = rows - 1; col = midC;   doorVal = 4;
+      intRow = rows - 2; intCol = midC;
+    } else if (dir === "E") {
+      row = midR;     col = cols - 1; doorVal = 3;
+      intRow = midR;  intCol = cols - 2;
+    } else if (dir === "W") {
+      row = midR;     col = 0;      doorVal = 5;
+      intRow = midR;  intCol = 1;
+    } else {
+      return; // unknown direction
+    }
+    room.grid[row * cols + col] = doorVal;   // door tile on border
+    room.grid[intRow * cols + intCol] = 0;   // ensure interior tile is floor
+  });
+}
+
+// tileBFS(grid, rows, cols, startRow, startCol) — BFS over floor tiles (0) and door
+// tiles (2–5). Returns a Set of "row,col" strings for all reachable positions from
+// the start tile. Returns empty Set if the start tile is a wall (D-15, D-22).
+function tileBFS(grid, rows, cols, startRow, startCol) {
+  var reachable = new Set();
+  var startVal = grid[startRow * cols + startCol];
+  // Start must be floor or door to traverse
+  if (startVal === 1) return reachable; // wall — nothing reachable
+
+  var queue = [[startRow, startCol]];
+  reachable.add(startRow + "," + startCol);
+
+  while (queue.length > 0) {
+    var curr = queue.shift();
+    var r = curr[0];
+    var c = curr[1];
+    // 4-directional neighbors
+    var neighbors = [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]];
+    for (var n = 0; n < neighbors.length; n++) {
+      var nr = neighbors[n][0];
+      var nc = neighbors[n][1];
+      if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+      var key = nr + "," + nc;
+      if (reachable.has(key)) continue;
+      var val = grid[nr * cols + nc];
+      if (val === 1) continue; // wall — not traversable
+      // floor (0) or door (2–5) — traversable
+      reachable.add(key);
+      queue.push([nr, nc]);
+    }
+  }
+  return reachable;
+}
+
+// computeSpawnPoints(room) — assigns room.spawnPoint ({ tx, ty }) and room.spawnList
+// (array of { tx, ty }) for player and enemy spawn positions. D-20, D-21, D-22.
+function computeSpawnPoints(room) {
+  var rows = room.rows;
+  var cols = room.cols;
+  var centerR = Math.floor(rows / 2);
+  var centerC = Math.floor(cols / 2);
+
+  // BFS reachable set from room center
+  var reachable = tileBFS(room.grid, rows, cols, centerR, centerC);
+
+  // Collect all door tile positions (for distance calculations)
+  var doorTiles = [];
+  for (var r = 0; r < rows; r++) {
+    for (var c = 0; c < cols; c++) {
+      var v = room.grid[r * cols + c];
+      if (v >= 2 && v <= 5) doorTiles.push([r, c]);
+    }
+  }
+
+  // Helper: Manhattan distance from tile (r,c) to nearest door tile.
+  function distToDoors(r, c) {
+    if (doorTiles.length === 0) return 999;
+    var minD = 999;
+    for (var i = 0; i < doorTiles.length; i++) {
+      var d = Math.abs(r - doorTiles[i][0]) + Math.abs(c - doorTiles[i][1]);
+      if (d < minD) minD = d;
+    }
+    return minD;
+  }
+
+  // Helper: min distance from tile (r,c) to any wall tile within a radius.
+  // Simplified per spec: check cardinal points at given radius distance.
+  function distToWallMin(r, c, radius) {
+    // Check if tiles at +/-radius in cardinal directions are all floor/door.
+    var checks = [
+      [r - radius, c],
+      [r + radius, c],
+      [r, c - radius],
+      [r, c + radius],
+    ];
+    for (var i = 0; i < checks.length; i++) {
+      var cr = checks[i][0];
+      var cc = checks[i][1];
+      if (cr < 0 || cr >= rows || cc < 0 || cc >= cols) return 0; // out of bounds → treat as wall
+      if (room.grid[cr * cols + cc] === 1) return 0; // wall found at radius
+    }
+    return radius; // all cardinal directions clear
+  }
+
+  // Player spawn: at least 3 tiles from any wall/door; fallback to 2 tiles.
+  var spawnPoint = null;
+  var candidates3 = [];
+  var candidates2 = [];
+
+  reachable.forEach(function(key) {
+    var parts = key.split(",");
+    var r = parseInt(parts[0], 10);
+    var c = parseInt(parts[1], 10);
+    if (room.grid[r * cols + c] !== 0) return; // must be floor
+    var d3 = distToWallMin(r, c, 3);
+    var d2 = distToWallMin(r, c, 2);
+    if (d3 >= 3) candidates3.push({ tx: c, ty: r });
+    else if (d2 >= 2) candidates2.push({ tx: c, ty: r });
+  });
+
+  // Sort deterministically: lowest ty (row) first, then lowest tx (col).
+  function sortTiles(arr) {
+    arr.sort(function(a, b) { return a.ty !== b.ty ? a.ty - b.ty : a.tx - b.tx; });
+  }
+  sortTiles(candidates3);
+  sortTiles(candidates2);
+
+  if (candidates3.length > 0) {
+    spawnPoint = candidates3[0];
+  } else if (candidates2.length > 0) {
+    spawnPoint = candidates2[0];
+  } else {
+    // Last resort: center tile if reachable, otherwise first reachable floor tile.
+    if (room.grid[centerR * cols + centerC] === 0) {
+      spawnPoint = { tx: centerC, ty: centerR };
+    } else {
+      reachable.forEach(function(key) {
+        if (spawnPoint) return;
+        var parts = key.split(",");
+        var r = parseInt(parts[0], 10);
+        var c = parseInt(parts[1], 10);
+        if (room.grid[r * cols + c] === 0) spawnPoint = { tx: c, ty: r };
+      });
+    }
+  }
+
+  room.spawnPoint = spawnPoint;
+
+  // Enemy spawn list: reachable floor tiles >= 4 from spawnPoint and >= 2 from doors.
+  var spawnList = [];
+  if (spawnPoint) {
+    reachable.forEach(function(key) {
+      var parts = key.split(",");
+      var r = parseInt(parts[0], 10);
+      var c = parseInt(parts[1], 10);
+      if (room.grid[r * cols + c] !== 0) return; // must be floor
+      var distFromSpawn = Math.abs(r - spawnPoint.ty) + Math.abs(c - spawnPoint.tx);
+      if (distFromSpawn < 4) return;
+      if (distToDoors(r, c) < 2) return;
+      spawnList.push({ tx: c, ty: r });
+    });
+  }
+  room.spawnList = spawnList;
 }
 
 // ----------------------------------------------------------------------------
