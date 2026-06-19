@@ -135,6 +135,8 @@ function handleFirstGesture() {
   unlockAudio();
   playTone({ type: "sine", freq: 220, endFreq: 440, dur: 0.18, gain: 0.14 });
   gameState = GAME_STATE.PLAYING;
+  const hud = document.getElementById("hud");
+  if (hud) hud.classList.remove("hidden");
   document.removeEventListener("keydown", handleFirstGesture);
   document.removeEventListener("pointerup", handleFirstGesture);
 }
@@ -187,7 +189,7 @@ function renderTitle() {
   ctx.restore();
 
   // Wordmark "NEON GAUNTLET" with gradient
-  const font = "bold 56px 'Segoe UI', system-ui, sans-serif";
+  const font = "bold 48px 'Segoe UI', system-ui, sans-serif";
   ctx.font = font;
   const wordmarkX = W / 2;
   const wordmarkY = H * 0.42;
@@ -214,7 +216,7 @@ function renderTitle() {
   const alpha = 0.45 + 0.55 * Math.abs(Math.sin(Date.now() / 600));
   ctx.font = "15px 'Segoe UI', system-ui, sans-serif";
   ctx.fillStyle = "rgba(154,154,192," + alpha + ")";
-  ctx.fillText("PRESS ANY KEY OR CLICK TO START", W / 2, H * 0.42 + 72);
+  ctx.fillText("PRESS ANY KEY OR CLICK TO START", W / 2, H * 0.42 + 56);
 }
 
 function renderPlaying() {

@@ -148,7 +148,7 @@ body {
 .game-title {
   margin: 0;
   font-size: clamp(2.5rem, 9vw, 4.5rem);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 0.95;
   letter-spacing: 0.04em;
   background: linear-gradient(90deg, var(--cyan), #b388ff 60%, var(--pink));
