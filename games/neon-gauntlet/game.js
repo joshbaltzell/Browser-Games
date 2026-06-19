@@ -188,7 +188,6 @@ function generateLevel(levelNumber, seed) {
     while (queue.length > 0) {
       var cur = queue.shift();
       var curRow = Math.floor(cur / 4);
-      var curCol = cur % 4;
       // Check all 4 directions
       var dirs = [cur - 4, cur + 4, cur + 1, cur - 1];
       for (var d = 0; d < dirs.length; d++) {
@@ -410,7 +409,6 @@ function generateLevel(levelNumber, seed) {
 
   // Tile-level BFS validation (D-15): ensure every door tile is reachable from room center.
   // If unreachable, regenerate once with offset seed. (Plan 02 — Task 2).
-  var retryRng = mulberry32(level.seed + 99999);
   level.rooms.forEach(function(room) {
     if (!room.grid) return;
     var rows = room.rows;
@@ -833,18 +831,7 @@ function renderRoom(room) {
     }
   }
 
-  // Step 4 — Draw wall tile backgrounds (value 1) — same as canvas bg, making walls "invisible"
-  // until the edge outlines in Step 5 reveal them.
-  ctx.fillStyle = "#05050c";
-  for (var wr = 0; wr < rows; wr++) {
-    for (var wc = 0; wc < cols; wc++) {
-      if (room.grid[wr * cols + wc] === 1) {
-        ctx.fillRect(originX + wc * TILE_SIZE, originY + wr * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-      }
-    }
-  }
-
-  // Step 5 — Draw wall edge outlines (value 1 only).
+  // Step 4 — Draw wall edge outlines (value 1 only).
   // Batched: single beginPath() before the outer loop, one stroke() after — T-40-08 mitigation.
   // Only draw a 0.5px edge where a wall tile borders a floor tile (or out-of-bounds).
   ctx.strokeStyle = "rgba(0,229,255,0.35)";
