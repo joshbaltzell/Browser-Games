@@ -1027,7 +1027,7 @@ document.addEventListener("keydown", function(e) {
 // ----------------------------------------------------------------------------
 function update(dt) {
   if (gameState === GAME_STATE.PLAYING) {
-    // TODO(phase-40): enemy updates, room logic
+    // Phase 41+: enemy updates, movement, room logic
   }
 }
 
