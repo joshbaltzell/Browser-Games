@@ -23,6 +23,8 @@ const COLORS = {
   white:  "#ffffff",
 };
 const GAME_STATE = { TITLE: "TITLE", PLAYING: "PLAYING" };
+const DEBUG = false;      // set true during development to enable the D-key debug overlay
+const TILE_SIZE = 16;     // canvas pixels per tile — matches D-17 spec
 
 // ----------------------------------------------------------------------------
 // Canvas & global state
@@ -48,6 +50,9 @@ resize();
 let gameState = GAME_STATE.TITLE;
 let audioCtx = null;
 let muted = false;
+let currentLevel = null;  // { rooms, connections, seed, levelNumber }
+let currentRoom  = null;  // reference to the Start room in currentLevel.rooms
+let debugOverlayVisible = false; // toggled by D key; only active when DEBUG=true
 
 // ----------------------------------------------------------------------------
 // Audio helpers
@@ -126,6 +131,19 @@ function glowShape(pathFn, color, blur = 12) {
   pathFn();
   ctx.fill();
   ctx.restore();
+}
+
+// ----------------------------------------------------------------------------
+// PRNG
+// ----------------------------------------------------------------------------
+function mulberry32(seed) {
+  return function() {
+    seed |= 0;
+    seed = seed + 0x6D2B79F5 | 0;
+    var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
 }
 
 // ----------------------------------------------------------------------------
