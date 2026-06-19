@@ -391,6 +391,18 @@ function generateLevel(levelNumber, seed) {
     });
   }
 
+  // Carve interior grids for all rooms (Plan 02 — Task 1).
+  // A fresh rng seeded from level.seed for carving — deterministic per seed (D-13).
+  var carveRng = mulberry32(level.seed + 9999);
+  level.rooms.forEach(function(room) {
+    if (room.type === "START" || room.type === "BOSS" || room.type === "SHOP") {
+      buildOpenRoom(room);
+    } else {
+      // NORMAL or ELITE
+      carveRoom(room, carveRng);
+    }
+  });
+
   // Assign module-level vars
   currentLevel = level;
   currentRoom = level.rooms.find(function(r) { return r.type === "START"; });
@@ -404,6 +416,144 @@ function generateLevel(levelNumber, seed) {
   );
 
   return currentLevel;
+}
+
+// ----------------------------------------------------------------------------
+// Room interior generation
+// ----------------------------------------------------------------------------
+
+// buildOpenRoom(room) — allocates an open-floor Uint8Array grid for Start/Boss/Shop rooms.
+// All interior tiles = 0 (floor); border tiles = 1 (wall). No door tiles — placeDoors()
+// adds those in a later step.
+function buildOpenRoom(room) {
+  var rows = room.rows;
+  var cols = room.cols;
+  room.grid = new Uint8Array(rows * cols); // filled with 0 (floor) by default
+  // Set border tiles to 1 (wall)
+  for (var c = 0; c < cols; c++) {
+    room.grid[0 * cols + c] = 1;          // top row
+    room.grid[(rows - 1) * cols + c] = 1; // bottom row
+  }
+  for (var r = 0; r < rows; r++) {
+    room.grid[r * cols + 0] = 1;          // left col
+    room.grid[r * cols + (cols - 1)] = 1; // right col
+  }
+}
+
+// carveRoom(room, rng) — recursive backtracking maze carver for Normal/Elite rooms.
+// Produces a perfect maze skeleton, then applies 2-wide corridor widening (D-08)
+// and ~12% loop removal (D-09). Same rng state → same carved grid (D-13).
+function carveRoom(room, rng) {
+  var rows = room.rows;
+  var cols = room.cols;
+
+  // 1. Allocate: all walls initially.
+  room.grid = new Uint8Array(rows * cols).fill(1);
+
+  // 2. Cell grid dimensions (odd-indexed tiles are "chamber" cells).
+  var cellRows = (rows - 1) / 2;
+  var cellCols = (cols - 1) / 2;
+
+  // 3. Visited array for cells.
+  var visited = new Uint8Array(cellRows * cellCols);
+
+  // 4. Iterative DFS (stack-based — avoids call stack overflow for large rooms).
+  var stack = [0]; // start at cell (0,0)
+  visited[0] = 1;
+  // Set starting cell tile to floor.
+  room.grid[1 * cols + 1] = 0;
+
+  // Direction offsets: [N, E, S, W] in cell coordinates and tile coordinates.
+  var cellDr = [-1, 0, 1, 0];
+  var cellDc = [0, 1, 0, -1];
+
+  while (stack.length > 0) {
+    var top = stack[stack.length - 1];
+    var cr = Math.floor(top / cellCols);
+    var cc = top % cellCols;
+
+    // Collect unvisited in-bounds neighbors.
+    var dirs = [0, 1, 2, 3];
+    // Fisher-Yates shuffle with seeded rng.
+    for (var i = 3; i > 0; i--) {
+      var j = Math.floor(rng() * (i + 1));
+      var tmp = dirs[i]; dirs[i] = dirs[j]; dirs[j] = tmp;
+    }
+
+    var moved = false;
+    for (var d = 0; d < 4; d++) {
+      var nr = cr + cellDr[dirs[d]];
+      var nc = cc + cellDc[dirs[d]];
+      if (nr < 0 || nr >= cellRows || nc < 0 || nc >= cellCols) continue;
+      var ncIdx = nr * cellCols + nc;
+      if (visited[ncIdx]) continue;
+
+      // Knock out wall between current cell and chosen cell.
+      var wallRow = cr * 2 + 1 + cellDr[dirs[d]]; // tile row of wall between
+      var wallCol = cc * 2 + 1 + cellDc[dirs[d]]; // tile col of wall between
+      room.grid[wallRow * cols + wallCol] = 0;     // wall → floor
+
+      // Set chosen cell tile to floor.
+      var nextTileRow = nr * 2 + 1;
+      var nextTileCol = nc * 2 + 1;
+      room.grid[nextTileRow * cols + nextTileCol] = 0;
+
+      visited[ncIdx] = 1;
+      stack.push(ncIdx);
+      moved = true;
+      break;
+    }
+
+    if (!moved) {
+      stack.pop(); // backtrack
+    }
+  }
+
+  // 5. Corridor widening (D-08): widen each corridor passage from 1-tile to 2-tile width.
+  // Passage tiles are even-indexed row or col tiles (the wall tiles between cells).
+  // For each passage tile that is floor, mark an adjacent tile also as floor.
+  for (var row = 1; row < rows - 1; row++) {
+    for (var col = 1; col < cols - 1; col++) {
+      // Only process passage tiles (even row or even col, but not both — those are
+      // intersections / cell corners). Actually we want even-row or even-col "corridor" tiles.
+      var evenRow = (row % 2 === 0);
+      var evenCol = (col % 2 === 0);
+      if (!evenRow && !evenCol) continue; // odd,odd = cell — skip
+      if (evenRow && evenCol) continue;   // even,even = corner intersection — skip
+
+      if (room.grid[row * cols + col] !== 0) continue; // must be floor
+
+      if (evenRow) {
+        // Horizontal passage (even row): widen by marking row+1 same col as floor,
+        // if row+1 is not a border.
+        if (row + 1 < rows - 1) {
+          room.grid[(row + 1) * cols + col] = 0;
+        }
+      } else {
+        // Vertical passage (even col): widen by marking row, col+1 as floor,
+        // if col+1 is not a border.
+        if (col + 1 < cols - 1) {
+          room.grid[row * cols + (col + 1)] = 0;
+        }
+      }
+    }
+  }
+
+  // 6. Loop removal (D-09): ~12% of bridge wall tiles become floor.
+  // A bridge wall is a wall tile that has a floor neighbor to N and S, or E and W.
+  for (var row2 = 1; row2 < rows - 1; row2++) {
+    for (var col2 = 1; col2 < cols - 1; col2++) {
+      if (room.grid[row2 * cols + col2] !== 1) continue; // must be wall
+      var hasN = (row2 > 0)        && room.grid[(row2 - 1) * cols + col2] === 0;
+      var hasS = (row2 < rows - 1) && room.grid[(row2 + 1) * cols + col2] === 0;
+      var hasE = (col2 < cols - 1) && room.grid[row2 * cols + (col2 + 1)] === 0;
+      var hasW = (col2 > 0)        && room.grid[row2 * cols + (col2 - 1)] === 0;
+      var bridge = (hasN && hasS) || (hasE && hasW);
+      if (bridge && rng() < 0.12) {
+        room.grid[row2 * cols + col2] = 0;
+      }
+    }
+  }
 }
 
 // ----------------------------------------------------------------------------
