@@ -98,6 +98,26 @@ const GAMES = [
         <rect x="88" y="58" width="18" height="18" rx="3" fill="#F5E6C0" />
       </svg>`,
   },
+  {
+    title: "Neon Gauntlet",
+    description:
+      "A room-by-room neon dungeon crawler. Clear rooms, fight six enemy archetypes, and build your skill tree one level at a time.",
+    path: "games/neon-gauntlet/index.html",
+    tags: ["Dungeon", "Roguelite", "Action"],
+    accent: "#ff3b6b",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="14" y="10" width="28" height="22" rx="3" fill="none" stroke="#ff3b6b" stroke-width="1.5" />
+        <rect x="78" y="10" width="28" height="22" rx="3" fill="none" stroke="#ff3b6b" stroke-width="1.5" />
+        <rect x="46" y="33" width="28" height="22" rx="3" fill="none" stroke="#00e5ff" stroke-width="2" />
+        <rect x="46" y="56" width="28" height="18" rx="3" fill="rgba(255,59,107,0.15)" stroke="#ff3b6b" stroke-width="1.5" />
+        <line x1="42" y1="21" x2="46" y2="44" stroke="#9a9ac0" stroke-width="1" />
+        <line x1="78" y1="21" x2="74" y2="44" stroke="#9a9ac0" stroke-width="1" />
+        <line x1="60" y1="55" x2="60" y2="56" stroke="#9a9ac0" stroke-width="1" />
+        <circle cx="60" cy="44" r="4" fill="#00e5ff" />
+        <circle cx="60" cy="44" r="7" fill="none" stroke="#00e5ff" stroke-width="1" opacity="0.4" />
+      </svg>`,
+  },
 ];
 
 function buildCard(game) {
