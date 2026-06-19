@@ -207,6 +207,7 @@ function renderTitle() {
   ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
   ctx.fillStyle = "#9a9ac0";
   ctx.shadowBlur = 0;
+  ctx.shadowColor = "transparent";
   ctx.fillText("DUNGEON CRAWLER", W / 2, wordmarkY + 28);
 
   // Prompt with pulsing opacity
