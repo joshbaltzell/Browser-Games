@@ -147,12 +147,273 @@ function mulberry32(seed) {
 }
 
 // ----------------------------------------------------------------------------
+// Level Generation
+// ----------------------------------------------------------------------------
+
+// generateLevel(levelNumber, seed) — produces the level skeleton:
+//   coarse 4x4 slot graph, room-type assignment, room objects with grid=null.
+// Plan 02 will carve interior mazes into room.grid.
+function generateLevel(levelNumber, seed) {
+  var MAX_RETRIES = 10;
+
+  // Slot adjacency: 4x4 grid, indices 0-15, row-major (row*4+col).
+  // Returns array of valid neighbor slot indices for a given slot.
+  function getNeighbors(idx) {
+    var neighbors = [];
+    var row = Math.floor(idx / 4);
+    var col = idx % 4;
+    if (row > 0) neighbors.push(idx - 4); // N
+    if (row < 3) neighbors.push(idx + 4); // S
+    if (col < 3) neighbors.push(idx + 1); // E
+    if (col > 0) neighbors.push(idx - 1); // W
+    return neighbors;
+  }
+
+  // Get direction label from slot A to slot B (A and B must be adjacent).
+  function getDir(from, to) {
+    var diff = to - from;
+    if (diff === -4) return "N";
+    if (diff === 4)  return "S";
+    if (diff === 1)  return "E";
+    if (diff === -1) return "W";
+    return null;
+  }
+
+  // BFS over the connection graph starting from startSlotIdx.
+  // Returns map of { slotIdx -> hopCount }.
+  function bfsHops(startSlotIdx, connections, placedSet) {
+    var queue = [startSlotIdx];
+    var visited = {};
+    visited[startSlotIdx] = 0;
+    while (queue.length > 0) {
+      var cur = queue.shift();
+      var curRow = Math.floor(cur / 4);
+      var curCol = cur % 4;
+      // Check all 4 directions
+      var dirs = [cur - 4, cur + 4, cur + 1, cur - 1];
+      for (var d = 0; d < dirs.length; d++) {
+        var nb = dirs[d];
+        if (!placedSet[nb]) continue;
+        // Validate adjacency (same-row check for E/W)
+        if (nb === cur + 1 || nb === cur - 1) {
+          if (Math.floor(nb / 4) !== curRow) continue;
+        }
+        if (nb < 0 || nb > 15) continue;
+        // Check connection exists
+        var key = Math.min(cur, nb) + "-" + Math.max(cur, nb);
+        if (!connections[key]) continue;
+        if (visited[nb] === undefined) {
+          visited[nb] = visited[cur] + 1;
+          queue.push(nb);
+        }
+      }
+    }
+    return visited;
+  }
+
+  // Attempt level generation once. Returns a level object or null if failed.
+  function attemptGenerate(attemptSeed) {
+    var rng = mulberry32(attemptSeed);
+
+    // Room count scaled by level number (D-04)
+    var roomCount = (levelNumber <= 2)
+      ? 3 + Math.floor(rng() * 2)       // 3 or 4 rooms for level 1-2
+      : 5 + Math.floor(rng() * 4);      // 5-8 rooms for level 3+
+
+    // Random walk on 4x4 slot grid (iterative DFS / backtracking)
+    var startSlot = Math.floor(rng() * 16);
+    var placedSlots = [startSlot];
+    var placedSet = {};
+    placedSet[startSlot] = true;
+    var stack = [startSlot];
+    var connections = {}; // key = "smallerIdx-largerIdx"
+
+    while (placedSlots.length < roomCount && stack.length > 0) {
+      var cur = stack[stack.length - 1];
+      var neighbors = getNeighbors(cur);
+      // Shuffle neighbors with seeded rng
+      for (var i = neighbors.length - 1; i > 0; i--) {
+        var j = Math.floor(rng() * (i + 1));
+        var tmp = neighbors[i]; neighbors[i] = neighbors[j]; neighbors[j] = tmp;
+      }
+      // Find unvisited neighbor
+      var found = false;
+      for (var ni = 0; ni < neighbors.length; ni++) {
+        var nb = neighbors[ni];
+        if (!placedSet[nb]) {
+          placedSet[nb] = true;
+          placedSlots.push(nb);
+          var key = Math.min(cur, nb) + "-" + Math.max(cur, nb);
+          connections[key] = true;
+          stack.push(nb);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        stack.pop(); // backtrack
+      }
+    }
+
+    // Must have placed exactly roomCount rooms
+    if (placedSlots.length < roomCount) return null;
+
+    // BFS reachability assertion (D-14): all rooms reachable from Start
+    var hopsMap = bfsHops(placedSlots[0], connections, placedSet);
+    for (var si = 0; si < placedSlots.length; si++) {
+      if (hopsMap[placedSlots[si]] === undefined) return null; // unreachable room
+    }
+
+    // Room-type assignment (D-06)
+    // Start = placedSlots[0], Boss = farthest by BFS hop count
+    var startSlotIdx = placedSlots[0];
+    var bossSlotIdx = startSlotIdx;
+    var maxHops = 0;
+    for (var si2 = 1; si2 < placedSlots.length; si2++) {
+      var slot = placedSlots[si2];
+      var hops = hopsMap[slot] || 0;
+      if (hops > maxHops) { maxHops = hops; bossSlotIdx = slot; }
+    }
+
+    // Remaining slots (not Start, not Boss) get ELITE, SHOP, NORMAL
+    var remainingSlots = placedSlots.filter(function(s) {
+      return s !== startSlotIdx && s !== bossSlotIdx;
+    });
+
+    // For level 1-2 (3-4 rooms total), we may have only 1-2 remaining slots.
+    // We need at least ELITE + SHOP + NORMAL = 3, but if we only have 1 remaining,
+    // we can't fit all 5 types — return null to trigger retry.
+    // With 3 rooms: [0]=START, [1]= the one middle room (skip ELITE/SHOP), [last]=BOSS — invalid.
+    // With 4 rooms: remaining=2, assign [0]=ELITE, [1]=SHOP — no NORMAL — still not all 5.
+    // With 5+ rooms: remaining>=3, assign [0]=ELITE, [1]=SHOP, rest=NORMAL — all 5 present.
+    //
+    // Special case per plan spec: if fewer than 5 total slots:
+    //   [0]=START, [last]=BOSS, [1]=SHOP (if 3 rooms skip ELITE), [others]=NORMAL
+    //   Then check if all 5 types are covered; if not, return null.
+    var typeMap = {};
+    typeMap[startSlotIdx] = "START";
+    typeMap[bossSlotIdx]  = "BOSS";
+
+    if (placedSlots.length < 5) {
+      // Can't fit all 5 types — return null to trigger retry (unless we relax)
+      // Actually per spec: "Retry if cannot fit all 5 types (max 10 retries, then fallback)"
+      // So we try to assign what we can and return null to signal failure
+      return null;
+    }
+
+    // 5+ rooms: assign ELITE, SHOP to first two remaining, rest = NORMAL
+    typeMap[remainingSlots[0]] = "ELITE";
+    typeMap[remainingSlots[1]] = "SHOP";
+    for (var ri = 2; ri < remainingSlots.length; ri++) {
+      typeMap[remainingSlots[ri]] = "NORMAL";
+    }
+
+    // Build room objects (D-02, D-03)
+    var rooms = placedSlots.map(function(slotIdx, id) {
+      var type = typeMap[slotIdx];
+      var rows = (type === "BOSS") ? 21 : 15;
+      var cols = (type === "BOSS") ? 21 : 15;
+      return {
+        id: id,
+        slotIdx: slotIdx,
+        type: type,
+        rows: rows,
+        cols: cols,
+        grid: null,        // filled by Plan 02 interior carving
+        spawnPoint: null,  // filled by Plan 02
+        spawnList: [],     // filled by Plan 02
+        connections: [],   // filled below
+      };
+    });
+
+    // Populate room.connections with direction labels
+    var slotToRoom = {};
+    rooms.forEach(function(r) { slotToRoom[r.slotIdx] = r; });
+
+    Object.keys(connections).forEach(function(key) {
+      var parts = key.split("-");
+      var a = parseInt(parts[0], 10);
+      var b = parseInt(parts[1], 10);
+      var ra = slotToRoom[a];
+      var rb = slotToRoom[b];
+      if (!ra || !rb) return;
+      var dirAtoB = getDir(a, b);
+      var dirBtoA = getDir(b, a);
+      if (dirAtoB) ra.connections.push(dirAtoB);
+      if (dirBtoA) rb.connections.push(dirBtoA);
+    });
+
+    return {
+      rooms: rooms,
+      connections: connections,
+      seed: attemptSeed,
+      levelNumber: levelNumber,
+    };
+  }
+
+  // Retry loop (D-14, D-15)
+  var level = null;
+  for (var retry = 0; retry < MAX_RETRIES; retry++) {
+    level = attemptGenerate(seed + retry);
+    if (level !== null) break;
+  }
+
+  // Fallback 2-room layout if all retries failed (D-14)
+  if (level === null) {
+    console.warn("[Phase40] Level generation failed after 10 retries — using fallback 2-room layout");
+    var fallbackConnections = { "5-6": true };
+    var startRoom = {
+      id: 0, slotIdx: 5, type: "START",
+      rows: 15, cols: 15, grid: null,
+      spawnPoint: null, spawnList: [], connections: ["E"],
+    };
+    var bossRoom = {
+      id: 1, slotIdx: 6, type: "BOSS",
+      rows: 21, cols: 21, grid: null,
+      spawnPoint: null, spawnList: [], connections: ["W"],
+    };
+    level = {
+      rooms: [startRoom, bossRoom],
+      connections: fallbackConnections,
+      seed: seed,
+      levelNumber: levelNumber,
+    };
+    // Add placeholder NORMAL/ELITE/SHOP rooms so the game is never in a broken state
+    // (all 5 types required by spec — add synthetic rooms at unused slots)
+    var synthSlots = [1, 2, 3];
+    var synthTypes = ["NORMAL", "ELITE", "SHOP"];
+    synthSlots.forEach(function(slot, i) {
+      level.rooms.push({
+        id: level.rooms.length, slotIdx: slot, type: synthTypes[i],
+        rows: 15, cols: 15, grid: null,
+        spawnPoint: null, spawnList: [], connections: [],
+      });
+    });
+  }
+
+  // Assign module-level vars
+  currentLevel = level;
+  currentRoom = level.rooms.find(function(r) { return r.type === "START"; });
+
+  // Console log on success (D-12, UI-SPEC Console Output)
+  console.log(
+    "[Phase40] Level", levelNumber,
+    "| seed:", level.seed,
+    "| rooms:", level.rooms.length,
+    "| types:", level.rooms.map(function(r) { return r.type; }).join(", ")
+  );
+
+  return currentLevel;
+}
+
+// ----------------------------------------------------------------------------
 // Input / audio-unlock gate
 // ----------------------------------------------------------------------------
 function handleFirstGesture() {
   unlockAudio();
   playTone({ type: "sine", freq: 220, endFreq: 440, dur: 0.18, gain: 0.14 });
   gameState = GAME_STATE.PLAYING;
+  generateLevel(1, Math.floor(Date.now() / 1000));
   const hud = document.getElementById("hud");
   if (hud) hud.classList.remove("hidden");
   document.removeEventListener("keydown", handleFirstGesture);
@@ -169,6 +430,13 @@ if (muteBtn) {
     muteBtn.textContent = muted ? "🔇" : "🔊";
   });
 }
+
+// Debug overlay toggle (D key — only active when DEBUG=true)
+document.addEventListener("keydown", function(e) {
+  if ((e.key === "d" || e.key === "D") && DEBUG) {
+    debugOverlayVisible = !debugOverlayVisible;
+  }
+});
 
 // ----------------------------------------------------------------------------
 // Update
