@@ -1627,8 +1627,19 @@ function renderEnemies() {
         ctx.restore();
       }
     } else if (e.type === "SNIPER") {
-      // Cyan body — stationary, distinct from pink Rusher
+      // Cyan body — stationary; crosshair ticks break the "circle = player" visual
       glowCircle(e.x, e.y, 8, COLORS.cyan, 16);
+      ctx.save();
+      ctx.strokeStyle = COLORS.cyan;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(e.x - 13, e.y); ctx.lineTo(e.x - 9, e.y);
+      ctx.moveTo(e.x + 9,  e.y); ctx.lineTo(e.x + 13, e.y);
+      ctx.moveTo(e.x, e.y - 13); ctx.lineTo(e.x, e.y - 9);
+      ctx.moveTo(e.x, e.y + 9);  ctx.lineTo(e.x, e.y + 13);
+      ctx.stroke();
+      ctx.restore();
       // Telegraph beam during aim state — pink line that brightens over 1.2s
       if (e.state === "aim" && e.aimDx !== undefined) {
         // Compute beam endpoint inline (same march as fire state)
@@ -2189,7 +2200,7 @@ function renderHpBar() {
       ctx.fillStyle = COLORS.pink;
     } else {
       ctx.shadowBlur = 0;
-      ctx.fillStyle = "#330011";
+      ctx.fillStyle = "#550022";
     }
     ctx.fillRect(12 + i * 18, 12, 16, 8);
   }
