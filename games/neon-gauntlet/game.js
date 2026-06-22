@@ -35,7 +35,7 @@ const SPAWN_TABLE = {
   2: ["STALKER", "RUSHER", "RUSHER"],
   3: ["STALKER", "AMBUSHER", "SENTINEL"],
   4: ["RUSHER", "AMBUSHER", "SENTINEL"],
-  5: ["STALKER", "AMBUSHER", "SENTINEL"],
+  5: ["SNIPER", "CRAWLER", "SENTINEL"],
 };
 const INVULN_DURATION = 1.5;      // seconds of invulnerability after taking a hit
 const ENEMY_CONTACT_DAMAGE = 1;   // HP lost on direct enemy contact
@@ -1156,19 +1156,26 @@ function spawnEnemies() {
     enemies.push({
       type: types[i],
       x: wx, y: wy,
-      r: 10,
+      r: types[i] === "SNIPER" ? 10 :
+         types[i] === "CRAWLER" ? 10 : 10,
       hp: types[i] === "STALKER" ? 2 :
           types[i] === "RUSHER"  ? 1 :
           types[i] === "AMBUSHER"? 2 :
-          types[i] === "SENTINEL"? 3 : 2,
+          types[i] === "SENTINEL"? 3 :
+          types[i] === "SNIPER"  ? 2 :
+          types[i] === "CRAWLER" ? 2 : 2,
       maxHp: types[i] === "STALKER" ? 2 :
              types[i] === "RUSHER"  ? 1 :
              types[i] === "AMBUSHER"? 2 :
-             types[i] === "SENTINEL"? 3 : 2,
+             types[i] === "SENTINEL"? 3 :
+             types[i] === "SNIPER"  ? 2 :
+             types[i] === "CRAWLER" ? 2 : 2,
       speed: types[i] === "STALKER" ? 55 :
              types[i] === "RUSHER"  ? 130 :
              types[i] === "AMBUSHER"? 75 :
-             types[i] === "SENTINEL"? 0 : 55,
+             types[i] === "SENTINEL"? 0 :
+             types[i] === "SNIPER"  ? 0 :
+             types[i] === "CRAWLER" ? 65 : 55,
       alive: true,
       age: 0
     });
@@ -1183,6 +1190,18 @@ function spawnEnemies() {
       var sent = enemies[enemies.length - 1];
       sent.state = "idle";
       sent.stateTimer = 1.5; // seconds until first telegraph
+    }
+    if (enemies[enemies.length - 1].type === "SNIPER") {
+      var sniper = enemies[enemies.length - 1];
+      sniper.state = "idle";
+      sniper.stateTimer = 2.0;
+      sniper.aimDx = 0; sniper.aimDy = -1; // locked direction, set at aim entry
+      sniper.beamEndX = 0; sniper.beamEndY = 0;
+    }
+    if (enemies[enemies.length - 1].type === "CRAWLER") {
+      var craw = enemies[enemies.length - 1];
+      craw.facing = Math.floor(Math.random() * 4); // 0=N 1=E 2=S 3=W
+      craw.generation = 0;
     }
   }
   doorsSealed = true;
