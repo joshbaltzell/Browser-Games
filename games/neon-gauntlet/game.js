@@ -1383,6 +1383,7 @@ function checkEnemiesClear() {
 // startBossClear() — triggered when the Boss is defeated in a Boss room.
 // Enters BOSS_CLEAR overlay state; advanceLevel() fires after the timer expires.
 function startBossClear() {
+  levelMapVisible = true;
   gameState = GAME_STATE.BOSS_CLEAR;
   bossClearTimer = 2.0;
   playTone({ type: "sine", freq: 440, endFreq: 880, dur: 0.5, gain: 0.18 });
