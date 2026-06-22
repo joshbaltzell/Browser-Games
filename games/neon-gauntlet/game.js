@@ -1423,6 +1423,14 @@ function checkEnemiesClear() {
 // startBossClear() — triggered when the Boss is defeated in a Boss room.
 // Enters BOSS_CLEAR overlay state; advanceLevel() fires after the timer expires.
 function startBossClear() {
+  // Scatter 8 bonus gems from boss position as the big-defeat reward.
+  var bossEnt = null;
+  for (var bi = 0; bi < enemies.length; bi++) {
+    if (enemies[bi].type === "BOSS") { bossEnt = enemies[bi]; break; }
+  }
+  if (bossEnt) {
+    for (var gi = 0; gi < 8; gi++) { spawnGem(bossEnt.x, bossEnt.y); }
+  }
   levelMapVisible = true;
   gameState = GAME_STATE.BOSS_CLEAR;
   bossClearTimer = 2.0;
