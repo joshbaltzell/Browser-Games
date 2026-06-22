@@ -1988,7 +1988,79 @@ function renderTitle() {
 
 function renderPlayer() {
   if (!player) return;
+  // Invuln flicker: hide every other 0.1s interval while invulnerable
+  if (player.invuln > 0 && Math.floor(player.invuln / 0.1) % 2 === 0) return;
   glowCircle(player.x, player.y, player.r, COLORS.cyan, 18);
+}
+
+// renderHpBar() — draws the player HP bar in screen-space (outside camera transform).
+// 5 segments: pink when filled, dark when empty. Called after camera.end().
+function renderHpBar() {
+  if (!player) return;
+  ctx.save();
+  // Draw filled segments with glow
+  ctx.shadowColor = COLORS.pink;
+  ctx.shadowBlur = 6;
+  for (var i = 0; i < player.maxHp; i++) {
+    if (i < player.hp) {
+      ctx.fillStyle = COLORS.pink;
+    } else {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#330011";
+    }
+    ctx.fillRect(12 + i * 18, 12, 16, 8);
+  }
+  ctx.restore();
+}
+
+// renderDead() — full-screen death overlay with stats and restart prompt.
+// Called from render() when gameState === GAME_STATE.DEAD.
+function renderDead() {
+  // Semi-transparent overlay
+  ctx.fillStyle = "rgba(5,5,12,0.85)";
+  ctx.fillRect(0, 0, W, H);
+
+  // Death title
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 48px 'Segoe UI', system-ui, sans-serif";
+  ctx.shadowColor = COLORS.pink;
+  ctx.shadowBlur = 24;
+  ctx.fillStyle = COLORS.pink;
+  ctx.fillText("YOU DIED", W / 2, H * 0.35);
+  ctx.shadowBlur = 0;
+  ctx.restore();
+
+  // Stats block
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "18px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLORS.white;
+  ctx.shadowBlur = 0;
+  ctx.fillText("LEVEL  " + (currentLevel ? currentLevel.levelNumber : 1), W / 2, H * 0.50);
+  ctx.fillText("ROOMS CLEARED  " + roomsCleared, W / 2, H * 0.57);
+  ctx.fillText("KILLS  " + killCount, W / 2, H * 0.64);
+  ctx.restore();
+
+  // Restart button — outlined rect with label
+  var btnX = W / 2 - 60;
+  var btnY = H * 0.75;
+  var btnW = 120;
+  var btnH = 36;
+  ctx.save();
+  ctx.strokeStyle = COLORS.cyan;
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = COLORS.cyan;
+  ctx.shadowBlur = 8;
+  ctx.strokeRect(btnX, btnY, btnW, btnH);
+  ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLORS.cyan;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("RESTART", W / 2, btnY + btnH / 2);
+  ctx.restore();
 }
 
 // renderBullets() — draws a glowing gold dot for each live bullet.
@@ -2037,6 +2109,7 @@ function renderPlaying() {
   if (camera) camera.end(ctx);
 
   // Step 4 — HUD overlays outside camera transform (screen-space)
+  renderHpBar();
   renderClearedFloater();
   renderTransitionOverlay();
 }
@@ -2044,6 +2117,7 @@ function renderPlaying() {
 function render() {
   if (gameState === GAME_STATE.TITLE) renderTitle();
   else if (gameState === GAME_STATE.PLAYING) renderPlaying();
+  else if (gameState === GAME_STATE.DEAD) renderDead();
 }
 
 // ----------------------------------------------------------------------------
