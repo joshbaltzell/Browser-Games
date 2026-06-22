@@ -2001,6 +2001,18 @@ function renderEnemies() {
     } else {
       glowCircle(e.x, e.y, e.r - 2, COLORS.white, 10);
     }
+    if (e.elite) {
+      ctx.save();
+      ctx.strokeStyle = COLORS.orange;
+      ctx.shadowColor = COLORS.orange;
+      ctx.shadowBlur = 10;
+      ctx.globalAlpha = 0.8;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r + 5, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 }
 
