@@ -1479,12 +1479,38 @@ function updateAim(dt) {
   }
 }
 
+// updateBullets(dt) — advances bullet positions and removes bullets that hit walls or expire.
+// Iterates backwards to allow splice without index corruption.
+function updateBullets(dt) {
+  if (!currentRoom || !currentRoom.grid) return;
+  var cols = currentRoom.cols;
+  var rows = currentRoom.rows;
+  for (var i = bullets.length - 1; i >= 0; i--) {
+    var b = bullets[i];
+    if (!b.alive) { bullets.splice(i, 1); continue; }
+    b.age += dt;
+    if (b.age >= BULLET_LIFETIME) { bullets.splice(i, 1); continue; }
+    var nx = b.x + b.vx * dt;
+    var ny = b.y + b.vy * dt;
+    var tc = Math.floor(nx / TILE_SIZE);
+    var tr = Math.floor(ny / TILE_SIZE);
+    if (tc < 0 || tc >= cols || tr < 0 || tr >= rows || currentRoom.grid[tr * cols + tc] === 1) {
+      bullets.splice(i, 1);
+      continue;
+    }
+    b.x = nx;
+    b.y = ny;
+  }
+}
+
 function update(dt) {
   if (gameState === GAME_STATE.PLAYING) {
     movePlayer(dt);
     updateCamera();
-    updateOrbs(dt);
     computeDistMap();
+    updateAim(dt);
+    updateBullets(dt);
+    updateOrbs(dt);
     if (clearedFloater) {
       clearedFloater.timer -= dt;
       clearedFloater.alpha = Math.max(0, clearedFloater.timer / 1.5);
