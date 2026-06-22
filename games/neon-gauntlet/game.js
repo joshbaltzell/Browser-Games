@@ -1380,6 +1380,16 @@ function spawnEnemies() {
     }
   }
   doorsSealed = true;
+
+  // Elite room: buff all spawned enemies — 1.5× HP, 1.2× speed, orange glow flag.
+  if (currentRoom.type === "ELITE") {
+    for (var ei = 0; ei < enemies.length; ei++) {
+      enemies[ei].hp    = Math.ceil(enemies[ei].hp    * 1.5);
+      enemies[ei].maxHp = Math.ceil(enemies[ei].maxHp * 1.5);
+      enemies[ei].speed = Math.round(enemies[ei].speed * 1.2);
+      enemies[ei].elite = true;
+    }
+  }
 }
 
 // openDoors() — called when all enemies are destroyed.
