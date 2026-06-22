@@ -25,6 +25,11 @@ const COLORS = {
 const GAME_STATE = { TITLE: "TITLE", PLAYING: "PLAYING" };
 const DEBUG = false;      // set true during development to enable the D-key debug overlay
 const TILE_SIZE = 16;     // canvas pixels per tile — matches D-17 spec
+const HYSTERESIS_GRACE = 0.5;  // seconds to hold target after LOS breaks
+const BULLET_SPEED     = 280;  // world pixels per second
+const BULLET_LIFETIME  = 3.0;  // seconds before bullet expires
+const FIRE_COOLDOWN    = 0.25; // seconds between shots
+const MAX_BULLETS      = 12;   // max live bullets on screen
 
 // ----------------------------------------------------------------------------
 // Canvas & global state
@@ -62,6 +67,10 @@ let clearedFloater = null; // { alpha, timer } — "CLEARED" text overlay
 let transition = null;    // { phase, timer, duration, targetRoom } — room fade transition
 let distMap = null;       // Float32Array of hop distances from player tile; null until first gesture
 let lastPlayerTile = { r: -1, c: -1 }; // cached player tile to skip redundant BFS
+let aimTarget = null;     // { x, y, alive } — current auto-aim target (orb or future enemy)
+let aimGrace = 0;         // seconds remaining before current target is released on LOS loss
+let fireCooldown = 0;     // seconds until next bullet can fire
+let bullets = [];         // array of { x, y, vx, vy, alive, age }
 
 // ----------------------------------------------------------------------------
 // Audio helpers
@@ -1043,6 +1052,7 @@ function handleFirstGesture() {
   spawnOrbs();
   distMap = null;
   lastPlayerTile = { r: -1, c: -1 };
+  aimTarget = null; aimGrace = 0; fireCooldown = 0; bullets = [];
   const hud = document.getElementById("hud");
   if (hud) hud.classList.remove("hidden");
   document.removeEventListener("keydown", handleFirstGesture);
@@ -1196,6 +1206,7 @@ function updateTransition(dt) {
       orbs = [];
       doorsSealed = false;
       clearedFloater = null;
+      aimTarget = null; bullets = [];
       distMap = null;
       lastPlayerTile = { r: -1, c: -1 };
       player.x = (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE;
@@ -1412,6 +1423,62 @@ function hasLOS(x1, y1, x2, y2) {
   return true;
 }
 
+// updateAim(dt) — auto-aim target selection with hysteresis grace period.
+// Scans orbs for nearest LOS-visible target; fires bullets toward it.
+function updateAim(dt) {
+  if (!player) return;
+  fireCooldown -= dt;
+  if (fireCooldown < 0) fireCooldown = 0;
+
+  // Re-evaluate current target
+  if (aimTarget && aimTarget.alive && hasLOS(player.x, player.y, aimTarget.x, aimTarget.y)) {
+    // Target confirmed with LOS — reset grace timer
+    aimGrace = HYSTERESIS_GRACE;
+  } else if (aimTarget && aimTarget.alive) {
+    // Target alive but LOS broken — drain grace timer
+    aimGrace -= dt;
+    if (aimGrace <= 0) {
+      aimTarget = null;
+    }
+  }
+
+  // Acquire new target if needed
+  if (aimTarget === null || (aimTarget && !aimTarget.alive)) {
+    var nearestOrb = null;
+    var nearestDist2 = Infinity;
+    for (var i = 0; i < orbs.length; i++) {
+      var orb = orbs[i];
+      if (!orb.alive) continue;
+      if (!hasLOS(player.x, player.y, orb.x, orb.y)) continue;
+      var dx2 = orb.x - player.x;
+      var dy2 = orb.y - player.y;
+      var d2 = dx2 * dx2 + dy2 * dy2;
+      if (d2 < nearestDist2) {
+        nearestDist2 = d2;
+        nearestOrb = orb;
+      }
+    }
+    if (nearestOrb !== null) {
+      aimTarget = nearestOrb;
+      aimGrace = HYSTERESIS_GRACE;
+    }
+  }
+
+  // Fire toward target
+  if (aimTarget && aimTarget.alive && fireCooldown <= 0 && bullets.length < MAX_BULLETS) {
+    var dx = aimTarget.x - player.x;
+    var dy = aimTarget.y - player.y;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    if (len > 0) {
+      var vx = (dx / len) * BULLET_SPEED;
+      var vy = (dy / len) * BULLET_SPEED;
+      bullets.push({ x: player.x, y: player.y, vx: vx, vy: vy, alive: true, age: 0 });
+      fireCooldown = FIRE_COOLDOWN;
+      playTone({ type: "sine", freq: 880, endFreq: 660, dur: 0.06, gain: 0.07 });
+    }
+  }
+}
+
 function update(dt) {
   if (gameState === GAME_STATE.PLAYING) {
     movePlayer(dt);
@@ -1493,6 +1560,17 @@ function renderPlayer() {
   glowCircle(player.x, player.y, player.r, COLORS.cyan, 18);
 }
 
+// renderBullets() — draws a glowing gold dot for each live bullet.
+// Called inside the camera sandwich in renderPlaying().
+function renderBullets() {
+  if (!bullets.length) return;
+  for (var i = 0; i < bullets.length; i++) {
+    var b = bullets[i];
+    if (!b.alive) continue;
+    glowCircle(b.x, b.y, 3, COLORS.gold, 10);
+  }
+}
+
 function renderPlaying() {
   // Step 1 — Clear to background
   ctx.fillStyle = "#05050c";
@@ -1522,6 +1600,7 @@ function renderPlaying() {
   renderRoom(currentRoom);
   renderPlayer();
   renderOrbs();
+  renderBullets();
   if (camera) camera.end(ctx);
 
   // Step 4 — HUD overlays outside camera transform (screen-space)
