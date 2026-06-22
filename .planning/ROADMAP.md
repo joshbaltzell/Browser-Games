@@ -199,7 +199,7 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 
 - [x] **Phase 39: Scaffold & Aesthetic** - Create the runnable game shell at `games/neon-gauntlet/` with Neon Sequel visual identity, hub card, and Web Audio (completed 2026-06-19)
 - [x] **Phase 40: Tile Grid + Maze Generation** - Generate seeded, reachability-verified levels of 3–8 rooms with procedural interiors and all room types (completed 2026-06-19)
-- [ ] **Phase 41: Camera + Player Movement + Room Flow** - Establish world/screen coordinate contract, WASD wall movement, and the door-seal → clear → open room cycle
+- [x] **Phase 41: Camera + Player Movement + Room Flow** - Establish world/screen coordinate contract, WASD wall movement, and the door-seal → clear → open room cycle (completed 2026-06-22)
 - [ ] **Phase 42: BFS Flow Field + LOS + Combat Core** - Build the shared BFS distMap and Bresenham LOS primitives, auto-aim, and bullet/wall collision
 - [ ] **Phase 43: Tier 1+2 Enemy Archetypes** - Introduce Stalker, Rusher, Ambusher, and Sentinel with gem drops and the level-keyed spawn table
 - [ ] **Phase 44: Tier 3 Enemies + HP System + Death Screen** - Add Sniper and Crawler, player HP/invuln/HUD bar, and the run-end death screen
@@ -258,11 +258,11 @@ Plans:
   4. Entering a room seals its doors (doors animate closed and block passage); destroying all placeholder enemies opens the doors with a visible pulse
   5. Passing through an open door transitions the player to the connected room; a "CLEARED" floater and audio fire on room clear
 
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
-- [ ] 41-01-PLAN.md — Player entity, WASD movement, 4-point wall collision
-- [ ] 41-02-PLAN.md — Camera system: locked/scroll modes, lerp follow, viewport culling
-- [ ] 41-03-PLAN.md — Room flow: door sealing, placeholder orbs, CLEARED feedback, room transition
+- [x] 41-01-PLAN.md — Player entity, WASD movement, 4-point wall collision
+- [x] 41-02-PLAN.md — Camera system: locked/scroll modes, lerp follow, viewport culling
+- [x] 41-03-PLAN.md — Room flow: door sealing, placeholder orbs, CLEARED feedback, room transition
 
 **UI hint:** yes
 
@@ -277,7 +277,10 @@ Plans:
   2. Fired bullets travel in a straight line and are destroyed on contact with a wall tile
   3. The shared BFS distance map is computed once per frame (not per enemy) and is verifiably shared by logging that all enemies reference the same map object
 
-**Plans:** TBD
+**Plans:** 1/2 plans executed
+
+- [x] 42-01-PLAN.md
+- [ ] 42-02-PLAN.md
 
 ### Phase 43: Tier 1+2 Enemy Archetypes
 
@@ -293,7 +296,12 @@ Plans:
   5. Defeating any enemy drops gems the player can collect for XP
   6. Level 1 spawns only Stalkers and Rushers; Ambushers and Sentinels do not appear until level 3 (enforced by the spawn table)
 
-**Plans:** TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 43-01-PLAN.md — Enemy base system: replace orbs[] with enemies[], SPAWN_TABLE, spawnEnemies, gem drops, XP, bullet-enemy collision, updateAim scan
+- [ ] 43-02-PLAN.md — Stalker BFS gradient descent + Rusher charge/bounce movement; type-aware renderEnemies
+- [ ] 43-03-PLAN.md — Ambusher velocity-prediction movement + Sentinel state machine + homing shots
 
 ### Phase 44: Tier 3 Enemies + HP System + Death Screen
 
@@ -385,8 +393,8 @@ Plans:
 | 38. animated-primer | v4.0 | 2/2 | Complete | 2026-06-10 |
 | 39. scaffold-aesthetic | v5.0 | 2/2 | Complete    | 2026-06-19 |
 | 40. tile-grid-maze-gen | v5.0 | 3/3 | Complete    | 2026-06-19 |
-| 41. camera-movement-room-flow | v5.0 | 0/TBD | Not started | - |
-| 42. bfs-los-combat-core | v5.0 | 0/TBD | Not started | - |
+| 41. camera-movement-room-flow | v5.0 | 3/3 | Complete   | 2026-06-22 |
+| 42. bfs-los-combat-core | v5.0 | 1/2 | In Progress|  |
 | 43. tier1-tier2-enemies | v5.0 | 0/TBD | Not started | - |
 | 44. tier3-enemies-hp-death | v5.0 | 0/TBD | Not started | - |
 | 45. skill-tree-map-escalation-boss | v5.0 | 0/TBD | Not started | - |

@@ -30,6 +30,13 @@ const BULLET_SPEED     = 280;  // world pixels per second
 const BULLET_LIFETIME  = 1.2;  // seconds before bullet expires (~21 tiles at 280px/s)
 const FIRE_COOLDOWN    = 0.25; // seconds between shots
 const MAX_BULLETS      = 12;   // max live bullets on screen
+const SPAWN_TABLE = {
+  1: ["STALKER", "RUSHER", "STALKER"],
+  2: ["STALKER", "RUSHER", "RUSHER"],
+  3: ["STALKER", "AMBUSHER", "SENTINEL"],
+  4: ["RUSHER", "AMBUSHER", "SENTINEL"],
+  5: ["STALKER", "AMBUSHER", "SENTINEL"],
+};
 
 // ----------------------------------------------------------------------------
 // Canvas & global state
@@ -61,13 +68,17 @@ let debugOverlayVisible = false; // toggled by D key; only active when DEBUG=tru
 let player = null;        // { x, y, r, speed } — world-space coordinates
 let camera = null;        // { tx, ty, locked, begin(ctx), end(ctx) } — camera transform
 let keys = {};            // tracks currently held keys: keys[e.key] = true/false
-let doorsSealed = false;  // true while orbs are alive; seals door traversal
-let orbs = [];            // placeholder enemy orbs for the current room
+let doorsSealed = false;  // true while enemies are alive; seals door traversal
+let enemies = [];         // active enemies for the current room
+let gems = [];            // gem drops array: { x, y, vx, vy, alive }
+let sentinelShots = [];   // sentinel projectiles: { x, y, vx, vy, alive, age }
+let xp = 0;               // current XP total
+let xpToNext = 100;       // XP threshold for next level-up
 let clearedFloater = null; // { alpha, timer } — "CLEARED" text overlay
 let transition = null;    // { phase, timer, duration, targetRoom } — room fade transition
 let distMap = null;       // Float32Array of hop distances from player tile; null until first gesture
 let lastPlayerTile = { r: -1, c: -1 }; // cached player tile to skip redundant BFS
-let aimTarget = null;     // { x, y, alive } — current auto-aim target (orb or future enemy)
+let aimTarget = null;     // { x, y, alive } — current auto-aim target
 let aimGrace = 0;         // seconds remaining before current target is released on LOS loss
 let fireCooldown = 0;     // seconds until next bullet can fire
 let bullets = [];         // array of { x, y, vx, vy, alive, age }
@@ -1046,10 +1057,14 @@ function handleFirstGesture() {
     x: (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE,
     y: (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE,
     r: 6,
-    speed: 100
+    speed: 100,
+    vx: 0,
+    vy: 0
   };
+  player.vx = 0; player.vy = 0;
   initCamera();
-  spawnOrbs();
+  enemies = []; gems = []; sentinelShots = []; xp = 0;
+  spawnEnemies();
   distMap = null;
   lastPlayerTile = { r: -1, c: -1 };
   aimTarget = null; aimGrace = 0; fireCooldown = 0; bullets = [];
@@ -1085,23 +1100,42 @@ document.addEventListener("keyup",   function(e) { keys[e.key] = false; });
 // Update
 // ----------------------------------------------------------------------------
 
-// spawnOrbs() — creates up to 3 placeholder enemy orbs from the current room's spawnList.
-// Sets doorsSealed = true so doors are locked until all orbs are destroyed.
-function spawnOrbs() {
+// spawnEnemies() — spawns enemies from SPAWN_TABLE for the current level.
+// Looks up SPAWN_TABLE[currentLevel.levelNumber], falls back to level 1 table.
+// Places up to 3 enemies at spawnList positions. Sets doorsSealed = true.
+function spawnEnemies() {
   if (!currentRoom || !currentRoom.spawnList) return;
-  orbs = [];
+  enemies = [];
+  var types = SPAWN_TABLE[currentLevel ? currentLevel.levelNumber : 1] || SPAWN_TABLE[1];
   var list = currentRoom.spawnList;
-  var count = Math.min(3, list.length);
+  var count = Math.min(types.length, list.length);
   for (var i = 0; i < count; i++) {
     var entry = list[i];
     var wx = (entry.tx + 0.5) * TILE_SIZE;
     var wy = (entry.ty + 0.5) * TILE_SIZE;
-    orbs.push({ x: wx, y: wy, alive: true });
+    enemies.push({
+      type: types[i],
+      x: wx, y: wy,
+      r: 10,
+      hp: types[i] === "STALKER" ? 2 :
+          types[i] === "RUSHER"  ? 1 :
+          types[i] === "AMBUSHER"? 2 :
+          types[i] === "SENTINEL"? 3 : 2,
+      maxHp: types[i] === "STALKER" ? 2 :
+             types[i] === "RUSHER"  ? 1 :
+             types[i] === "AMBUSHER"? 2 :
+             types[i] === "SENTINEL"? 3 : 2,
+      speed: types[i] === "STALKER" ? 55 :
+             types[i] === "RUSHER"  ? 130 :
+             types[i] === "AMBUSHER"? 75 :
+             types[i] === "SENTINEL"? 0 : 55,
+      alive: true
+    });
   }
   doorsSealed = true;
 }
 
-// openDoors() — called when all orbs are destroyed.
+// openDoors() — called when all enemies are destroyed.
 // Clears the door seal, plays a tone, and triggers the CLEARED floater.
 function openDoors() {
   doorsSealed = false;
@@ -1109,37 +1143,84 @@ function openDoors() {
   clearedFloater = { alpha: 1.0, timer: 1.5 };
 }
 
-// updateOrbs(dt) — checks player overlap with each orb; destroys on collision.
-// Calls openDoors() when all orbs are gone.
-function updateOrbs(dt) {
-  if (!doorsSealed || !player) return;
-  for (var i = 0; i < orbs.length; i++) {
-    var orb = orbs[i];
-    if (orb.alive !== true) continue;
-    var dx = player.x - orb.x;
-    var dy = player.y - orb.y;
-    var dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < 12) {
-      orb.alive = false;
-      playTone({ type: "square", freq: 440, endFreq: 220, dur: 0.12, gain: 0.08 });
-    }
-  }
+// checkEnemiesClear() — called after bullet-enemy hits and from updateEnemies().
+// Opens doors when all enemies are dead and doors are currently sealed.
+function checkEnemiesClear() {
+  if (!doorsSealed) return;
   var allDead = true;
-  for (var j = 0; j < orbs.length; j++) {
-    if (orbs[j].alive === true) { allDead = false; break; }
+  for (var i = 0; i < enemies.length; i++) {
+    if (enemies[i].alive) { allDead = false; break; }
   }
   if (allDead) openDoors();
 }
 
-// renderOrbs() — draws alive orbs as pulsing pink glow circles.
-// Called inside the camera sandwich (world-space coordinates).
-function renderOrbs() {
-  for (var i = 0; i < orbs.length; i++) {
-    var orb = orbs[i];
-    if (orb.alive !== true) continue;
-    glowCircle(orb.x, orb.y, 5, COLORS.pink, 16);
-    var pulse = 0.7 + 0.3 * Math.sin(Date.now() / 400);
-    glowCircle(orb.x, orb.y, 5 * pulse + 2, COLORS.pink, 6);
+// addXP() — adds amount to xp; handles level-up counter (effects in Phase 45).
+function addXP(amount) {
+  xp += amount;
+  if (xp >= xpToNext) {
+    xp -= xpToNext;
+  }
+}
+
+// spawnGem(x, y) — creates a gem with random outward velocity at world position x,y.
+function spawnGem(gx, gy) {
+  var angle = Math.random() * Math.PI * 2;
+  var speed = 60;
+  gems.push({ x: gx, y: gy, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, alive: true });
+}
+
+// updateGems(dt) — moves gems with exponential friction; collects gems near player.
+function updateGems(dt) {
+  if (!player) return;
+  var friction = Math.pow(0.85, dt * 60);
+  for (var i = gems.length - 1; i >= 0; i--) {
+    var gem = gems[i];
+    if (!gem.alive) { gems.splice(i, 1); continue; }
+    gem.vx *= friction;
+    gem.vy *= friction;
+    gem.x += gem.vx * dt;
+    gem.y += gem.vy * dt;
+    var gx = gem.x - player.x;
+    var gy = gem.y - player.y;
+    if (Math.sqrt(gx * gx + gy * gy) < 16) {
+      gem.alive = false;
+      addXP(10);
+      gems.splice(i, 1);
+    }
+  }
+}
+
+// renderGems() — draws gems as gold glow circles. Called inside camera sandwich.
+function renderGems() {
+  for (var i = 0; i < gems.length; i++) {
+    var gem = gems[i];
+    if (!gem.alive) continue;
+    glowCircle(gem.x, gem.y, 4, COLORS.gold, 14);
+  }
+}
+
+// updateEnemies(dt) — stub for Wave 1; Wave 2 adds Stalker+Rusher movement.
+// Only checks clear condition for now.
+function updateEnemies(dt) {
+  checkEnemiesClear();
+}
+
+// renderEnemies() — Wave 1 stub: white circle for every alive enemy.
+// Wave 2 makes this type-aware (purple Stalker, pink Rusher, etc.).
+function renderEnemies() {
+  for (var i = 0; i < enemies.length; i++) {
+    var e = enemies[i];
+    if (!e.alive) continue;
+    glowCircle(e.x, e.y, e.r - 2, COLORS.white, 10);
+  }
+}
+
+// renderSentinelShots() — draws sentinel projectiles (stub; populated in Wave 3).
+function renderSentinelShots() {
+  for (var i = 0; i < sentinelShots.length; i++) {
+    var s = sentinelShots[i];
+    if (!s.alive) continue;
+    glowCircle(s.x, s.y, 4, COLORS.purple, 14);
   }
 }
 
@@ -1203,7 +1284,7 @@ function updateTransition(dt) {
   if (transition.timer <= 0) {
     if (transition.phase === "out") {
       currentRoom = transition.targetRoom;
-      orbs = [];
+      enemies = []; gems = []; sentinelShots = [];
       doorsSealed = false;
       clearedFloater = null;
       aimTarget = null; bullets = [];
@@ -1212,7 +1293,7 @@ function updateTransition(dt) {
       player.x = (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE;
       player.y = (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE;
       initCamera();
-      spawnOrbs();
+      spawnEnemies();
       transition = { phase: "in", timer: 0.25, duration: 0.25, targetRoom: null };
     } else if (transition.phase === "in") {
       transition = null;
@@ -1355,6 +1436,8 @@ function movePlayer(dt) {
     ny = player.y; // cancel vertical move
   }
 
+  player.vx = (nx - player.x) / (dt > 0 ? dt : 0.016);
+  player.vy = (ny - player.y) / (dt > 0 ? dt : 0.016);
   player.x = nx;
   player.y = ny;
 }
@@ -1424,7 +1507,7 @@ function hasLOS(x1, y1, x2, y2) {
 }
 
 // updateAim(dt) — auto-aim target selection with hysteresis grace period.
-// Scans orbs for nearest LOS-visible target; fires bullets toward it.
+// Scans enemies for nearest LOS-visible target; fires bullets toward it.
 function updateAim(dt) {
   if (!player) return;
   fireCooldown -= dt;
@@ -1444,10 +1527,10 @@ function updateAim(dt) {
 
   // Acquire new target if needed
   if (aimTarget === null || (aimTarget && !aimTarget.alive)) {
-    var nearestOrb = null;
+    var nearestEnemy = null;
     var nearestDist2 = Infinity;
-    for (var i = 0; i < orbs.length; i++) {
-      var orb = orbs[i];
+    for (var i = 0; i < enemies.length; i++) {
+      var orb = enemies[i];
       if (!orb.alive) continue;
       if (!hasLOS(player.x, player.y, orb.x, orb.y)) continue;
       var dx2 = orb.x - player.x;
@@ -1455,11 +1538,11 @@ function updateAim(dt) {
       var d2 = dx2 * dx2 + dy2 * dy2;
       if (d2 < nearestDist2) {
         nearestDist2 = d2;
-        nearestOrb = orb;
+        nearestEnemy = orb;
       }
     }
-    if (nearestOrb !== null) {
-      aimTarget = nearestOrb;
+    if (nearestEnemy !== null) {
+      aimTarget = nearestEnemy;
       aimGrace = HYSTERESIS_GRACE;
     }
   }
@@ -1500,6 +1583,25 @@ function updateBullets(dt) {
     }
     b.x = nx;
     b.y = ny;
+    // Bullet-enemy collision
+    var hit = false;
+    for (var j = 0; j < enemies.length; j++) {
+      var en = enemies[j];
+      if (!en.alive) continue;
+      var bdx = nx - en.x;
+      var bdy = ny - en.y;
+      if (Math.sqrt(bdx * bdx + bdy * bdy) < (3 + en.r)) {
+        en.hp -= 1;
+        if (en.hp <= 0) {
+          en.alive = false;
+          spawnGem(en.x, en.y);
+          checkEnemiesClear();
+        }
+        hit = true;
+        break;
+      }
+    }
+    if (hit) { bullets.splice(i, 1); continue; }
   }
 }
 
@@ -1510,7 +1612,8 @@ function update(dt) {
     computeDistMap();
     updateAim(dt);
     updateBullets(dt);
-    updateOrbs(dt);
+    updateEnemies(dt);
+    updateGems(dt);
     if (clearedFloater) {
       clearedFloater.timer -= dt;
       clearedFloater.alpha = Math.max(0, clearedFloater.timer / 1.5);
@@ -1625,7 +1728,9 @@ function renderPlaying() {
   if (camera) camera.begin(ctx);
   renderRoom(currentRoom);
   renderBullets();
-  renderOrbs();
+  renderSentinelShots();
+  renderGems();
+  renderEnemies();
   renderPlayer();
   if (camera) camera.end(ctx);
 
