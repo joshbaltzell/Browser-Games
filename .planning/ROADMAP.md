@@ -200,8 +200,8 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 - [x] **Phase 39: Scaffold & Aesthetic** - Create the runnable game shell at `games/neon-gauntlet/` with Neon Sequel visual identity, hub card, and Web Audio (completed 2026-06-19)
 - [x] **Phase 40: Tile Grid + Maze Generation** - Generate seeded, reachability-verified levels of 3–8 rooms with procedural interiors and all room types (completed 2026-06-19)
 - [x] **Phase 41: Camera + Player Movement + Room Flow** - Establish world/screen coordinate contract, WASD wall movement, and the door-seal → clear → open room cycle (completed 2026-06-22)
-- [ ] **Phase 42: BFS Flow Field + LOS + Combat Core** - Build the shared BFS distMap and Bresenham LOS primitives, auto-aim, and bullet/wall collision
-- [ ] **Phase 43: Tier 1+2 Enemy Archetypes** - Introduce Stalker, Rusher, Ambusher, and Sentinel with gem drops and the level-keyed spawn table
+- [x] **Phase 42: BFS Flow Field + LOS + Combat Core** - Build the shared BFS distMap and Bresenham LOS primitives, auto-aim, and bullet/wall collision (completed 2026-06-22)
+- [x] **Phase 43: Tier 1+2 Enemy Archetypes** - Introduce Stalker, Rusher, Ambusher, and Sentinel with gem drops and the level-keyed spawn table (completed 2026-06-22)
 - [ ] **Phase 44: Tier 3 Enemies + HP System + Death Screen** - Add Sniper and Crawler, player HP/invuln/HUD bar, and the run-end death screen
 - [ ] **Phase 45: Skill Tree + Level Map + Level Escalation + Boss** - Full 5-branch skill tree, level map minimap, between-level modifier draft, level escalation, and Boss room win condition
 - [ ] **Phase 46: Elite/Shop Rooms + Polish** - Shop XP-spend, Elite room harder enemies with better rewards, scrolling camera for large rooms, and visual polish
@@ -296,12 +296,13 @@ Plans:
   5. Defeating any enemy drops gems the player can collect for XP
   6. Level 1 spawns only Stalkers and Rushers; Ambushers and Sentinels do not appear until level 3 (enforced by the spawn table)
 
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
 Plans:
-- [ ] 43-01-PLAN.md — Enemy base system: replace orbs[] with enemies[], SPAWN_TABLE, spawnEnemies, gem drops, XP, bullet-enemy collision, updateAim scan
-- [ ] 43-02-PLAN.md — Stalker BFS gradient descent + Rusher charge/bounce movement; type-aware renderEnemies
-- [ ] 43-03-PLAN.md — Ambusher velocity-prediction movement + Sentinel state machine + homing shots
+
+- [x] 43-01-PLAN.md — Enemy base system: replace orbs[] with enemies[], SPAWN_TABLE, spawnEnemies, gem drops, XP, bullet-enemy collision, updateAim scan
+- [x] 43-02-PLAN.md — Stalker BFS gradient descent + Rusher charge/bounce movement; type-aware renderEnemies
+- [x] 43-03-PLAN.md — Ambusher velocity-prediction movement + Sentinel state machine + homing shots
 
 ### Phase 44: Tier 3 Enemies + HP System + Death Screen
 
@@ -315,7 +316,12 @@ Plans:
   3. Player has a visible HP bar in the HUD; taking damage triggers a brief invulnerability window (visible flicker) that prevents rapid HP drain
   4. On death, a run-end screen displays level reached, rooms cleared, and total kills, and a Restart button starts a fresh run
 
-**Plans:** TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 44-01-PLAN.md — HP system + DEAD state + death screen + stat tracking
+- [ ] 44-02-PLAN.md — Sniper enemy (aim/fire/cooldown state machine + beam telegraph)
+- [ ] 44-03-PLAN.md — Crawler enemy (right-hand rule + generational split-on-death)
 
 ### Phase 45: Skill Tree + Level Map + Level Escalation + Boss
 
@@ -394,8 +400,8 @@ Plans:
 | 39. scaffold-aesthetic | v5.0 | 2/2 | Complete    | 2026-06-19 |
 | 40. tile-grid-maze-gen | v5.0 | 3/3 | Complete    | 2026-06-19 |
 | 41. camera-movement-room-flow | v5.0 | 3/3 | Complete   | 2026-06-22 |
-| 42. bfs-los-combat-core | v5.0 | 1/2 | In Progress|  |
-| 43. tier1-tier2-enemies | v5.0 | 0/TBD | Not started | - |
-| 44. tier3-enemies-hp-death | v5.0 | 0/TBD | Not started | - |
+| 42. bfs-los-combat-core | v5.0 | 2/2 | Complete   | 2026-06-22 |
+| 43. tier1-tier2-enemies | v5.0 | 3/3 | Complete   | 2026-06-22 |
+| 44. tier3-enemies-hp-death | v5.0 | 0/3 | Planned | - |
 | 45. skill-tree-map-escalation-boss | v5.0 | 0/TBD | Not started | - |
 | 46. elite-shop-polish | v5.0 | 0/TBD | Not started | - |
