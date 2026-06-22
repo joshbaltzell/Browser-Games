@@ -144,6 +144,9 @@ let currentLevelNum = 1;  // current level number (increments on Boss clear)
 let bossClearTimer = 0;   // seconds remaining in BOSS_CLEAR overlay
 let skillPoints = 0;      // unspent skill points available to invest
 let skillSelectBranch = 0; // keyboard highlight index 0-4 in skill select overlay
+let levelMapVisible = false; // M key toggle — shows minimap overlay
+let modifierDraftStep = 0;    // 0 = blessing pick, 1 = curse pick
+let pendingModifierChoice = -1; // index of chosen blessing awaiting curse selection
 
 // ----------------------------------------------------------------------------
 // Audio helpers
@@ -1135,6 +1138,7 @@ function handleFirstGesture() {
   enemies = []; gems = []; sentinelShots = []; xp = 0;
   killCount = 0; roomsCleared = 0;
   spawnEnemies();
+  if (currentRoom && currentRoom.type === "START") currentRoom.cleared = true;
   distMap = null;
   lastPlayerTile = { r: -1, c: -1 };
   aimTarget = null; aimGrace = 0; fireCooldown = 0; bullets = [];
@@ -1152,6 +1156,7 @@ function restartGame() {
   enemies = []; gems = []; sentinelShots = []; bullets = [];
   xp = 0; xpToNext = 100; killCount = 0; roomsCleared = 0;
   currentLevelNum = 1; bossClearTimer = 0;
+  levelMapVisible = false; modifierDraftStep = 0; pendingModifierChoice = -1;
   doorsSealed = false; clearedFloater = null; transition = null;
   distMap = null; lastPlayerTile = { r: -1, c: -1 };
   aimTarget = null; aimGrace = 0; fireCooldown = 0;
@@ -1211,6 +1216,9 @@ document.addEventListener("keydown", function(e) {
   } else if (gameState === GAME_STATE.PLAYING) {
     if (e.key === "s" || e.key === "S") {
       gameState = GAME_STATE.SKILL_SELECT;
+    }
+    if (e.key === "m" || e.key === "M") {
+      levelMapVisible = !levelMapVisible;
     }
   }
 });
@@ -1314,6 +1322,7 @@ function spawnEnemies() {
 // Clears the door seal, plays a tone, and triggers the CLEARED floater.
 function openDoors() {
   roomsCleared += 1;
+  if (currentRoom) currentRoom.cleared = true;
   doorsSealed = false;
   playTone({ type: "sine", freq: 660, endFreq: 880, dur: 0.22, gain: 0.12 });
   clearedFloater = { alpha: 1.0, timer: 1.5 };
@@ -1353,6 +1362,7 @@ function advanceLevel() {
   // Reset all per-room state
   enemies = []; gems = []; sentinelShots = []; bullets = [];
   doorsSealed = false; clearedFloater = null; transition = null;
+  levelMapVisible = false;
   // Place player at new Start room spawn point
   player.x = (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE;
   player.y = (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE;
@@ -1361,6 +1371,7 @@ function advanceLevel() {
   aimTarget = null; aimGrace = 0; fireCooldown = 0;
   initCamera();
   spawnEnemies();
+  if (currentRoom && currentRoom.type === "START") currentRoom.cleared = true;
   gameState = GAME_STATE.PLAYING;
 }
 
@@ -2557,6 +2568,93 @@ function renderHpBar() {
   ctx.restore();
 }
 
+// renderLevelMap() — M key minimap overlay (top-right corner).
+// Shows all rooms in the current level colored by type; current room has a white border;
+// cleared rooms show a check mark.
+function renderLevelMap() {
+  if (!levelMapVisible || !currentLevel) return;
+  ctx.save();
+
+  var rooms = currentLevel.rooms;
+
+  // Cell dimensions and gap
+  var CELL_W = 20;
+  var CELL_H = 15;
+  var GAP = 2;
+
+  // Determine grid bounds from slotIdx (4x4 coarse grid: row = floor(idx/4), col = idx%4)
+  var minRow = 3, maxRow = 0, minCol = 3, maxCol = 0;
+  for (var ri = 0; ri < rooms.length; ri++) {
+    var sr = Math.floor(rooms[ri].slotIdx / 4);
+    var sc = rooms[ri].slotIdx % 4;
+    if (sr < minRow) minRow = sr;
+    if (sr > maxRow) maxRow = sr;
+    if (sc < minCol) minCol = sc;
+    if (sc > maxCol) maxCol = sc;
+  }
+  var gridCols = maxCol - minCol + 1;
+  var gridRows = maxRow - minRow + 1;
+
+  var panelW = gridCols * (CELL_W + GAP) + GAP + 16;
+  var panelH = gridRows * (CELL_H + GAP) + GAP + 22; // 22px for "MAP" title
+  var panelX = W - panelW - 8;
+  var panelY = 8;
+
+  // Panel background
+  ctx.fillStyle = "rgba(5,5,12,0.82)";
+  ctx.fillRect(panelX, panelY, panelW, panelH);
+
+  // Title "MAP"
+  ctx.font = "bold 11px 'Segoe UI', system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = COLORS.cyan;
+  ctx.fillText("MAP", panelX + panelW / 2, panelY + 9);
+
+  // Room type colors
+  var typeColors = {
+    "START":  COLORS.cyan,
+    "NORMAL": "#333366",
+    "ELITE":  COLORS.gold,
+    "SHOP":   "#336633",
+    "BOSS":   COLORS.pink,
+  };
+
+  // Draw each room cell
+  ctx.font = "10px 'Segoe UI', system-ui, sans-serif";
+  for (var i = 0; i < rooms.length; i++) {
+    var room = rooms[i];
+    var row = Math.floor(room.slotIdx / 4) - minRow;
+    var col = room.slotIdx % 4 - minCol;
+
+    var cellX = panelX + GAP + 8 + col * (CELL_W + GAP);
+    var cellY = panelY + 18 + row * (CELL_H + GAP);
+
+    // Room fill color
+    ctx.fillStyle = typeColors[room.type] || "#222244";
+    ctx.fillRect(cellX, cellY, CELL_W, CELL_H);
+
+    // Current room: bright white border
+    if (room === currentRoom) {
+      ctx.save();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(cellX, cellY, CELL_W, CELL_H);
+      ctx.restore();
+    }
+
+    // Cleared rooms: checkmark
+    if (room.cleared === true) {
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("✓", cellX + CELL_W / 2, cellY + CELL_H / 2);
+    }
+  }
+
+  ctx.restore();
+}
+
 // renderDead() — full-screen death overlay with stats and restart prompt.
 // Called from render() when gameState === GAME_STATE.DEAD.
 function renderDead() {
@@ -2781,6 +2879,7 @@ function renderPlaying() {
 
   // Step 4 — HUD overlays outside camera transform (screen-space)
   renderHpBar();
+  renderLevelMap();
   renderClearedFloater();
   renderTransitionOverlay();
 }
