@@ -1325,6 +1325,9 @@ function spawnEnemies() {
     }
     shopItems = currentRoom.shopItems; // restore persisted sold flags on re-entry
     gameState = GAME_STATE.SHOP;
+    // Clear any in-flight room transition so the "in" fade does not stall while
+    // the shop overlay is open and does not block doors on exit (WR-03).
+    transition = null;
     return;
   }
 
