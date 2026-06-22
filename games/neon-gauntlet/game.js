@@ -2479,6 +2479,7 @@ function updateBullets(dt) {
           en.alive = false;
           killCount += 1;
           spawnGem(en.x, en.y);
+          if (en.elite) spawnGem(en.x, en.y);
           // Sub-Crawler split must happen BEFORE checkEnemiesClear to prevent
           // false door-open on the frame the parent Crawler dies.
           if (en.type === "CRAWLER" && en.generation === 0) {
