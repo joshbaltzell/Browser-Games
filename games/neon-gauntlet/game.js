@@ -3003,7 +3003,7 @@ function render() {
   if (gameState === GAME_STATE.TITLE) renderTitle();
   else if (gameState === GAME_STATE.PLAYING) renderPlaying();
   else if (gameState === GAME_STATE.DEAD) renderDead();
-  else if (gameState === GAME_STATE.BOSS_CLEAR) renderBossClear();
+  else if (gameState === GAME_STATE.BOSS_CLEAR) { renderBossClear(); renderLevelMap(); }
   else if (gameState === GAME_STATE.SKILL_SELECT) renderSkillSelect();
   else if (gameState === GAME_STATE.MODIFIER_DRAFT) renderModifierDraft();
 }
