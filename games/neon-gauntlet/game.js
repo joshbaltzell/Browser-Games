@@ -1211,6 +1211,52 @@ function renderGems() {
   }
 }
 
+// updateSentinelShots(dt) — moves sentinel homing projectiles toward player.
+// Re-aims each frame; wall hit or 4s lifetime destroys shot.
+// Player contact removes shot without damage (HP system added in Phase 44).
+function updateSentinelShots(dt) {
+  if (!currentRoom || !currentRoom.grid || !player) return;
+  var cols = currentRoom.cols;
+  var rows = currentRoom.rows;
+  for (var i = sentinelShots.length - 1; i >= 0; i--) {
+    var s = sentinelShots[i];
+    if (!s.alive) { sentinelShots.splice(i, 1); continue; }
+    s.age += dt;
+    if (s.age >= 4.0) { sentinelShots.splice(i, 1); continue; }
+
+    // Re-aim toward player
+    var hdx = player.x - s.x;
+    var hdy = player.y - s.y;
+    var hlen = Math.sqrt(hdx * hdx + hdy * hdy);
+    if (hlen > 0) {
+      s.vx = (hdx / hlen) * 120;
+      s.vy = (hdy / hlen) * 120;
+    }
+
+    var nx = s.x + s.vx * dt;
+    var ny = s.y + s.vy * dt;
+
+    // Wall check
+    var tc = Math.floor(nx / TILE_SIZE);
+    var tr = Math.floor(ny / TILE_SIZE);
+    if (tc < 0 || tc >= cols || tr < 0 || tr >= rows ||
+        currentRoom.grid[tr * cols + tc] === 1) {
+      sentinelShots.splice(i, 1);
+      continue;
+    }
+
+    s.x = nx;
+    s.y = ny;
+
+    // Player contact — remove shot, no damage (Phase 44 adds HP)
+    var pdx = s.x - player.x;
+    var pdy = s.y - player.y;
+    if (Math.sqrt(pdx * pdx + pdy * pdy) < (4 + player.r)) {
+      sentinelShots.splice(i, 1);
+    }
+  }
+}
+
 // updateEnemies(dt) — routes each alive enemy to its type-specific movement.
 // Stalker: BFS gradient descent via distMap. Rusher: charge+wall-bounce.
 // AMBUSHER and SENTINEL handled in Plan 03.
@@ -1807,6 +1853,7 @@ function update(dt) {
     updateBullets(dt);
     updateEnemies(dt);
     updateGems(dt);
+    updateSentinelShots(dt);
     if (clearedFloater) {
       clearedFloater.timer -= dt;
       clearedFloater.alpha = Math.max(0, clearedFloater.timer / 1.5);
