@@ -1386,6 +1386,32 @@ function computeDistMap() {
   }
 }
 
+// hasLOS(x1, y1, x2, y2) — Bresenham tile-walk line-of-sight check.
+// Returns true if no wall tiles block the straight line between two world-space points.
+// Returns false immediately if any traversed tile is a wall or out of bounds.
+function hasLOS(x1, y1, x2, y2) {
+  if (!currentRoom) return false;
+  var r1 = Math.floor(y1 / TILE_SIZE);
+  var c1 = Math.floor(x1 / TILE_SIZE);
+  var r2 = Math.floor(y2 / TILE_SIZE);
+  var c2 = Math.floor(x2 / TILE_SIZE);
+  var dr = Math.abs(r2 - r1);
+  var dc = Math.abs(c2 - c1);
+  var sr = (r1 < r2) ? 1 : -1;
+  var sc = (c1 < c2) ? 1 : -1;
+  var err = dr - dc;
+  var maxSteps = dr + dc + 2;
+  for (var step = 0; step < maxSteps; step++) {
+    if (r1 < 0 || r1 >= currentRoom.rows || c1 < 0 || c1 >= currentRoom.cols) return false;
+    if (currentRoom.grid[r1 * currentRoom.cols + c1] === 1) return false;
+    if (r1 === r2 && c1 === c2) break;
+    var e2 = 2 * err;
+    if (e2 > -dc) { err -= dc; c1 += sc; }
+    if (e2 < dr)  { err += dr; r1 += sr; }
+  }
+  return true;
+}
+
 function update(dt) {
   if (gameState === GAME_STATE.PLAYING) {
     movePlayer(dt);
