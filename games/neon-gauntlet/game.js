@@ -1044,9 +1044,54 @@ document.addEventListener("keyup",   function(e) { keys[e.key] = false; });
 // ----------------------------------------------------------------------------
 // Update
 // ----------------------------------------------------------------------------
+function movePlayer(dt) {
+  if (!player || !currentRoom || !currentRoom.grid) return;
+
+  // Build direction vector from WASD / arrow keys
+  var dx = 0;
+  var dy = 0;
+  if (keys["w"] || keys["W"] || keys["ArrowUp"])    dy -= 1;
+  if (keys["s"] || keys["S"] || keys["ArrowDown"])  dy += 1;
+  if (keys["a"] || keys["A"] || keys["ArrowLeft"])  dx -= 1;
+  if (keys["d"] || keys["D"] || keys["ArrowRight"]) dx += 1;
+
+  // Normalize diagonal movement
+  if (dx !== 0 && dy !== 0) {
+    var inv = 1 / Math.sqrt(2);
+    dx *= inv;
+    dy *= inv;
+  }
+
+  var spd = player.speed * dt;
+
+  // Inner solid-tile helper: returns true if world point (wx, wy) is inside a wall
+  function solid(wx, wy) {
+    var tc = Math.floor(wx / TILE_SIZE);
+    var tr = Math.floor(wy / TILE_SIZE);
+    if (tc < 0 || tr < 0 || tc >= currentRoom.cols || tr >= currentRoom.rows) return true;
+    return currentRoom.grid[tr * currentRoom.cols + tc] === 1;
+  }
+
+  var cr = 4; // collision radius (slightly smaller than render radius)
+  var nx = player.x + dx * spd;
+  var ny = player.y + dy * spd;
+
+  // Axis-split collision: test X movement independently
+  if (solid(nx - cr, player.y) || solid(nx + cr, player.y)) {
+    nx = player.x; // cancel horizontal move
+  }
+  // Test Y movement independently
+  if (solid(player.x, ny - cr) || solid(player.x, ny + cr)) {
+    ny = player.y; // cancel vertical move
+  }
+
+  player.x = nx;
+  player.y = ny;
+}
+
 function update(dt) {
   if (gameState === GAME_STATE.PLAYING) {
-    // Phase 41+: enemy updates, movement, room logic
+    movePlayer(dt);
   }
 }
 
@@ -1108,6 +1153,11 @@ function renderTitle() {
   ctx.fillText("PRESS ANY KEY OR CLICK TO START", W / 2, H * 0.42 + 56);
 }
 
+function renderPlayer() {
+  if (!player) return;
+  glowCircle(player.x, player.y, player.r, COLORS.cyan, 18);
+}
+
 function renderPlaying() {
   // Step 1 — Clear to background
   ctx.fillStyle = "#05050c";
@@ -1134,6 +1184,9 @@ function renderPlaying() {
 
   // Step 3 — Draw the current room tile grid (floor, wall outlines, door glow dots)
   renderRoom(currentRoom);
+
+  // Step 4 — Draw player dot (Phase 41; will move inside camera sandwich in Plan 02)
+  renderPlayer();
 }
 
 function render() {
