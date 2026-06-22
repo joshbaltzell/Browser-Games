@@ -1157,7 +1157,7 @@ function spawnEnemies() {
       type: types[i],
       x: wx, y: wy,
       r: types[i] === "SNIPER" ? 10 :
-         types[i] === "CRAWLER" ? 10 : 10,
+         types[i] === "CRAWLER" ? 8 : 10,
       hp: types[i] === "STALKER" ? 2 :
           types[i] === "RUSHER"  ? 1 :
           types[i] === "AMBUSHER"? 2 :
@@ -1539,6 +1539,47 @@ function updateEnemies(dt) {
         if (e.stateTimer <= 0) {
           e.state = "idle"; e.stateTimer = 2.0;
         }
+      }
+
+    } else if (e.type === "CRAWLER") {
+      // Right-hand rule wall-hugging movement
+      // Facing index: 0=N 1=E 2=S 3=W
+      var DIRS = [[0,-1],[1,0],[0,1],[-1,0]];
+      // Passability probe: checks center of tile at (px, py)
+      var probe = function(px, py) {
+        var ptc = Math.floor(px / TILE_SIZE);
+        var ptr = Math.floor(py / TILE_SIZE);
+        return ptc >= 0 && ptc < cols && ptr >= 0 && ptr < currentRoom.rows &&
+               currentRoom.grid[ptr * cols + ptc] !== 1;
+      };
+      // Try turn-right first, then forward, then turn-left, then U-turn
+      var cStep = e.speed * dt;
+      var rightFacing = (e.facing + 1) % 4;
+      var leftFacing  = (e.facing + 3) % 4;
+      var backFacing  = (e.facing + 2) % 4;
+      if (probe(e.x + DIRS[rightFacing][0] * cStep, e.y + DIRS[rightFacing][1] * cStep)) {
+        e.facing = rightFacing;
+      } else if (probe(e.x + DIRS[e.facing][0] * cStep, e.y + DIRS[e.facing][1] * cStep)) {
+        // keep current facing
+      } else if (probe(e.x + DIRS[leftFacing][0] * cStep, e.y + DIRS[leftFacing][1] * cStep)) {
+        e.facing = leftFacing;
+      } else {
+        e.facing = backFacing;
+      }
+      // Move in chosen direction with axis-split solid check
+      var cnx = e.x + DIRS[e.facing][0] * cStep;
+      var cny = e.y + DIRS[e.facing][1] * cStep;
+      var ctcx = Math.floor(cnx / TILE_SIZE);
+      var ctrx = Math.floor(e.y / TILE_SIZE);
+      if (ctcx >= 0 && ctcx < cols && ctrx >= 0 && ctrx < currentRoom.rows &&
+          currentRoom.grid[ctrx * cols + ctcx] !== 1) {
+        e.x = cnx;
+      }
+      var ctcx2 = Math.floor(e.x / TILE_SIZE);
+      var ctry2 = Math.floor(cny / TILE_SIZE);
+      if (ctcx2 >= 0 && ctcx2 < cols && ctry2 >= 0 && ctry2 < currentRoom.rows &&
+          currentRoom.grid[ctry2 * cols + ctcx2] !== 1) {
+        e.y = cny;
       }
     }
 
