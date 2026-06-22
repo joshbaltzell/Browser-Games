@@ -2470,6 +2470,7 @@ function updateBullets(dt) {
               chainNearest.alive = false;
               killCount += 1;
               spawnGem(chainNearest.x, chainNearest.y);
+              if (chainNearest.elite) spawnGem(chainNearest.x, chainNearest.y);
               if (chainNearest.type === "CRAWLER" && chainNearest.generation === 0) {
                 var chOff = [-8, 8];
                 for (var chi = 0; chi < 2; chi++) {
@@ -2524,6 +2525,7 @@ function updateBullets(dt) {
                 bhe.alive = false;
                 killCount += 1;
                 spawnGem(bhe.x, bhe.y);
+                if (bhe.elite) spawnGem(bhe.x, bhe.y);
                 if (bhe.type === "CRAWLER" && bhe.generation === 0) {
                   var bhOff = [-8, 8];
                   for (var bhsi = 0; bhsi < 2; bhsi++) {
