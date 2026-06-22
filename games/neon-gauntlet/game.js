@@ -21,8 +21,9 @@ const COLORS = {
   gold:   "#fffb96",
   purple: "#b388ff",
   white:  "#ffffff",
+  orange: "#ff8c00",
 };
-const GAME_STATE = { TITLE: "TITLE", PLAYING: "PLAYING", DEAD: "DEAD", BOSS_CLEAR: "BOSS_CLEAR", SKILL_SELECT: "SKILL_SELECT", MODIFIER_DRAFT: "MODIFIER_DRAFT" };
+const GAME_STATE = { TITLE: "TITLE", PLAYING: "PLAYING", DEAD: "DEAD", BOSS_CLEAR: "BOSS_CLEAR", SKILL_SELECT: "SKILL_SELECT", MODIFIER_DRAFT: "MODIFIER_DRAFT", SHOP: "SHOP" };
 const DEBUG = false;      // set true during development to enable the D-key debug overlay
 const TILE_SIZE = 16;     // canvas pixels per tile — matches D-17 spec
 const HYSTERESIS_GRACE = 0.5;  // seconds to hold target after LOS breaks
@@ -162,6 +163,7 @@ let skillSelectBranch = 0; // keyboard highlight index 0-4 in skill select overl
 let levelMapVisible = false; // M key toggle — shows minimap overlay
 let modifierDraftStep = 0;    // 0 = blessing pick, 1 = curse pick
 let pendingModifierChoice = -1; // index of chosen blessing awaiting curse selection
+let shopItems = [];
 
 // ----------------------------------------------------------------------------
 // Audio helpers
@@ -1169,6 +1171,7 @@ document.addEventListener("pointerup", handleFirstGesture);
 // Called from the DEAD screen restart button click.
 function restartGame() {
   enemies = []; gems = []; sentinelShots = []; bullets = [];
+  shopItems = [];
   xp = 0; xpToNext = 100; killCount = 0; roomsCleared = 0;
   currentLevelNum = 1; bossClearTimer = 0;
   levelMapVisible = false; modifierDraftStep = 0; pendingModifierChoice = -1;
@@ -1254,6 +1257,19 @@ document.addEventListener("keydown", function(e) {
     if (e.key === "m" || e.key === "M") {
       levelMapVisible = !levelMapVisible;
     }
+  } else if (gameState === GAME_STATE.SHOP) {
+    if (e.key === "1" || e.key === "2" || e.key === "3") {
+      e.preventDefault();
+      var si = Number(e.key) - 1;
+      var sitem = shopItems[si];
+      if (sitem && !sitem.sold && xp >= sitem.cost) {
+        xp -= sitem.cost;
+        sitem.apply(player);
+        sitem.sold = true;
+      }
+    } else if (e.key === "Escape" || e.key === "e" || e.key === "E") {
+      gameState = GAME_STATE.PLAYING;
+    }
   }
 });
 
@@ -1288,6 +1304,20 @@ function spawnEnemies() {
       state: "idle"
     });
     doorsSealed = true;
+    return;
+  }
+
+  // Shop room — no combat; populate shop inventory and open shop overlay.
+  if (currentRoom.type === "SHOP") {
+    shopItems = [
+      { name: "Health Restore", stat: "+30 HP",        cost: 40, sold: false,
+        apply: function(p) { p.hp = Math.min(p.maxHp || 5, p.hp + 30); } },
+      { name: "Damage Shard",   stat: "+5 bullet dmg", cost: 50, sold: false,
+        apply: function(p) { p.bulletDmg = (p.bulletDmg || 1) + 5; } },
+      { name: "Swiftness Coil", stat: "+30 speed",     cost: 50, sold: false,
+        apply: function(p) { p.speed = (p.speed || 100) + 30; } }
+    ];
+    gameState = GAME_STATE.SHOP;
     return;
   }
 
@@ -2503,6 +2533,7 @@ function update(dt) {
   if (gameState === GAME_STATE.SKILL_SELECT) {
     return; // skip all movement/physics/AI
   }
+  if (gameState === GAME_STATE.SHOP) return;
   if (gameState === GAME_STATE.PLAYING) {
     movePlayer(dt);
     if (player && player.invuln > 0) player.invuln = Math.max(0, player.invuln - dt);
@@ -2947,6 +2978,55 @@ function renderSkillSelect() {
   ctx.restore();
 }
 
+// renderShop() — shop overlay with 3 purchasable items.
+// Called from render() when gameState === GAME_STATE.SHOP.
+function renderShop() {
+  ctx.save();
+  ctx.globalAlpha = 0.88;
+  ctx.fillStyle = "#0a0a18";
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.font = "bold 36px monospace";
+  ctx.fillStyle = COLORS.gold;
+  ctx.shadowColor = COLORS.gold;
+  ctx.shadowBlur = 18;
+  ctx.fillText("SHOP", W / 2, H / 2 - 120);
+  ctx.shadowBlur = 0;
+  ctx.font = "18px monospace";
+  ctx.fillStyle = COLORS.orange;
+  ctx.fillText("XP: " + xp, W / 2, H / 2 - 80);
+  ctx.restore();
+
+  ctx.save();
+  ctx.textAlign = "center";
+  for (var i = 0; i < shopItems.length; i++) {
+    var item = shopItems[i];
+    var iy = H / 2 - 40 + i * 70;
+    var canAfford = xp >= item.cost;
+    ctx.font = "bold 20px monospace";
+    ctx.fillStyle = item.sold ? "#555" : (canAfford ? COLORS.gold : COLORS.white);
+    ctx.shadowColor = (item.sold || !canAfford) ? "transparent" : COLORS.gold;
+    ctx.shadowBlur = (item.sold || !canAfford) ? 0 : 8;
+    ctx.fillText("[" + (i + 1) + "] " + item.name + "  —  " + item.stat, W / 2, iy);
+    ctx.font = "16px monospace";
+    ctx.fillStyle = item.sold ? "#555" : (canAfford ? COLORS.cyan : COLORS.pink);
+    ctx.shadowBlur = 0;
+    ctx.fillText(item.sold ? "SOLD" : (item.cost + " XP"), W / 2, iy + 24);
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.font = "14px monospace";
+  ctx.fillStyle = COLORS.white;
+  ctx.globalAlpha = 0.45;
+  ctx.fillText("[E] or [ESC]  Leave shop", W / 2, H / 2 + 170);
+  ctx.restore();
+}
+
 // renderBullets() — draws a glowing gold dot for each live bullet.
 // Called inside the camera sandwich in renderPlaying().
 function renderBullets() {
@@ -3006,6 +3086,7 @@ function render() {
   else if (gameState === GAME_STATE.BOSS_CLEAR) { renderBossClear(); renderLevelMap(); }
   else if (gameState === GAME_STATE.SKILL_SELECT) renderSkillSelect();
   else if (gameState === GAME_STATE.MODIFIER_DRAFT) renderModifierDraft();
+  else if (gameState === GAME_STATE.SHOP)          renderShop();
 }
 
 // ----------------------------------------------------------------------------
