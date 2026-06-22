@@ -1308,15 +1308,22 @@ function spawnEnemies() {
   }
 
   // Shop room — no combat; populate shop inventory and open shop overlay.
+  // One-time per room entry: build the catalog once and persist it on the room
+  // so re-entering a cleared shop shows the already-purchased (sold) state
+  // rather than a fresh restock (CR-01 — repurchase exploit guard).
   if (currentRoom.type === "SHOP") {
-    shopItems = [
-      { name: "Health Restore", stat: "+30 HP",        cost: 40, sold: false,
-        apply: function(p) { p.hp = Math.min(p.maxHp || 5, p.hp + 30); } },
-      { name: "Damage Shard",   stat: "+5 bullet dmg", cost: 50, sold: false,
-        apply: function(p) { p.bulletDmg = (p.bulletDmg || 1) + 5; } },
-      { name: "Swiftness Coil", stat: "+30 speed",     cost: 50, sold: false,
-        apply: function(p) { p.speed = (p.speed || 100) + 30; } }
-    ];
+    if (!currentRoom.shopBuilt) {
+      currentRoom.shopItems = [
+        { name: "Health Restore", stat: "+30 HP",        cost: 40, sold: false,
+          apply: function(p) { p.hp = Math.min(p.maxHp || 5, p.hp + 30); } },
+        { name: "Damage Shard",   stat: "+5 bullet dmg", cost: 50, sold: false,
+          apply: function(p) { p.bulletDmg = (p.bulletDmg || 1) + 5; } },
+        { name: "Swiftness Coil", stat: "+30 speed",     cost: 50, sold: false,
+          apply: function(p) { p.speed = (p.speed || 100) + 30; } }
+      ];
+      currentRoom.shopBuilt = true;
+    }
+    shopItems = currentRoom.shopItems; // restore persisted sold flags on re-entry
     gameState = GAME_STATE.SHOP;
     return;
   }
