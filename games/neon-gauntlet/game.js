@@ -27,7 +27,7 @@ const DEBUG = false;      // set true during development to enable the D-key deb
 const TILE_SIZE = 16;     // canvas pixels per tile — matches D-17 spec
 const HYSTERESIS_GRACE = 0.5;  // seconds to hold target after LOS breaks
 const BULLET_SPEED     = 280;  // world pixels per second
-const BULLET_LIFETIME  = 3.0;  // seconds before bullet expires
+const BULLET_LIFETIME  = 1.2;  // seconds before bullet expires (~21 tiles at 280px/s)
 const FIRE_COOLDOWN    = 0.25; // seconds between shots
 const MAX_BULLETS      = 12;   // max live bullets on screen
 
@@ -1624,9 +1624,9 @@ function renderPlaying() {
   // Step 3 — Draw room + player inside camera transform (Plan 02: camera sandwich)
   if (camera) camera.begin(ctx);
   renderRoom(currentRoom);
-  renderPlayer();
-  renderOrbs();
   renderBullets();
+  renderOrbs();
+  renderPlayer();
   if (camera) camera.end(ctx);
 
   // Step 4 — HUD overlays outside camera transform (screen-space)
