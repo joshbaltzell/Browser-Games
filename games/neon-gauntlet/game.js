@@ -1199,9 +1199,67 @@ function renderGems() {
   }
 }
 
-// updateEnemies(dt) — stub for Wave 1; Wave 2 adds Stalker+Rusher movement.
-// Only checks clear condition for now.
+// updateEnemies(dt) — routes each alive enemy to its type-specific movement.
+// Stalker: BFS gradient descent via distMap. Rusher: charge+wall-bounce.
+// AMBUSHER and SENTINEL handled in Plan 03.
 function updateEnemies(dt) {
+  if (!currentRoom || !player) { checkEnemiesClear(); return; }
+  var cols = currentRoom.cols;
+
+  for (var i = 0; i < enemies.length; i++) {
+    var e = enemies[i];
+    if (!e.alive) continue;
+
+    if (e.type === "STALKER") {
+      // BFS gradient descent — pick adjacent tile with lowest distMap value
+      if (distMap === null) continue; // guard: BFS not yet computed
+      var er = Math.floor(e.y / TILE_SIZE);
+      var ec = Math.floor(e.x / TILE_SIZE);
+      var best = Infinity;
+      var bestRow = er;
+      var bestCol = ec;
+      var dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+      for (var d = 0; d < dirs.length; d++) {
+        var nr = er + dirs[d][0];
+        var nc = ec + dirs[d][1];
+        if (nr < 0 || nr >= currentRoom.rows || nc < 0 || nc >= cols) continue;
+        var idx = nr * cols + nc;
+        if (currentRoom.grid[idx] === 1) continue; // wall tile
+        var val = distMap[idx];
+        if (val < best) { best = val; bestRow = nr; bestCol = nc; }
+      }
+      // Move toward center of best tile
+      var tx = (bestCol + 0.5) * TILE_SIZE;
+      var ty = (bestRow + 0.5) * TILE_SIZE;
+      var ddx = tx - e.x;
+      var ddy = ty - e.y;
+      var dlen = Math.sqrt(ddx * ddx + ddy * ddy);
+      if (dlen > 0) {
+        var mx = (ddx / dlen) * e.speed * dt;
+        var my = (ddy / dlen) * e.speed * dt;
+        // Solid check (same axis-split pattern as movePlayer)
+        var enx = e.x + mx;
+        var eny = e.y + my;
+        var tc2 = Math.floor(enx / TILE_SIZE);
+        var tr2 = Math.floor(e.y / TILE_SIZE);
+        if (tc2 >= 0 && tc2 < cols && tr2 >= 0 && tr2 < currentRoom.rows &&
+            currentRoom.grid[tr2 * cols + tc2] !== 1) {
+          e.x = enx;
+        }
+        var tc3 = Math.floor(e.x / TILE_SIZE);
+        var tr3 = Math.floor((e.y + my) / TILE_SIZE);
+        if (tc3 >= 0 && tc3 < cols && tr3 >= 0 && tr3 < currentRoom.rows &&
+            currentRoom.grid[tr3 * cols + tc3] !== 1) {
+          e.y = e.y + my;
+        }
+      }
+
+    } else if (e.type === "RUSHER") {
+      // Rusher movement handled in Task 2 (43-02-02)
+    }
+    // AMBUSHER and SENTINEL handled in Plan 03
+  }
+
   checkEnemiesClear();
 }
 
