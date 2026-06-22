@@ -1262,7 +1262,10 @@ document.addEventListener("keydown", function(e) {
       e.preventDefault();
       var si = Number(e.key) - 1;
       var sitem = shopItems[si];
-      if (sitem && !sitem.sold && xp >= sitem.cost) {
+      // Treat a zero-effect Health Restore (already at full HP) as unavailable so
+      // no XP is consumed for a no-op purchase (WR-01).
+      var healNoOp = sitem && sitem.name === "Health Restore" && player && player.hp >= player.maxHp;
+      if (sitem && !sitem.sold && xp >= sitem.cost && !healNoOp) {
         xp -= sitem.cost;
         sitem.apply(player);
         sitem.sold = true;
@@ -3048,16 +3051,20 @@ function renderShop() {
   for (var i = 0; i < shopItems.length; i++) {
     var item = shopItems[i];
     var iy = H / 2 - 40 + i * 70;
-    var canAfford = xp >= item.cost;
+    // A Health Restore at full HP is a no-op purchase — render it as unavailable
+    // (dimmed, "FULL HP") and never as affordable (WR-01).
+    var healNoOp = item.name === "Health Restore" && player && player.hp >= player.maxHp;
+    var unavailable = item.sold || healNoOp;
+    var canAfford = !unavailable && xp >= item.cost;
     ctx.font = "bold 20px monospace";
-    ctx.fillStyle = item.sold ? "#555" : (canAfford ? COLORS.gold : COLORS.white);
-    ctx.shadowColor = (item.sold || !canAfford) ? "transparent" : COLORS.gold;
-    ctx.shadowBlur = (item.sold || !canAfford) ? 0 : 8;
+    ctx.fillStyle = unavailable ? "#555" : (canAfford ? COLORS.gold : COLORS.white);
+    ctx.shadowColor = (unavailable || !canAfford) ? "transparent" : COLORS.gold;
+    ctx.shadowBlur = (unavailable || !canAfford) ? 0 : 8;
     ctx.fillText("[" + (i + 1) + "] " + item.name + "  —  " + item.stat, W / 2, iy);
     ctx.font = "16px monospace";
-    ctx.fillStyle = item.sold ? "#555" : (canAfford ? COLORS.cyan : COLORS.pink);
+    ctx.fillStyle = unavailable ? "#555" : (canAfford ? COLORS.cyan : COLORS.pink);
     ctx.shadowBlur = 0;
-    ctx.fillText(item.sold ? "SOLD" : (item.cost + " XP"), W / 2, iy + 24);
+    ctx.fillText(item.sold ? "SOLD" : (healNoOp ? "FULL HP" : (item.cost + " XP")), W / 2, iy + 24);
   }
   ctx.restore();
 
