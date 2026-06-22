@@ -41,6 +41,60 @@ const INVULN_DURATION = 1.5;      // seconds of invulnerability after taking a h
 const ENEMY_CONTACT_DAMAGE = 1;   // HP lost on direct enemy contact
 
 // ----------------------------------------------------------------------------
+// Skill tree constants
+// ----------------------------------------------------------------------------
+const SKILL_TREE = {
+  MARKSMAN: [
+    { name: "Sharpshooter",  cost: 1, apply: function(p) { p.bulletDmg = (p.bulletDmg || 1) + 1; } },
+    { name: "Rapid Fire",    cost: 1, apply: function(p) { p.fireCooldownMult = (p.fireCooldownMult || 1) * 0.75; } },
+    { name: "Penetrating",   cost: 2, apply: function(p) { p.bulletPenetrate = true; } },
+    { name: "Overcharge",    cost: 2, apply: function(p) { p.maxBullets = (p.maxBullets || 12) + 6; } },
+  ],
+  PHANTOM: [
+    { name: "Fleet Foot",    cost: 1, apply: function(p) { p.speed = (p.speed || 100) + 20; } },
+    { name: "Ghost Step",    cost: 1, apply: function(p) { p.invulnDuration = (p.invulnDuration || 1.5) + 0.5; } },
+    { name: "Phase Shift",   cost: 2, apply: function(p) { p.speed = (p.speed || 100) + 25; } },
+    { name: "Wraith",        cost: 2, apply: function(p) { p.hysteresisMult = (p.hysteresisMult || 1) * 1.5; } },
+  ],
+  DEMOLITIONS: [
+    { name: "Blast Radius",  cost: 1, apply: function(p) { p.bulletBlast = true; p.bulletBlastRadius = 16; } },
+    { name: "Frag Rounds",   cost: 1, apply: function(p) { p.bulletBlastRadius = (p.bulletBlastRadius || 16) + 8; } },
+    { name: "Chain Blast",   cost: 2, apply: function(p) { p.bulletChain = true; } },
+    { name: "Nuclear",       cost: 2, apply: function(p) { p.bulletBlastRadius = (p.bulletBlastRadius || 16) * 2; } },
+  ],
+  CONDUCTOR: [
+    { name: "Capacitor",     cost: 1, apply: function(p) { p.bulletArc = true; } },
+    { name: "Overload",      cost: 1, apply: function(p) { p.bulletDmg = (p.bulletDmg || 1) + 1; } },
+    { name: "Chain Arc",     cost: 2, apply: function(p) { p.bulletChain = true; } },
+    { name: "Tesla Core",    cost: 2, apply: function(p) { p.fireCooldownMult = (p.fireCooldownMult || 1) * 0.8; p.bulletArc = true; } },
+  ],
+  HUNTER: [
+    { name: "Tracker",       cost: 1, apply: function(p) { p.bulletSpeed = (p.bulletSpeed || 280) + 60; } },
+    { name: "Predator",      cost: 1, apply: function(p) { p.aimRange = 400; } },
+    { name: "Feral Sense",   cost: 2, apply: function(p) { p.aimRange = (p.aimRange || 400) + 200; } },
+    { name: "Apex",          cost: 2, apply: function(p) { p.bulletDmg = (p.bulletDmg || 1) + 2; p.bulletSpeed = (p.bulletSpeed || 280) + 40; } },
+  ],
+};
+
+const FUSION_SKILLS = [
+  {
+    name: "Phantom Marksman",
+    branches: ["MARKSMAN", "PHANTOM"],
+    apply: function(p) { p.bulletPenetrate = true; p.fireCooldownMult = (p.fireCooldownMult || 1) * 0.85; p.speed = (p.speed || 100) + 15; }
+  },
+  {
+    name: "Tesla Demolitions",
+    branches: ["CONDUCTOR", "DEMOLITIONS"],
+    apply: function(p) { p.bulletArc = true; p.bulletBlast = true; p.bulletBlastRadius = (p.bulletBlastRadius || 16) + 8; }
+  },
+  {
+    name: "Apex Hunter",
+    branches: ["HUNTER", "PHANTOM"],
+    apply: function(p) { p.bulletSpeed = (p.bulletSpeed || 280) + 80; p.speed = (p.speed || 100) + 20; p.aimRange = (p.aimRange || 400) + 300; }
+  },
+];
+
+// ----------------------------------------------------------------------------
 // Canvas & global state
 // ----------------------------------------------------------------------------
 const canvas = document.getElementById("game");
@@ -88,6 +142,8 @@ let killCount = 0;        // enemies killed this run
 let roomsCleared = 0;     // rooms cleared this run
 let currentLevelNum = 1;  // current level number (increments on Boss clear)
 let bossClearTimer = 0;   // seconds remaining in BOSS_CLEAR overlay
+let skillPoints = 0;      // unspent skill points available to invest
+let skillSelectBranch = 0; // keyboard highlight index 0-4 in skill select overlay
 
 // ----------------------------------------------------------------------------
 // Audio helpers
@@ -1071,7 +1127,10 @@ function handleFirstGesture() {
     maxHp: 5,
     invuln: 0
   };
+  player.skillTiers = { MARKSMAN: 0, PHANTOM: 0, DEMOLITIONS: 0, CONDUCTOR: 0, HUNTER: 0 };
+  player.fusionUnlocked = [];
   player.vx = 0; player.vy = 0;
+  skillPoints = 0;
   initCamera();
   enemies = []; gems = []; sentinelShots = []; xp = 0;
   killCount = 0; roomsCleared = 0;
@@ -1108,6 +1167,9 @@ function restartGame() {
     maxHp: 5,
     invuln: 0
   };
+  player.skillTiers = { MARKSMAN: 0, PHANTOM: 0, DEMOLITIONS: 0, CONDUCTOR: 0, HUNTER: 0 };
+  player.fusionUnlocked = [];
+  skillPoints = 0;
   initCamera();
   spawnEnemies();
   gameState = GAME_STATE.PLAYING;
@@ -1285,11 +1347,40 @@ function advanceLevel() {
   gameState = GAME_STATE.PLAYING;
 }
 
-// addXP() — adds amount to xp; handles level-up counter (effects in Phase 45).
+// addXP() — adds amount to xp; on level-up awards a skill point and opens skill select.
 function addXP(amount) {
   xp += amount;
   if (xp >= xpToNext) {
     xp -= xpToNext;
+    skillPoints += 1;
+    gameState = GAME_STATE.SKILL_SELECT;
+  }
+}
+
+// investSkill(branchKey) — deducts a skill point and applies the next tier effect for the given branch.
+// Checks fusion unlock conditions after every investment.
+function investSkill(branchKey) {
+  if (!player || skillPoints <= 0) return;
+  var tiers = player.skillTiers;
+  var tier = tiers[branchKey];
+  if (tier === undefined) return;
+  if (tier >= 4) return; // already maxed
+  var skillDef = SKILL_TREE[branchKey][tier];
+  if (!skillDef) return;
+  if (skillPoints < skillDef.cost) return; // can't afford
+  skillPoints -= skillDef.cost;
+  skillDef.apply(player);
+  tiers[branchKey] = tier + 1;
+  // Check fusion unlock conditions
+  for (var fi = 0; fi < FUSION_SKILLS.length; fi++) {
+    var fusion = FUSION_SKILLS[fi];
+    var b0 = fusion.branches[0];
+    var b1 = fusion.branches[1];
+    if (player.skillTiers[b0] >= 4 && player.skillTiers[b1] >= 4 &&
+        player.fusionUnlocked.indexOf(fusion.name) === -1) {
+      fusion.apply(player);
+      player.fusionUnlocked.push(fusion.name);
+    }
   }
 }
 
