@@ -53,6 +53,8 @@ let muted = false;
 let currentLevel = null;  // { rooms, connections, seed, levelNumber }
 let currentRoom  = null;  // reference to the Start room in currentLevel.rooms
 let debugOverlayVisible = false; // toggled by D key; only active when DEBUG=true
+let player = null;        // { x, y, r, speed } — world-space coordinates
+let keys = {};            // tracks currently held keys: keys[e.key] = true/false
 
 // ----------------------------------------------------------------------------
 // Audio helpers
@@ -1005,6 +1007,12 @@ function handleFirstGesture() {
   playTone({ type: "sine", freq: 220, endFreq: 440, dur: 0.18, gain: 0.14 });
   gameState = GAME_STATE.PLAYING;
   generateLevel(1, Math.floor(Date.now() / 1000));
+  player = {
+    x: (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE,
+    y: (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE,
+    r: 6,
+    speed: 100
+  };
   const hud = document.getElementById("hud");
   if (hud) hud.classList.remove("hidden");
   document.removeEventListener("keydown", handleFirstGesture);
@@ -1028,6 +1036,10 @@ document.addEventListener("keydown", function(e) {
     debugOverlayVisible = !debugOverlayVisible;
   }
 });
+
+// Movement key tracking — unconditional, all game states
+document.addEventListener("keydown", function(e) { keys[e.key] = true; });
+document.addEventListener("keyup",   function(e) { keys[e.key] = false; });
 
 // ----------------------------------------------------------------------------
 // Update

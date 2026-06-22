@@ -198,7 +198,7 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 ## v5.0 Neon Gauntlet (Phases 39–46)
 
 - [x] **Phase 39: Scaffold & Aesthetic** - Create the runnable game shell at `games/neon-gauntlet/` with Neon Sequel visual identity, hub card, and Web Audio (completed 2026-06-19)
-- [ ] **Phase 40: Tile Grid + Maze Generation** - Generate seeded, reachability-verified levels of 3–8 rooms with procedural interiors and all room types
+- [x] **Phase 40: Tile Grid + Maze Generation** - Generate seeded, reachability-verified levels of 3–8 rooms with procedural interiors and all room types (completed 2026-06-19)
 - [ ] **Phase 41: Camera + Player Movement + Room Flow** - Establish world/screen coordinate contract, WASD wall movement, and the door-seal → clear → open room cycle
 - [ ] **Phase 42: BFS Flow Field + LOS + Combat Core** - Build the shared BFS distMap and Bresenham LOS primitives, auto-aim, and bullet/wall collision
 - [ ] **Phase 43: Tier 1+2 Enemy Archetypes** - Introduce Stalker, Rusher, Ambusher, and Sentinel with gem drops and the level-keyed spawn table
@@ -237,12 +237,13 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
   3. All five room types (Start, Normal, Elite, Shop, Boss) appear correctly assigned across a level
   4. Player and enemy spawn positions land on reachable floor tiles — no spawn inside a wall
 
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
 Plans:
-- [ ] 40-01-PLAN.md — Data layer: mulberry32 PRNG, room graph generation, type assignment, level entry point
-- [ ] 40-02-PLAN.md — Interior generation: recursive backtracking carving, widening, loop removal, BFS assertion, spawn validation
-- [ ] 40-03-PLAN.md — Canvas render: renderRoom(), wall edge outlines, door glow dots, debug overlay, placeholder replaced
+
+- [x] 40-01-PLAN.md — Data layer: mulberry32 PRNG, room graph generation, type assignment, level entry point
+- [x] 40-02-PLAN.md — Interior generation: recursive backtracking carving, widening, loop removal, BFS assertion, spawn validation
+- [x] 40-03-PLAN.md — Canvas render: renderRoom(), wall edge outlines, door glow dots, debug overlay, placeholder replaced
 
 ### Phase 41: Camera + Player Movement + Room Flow
 
@@ -257,7 +258,12 @@ Plans:
   4. Entering a room seals its doors (doors animate closed and block passage); destroying all placeholder enemies opens the doors with a visible pulse
   5. Passing through an open door transitions the player to the connected room; a "CLEARED" floater and audio fire on room clear
 
-**Plans:** TBD
+**Plans:** 3 plans
+
+- [ ] 41-01-PLAN.md — Player entity, WASD movement, 4-point wall collision
+- [ ] 41-02-PLAN.md — Camera system: locked/scroll modes, lerp follow, viewport culling
+- [ ] 41-03-PLAN.md — Room flow: door sealing, placeholder orbs, CLEARED feedback, room transition
+
 **UI hint:** yes
 
 ### Phase 42: BFS Flow Field + LOS + Combat Core
@@ -378,7 +384,7 @@ Plans:
 | 37. designer-mode | v4.0 | 2/2 | Complete | 2026-06-09 |
 | 38. animated-primer | v4.0 | 2/2 | Complete | 2026-06-10 |
 | 39. scaffold-aesthetic | v5.0 | 2/2 | Complete    | 2026-06-19 |
-| 40. tile-grid-maze-gen | v5.0 | 0/TBD | Not started | - |
+| 40. tile-grid-maze-gen | v5.0 | 3/3 | Complete    | 2026-06-19 |
 | 41. camera-movement-room-flow | v5.0 | 0/TBD | Not started | - |
 | 42. bfs-los-combat-core | v5.0 | 0/TBD | Not started | - |
 | 43. tier1-tier2-enemies | v5.0 | 0/TBD | Not started | - |
