@@ -1080,10 +1080,6 @@ function spawnOrbs() {
   doorsSealed = true;
 }
 
-function sealDoors() {
-  doorsSealed = true;
-}
-
 // openDoors() — called when all orbs are destroyed.
 // Clears the door seal, plays a tone, and triggers the CLEARED floater.
 function openDoors() {
@@ -1211,6 +1207,7 @@ function renderTransitionOverlay() {
   } else {
     alpha = transition.timer / transition.duration;
   }
+  alpha = Math.max(0, Math.min(1, alpha));
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = "#000000";
@@ -1277,8 +1274,17 @@ function updateCamera() {
   var minTy = H - roomH;
   var maxTy = 0;
 
-  targetTx = Math.max(minTx, Math.min(maxTx, targetTx));
-  targetTy = Math.max(minTy, Math.min(maxTy, targetTy));
+  // If room fits the axis (minT > maxT = 0), center it rather than scroll it
+  if (minTx > maxTx) {
+    targetTx = Math.floor((W - roomW) / 2);
+  } else {
+    targetTx = Math.max(minTx, Math.min(maxTx, targetTx));
+  }
+  if (minTy > maxTy) {
+    targetTy = Math.floor((H - roomH) / 2);
+  } else {
+    targetTy = Math.max(minTy, Math.min(maxTy, targetTy));
+  }
 
   camera.tx += (targetTx - camera.tx) * 0.10;
   camera.ty += (targetTy - camera.ty) * 0.10;
