@@ -1198,6 +1198,23 @@ document.addEventListener("keydown", function(e) {
   }
 });
 
+// Skill select keyboard handler — invest (1-5), continue (S/Enter/Esc), open from PLAYING (S)
+document.addEventListener("keydown", function(e) {
+  var branchKeys = ["MARKSMAN", "PHANTOM", "DEMOLITIONS", "CONDUCTOR", "HUNTER"];
+  if (gameState === GAME_STATE.SKILL_SELECT) {
+    if (e.key >= "1" && e.key <= "5") {
+      e.preventDefault();
+      investSkill(branchKeys[Number(e.key) - 1]);
+    } else if (e.key === "s" || e.key === "S" || e.key === "Enter" || e.key === "Escape") {
+      gameState = GAME_STATE.PLAYING;
+    }
+  } else if (gameState === GAME_STATE.PLAYING) {
+    if (e.key === "s" || e.key === "S") {
+      gameState = GAME_STATE.SKILL_SELECT;
+    }
+  }
+});
+
 // Movement key tracking — unconditional, all game states
 document.addEventListener("keydown", function(e) { keys[e.key] = true; });
 document.addEventListener("keyup",   function(e) { keys[e.key] = false; });
@@ -1464,7 +1481,8 @@ function updateSentinelShots(dt) {
     if (Math.sqrt(pdx * pdx + pdy * pdy) < (4 + player.r)) {
       if (player.invuln <= 0) {
         player.hp -= 1;
-        player.invuln = INVULN_DURATION;
+        var sInvDur = player.invulnDuration || INVULN_DURATION;
+        player.invuln = sInvDur;
         if (player.hp <= 0) gameState = GAME_STATE.DEAD;
       }
       sentinelShots.splice(i, 1);
@@ -1679,7 +1697,8 @@ function updateEnemies(dt) {
         var perpDist = Math.sqrt((player.x - closestX) * (player.x - closestX) + (player.y - closestY) * (player.y - closestY));
         if (perpDist < 6 && player.invuln <= 0) {
           player.hp -= 1;
-          player.invuln = INVULN_DURATION;
+          var snInvDur = player.invulnDuration || INVULN_DURATION;
+          player.invuln = snInvDur;
           if (player.hp <= 0) gameState = GAME_STATE.DEAD;
         }
         e.state = "cooldown"; e.stateTimer = 2.5;
@@ -1781,7 +1800,8 @@ function updateEnemies(dt) {
     var cdy = player.y - e.y;
     if (Math.sqrt(cdx * cdx + cdy * cdy) < (e.r + player.r) && player.invuln <= 0) {
       player.hp -= ENEMY_CONTACT_DAMAGE;
-      player.invuln = INVULN_DURATION;
+      var invDur = player.invulnDuration || INVULN_DURATION;
+      player.invuln = invDur;
       if (player.hp <= 0) gameState = GAME_STATE.DEAD;
     }
   }
@@ -2199,7 +2219,7 @@ function updateAim(dt) {
   // Re-evaluate current target
   if (aimTarget && aimTarget.alive && hasLOS(player.x, player.y, aimTarget.x, aimTarget.y)) {
     // Target confirmed with LOS — reset grace timer
-    aimGrace = HYSTERESIS_GRACE;
+    aimGrace = HYSTERESIS_GRACE * (player.hysteresisMult || 1);
   } else if (aimTarget && aimTarget.alive) {
     // Target alive but LOS broken — drain grace timer
     aimGrace -= dt;
@@ -2212,6 +2232,7 @@ function updateAim(dt) {
   if (aimTarget === null || (aimTarget && !aimTarget.alive)) {
     var nearestEnemy = null;
     var nearestDist2 = Infinity;
+    var aimRangeSq = player.aimRange ? (player.aimRange * player.aimRange) : Infinity;
     for (var i = 0; i < enemies.length; i++) {
       var orb = enemies[i];
       if (!orb.alive) continue;
@@ -2219,6 +2240,7 @@ function updateAim(dt) {
       var dx2 = orb.x - player.x;
       var dy2 = orb.y - player.y;
       var d2 = dx2 * dx2 + dy2 * dy2;
+      if (d2 > aimRangeSq) continue; // outside aimRange
       if (d2 < nearestDist2) {
         nearestDist2 = d2;
         nearestEnemy = orb;
@@ -2226,20 +2248,40 @@ function updateAim(dt) {
     }
     if (nearestEnemy !== null) {
       aimTarget = nearestEnemy;
-      aimGrace = HYSTERESIS_GRACE;
+      aimGrace = HYSTERESIS_GRACE * (player.hysteresisMult || 1);
     }
   }
 
   // Fire toward target
-  if (aimTarget && aimTarget.alive && fireCooldown <= 0 && bullets.length < MAX_BULLETS) {
+  var maxB = player.maxBullets || MAX_BULLETS;
+  if (aimTarget && aimTarget.alive && fireCooldown <= 0 && bullets.length < maxB) {
     var dx = aimTarget.x - player.x;
     var dy = aimTarget.y - player.y;
     var len = Math.sqrt(dx * dx + dy * dy);
     if (len > 0) {
-      var vx = (dx / len) * BULLET_SPEED;
-      var vy = (dy / len) * BULLET_SPEED;
+      var bspd = player.bulletSpeed || BULLET_SPEED;
+      var vx = (dx / len) * bspd;
+      var vy = (dy / len) * bspd;
       bullets.push({ x: player.x, y: player.y, vx: vx, vy: vy, alive: true, age: 0 });
-      fireCooldown = FIRE_COOLDOWN;
+      // Bullet arc: spawn two additional bullets at ±15 degrees if bulletArc is set
+      if (player.bulletArc) {
+        var arcAngle = Math.PI / 12; // 15 degrees
+        var baseAngle = Math.atan2(vy, vx);
+        var arc1Angle = baseAngle + arcAngle;
+        var arc2Angle = baseAngle - arcAngle;
+        if (bullets.length < maxB) {
+          bullets.push({ x: player.x, y: player.y,
+            vx: Math.cos(arc1Angle) * bspd, vy: Math.sin(arc1Angle) * bspd,
+            alive: true, age: 0 });
+        }
+        if (bullets.length < maxB) {
+          bullets.push({ x: player.x, y: player.y,
+            vx: Math.cos(arc2Angle) * bspd, vy: Math.sin(arc2Angle) * bspd,
+            alive: true, age: 0 });
+        }
+      }
+      var cooldown = FIRE_COOLDOWN * (player.fireCooldownMult || 1);
+      fireCooldown = cooldown;
       playTone({ type: "sine", freq: 880, endFreq: 660, dur: 0.06, gain: 0.07 });
     }
   }
@@ -2261,6 +2303,34 @@ function updateBullets(dt) {
     var tc = Math.floor(nx / TILE_SIZE);
     var tr = Math.floor(ny / TILE_SIZE);
     if (tc < 0 || tc >= cols || tr < 0 || tr >= rows || currentRoom.grid[tr * cols + tc] === 1) {
+      // Bullet hit a wall — apply blast damage if bulletBlast is set
+      if (player && player.bulletBlast) {
+        var blastR = player.bulletBlastRadius || 16;
+        for (var bj = 0; bj < enemies.length; bj++) {
+          var ben = enemies[bj];
+          if (!ben.alive) continue;
+          var bdxB = nx - ben.x;
+          var bdyB = ny - ben.y;
+          if (Math.sqrt(bdxB * bdxB + bdyB * bdyB) < blastR) {
+            ben.hp -= 1;
+            if (ben.hp <= 0) {
+              ben.alive = false;
+              killCount += 1;
+              spawnGem(ben.x, ben.y);
+              if (ben.type === "CRAWLER" && ben.generation === 0) {
+                var bOffsets = [-8, 8];
+                for (var bsi = 0; bsi < 2; bsi++) {
+                  enemies.push({ type: "CRAWLER", x: ben.x + bOffsets[bsi], y: ben.y,
+                    r: 6, hp: 1, maxHp: 1, speed: 85, alive: true, age: 0,
+                    facing: Math.floor(Math.random() * 4), generation: 1 });
+                }
+                doorsSealed = true;
+              }
+            }
+          }
+        }
+        checkEnemiesClear();
+      }
       bullets.splice(i, 1);
       continue;
     }
@@ -2274,7 +2344,39 @@ function updateBullets(dt) {
       var bdx = nx - en.x;
       var bdy = ny - en.y;
       if (Math.sqrt(bdx * bdx + bdy * bdy) < (3 + en.r)) {
-        en.hp -= 1;
+        var dmg = player ? (player.bulletDmg || 1) : 1;
+        en.hp -= dmg;
+        // Bullet chain: deal 1 damage to nearest other enemy within 80px
+        if (player && player.bulletChain) {
+          var chainNearest = null;
+          var chainDist2 = 80 * 80;
+          for (var ci = 0; ci < enemies.length; ci++) {
+            if (ci === j) continue;
+            if (!enemies[ci].alive) continue;
+            var cdx = enemies[ci].x - en.x;
+            var cdy = enemies[ci].y - en.y;
+            var cd2 = cdx * cdx + cdy * cdy;
+            if (cd2 < chainDist2) { chainDist2 = cd2; chainNearest = enemies[ci]; }
+          }
+          if (chainNearest !== null) {
+            chainNearest.hp -= 1;
+            if (chainNearest.hp <= 0) {
+              chainNearest.alive = false;
+              killCount += 1;
+              spawnGem(chainNearest.x, chainNearest.y);
+              if (chainNearest.type === "CRAWLER" && chainNearest.generation === 0) {
+                var chOff = [-8, 8];
+                for (var chi = 0; chi < 2; chi++) {
+                  enemies.push({ type: "CRAWLER", x: chainNearest.x + chOff[chi], y: chainNearest.y,
+                    r: 6, hp: 1, maxHp: 1, speed: 85, alive: true, age: 0,
+                    facing: Math.floor(Math.random() * 4), generation: 1 });
+                }
+                doorsSealed = true;
+              }
+            }
+            checkEnemiesClear();
+          }
+        }
         if (en.hp <= 0) {
           en.alive = false;
           killCount += 1;
@@ -2300,11 +2402,41 @@ function updateBullets(dt) {
           }
           checkEnemiesClear(); // runs after sub-Crawlers are in enemies[]
         }
+        // Blast on hit (when not a wall hit) — if bulletBlast, deal AoE around enemy hit point
+        if (player && player.bulletBlast) {
+          var blastRH = player.bulletBlastRadius || 16;
+          for (var bhi = 0; bhi < enemies.length; bhi++) {
+            if (bhi === j) continue;
+            var bhe = enemies[bhi];
+            if (!bhe.alive) continue;
+            var bhdx = nx - bhe.x;
+            var bhdy = ny - bhe.y;
+            if (Math.sqrt(bhdx * bhdx + bhdy * bhdy) < blastRH) {
+              bhe.hp -= 1;
+              if (bhe.hp <= 0) {
+                bhe.alive = false;
+                killCount += 1;
+                spawnGem(bhe.x, bhe.y);
+                if (bhe.type === "CRAWLER" && bhe.generation === 0) {
+                  var bhOff = [-8, 8];
+                  for (var bhsi = 0; bhsi < 2; bhsi++) {
+                    enemies.push({ type: "CRAWLER", x: bhe.x + bhOff[bhsi], y: bhe.y,
+                      r: 6, hp: 1, maxHp: 1, speed: 85, alive: true, age: 0,
+                      facing: Math.floor(Math.random() * 4), generation: 1 });
+                  }
+                  doorsSealed = true;
+                }
+              }
+            }
+          }
+          checkEnemiesClear();
+        }
         hit = true;
-        break;
+        // Penetrating bullet: continue to next enemy instead of breaking
+        if (!player || !player.bulletPenetrate) break;
       }
     }
-    if (hit) { bullets.splice(i, 1); continue; }
+    if (hit && (!player || !player.bulletPenetrate)) { bullets.splice(i, 1); continue; }
   }
 }
 
@@ -2314,7 +2446,10 @@ function update(dt) {
     if (bossClearTimer <= 0) { advanceLevel(); }
     return; // skip movement/physics while overlay is visible
   }
-  // GAME_STATE.SKILL_SELECT update stub — wired in Plan 03
+  // GAME_STATE.SKILL_SELECT — game paused while overlay is open
+  if (gameState === GAME_STATE.SKILL_SELECT) {
+    return; // skip all movement/physics/AI
+  }
   if (gameState === GAME_STATE.PLAYING) {
     movePlayer(dt);
     if (player && player.invuln > 0) player.invuln = Math.max(0, player.invuln - dt);
@@ -2505,6 +2640,100 @@ function renderBossClear() {
   ctx.restore();
 }
 
+// renderSkillSelect() — canvas overlay showing all 5 skill branches with tier rects and keyboard hints.
+// Called from render() when gameState === GAME_STATE.SKILL_SELECT.
+function renderSkillSelect() {
+  if (!player) return;
+  ctx.save();
+
+  // Semi-transparent dark panel
+  ctx.fillStyle = "rgba(5,5,12,0.88)";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // Title
+  ctx.font = "bold 32px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLORS.cyan;
+  ctx.shadowColor = COLORS.cyan;
+  ctx.shadowBlur = 16;
+  ctx.fillText("SKILL TREE", W / 2, 60);
+  ctx.shadowBlur = 0;
+
+  // Skill points remaining
+  ctx.font = "18px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLORS.gold;
+  ctx.fillText("Skill Points: " + skillPoints, W / 2, 95);
+
+  // Branch abbreviations and keys in display order
+  var BRANCH_KEYS  = ["MARKSMAN", "PHANTOM", "DEMOLITIONS", "CONDUCTOR", "HUNTER"];
+  var BRANCH_ABBR  = ["MARK", "PHANT", "DEMO", "COND", "HUNT"];
+
+  for (var i = 0; i < 5; i++) {
+    var branchKey = BRANCH_KEYS[i];
+    var colX = W * (i + 1) / 6;
+    var branch = SKILL_TREE[branchKey];
+    var currentTier = player.skillTiers[branchKey];
+
+    // Branch name label
+    ctx.font = "bold 13px 'Segoe UI', system-ui, sans-serif";
+    ctx.fillStyle = COLORS.cyan;
+    ctx.fillText(BRANCH_ABBR[i], colX, 130);
+
+    // Tier rects
+    for (var t = 0; t < 4; t++) {
+      var rectX = colX - 30;
+      var rectY = 155 + t * 38;
+      var rectW = 60;
+      var rectH = 28;
+      var purchased = (currentTier > t);
+
+      // Fill rect
+      if (purchased) {
+        ctx.fillStyle = COLORS.gold;
+      } else {
+        ctx.fillStyle = "#1a1a2e";
+      }
+      ctx.fillRect(rectX, rectY, rectW, rectH);
+
+      // Tier name inside rect
+      ctx.font = "11px 'Segoe UI', system-ui, sans-serif";
+      ctx.fillStyle = purchased ? "#1a1a2e" : "rgba(255,255,255,0.7)";
+      ctx.fillText(branch[t].name, colX, rectY + rectH / 2);
+    }
+
+    // Invest button below tier rects
+    var nextTier = currentTier;
+    var investY = 155 + 4 * 38 + 16;
+    if (nextTier < 4) {
+      var cost = branch[nextTier].cost;
+      var canAfford = (skillPoints >= cost);
+      ctx.font = "12px 'Segoe UI', system-ui, sans-serif";
+      ctx.fillStyle = canAfford ? COLORS.cyan : "rgba(255,255,255,0.3)";
+      ctx.fillText("[" + (i + 1) + "] " + cost + " SP", colX, investY);
+    } else {
+      ctx.font = "12px 'Segoe UI', system-ui, sans-serif";
+      ctx.fillStyle = COLORS.gold;
+      ctx.fillText("MAX", colX, investY);
+    }
+  }
+
+  // Unlocked fusions
+  if (player.fusionUnlocked && player.fusionUnlocked.length > 0) {
+    ctx.font = "14px 'Segoe UI', system-ui, sans-serif";
+    ctx.fillStyle = COLORS.purple;
+    ctx.fillText("Fusions: " + player.fusionUnlocked.join(", "), W / 2, 360);
+  }
+
+  // Footer
+  ctx.font = "14px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.fillText("Press 1-5 to invest  |  S / Enter / Esc to continue", W / 2, H - 30);
+
+  ctx.restore();
+}
+
 // renderBullets() — draws a glowing gold dot for each live bullet.
 // Called inside the camera sandwich in renderPlaying().
 function renderBullets() {
@@ -2561,7 +2790,8 @@ function render() {
   else if (gameState === GAME_STATE.PLAYING) renderPlaying();
   else if (gameState === GAME_STATE.DEAD) renderDead();
   else if (gameState === GAME_STATE.BOSS_CLEAR) renderBossClear();
-  // GAME_STATE.SKILL_SELECT and GAME_STATE.MODIFIER_DRAFT render stubs — wired in Plan 03
+  else if (gameState === GAME_STATE.SKILL_SELECT) renderSkillSelect();
+  // GAME_STATE.MODIFIER_DRAFT render stub — wired in Plan 03
 }
 
 // ----------------------------------------------------------------------------
