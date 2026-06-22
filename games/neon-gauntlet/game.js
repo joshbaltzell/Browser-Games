@@ -817,6 +817,13 @@ function renderRoom(room) {
   // Step 1 — World-space origin (camera.begin() already translated ctx to correct screen pos)
   var originX = 0;
   var originY = 0;
+  // World-space viewport bounds: tile at (wx,wy) is visible if wx > vpL && wx+TILE_SIZE < vpR (etc.)
+  var camTx = camera ? Math.round(camera.tx) : 0;
+  var camTy = camera ? Math.round(camera.ty) : 0;
+  var vpL = -camTx - TILE_SIZE;
+  var vpR = -camTx + W;
+  var vpT = -camTy - TILE_SIZE;
+  var vpB = -camTy + H;
 
   // Step 2 — Scale-to-fit fallback disabled (camera handles framing; scale stays 1)
   var scale = 1;
@@ -833,9 +840,9 @@ function renderRoom(room) {
   for (var fr = 0; fr < rows; fr++) {
     for (var fc = 0; fc < cols; fc++) {
       if (room.grid[fr * cols + fc] === 0) {
-        var screenX = originX + fc * TILE_SIZE + Math.round(camera ? camera.tx : 0);
-        var screenY = originY + fr * TILE_SIZE + Math.round(camera ? camera.ty : 0);
-        if (screenX + TILE_SIZE < 0 || screenX > W || screenY + TILE_SIZE < 0 || screenY > H) continue;
+        var wxF = originX + fc * TILE_SIZE;
+        var wyF = originY + fr * TILE_SIZE;
+        if (wxF > vpR || wxF < vpL || wyF > vpB || wyF < vpT) continue;
         ctx.fillRect(originX + fc * TILE_SIZE, originY + fr * TILE_SIZE, TILE_SIZE, TILE_SIZE);
       }
     }
@@ -847,9 +854,9 @@ function renderRoom(room) {
   for (var wr = 0; wr < rows; wr++) {
     for (var wc = 0; wc < cols; wc++) {
       if (room.grid[wr * cols + wc] === 1) {
-        var screenXw = originX + wc * TILE_SIZE + Math.round(camera ? camera.tx : 0);
-        var screenYw = originY + wr * TILE_SIZE + Math.round(camera ? camera.ty : 0);
-        if (screenXw + TILE_SIZE < 0 || screenXw > W || screenYw + TILE_SIZE < 0 || screenYw > H) continue;
+        var wxW = originX + wc * TILE_SIZE;
+        var wyW = originY + wr * TILE_SIZE;
+        if (wxW > vpR || wxW < vpL || wyW > vpB || wyW < vpT) continue;
         ctx.fillRect(originX + wc * TILE_SIZE, originY + wr * TILE_SIZE, TILE_SIZE, TILE_SIZE);
       }
     }
@@ -865,9 +872,9 @@ function renderRoom(room) {
   for (var er = 0; er < rows; er++) {
     for (var ec = 0; ec < cols; ec++) {
       if (room.grid[er * cols + ec] !== 1) continue; // only wall tiles
-      var screenXe = originX + ec * TILE_SIZE + Math.round(camera ? camera.tx : 0);
-      var screenYe = originY + er * TILE_SIZE + Math.round(camera ? camera.ty : 0);
-      if (screenXe + TILE_SIZE < 0 || screenXe > W || screenYe + TILE_SIZE < 0 || screenYe > H) continue;
+      var wxE = originX + ec * TILE_SIZE;
+      var wyE = originY + er * TILE_SIZE;
+      if (wxE > vpR || wxE < vpL || wyE > vpB || wyE < vpT) continue;
       var tx = originX + ec * TILE_SIZE;
       var ty = originY + er * TILE_SIZE;
       for (var di = 0; di < dirs.length; di++) {
@@ -897,9 +904,9 @@ function renderRoom(room) {
   for (var dr2 = 0; dr2 < rows; dr2++) {
     for (var dc2 = 0; dc2 < cols; dc2++) {
       if (room.grid[dr2 * cols + dc2] >= 2) {
-        var screenXd = originX + dc2 * TILE_SIZE + Math.round(camera ? camera.tx : 0);
-        var screenYd = originY + dr2 * TILE_SIZE + Math.round(camera ? camera.ty : 0);
-        if (screenXd + TILE_SIZE < 0 || screenXd > W || screenYd + TILE_SIZE < 0 || screenYd > H) continue;
+        var wxD = originX + dc2 * TILE_SIZE;
+        var wyD = originY + dr2 * TILE_SIZE;
+        if (wxD > vpR || wxD < vpL || wyD > vpB || wyD < vpT) continue;
         var cx = originX + dc2 * TILE_SIZE + TILE_SIZE / 2;
         var cy = originY + dr2 * TILE_SIZE + TILE_SIZE / 2;
         glowCircle(cx, cy, doorR, doorColor, 12);
@@ -1345,6 +1352,8 @@ function update(dt) {
       clearedFloater.alpha = Math.max(0, clearedFloater.timer / 1.5);
       if (clearedFloater.timer <= 0) clearedFloater = null;
     }
+    // checkDoorTraversal must run before updateTransition: the guard `!transition` inside
+    // checkDoorTraversal relies on transition being null from the previous frame.
     checkDoorTraversal();
     updateTransition(dt);
   }
