@@ -2059,8 +2059,8 @@ function updateBullets(dt) {
           en.alive = false;
           killCount += 1;
           spawnGem(en.x, en.y);
-          checkEnemiesClear();
-          // Sub-Crawler split: generation=0 parent spawns 2 smaller sub-Crawlers
+          // Sub-Crawler split must happen BEFORE checkEnemiesClear to prevent
+          // false door-open on the frame the parent Crawler dies.
           if (en.type === "CRAWLER" && en.generation === 0) {
             var offsets = [-8, 8];
             for (var si = 0; si < 2; si++) {
@@ -2076,8 +2076,9 @@ function updateBullets(dt) {
                 generation: 1
               });
             }
-            doorsSealed = true; // re-seal: new enemies just spawned
+            doorsSealed = true; // re-seal: new sub-Crawlers just spawned
           }
+          checkEnemiesClear(); // runs after sub-Crawlers are in enemies[]
         }
         hit = true;
         break;
