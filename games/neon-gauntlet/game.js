@@ -2436,6 +2436,7 @@ function updateBullets(dt) {
               ben.alive = false;
               killCount += 1;
               spawnGem(ben.x, ben.y);
+              if (ben.elite) spawnGem(ben.x, ben.y);
               if (ben.type === "CRAWLER" && ben.generation === 0) {
                 var bOffsets = [-8, 8];
                 for (var bsi = 0; bsi < 2; bsi++) {
