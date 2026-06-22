@@ -95,6 +95,21 @@ const FUSION_SKILLS = [
 ];
 
 // ----------------------------------------------------------------------------
+// Modifier draft constants — blessings (positive) and curses (negative) offered between levels.
+// ----------------------------------------------------------------------------
+const POSITIVE_MODIFIERS = [
+  { name: "Speed Boost",  apply: function(p) { p.speed += 20; } },
+  { name: "Fortified",    apply: function(p) { p.maxHp += 2; p.hp = Math.min(p.hp + 2, p.maxHp); } },
+  { name: "Hair Trigger", apply: function(p) { p.fireCooldownMult = (p.fireCooldownMult || 1) * 0.8; } },
+];
+
+const NEGATIVE_MODIFIERS = [
+  { name: "Slowed",       apply: function(p) { p.speed = Math.max(60, p.speed - 15); } },
+  { name: "Brittle",      apply: function(p) { p.maxHp = Math.max(1, p.maxHp - 1); p.hp = Math.min(p.hp, p.maxHp); } },
+  { name: "Sluggish Fire",apply: function(p) { p.fireCooldownMult = (p.fireCooldownMult || 1) * 1.2; } },
+];
+
+// ----------------------------------------------------------------------------
 // Canvas & global state
 // ----------------------------------------------------------------------------
 const canvas = document.getElementById("game");
@@ -1212,6 +1227,25 @@ document.addEventListener("keydown", function(e) {
       investSkill(branchKeys[Number(e.key) - 1]);
     } else if (e.key === "s" || e.key === "S" || e.key === "Enter" || e.key === "Escape") {
       gameState = GAME_STATE.PLAYING;
+    }
+  } else if (gameState === GAME_STATE.MODIFIER_DRAFT) {
+    if (e.key === "1" || e.key === "2" || e.key === "3") {
+      e.preventDefault();
+      var idx = Number(e.key) - 1;
+      // Guard: idx must be 0-2 (T-45-03a)
+      if (idx < 0 || idx > 2) return;
+      if (modifierDraftStep === 0) {
+        pendingModifierChoice = idx;
+        modifierDraftStep = 1;
+      } else if (modifierDraftStep === 1) {
+        // Guard: pendingModifierChoice must be valid (T-45-03b)
+        if (pendingModifierChoice < 0) return;
+        POSITIVE_MODIFIERS[pendingModifierChoice].apply(player);
+        NEGATIVE_MODIFIERS[idx].apply(player);
+        modifierDraftStep = 0;
+        pendingModifierChoice = -1;
+        advanceLevel();
+      }
     }
   } else if (gameState === GAME_STATE.PLAYING) {
     if (e.key === "s" || e.key === "S") {
@@ -2454,8 +2488,15 @@ function updateBullets(dt) {
 function update(dt) {
   if (gameState === GAME_STATE.BOSS_CLEAR) {
     bossClearTimer -= dt;
-    if (bossClearTimer <= 0) { advanceLevel(); }
+    if (bossClearTimer <= 0) {
+      modifierDraftStep = 0;
+      pendingModifierChoice = -1;
+      gameState = GAME_STATE.MODIFIER_DRAFT;
+    }
     return; // skip movement/physics while overlay is visible
+  }
+  if (gameState === GAME_STATE.MODIFIER_DRAFT) {
+    return; // game paused while modifier draft is active
   }
   // GAME_STATE.SKILL_SELECT — game paused while overlay is open
   if (gameState === GAME_STATE.SKILL_SELECT) {
@@ -2738,6 +2779,79 @@ function renderBossClear() {
   ctx.restore();
 }
 
+// renderModifierDraft() — two-step draft overlay: step 0 = blessings, step 1 = curses.
+// Called from render() when gameState === GAME_STATE.MODIFIER_DRAFT.
+function renderModifierDraft() {
+  ctx.save();
+
+  // Full-screen dark overlay
+  ctx.fillStyle = "rgba(5,5,12,0.9)";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // Step-dependent colors and lists
+  var isDraft0 = (modifierDraftStep === 0);
+  var accentColor = isDraft0 ? COLORS.gold : COLORS.pink;
+  var title = isDraft0 ? "CHOOSE A BLESSING" : "CHOOSE A CURSE";
+  var mods = isDraft0 ? POSITIVE_MODIFIERS : NEGATIVE_MODIFIERS;
+
+  // Title
+  ctx.font = "bold 32px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = accentColor;
+  ctx.shadowColor = accentColor;
+  ctx.shadowBlur = 20;
+  ctx.fillText(title, W / 2, 70);
+  ctx.shadowBlur = 0;
+
+  // Subtitle
+  ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.fillText("Level " + (currentLevelNum + 1) + " begins after your choice", W / 2, 110);
+
+  // Option boxes — 3 stacked, centered
+  var boxW = 280;
+  var boxH = 60;
+  var boxGap = 16;
+  var startY = 150;
+
+  for (var i = 0; i < 3; i++) {
+    var boxX = W / 2 - boxW / 2;
+    var boxY = startY + i * (boxH + boxGap);
+
+    // Box background
+    ctx.fillStyle = "rgba(20,20,40,0.9)";
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+
+    // Box border
+    ctx.strokeStyle = accentColor;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+    // Modifier name centered in box
+    ctx.font = "bold 18px 'Segoe UI', system-ui, sans-serif";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(mods[i].name, W / 2, boxY + boxH / 2);
+
+    // Keyboard hint "[N]" to the left
+    ctx.font = "14px 'Segoe UI', system-ui, sans-serif";
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = accentColor;
+    ctx.textAlign = "left";
+    ctx.fillText("[" + (i + 1) + "]", boxX + 12, boxY + boxH / 2);
+    ctx.globalAlpha = 1.0;
+    ctx.textAlign = "center";
+  }
+
+  // Footer
+  ctx.font = "14px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.fillText("Press 1, 2, or 3 to choose", W / 2, H - 30);
+
+  ctx.restore();
+}
+
 // renderSkillSelect() — canvas overlay showing all 5 skill branches with tier rects and keyboard hints.
 // Called from render() when gameState === GAME_STATE.SKILL_SELECT.
 function renderSkillSelect() {
@@ -2890,7 +3004,7 @@ function render() {
   else if (gameState === GAME_STATE.DEAD) renderDead();
   else if (gameState === GAME_STATE.BOSS_CLEAR) renderBossClear();
   else if (gameState === GAME_STATE.SKILL_SELECT) renderSkillSelect();
-  // GAME_STATE.MODIFIER_DRAFT render stub — wired in Plan 03
+  else if (gameState === GAME_STATE.MODIFIER_DRAFT) renderModifierDraft();
 }
 
 // ----------------------------------------------------------------------------
