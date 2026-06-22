@@ -810,13 +810,13 @@ function renderRoom(room) {
   var rows = room.rows;
   var cols = room.cols;
 
-  // Step 1 — Compute centering (D-17 spec: each tile = TILE_SIZE px)
-  var originX = Math.floor((W - cols * TILE_SIZE) / 2);
-  var originY = Math.floor((H - rows * TILE_SIZE) / 2);
+  // Step 1 — World-space origin (camera.begin() already translated ctx to correct screen pos)
+  var originX = 0;
+  var originY = 0;
 
-  // Step 2 — Scale-to-fit fallback (guard for Boss rooms or very small canvases)
+  // Step 2 — Scale-to-fit fallback disabled (camera handles framing; scale stays 1)
   var scale = 1;
-  if (cols * TILE_SIZE > W || rows * TILE_SIZE > H) {
+  if (false && (cols * TILE_SIZE > W || rows * TILE_SIZE > H)) {
     scale = Math.min(W / (cols * TILE_SIZE), H / (rows * TILE_SIZE)) * 0.9;
     ctx.save();
     ctx.scale(scale, scale);
@@ -829,6 +829,9 @@ function renderRoom(room) {
   for (var fr = 0; fr < rows; fr++) {
     for (var fc = 0; fc < cols; fc++) {
       if (room.grid[fr * cols + fc] === 0) {
+        var screenX = originX + fc * TILE_SIZE + Math.round(camera ? camera.tx : 0);
+        var screenY = originY + fr * TILE_SIZE + Math.round(camera ? camera.ty : 0);
+        if (screenX + TILE_SIZE < 0 || screenX > W || screenY + TILE_SIZE < 0 || screenY > H) continue;
         ctx.fillRect(originX + fc * TILE_SIZE, originY + fr * TILE_SIZE, TILE_SIZE, TILE_SIZE);
       }
     }
@@ -840,6 +843,9 @@ function renderRoom(room) {
   for (var wr = 0; wr < rows; wr++) {
     for (var wc = 0; wc < cols; wc++) {
       if (room.grid[wr * cols + wc] === 1) {
+        var screenXw = originX + wc * TILE_SIZE + Math.round(camera ? camera.tx : 0);
+        var screenYw = originY + wr * TILE_SIZE + Math.round(camera ? camera.ty : 0);
+        if (screenXw + TILE_SIZE < 0 || screenXw > W || screenYw + TILE_SIZE < 0 || screenYw > H) continue;
         ctx.fillRect(originX + wc * TILE_SIZE, originY + wr * TILE_SIZE, TILE_SIZE, TILE_SIZE);
       }
     }
@@ -855,6 +861,9 @@ function renderRoom(room) {
   for (var er = 0; er < rows; er++) {
     for (var ec = 0; ec < cols; ec++) {
       if (room.grid[er * cols + ec] !== 1) continue; // only wall tiles
+      var screenXe = originX + ec * TILE_SIZE + Math.round(camera ? camera.tx : 0);
+      var screenYe = originY + er * TILE_SIZE + Math.round(camera ? camera.ty : 0);
+      if (screenXe + TILE_SIZE < 0 || screenXe > W || screenYe + TILE_SIZE < 0 || screenYe > H) continue;
       var tx = originX + ec * TILE_SIZE;
       var ty = originY + er * TILE_SIZE;
       for (var di = 0; di < dirs.length; di++) {
@@ -884,6 +893,9 @@ function renderRoom(room) {
   for (var dr2 = 0; dr2 < rows; dr2++) {
     for (var dc2 = 0; dc2 < cols; dc2++) {
       if (room.grid[dr2 * cols + dc2] >= 2) {
+        var screenXd = originX + dc2 * TILE_SIZE + Math.round(camera ? camera.tx : 0);
+        var screenYd = originY + dr2 * TILE_SIZE + Math.round(camera ? camera.ty : 0);
+        if (screenXd + TILE_SIZE < 0 || screenXd > W || screenYd + TILE_SIZE < 0 || screenYd > H) continue;
         var cx = originX + dc2 * TILE_SIZE + TILE_SIZE / 2;
         var cy = originY + dr2 * TILE_SIZE + TILE_SIZE / 2;
         glowCircle(cx, cy, doorR, doorColor, 12);
@@ -1252,11 +1264,11 @@ function renderPlaying() {
   }
   ctx.restore();
 
-  // Step 3 — Draw the current room tile grid (floor, wall outlines, door glow dots)
+  // Step 3 — Draw room + player inside camera transform (Plan 02: camera sandwich)
+  if (camera) camera.begin(ctx);
   renderRoom(currentRoom);
-
-  // Step 4 — Draw player dot (Phase 41; will move inside camera sandwich in Plan 02)
   renderPlayer();
+  if (camera) camera.end(ctx);
 }
 
 function render() {
