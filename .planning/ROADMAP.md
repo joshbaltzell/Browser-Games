@@ -203,7 +203,7 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 - [x] **Phase 42: BFS Flow Field + LOS + Combat Core** - Build the shared BFS distMap and Bresenham LOS primitives, auto-aim, and bullet/wall collision (completed 2026-06-22)
 - [x] **Phase 43: Tier 1+2 Enemy Archetypes** - Introduce Stalker, Rusher, Ambusher, and Sentinel with gem drops and the level-keyed spawn table (completed 2026-06-22)
 - [x] **Phase 44: Tier 3 Enemies + HP System + Death Screen** - Add Sniper and Crawler, player HP/invuln/HUD bar, and the run-end death screen (completed 2026-06-22)
-- [ ] **Phase 45: Skill Tree + Level Map + Level Escalation + Boss** - Full 5-branch skill tree, level map minimap, between-level modifier draft, level escalation, and Boss room win condition
+- [x] **Phase 45: Skill Tree + Level Map + Level Escalation + Boss** - Full 5-branch skill tree, level map minimap, between-level modifier draft, level escalation, and Boss room win condition (completed 2026-06-22)
 - [ ] **Phase 46: Elite/Shop Rooms + Polish** - Shop XP-spend, Elite room harder enemies with better rewards, scrolling camera for large rooms, and visual polish
 
 ### Phase 39: Scaffold & Aesthetic
@@ -337,7 +337,12 @@ Plans:
   4. Clearing the Boss room ends the level, shows the level map summary, and opens a two-step modifier draft (1 positive, 1 negative) before generating the next level
   5. Each new level is larger and introduces enemy types gated by the escalating level number (Snipers and Crawlers appear from level 5 onward)
 
-**Plans:** TBD
+**Plans:** 4/4 plans complete
+
+- [x] 45-01-PLAN.md
+- [x] 45-02-PLAN.md
+- [x] 45-03-PLAN.md
+
 **UI hint:** yes
 
 ### Phase 46: Elite/Shop Rooms + Polish
@@ -404,5 +409,5 @@ Plans:
 | 42. bfs-los-combat-core | v5.0 | 2/2 | Complete   | 2026-06-22 |
 | 43. tier1-tier2-enemies | v5.0 | 3/3 | Complete   | 2026-06-22 |
 | 44. tier3-enemies-hp-death | v5.0 | 3/3 | Complete   | 2026-06-22 |
-| 45. skill-tree-map-escalation-boss | v5.0 | 3/3 | Planned | - |
+| 45. skill-tree-map-escalation-boss | v5.0 | 4/4 | Complete    | 2026-06-22 |
 | 46. elite-shop-polish | v5.0 | 0/TBD | Not started | - |
