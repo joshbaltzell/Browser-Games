@@ -60,6 +60,8 @@ let doorsSealed = false;  // true while orbs are alive; seals door traversal
 let orbs = [];            // placeholder enemy orbs for the current room
 let clearedFloater = null; // { alpha, timer } — "CLEARED" text overlay
 let transition = null;    // { phase, timer, duration, targetRoom } — room fade transition
+let distMap = null;       // Float32Array of hop distances from player tile; null until first gesture
+let lastPlayerTile = { r: -1, c: -1 }; // cached player tile to skip redundant BFS
 
 // ----------------------------------------------------------------------------
 // Audio helpers
@@ -1039,6 +1041,8 @@ function handleFirstGesture() {
   };
   initCamera();
   spawnOrbs();
+  distMap = null;
+  lastPlayerTile = { r: -1, c: -1 };
   const hud = document.getElementById("hud");
   if (hud) hud.classList.remove("hidden");
   document.removeEventListener("keydown", handleFirstGesture);
@@ -1192,6 +1196,8 @@ function updateTransition(dt) {
       orbs = [];
       doorsSealed = false;
       clearedFloater = null;
+      distMap = null;
+      lastPlayerTile = { r: -1, c: -1 };
       player.x = (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE;
       player.y = (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE;
       initCamera();
@@ -1342,11 +1348,50 @@ function movePlayer(dt) {
   player.y = ny;
 }
 
+// computeDistMap() — BFS distance field from player tile.
+// Populates distMap (Float32Array) with hop-count distances; skips recompute if
+// player tile unchanged. Uses head-pointer queue for O(1) dequeue (avoids Array.shift).
+function computeDistMap() {
+  if (!currentRoom || !player) return;
+  var pr = Math.floor(player.y / TILE_SIZE);
+  var pc = Math.floor(player.x / TILE_SIZE);
+  if (pr === lastPlayerTile.r && pc === lastPlayerTile.c) return;
+  lastPlayerTile.r = pr;
+  lastPlayerTile.c = pc;
+  var rows = currentRoom.rows;
+  var cols = currentRoom.cols;
+  distMap = new Float32Array(rows * cols).fill(Infinity);
+  var queue = new Array(rows * cols);
+  var head = 0, tail = 0;
+  if (currentRoom.grid[pr * cols + pc] !== 1) {
+    distMap[pr * cols + pc] = 0;
+    queue[tail++] = pr * cols + pc;
+  }
+  var nbOffsets = [-cols, cols, -1, 1]; // N, S, W, E
+  while (head < tail) {
+    var cur = queue[head++];
+    var cr = Math.floor(cur / cols);
+    var cc = cur % cols;
+    for (var di = 0; di < 4; di++) {
+      var nb = cur + nbOffsets[di];
+      if (nb < 0 || nb >= rows * cols) continue;
+      // Boundary wrap guard for E/W
+      if (di === 2 && cc === 0) continue; // W from col 0
+      if (di === 3 && cc === cols - 1) continue; // E from col cols-1
+      if (currentRoom.grid[nb] === 1) continue; // wall
+      if (distMap[nb] !== Infinity) continue; // visited
+      distMap[nb] = distMap[cur] + 1;
+      queue[tail++] = nb;
+    }
+  }
+}
+
 function update(dt) {
   if (gameState === GAME_STATE.PLAYING) {
     movePlayer(dt);
     updateCamera();
     updateOrbs(dt);
+    computeDistMap();
     if (clearedFloater) {
       clearedFloater.timer -= dt;
       clearedFloater.alpha = Math.max(0, clearedFloater.timer / 1.5);
