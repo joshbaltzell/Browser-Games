@@ -202,7 +202,7 @@ Full phase details: `.planning/milestones/v3.0-ROADMAP.md`
 - [x] **Phase 41: Camera + Player Movement + Room Flow** - Establish world/screen coordinate contract, WASD wall movement, and the door-seal → clear → open room cycle (completed 2026-06-22)
 - [x] **Phase 42: BFS Flow Field + LOS + Combat Core** - Build the shared BFS distMap and Bresenham LOS primitives, auto-aim, and bullet/wall collision (completed 2026-06-22)
 - [x] **Phase 43: Tier 1+2 Enemy Archetypes** - Introduce Stalker, Rusher, Ambusher, and Sentinel with gem drops and the level-keyed spawn table (completed 2026-06-22)
-- [ ] **Phase 44: Tier 3 Enemies + HP System + Death Screen** - Add Sniper and Crawler, player HP/invuln/HUD bar, and the run-end death screen
+- [x] **Phase 44: Tier 3 Enemies + HP System + Death Screen** - Add Sniper and Crawler, player HP/invuln/HUD bar, and the run-end death screen (completed 2026-06-22)
 - [ ] **Phase 45: Skill Tree + Level Map + Level Escalation + Boss** - Full 5-branch skill tree, level map minimap, between-level modifier draft, level escalation, and Boss room win condition
 - [ ] **Phase 46: Elite/Shop Rooms + Polish** - Shop XP-spend, Elite room harder enemies with better rewards, scrolling camera for large rooms, and visual polish
 
@@ -316,12 +316,13 @@ Plans:
   3. Player has a visible HP bar in the HUD; taking damage triggers a brief invulnerability window (visible flicker) that prevents rapid HP drain
   4. On death, a run-end screen displays level reached, rooms cleared, and total kills, and a Restart button starts a fresh run
 
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
 Plans:
-- [ ] 44-01-PLAN.md — HP system + DEAD state + death screen + stat tracking
-- [ ] 44-02-PLAN.md — Sniper enemy (aim/fire/cooldown state machine + beam telegraph)
-- [ ] 44-03-PLAN.md — Crawler enemy (right-hand rule + generational split-on-death)
+
+- [x] 44-01-PLAN.md — HP system + DEAD state + death screen + stat tracking
+- [x] 44-02-PLAN.md — Sniper enemy (aim/fire/cooldown state machine + beam telegraph)
+- [x] 44-03-PLAN.md — Crawler enemy (right-hand rule + generational split-on-death)
 
 ### Phase 45: Skill Tree + Level Map + Level Escalation + Boss
 
@@ -402,6 +403,6 @@ Plans:
 | 41. camera-movement-room-flow | v5.0 | 3/3 | Complete   | 2026-06-22 |
 | 42. bfs-los-combat-core | v5.0 | 2/2 | Complete   | 2026-06-22 |
 | 43. tier1-tier2-enemies | v5.0 | 3/3 | Complete   | 2026-06-22 |
-| 44. tier3-enemies-hp-death | v5.0 | 0/3 | Planned | - |
-| 45. skill-tree-map-escalation-boss | v5.0 | 0/TBD | Not started | - |
+| 44. tier3-enemies-hp-death | v5.0 | 3/3 | Complete   | 2026-06-22 |
+| 45. skill-tree-map-escalation-boss | v5.0 | 3/3 | Planned | - |
 | 46. elite-shop-polish | v5.0 | 0/TBD | Not started | - |

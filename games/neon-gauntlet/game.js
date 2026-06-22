@@ -22,7 +22,7 @@ const COLORS = {
   purple: "#b388ff",
   white:  "#ffffff",
 };
-const GAME_STATE = { TITLE: "TITLE", PLAYING: "PLAYING", DEAD: "DEAD" };
+const GAME_STATE = { TITLE: "TITLE", PLAYING: "PLAYING", DEAD: "DEAD", BOSS_CLEAR: "BOSS_CLEAR", SKILL_SELECT: "SKILL_SELECT", MODIFIER_DRAFT: "MODIFIER_DRAFT" };
 const DEBUG = false;      // set true during development to enable the D-key debug overlay
 const TILE_SIZE = 16;     // canvas pixels per tile — matches D-17 spec
 const HYSTERESIS_GRACE = 0.5;  // seconds to hold target after LOS breaks
@@ -86,6 +86,8 @@ let fireCooldown = 0;     // seconds until next bullet can fire
 let bullets = [];         // array of { x, y, vx, vy, alive, age }
 let killCount = 0;        // enemies killed this run
 let roomsCleared = 0;     // rooms cleared this run
+let currentLevelNum = 1;  // current level number (increments on Boss clear)
+let bossClearTimer = 0;   // seconds remaining in BOSS_CLEAR overlay
 
 // ----------------------------------------------------------------------------
 // Audio helpers
@@ -1146,7 +1148,27 @@ document.addEventListener("keyup",   function(e) { keys[e.key] = false; });
 function spawnEnemies() {
   if (!currentRoom || !currentRoom.spawnList) return;
   enemies = [];
-  var types = SPAWN_TABLE[currentLevel ? currentLevel.levelNumber : 1] || SPAWN_TABLE[1];
+
+  // Boss room override — spawn one BOSS enemy, seal doors, skip normal SPAWN_TABLE.
+  if (currentRoom.type === "BOSS") {
+    var bossSpawn = currentRoom.spawnList[0];
+    var bossX = bossSpawn ? (bossSpawn.tx + 0.5) * TILE_SIZE : (currentRoom.cols * TILE_SIZE) / 2;
+    var bossY = bossSpawn ? (bossSpawn.ty + 0.5) * TILE_SIZE : (currentRoom.rows * TILE_SIZE) / 2;
+    enemies.push({
+      type: "BOSS",
+      x: bossX, y: bossY,
+      r: 18,
+      hp: 15, maxHp: 15,
+      speed: 80,
+      alive: true,
+      age: 0,
+      state: "idle"
+    });
+    doorsSealed = true;
+    return;
+  }
+
+  var types = SPAWN_TABLE[currentLevel ? currentLevel.levelNumber : 1] || SPAWN_TABLE[5];
   var list = currentRoom.spawnList;
   var count = Math.min(types.length, list.length);
   for (var i = 0; i < count; i++) {
@@ -1581,6 +1603,50 @@ function updateEnemies(dt) {
           currentRoom.grid[ctry2 * cols + ctcx2] !== 1) {
         e.y = cny;
       }
+
+    } else if (e.type === "BOSS") {
+      // BFS gradient descent — identical to STALKER movement
+      if (distMap === null) continue; // guard: BFS not yet computed
+      var ber = Math.floor(e.y / TILE_SIZE);
+      var bec = Math.floor(e.x / TILE_SIZE);
+      var bbest = Infinity;
+      var bbestRow = ber;
+      var bbestCol = bec;
+      var bdirs = [[-1,0],[1,0],[0,-1],[0,1]];
+      for (var bd = 0; bd < bdirs.length; bd++) {
+        var bnr = ber + bdirs[bd][0];
+        var bnc = bec + bdirs[bd][1];
+        if (bnr < 0 || bnr >= currentRoom.rows || bnc < 0 || bnc >= cols) continue;
+        var bidx = bnr * cols + bnc;
+        if (currentRoom.grid[bidx] === 1) continue; // wall tile
+        var bval = distMap[bidx];
+        if (bval < bbest) { bbest = bval; bbestRow = bnr; bbestCol = bnc; }
+      }
+      // Move toward center of best tile
+      var btx = (bbestCol + 0.5) * TILE_SIZE;
+      var bty = (bbestRow + 0.5) * TILE_SIZE;
+      var bddx = btx - e.x;
+      var bddy = bty - e.y;
+      var bdlen = Math.sqrt(bddx * bddx + bddy * bddy);
+      if (bdlen > 0) {
+        var bmx = (bddx / bdlen) * e.speed * dt;
+        var bmy = (bddy / bdlen) * e.speed * dt;
+        // Axis-split solid check
+        var benx = e.x + bmx;
+        var beny = e.y + bmy;
+        var btc2 = Math.floor(benx / TILE_SIZE);
+        var btr2 = Math.floor(e.y / TILE_SIZE);
+        if (btc2 >= 0 && btc2 < cols && btr2 >= 0 && btr2 < currentRoom.rows &&
+            currentRoom.grid[btr2 * cols + btc2] !== 1) {
+          e.x = benx;
+        }
+        var btc3 = Math.floor(e.x / TILE_SIZE);
+        var btr3 = Math.floor((e.y + bmy) / TILE_SIZE);
+        if (btc3 >= 0 && btc3 < cols && btr3 >= 0 && btr3 < currentRoom.rows &&
+            currentRoom.grid[btr3 * cols + btc3] !== 1) {
+          e.y = e.y + bmy;
+        }
+      }
     }
 
     // Enemy contact damage — runs for all alive enemies after type-specific movement
@@ -1683,6 +1749,22 @@ function renderEnemies() {
       } else {
         glowCircle(e.x, e.y, 5, COLORS.purple, 8);
       }
+    } else if (e.type === "BOSS") {
+      // Core body — large pink glow
+      glowCircle(e.x, e.y, 18, COLORS.pink, 24);
+      // Pulsing outer ring
+      var pulse = 18 + 6 * Math.sin(e.age * 4);
+      ctx.save();
+      ctx.strokeStyle = COLORS.pink;
+      ctx.globalAlpha = 0.5 * (0.5 + 0.5 * Math.sin(e.age * 4));
+      ctx.lineWidth = 2;
+      ctx.shadowColor = COLORS.pink;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, pulse, 0, TAU);
+      ctx.stroke();
+      ctx.globalAlpha = 1.0;
+      ctx.restore();
     } else {
       glowCircle(e.x, e.y, e.r - 2, COLORS.white, 10);
     }
