@@ -1482,6 +1482,64 @@ function updateEnemies(dt) {
         e.state = "cooldown";
         e.stateTimer = 2.0;
       }
+
+    } else if (e.type === "SNIPER") {
+      // SNIPER state machine: idle → aim → fire → cooldown
+      if (e.state === "idle") {
+        e.stateTimer -= dt;
+        if (e.stateTimer <= 0) {
+          // Lock cardinal direction toward player at aim entry
+          var spx = player.x - e.x;
+          var spy = player.y - e.y;
+          var spl = Math.sqrt(spx * spx + spy * spy);
+          if (spl > 0) { spx /= spl; spy /= spl; }
+          var cardinals = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+          var bestDot = -Infinity;
+          var bestCard = [0, -1];
+          for (var ci = 0; ci < cardinals.length; ci++) {
+            var dot = spx * cardinals[ci][0] + spy * cardinals[ci][1];
+            if (dot > bestDot) { bestDot = dot; bestCard = cardinals[ci]; }
+          }
+          e.aimDx = bestCard[0]; e.aimDy = bestCard[1];
+          e.state = "aim"; e.stateTimer = 1.2;
+        }
+      } else if (e.state === "aim") {
+        e.stateTimer -= dt;
+        if (e.stateTimer <= 0) {
+          e.state = "fire"; e.stateTimer = 0;
+        }
+      } else if (e.state === "fire") {
+        // March beam from sniper along aim direction to find wall; step 4px, max 400 steps
+        var snx = e.x; var sny = e.y;
+        var scols = currentRoom.cols; var srows = currentRoom.rows;
+        var steps = 0;
+        while (steps < 400) {
+          snx += e.aimDx * 4; sny += e.aimDy * 4;
+          var stc = Math.floor(snx / TILE_SIZE); var str = Math.floor(sny / TILE_SIZE);
+          if (stc < 0 || stc >= scols || str < 0 || str >= srows) break;
+          if (currentRoom.grid[str * scols + stc] === 1) break;
+          steps++;
+        }
+        e.beamEndX = snx; e.beamEndY = sny;
+        // Hit-test player against beam line segment using perpendicular distance
+        var bex = e.beamEndX - e.x; var bey = e.beamEndY - e.y;
+        var blen2 = bex * bex + bey * bey;
+        var t = blen2 > 0 ? ((player.x - e.x) * bex + (player.y - e.y) * bey) / blen2 : 0;
+        var t2 = Math.max(0, Math.min(1, t));
+        var closestX = e.x + t2 * bex; var closestY = e.y + t2 * bey;
+        var perpDist = Math.sqrt((player.x - closestX) * (player.x - closestX) + (player.y - closestY) * (player.y - closestY));
+        if (perpDist < 6 && player.invuln <= 0) {
+          player.hp -= 1;
+          player.invuln = INVULN_DURATION;
+          if (player.hp <= 0) gameState = GAME_STATE.DEAD;
+        }
+        e.state = "cooldown"; e.stateTimer = 2.5;
+      } else if (e.state === "cooldown") {
+        e.stateTimer -= dt;
+        if (e.stateTimer <= 0) {
+          e.state = "idle"; e.stateTimer = 2.0;
+        }
+      }
     }
 
     // Enemy contact damage — runs for all alive enemies after type-specific movement
@@ -1524,6 +1582,45 @@ function renderEnemies() {
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(player.x, player.y, ringR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    } else if (e.type === "SNIPER") {
+      // Cyan body — stationary, distinct from pink Rusher
+      glowCircle(e.x, e.y, 8, COLORS.cyan, 16);
+      // Telegraph beam during aim state — pink line that brightens over 1.2s
+      if (e.state === "aim" && e.aimDx !== undefined) {
+        // Compute beam endpoint inline (same march as fire state)
+        var sbx = e.x; var sby = e.y;
+        var sbcols = currentRoom.cols; var sbrows = currentRoom.rows;
+        var sbsteps = 0;
+        while (sbsteps < 400) {
+          sbx += e.aimDx * 4; sby += e.aimDy * 4;
+          var sbtc = Math.floor(sbx / TILE_SIZE); var sbtr = Math.floor(sby / TILE_SIZE);
+          if (sbtc < 0 || sbtc >= sbcols || sbtr < 0 || sbtr >= sbrows) break;
+          if (currentRoom.grid[sbtr * sbcols + sbtc] === 1) break;
+          sbsteps++;
+        }
+        var prog = Math.min(1, (1.2 - e.stateTimer) / 1.2);
+        ctx.save();
+        ctx.globalAlpha = 0.3 + 0.3 * prog;
+        ctx.strokeStyle = COLORS.pink;
+        ctx.lineWidth = 1 + prog;
+        ctx.beginPath();
+        ctx.moveTo(e.x, e.y);
+        ctx.lineTo(sbx, sby);
+        ctx.stroke();
+        ctx.restore();
+      }
+      // Beam flash on fire frame
+      if (e.state === "fire") {
+        ctx.save();
+        ctx.globalAlpha = 1.0;
+        ctx.strokeStyle = COLORS.pink;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(e.x, e.y);
+        ctx.lineTo(e.beamEndX || e.x, e.beamEndY || e.y);
         ctx.stroke();
         ctx.restore();
       }
