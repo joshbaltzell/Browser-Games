@@ -22,7 +22,7 @@ const COLORS = {
   purple: "#b388ff",
   white:  "#ffffff",
 };
-const GAME_STATE = { TITLE: "TITLE", PLAYING: "PLAYING" };
+const GAME_STATE = { TITLE: "TITLE", PLAYING: "PLAYING", DEAD: "DEAD" };
 const DEBUG = false;      // set true during development to enable the D-key debug overlay
 const TILE_SIZE = 16;     // canvas pixels per tile — matches D-17 spec
 const HYSTERESIS_GRACE = 0.5;  // seconds to hold target after LOS breaks
@@ -37,6 +37,8 @@ const SPAWN_TABLE = {
   4: ["RUSHER", "AMBUSHER", "SENTINEL"],
   5: ["STALKER", "AMBUSHER", "SENTINEL"],
 };
+const INVULN_DURATION = 1.5;      // seconds of invulnerability after taking a hit
+const ENEMY_CONTACT_DAMAGE = 1;   // HP lost on direct enemy contact
 
 // ----------------------------------------------------------------------------
 // Canvas & global state
@@ -82,6 +84,8 @@ let aimTarget = null;     // { x, y, alive } — current auto-aim target
 let aimGrace = 0;         // seconds remaining before current target is released on LOS loss
 let fireCooldown = 0;     // seconds until next bullet can fire
 let bullets = [];         // array of { x, y, vx, vy, alive, age }
+let killCount = 0;        // enemies killed this run
+let roomsCleared = 0;     // rooms cleared this run
 
 // ----------------------------------------------------------------------------
 // Audio helpers
@@ -1059,11 +1063,15 @@ function handleFirstGesture() {
     r: 6,
     speed: 100,
     vx: 0,
-    vy: 0
+    vy: 0,
+    hp: 5,
+    maxHp: 5,
+    invuln: 0
   };
   player.vx = 0; player.vy = 0;
   initCamera();
   enemies = []; gems = []; sentinelShots = []; xp = 0;
+  killCount = 0; roomsCleared = 0;
   spawnEnemies();
   distMap = null;
   lastPlayerTile = { r: -1, c: -1 };
@@ -1075,6 +1083,38 @@ function handleFirstGesture() {
 }
 document.addEventListener("keydown", handleFirstGesture);
 document.addEventListener("pointerup", handleFirstGesture);
+
+// restartGame() — resets all run state and begins a fresh level 1 run.
+// Called from the DEAD screen restart button click.
+function restartGame() {
+  enemies = []; gems = []; sentinelShots = []; bullets = [];
+  xp = 0; xpToNext = 100; killCount = 0; roomsCleared = 0;
+  doorsSealed = false; clearedFloater = null; transition = null;
+  distMap = null; lastPlayerTile = { r: -1, c: -1 };
+  aimTarget = null; aimGrace = 0; fireCooldown = 0;
+  generateLevel(1, Math.floor(Date.now() / 1000));
+  player = {
+    x: (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE,
+    y: (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE,
+    r: 6,
+    speed: 100,
+    vx: 0,
+    vy: 0,
+    hp: 5,
+    maxHp: 5,
+    invuln: 0
+  };
+  initCamera();
+  spawnEnemies();
+  gameState = GAME_STATE.PLAYING;
+}
+
+// Click handler for DEAD state restart button
+canvas.addEventListener("click", function(e) {
+  if (gameState === GAME_STATE.DEAD) {
+    restartGame();
+  }
+});
 
 // Mute button wiring
 const muteBtn = document.getElementById("mute-btn");
@@ -1151,6 +1191,7 @@ function spawnEnemies() {
 // openDoors() — called when all enemies are destroyed.
 // Clears the door seal, plays a tone, and triggers the CLEARED floater.
 function openDoors() {
+  roomsCleared += 1;
   doorsSealed = false;
   playTone({ type: "sine", freq: 660, endFreq: 880, dur: 0.22, gain: 0.12 });
   clearedFloater = { alpha: 1.0, timer: 1.5 };
@@ -1249,10 +1290,15 @@ function updateSentinelShots(dt) {
     s.x = nx;
     s.y = ny;
 
-    // Player contact — remove shot, no damage (Phase 44 adds HP)
+    // Player contact — deal damage if not invulnerable, always remove shot
     var pdx = s.x - player.x;
     var pdy = s.y - player.y;
     if (Math.sqrt(pdx * pdx + pdy * pdy) < (4 + player.r)) {
+      if (player.invuln <= 0) {
+        player.hp -= 1;
+        player.invuln = INVULN_DURATION;
+        if (player.hp <= 0) gameState = GAME_STATE.DEAD;
+      }
       sentinelShots.splice(i, 1);
     }
   }
@@ -1417,6 +1463,15 @@ function updateEnemies(dt) {
         e.state = "cooldown";
         e.stateTimer = 2.0;
       }
+    }
+
+    // Enemy contact damage — runs for all alive enemies after type-specific movement
+    var cdx = player.x - e.x;
+    var cdy = player.y - e.y;
+    if (Math.sqrt(cdx * cdx + cdy * cdy) < (e.r + player.r) && player.invuln <= 0) {
+      player.hp -= ENEMY_CONTACT_DAMAGE;
+      player.invuln = INVULN_DURATION;
+      if (player.hp <= 0) gameState = GAME_STATE.DEAD;
     }
   }
 
@@ -1838,6 +1893,7 @@ function updateBullets(dt) {
         en.hp -= 1;
         if (en.hp <= 0) {
           en.alive = false;
+          killCount += 1;
           spawnGem(en.x, en.y);
           checkEnemiesClear();
         }
@@ -1852,6 +1908,7 @@ function updateBullets(dt) {
 function update(dt) {
   if (gameState === GAME_STATE.PLAYING) {
     movePlayer(dt);
+    if (player && player.invuln > 0) player.invuln = Math.max(0, player.invuln - dt);
     updateCamera();
     computeDistMap();
     updateAim(dt);
