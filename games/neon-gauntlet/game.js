@@ -1129,7 +1129,8 @@ function spawnEnemies() {
              types[i] === "RUSHER"  ? 130 :
              types[i] === "AMBUSHER"? 75 :
              types[i] === "SENTINEL"? 0 : 55,
-      alive: true
+      alive: true,
+      age: 0
     });
     // Initialize type-specific fields
     if (enemies[enemies.length - 1].type === "RUSHER") {
@@ -1267,6 +1268,7 @@ function updateEnemies(dt) {
   for (var i = 0; i < enemies.length; i++) {
     var e = enemies[i];
     if (!e.alive) continue;
+    e.age += dt;
 
     if (e.type === "STALKER") {
       // BFS gradient descent — pick adjacent tile with lowest distMap value
@@ -1431,7 +1433,10 @@ function renderEnemies() {
     } else if (e.type === "RUSHER") {
       glowCircle(e.x, e.y, 7, COLORS.pink, 18);
     } else if (e.type === "AMBUSHER") {
+      ctx.save();
+      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(e.age * 4);
       glowCircle(e.x, e.y, 7, COLORS.white, 10);
+      ctx.restore();
     } else if (e.type === "SENTINEL") {
       glowCircle(e.x, e.y, 9, COLORS.gold, 12);
       // Draw telegraph reticle at player position when in telegraph state
@@ -1936,7 +1941,7 @@ function renderBullets() {
   for (var i = 0; i < bullets.length; i++) {
     var b = bullets[i];
     if (!b.alive) continue;
-    glowCircle(b.x, b.y, 3, COLORS.gold, 10);
+    glowCircle(b.x, b.y, 3, COLORS.cyan, 10);
   }
 }
 
