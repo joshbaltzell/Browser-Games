@@ -56,6 +56,10 @@ let debugOverlayVisible = false; // toggled by D key; only active when DEBUG=tru
 let player = null;        // { x, y, r, speed } — world-space coordinates
 let camera = null;        // { tx, ty, locked, begin(ctx), end(ctx) } — camera transform
 let keys = {};            // tracks currently held keys: keys[e.key] = true/false
+let doorsSealed = false;  // true while orbs are alive; seals door traversal
+let orbs = [];            // placeholder enemy orbs for the current room
+let clearedFloater = null; // { alpha, timer } — "CLEARED" text overlay
+let transition = null;    // { phase, timer, duration, targetRoom } — room fade transition
 
 // ----------------------------------------------------------------------------
 // Audio helpers
@@ -889,7 +893,7 @@ function renderRoom(room) {
   // Step 6 — Draw door glow dots (tile values 2–5: N/E/S/W doors)
   var pulse = Math.sin(Date.now() / 800);
   var doorR = 3 + pulse * 1.5;
-  var doorColor = (room.type === "BOSS") ? COLORS.pink : COLORS.cyan;
+  var doorColor = doorsSealed ? COLORS.pink : COLORS.cyan;
   for (var dr2 = 0; dr2 < rows; dr2++) {
     for (var dc2 = 0; dc2 < cols; dc2++) {
       if (room.grid[dr2 * cols + dc2] >= 2) {
@@ -1027,6 +1031,7 @@ function handleFirstGesture() {
     speed: 100
   };
   initCamera();
+  spawnOrbs();
   const hud = document.getElementById("hud");
   if (hud) hud.classList.remove("hidden");
   document.removeEventListener("keydown", handleFirstGesture);
@@ -1058,6 +1063,160 @@ document.addEventListener("keyup",   function(e) { keys[e.key] = false; });
 // ----------------------------------------------------------------------------
 // Update
 // ----------------------------------------------------------------------------
+
+// spawnOrbs() — creates up to 3 placeholder enemy orbs from the current room's spawnList.
+// Sets doorsSealed = true so doors are locked until all orbs are destroyed.
+function spawnOrbs() {
+  if (!currentRoom || !currentRoom.spawnList) return;
+  orbs = [];
+  var list = currentRoom.spawnList;
+  var count = Math.min(3, list.length);
+  for (var i = 0; i < count; i++) {
+    var entry = list[i];
+    var wx = (entry.tx + 0.5) * TILE_SIZE;
+    var wy = (entry.ty + 0.5) * TILE_SIZE;
+    orbs.push({ x: wx, y: wy, alive: true });
+  }
+  doorsSealed = true;
+}
+
+function sealDoors() {
+  doorsSealed = true;
+}
+
+// openDoors() — called when all orbs are destroyed.
+// Clears the door seal, plays a tone, and triggers the CLEARED floater.
+function openDoors() {
+  doorsSealed = false;
+  playTone({ type: "sine", freq: 660, endFreq: 880, dur: 0.22, gain: 0.12 });
+  clearedFloater = { alpha: 1.0, timer: 1.5 };
+}
+
+// updateOrbs(dt) — checks player overlap with each orb; destroys on collision.
+// Calls openDoors() when all orbs are gone.
+function updateOrbs(dt) {
+  if (!doorsSealed || !player) return;
+  for (var i = 0; i < orbs.length; i++) {
+    var orb = orbs[i];
+    if (orb.alive !== true) continue;
+    var dx = player.x - orb.x;
+    var dy = player.y - orb.y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 12) {
+      orb.alive = false;
+      playTone({ type: "square", freq: 440, endFreq: 220, dur: 0.12, gain: 0.08 });
+    }
+  }
+  var allDead = true;
+  for (var j = 0; j < orbs.length; j++) {
+    if (orbs[j].alive === true) { allDead = false; break; }
+  }
+  if (allDead) openDoors();
+}
+
+// renderOrbs() — draws alive orbs as pulsing pink glow circles.
+// Called inside the camera sandwich (world-space coordinates).
+function renderOrbs() {
+  for (var i = 0; i < orbs.length; i++) {
+    var orb = orbs[i];
+    if (orb.alive !== true) continue;
+    glowCircle(orb.x, orb.y, 5, COLORS.pink, 16);
+    var pulse = 0.7 + 0.3 * Math.sin(Date.now() / 400);
+    glowCircle(orb.x, orb.y, 5 * pulse + 2, COLORS.pink, 6);
+  }
+}
+
+// renderClearedFloater() — draws the "CLEARED" text overlay at screen center.
+// Timer decrement handled in update(dt). Called outside the camera sandwich.
+function renderClearedFloater() {
+  if (!clearedFloater || clearedFloater.alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = clearedFloater.alpha;
+  ctx.font = "bold 32px 'Segoe UI', system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = COLORS.cyan;
+  ctx.shadowColor = COLORS.cyan;
+  ctx.shadowBlur = 20;
+  ctx.fillText("CLEARED", W / 2, H / 2);
+  ctx.restore();
+}
+
+// checkDoorTraversal() — detects when the player steps onto a door tile and starts
+// a fade-out transition toward the connected room. Only fires when doors are open
+// and no transition is already in progress.
+function checkDoorTraversal() {
+  if (!player || !currentRoom || doorsSealed || transition) return;
+  var tc = Math.floor(player.x / TILE_SIZE);
+  var tr = Math.floor(player.y / TILE_SIZE);
+  if (tc < 0 || tc >= currentRoom.cols || tr < 0 || tr >= currentRoom.rows) return;
+  var tileVal = currentRoom.grid[tr * currentRoom.cols + tc];
+  if (tileVal >= 2 && tileVal <= 5) {
+    var dirMap = { 2: "N", 3: "E", 4: "S", 5: "W" };
+    var dir = dirMap[tileVal];
+    var slotDelta = { N: -4, E: 1, S: 4, W: -1 };
+    var delta = slotDelta[dir];
+    var targetSlot = currentRoom.slotIdx + delta;
+
+    // Find target room by slot index
+    var targetRoom = null;
+    var rooms = currentLevel.rooms;
+    for (var i = 0; i < rooms.length; i++) {
+      if (rooms[i].slotIdx === targetSlot) { targetRoom = rooms[i]; break; }
+    }
+    if (!targetRoom) return;
+
+    // Verify the connection exists in currentLevel.connections (keys stored as "A-B" smaller-first)
+    var a = Math.min(currentRoom.slotIdx, targetSlot);
+    var b = Math.max(currentRoom.slotIdx, targetSlot);
+    var connKey = a + "-" + b;
+    if (!currentLevel.connections[connKey]) return;
+
+    transition = { phase: "out", timer: 0.25, duration: 0.25, targetRoom: targetRoom };
+    playTone({ type: "sine", freq: 300, endFreq: 150, dur: 0.20, gain: 0.10 });
+  }
+}
+
+// updateTransition(dt) — advances the fade-out/fade-in timer.
+// On fade-out completion: swaps room, resets orb state, repositions player, restarts camera.
+// On fade-in completion: clears the transition object.
+function updateTransition(dt) {
+  if (!transition) return;
+  transition.timer -= dt;
+  if (transition.timer <= 0) {
+    if (transition.phase === "out") {
+      currentRoom = transition.targetRoom;
+      orbs = [];
+      doorsSealed = false;
+      clearedFloater = null;
+      player.x = (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE;
+      player.y = (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE;
+      initCamera();
+      spawnOrbs();
+      transition = { phase: "in", timer: 0.25, duration: 0.25, targetRoom: null };
+    } else if (transition.phase === "in") {
+      transition = null;
+    }
+  }
+}
+
+// renderTransitionOverlay() — draws a black fullscreen rect at computed alpha.
+// Out phase: fades to black (0→1). In phase: fades from black (1→0).
+// Called last in renderPlaying() so it sits on top of everything.
+function renderTransitionOverlay() {
+  if (!transition) return;
+  var alpha;
+  if (transition.phase === "out") {
+    alpha = 1 - transition.timer / transition.duration;
+  } else {
+    alpha = transition.timer / transition.duration;
+  }
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
 
 // initCamera() — called once per room entry (after player is placed).
 // Determines whether the room fits on screen (locked mode) or needs to scroll.
@@ -1174,6 +1333,14 @@ function update(dt) {
   if (gameState === GAME_STATE.PLAYING) {
     movePlayer(dt);
     updateCamera();
+    updateOrbs(dt);
+    if (clearedFloater) {
+      clearedFloater.timer -= dt;
+      clearedFloater.alpha = Math.max(0, clearedFloater.timer / 1.5);
+      if (clearedFloater.timer <= 0) clearedFloater = null;
+    }
+    checkDoorTraversal();
+    updateTransition(dt);
   }
 }
 
@@ -1268,7 +1435,12 @@ function renderPlaying() {
   if (camera) camera.begin(ctx);
   renderRoom(currentRoom);
   renderPlayer();
+  renderOrbs();
   if (camera) camera.end(ctx);
+
+  // Step 4 — HUD overlays outside camera transform (screen-space)
+  renderClearedFloater();
+  renderTransitionOverlay();
 }
 
 function render() {
