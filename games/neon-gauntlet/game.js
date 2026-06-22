@@ -1058,6 +1058,7 @@ function handleFirstGesture() {
   unlockAudio();
   playTone({ type: "sine", freq: 220, endFreq: 440, dur: 0.18, gain: 0.14 });
   gameState = GAME_STATE.PLAYING;
+  currentLevelNum = 1;
   generateLevel(1, Math.floor(Date.now() / 1000));
   player = {
     x: (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE,
@@ -1091,6 +1092,7 @@ document.addEventListener("pointerup", handleFirstGesture);
 function restartGame() {
   enemies = []; gems = []; sentinelShots = []; bullets = [];
   xp = 0; xpToNext = 100; killCount = 0; roomsCleared = 0;
+  currentLevelNum = 1; bossClearTimer = 0;
   doorsSealed = false; clearedFloater = null; transition = null;
   distMap = null; lastPlayerTile = { r: -1, c: -1 };
   aimTarget = null; aimGrace = 0; fireCooldown = 0;
@@ -1240,13 +1242,47 @@ function openDoors() {
 
 // checkEnemiesClear() — called after bullet-enemy hits and from updateEnemies().
 // Opens doors when all enemies are dead and doors are currently sealed.
+// In Boss rooms, calls startBossClear() instead of openDoors().
 function checkEnemiesClear() {
   if (!doorsSealed) return;
   var allDead = true;
   for (var i = 0; i < enemies.length; i++) {
     if (enemies[i].alive) { allDead = false; break; }
   }
-  if (allDead) openDoors();
+  if (allDead) {
+    if (currentRoom && currentRoom.type === "BOSS") {
+      startBossClear();
+    } else {
+      openDoors();
+    }
+  }
+}
+
+// startBossClear() — triggered when the Boss is defeated in a Boss room.
+// Enters BOSS_CLEAR overlay state; advanceLevel() fires after the timer expires.
+function startBossClear() {
+  gameState = GAME_STATE.BOSS_CLEAR;
+  bossClearTimer = 2.0;
+  playTone({ type: "sine", freq: 440, endFreq: 880, dur: 0.5, gain: 0.18 });
+}
+
+// advanceLevel() — increments currentLevelNum, generates a new level, resets all room state.
+function advanceLevel() {
+  currentLevelNum += 1;
+  var seed = Math.floor(Date.now() / 1000) + currentLevelNum * 997;
+  generateLevel(currentLevelNum, seed);
+  // Reset all per-room state
+  enemies = []; gems = []; sentinelShots = []; bullets = [];
+  doorsSealed = false; clearedFloater = null; transition = null;
+  // Place player at new Start room spawn point
+  player.x = (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE;
+  player.y = (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE;
+  // Reset navigation/aim state
+  distMap = null; lastPlayerTile = { r: -1, c: -1 };
+  aimTarget = null; aimGrace = 0; fireCooldown = 0;
+  initCamera();
+  spawnEnemies();
+  gameState = GAME_STATE.PLAYING;
 }
 
 // addXP() — adds amount to xp; handles level-up counter (effects in Phase 45).
@@ -2182,6 +2218,12 @@ function updateBullets(dt) {
 }
 
 function update(dt) {
+  if (gameState === GAME_STATE.BOSS_CLEAR) {
+    bossClearTimer -= dt;
+    if (bossClearTimer <= 0) { advanceLevel(); }
+    return; // skip movement/physics while overlay is visible
+  }
+  // GAME_STATE.SKILL_SELECT update stub — wired in Plan 03
   if (gameState === GAME_STATE.PLAYING) {
     movePlayer(dt);
     if (player && player.invuln > 0) player.invuln = Math.max(0, player.invuln - dt);
@@ -2339,6 +2381,39 @@ function renderDead() {
   ctx.restore();
 }
 
+// renderBossClear() — full-screen overlay displayed for ~2s after defeating the Boss.
+function renderBossClear() {
+  // Semi-transparent dark overlay
+  ctx.fillStyle = "rgba(5,5,12,0.7)";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // "LEVEL COMPLETE" in bold 48px neon pink
+  ctx.font = "bold 48px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLORS.pink;
+  ctx.shadowColor = COLORS.pink;
+  ctx.shadowBlur = 28;
+  ctx.fillText("LEVEL COMPLETE", W / 2, H / 2 - 30);
+
+  // Level number cleared in 24px gold
+  ctx.font = "24px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLORS.gold;
+  ctx.shadowColor = COLORS.gold;
+  ctx.shadowBlur = 14;
+  ctx.fillText("LEVEL " + (currentLevelNum - 1) + " CLEARED", W / 2, H / 2 + 20);
+
+  // Preparing hint in 16px white at lower alpha
+  ctx.font = "16px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.shadowBlur = 0;
+  ctx.fillText("Preparing next level...", W / 2, H / 2 + 60);
+
+  ctx.restore();
+}
+
 // renderBullets() — draws a glowing gold dot for each live bullet.
 // Called inside the camera sandwich in renderPlaying().
 function renderBullets() {
@@ -2394,6 +2469,8 @@ function render() {
   if (gameState === GAME_STATE.TITLE) renderTitle();
   else if (gameState === GAME_STATE.PLAYING) renderPlaying();
   else if (gameState === GAME_STATE.DEAD) renderDead();
+  else if (gameState === GAME_STATE.BOSS_CLEAR) renderBossClear();
+  // GAME_STATE.SKILL_SELECT and GAME_STATE.MODIFIER_DRAFT render stubs — wired in Plan 03
 }
 
 // ----------------------------------------------------------------------------
