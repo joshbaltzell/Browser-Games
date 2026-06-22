@@ -1138,6 +1138,11 @@ function spawnEnemies() {
       last.stuckTimer = 0;
       last.lastX = last.x; last.lastY = last.y;
     }
+    if (enemies[enemies.length - 1].type === "SENTINEL") {
+      var sent = enemies[enemies.length - 1];
+      sent.state = "idle";
+      sent.stateTimer = 1.5; // seconds until first telegraph
+    }
   }
   doorsSealed = true;
 }
@@ -1301,8 +1306,70 @@ function updateEnemies(dt) {
       }
       e.x = rnx;
       e.y = rny;
+
+    } else if (e.type === "AMBUSHER") {
+      // Velocity-prediction intercept
+      var apx = player.x + player.vx * 1.5;
+      var apy = player.y + player.vy * 1.5;
+      // Clamp predicted position to room interior (one tile margin)
+      apx = Math.max(TILE_SIZE, Math.min((currentRoom.cols - 1) * TILE_SIZE, apx));
+      apy = Math.max(TILE_SIZE, Math.min((currentRoom.rows - 1) * TILE_SIZE, apy));
+      var adx = apx - e.x;
+      var ady = apy - e.y;
+      var alen = Math.sqrt(adx * adx + ady * ady);
+      if (alen > 0) {
+        var amx = (adx / alen) * e.speed * dt;
+        var amy = (ady / alen) * e.speed * dt;
+        // Axis-split solid check
+        var anx = e.x + amx;
+        var any = e.y + amy;
+        var atcx = Math.floor(anx / TILE_SIZE);
+        var atr  = Math.floor(e.y / TILE_SIZE);
+        if (atcx >= 0 && atcx < cols && atr >= 0 && atr < currentRoom.rows &&
+            currentRoom.grid[atr * cols + atcx] !== 1) {
+          e.x = anx;
+        }
+        var atcx2 = Math.floor(e.x / TILE_SIZE);
+        var atr2  = Math.floor((e.y + amy) / TILE_SIZE);
+        if (atcx2 >= 0 && atcx2 < cols && atr2 >= 0 && atr2 < currentRoom.rows &&
+            currentRoom.grid[atr2 * cols + atcx2] !== 1) {
+          e.y = e.y + amy;
+        }
+      }
+
+    } else if (e.type === "SENTINEL") {
+      // Stationary — only runs state machine
+      e.stateTimer = (e.stateTimer || 1.5) - dt;
+      if (e.stateTimer <= 0) {
+        if (e.state === "idle") {
+          e.state = "telegraph";
+          e.stateTimer = 0.8;
+        } else if (e.state === "telegraph") {
+          e.state = "fire";
+          e.stateTimer = 0; // fire is instantaneous — handled below
+        } else if (e.state === "cooldown") {
+          e.state = "idle";
+          e.stateTimer = 1.5;
+        }
+      }
+      // Handle fire state immediately (not timer-gated — fires on the frame state changes)
+      if (e.state === "fire") {
+        var fdx = player.x - e.x;
+        var fdy = player.y - e.y;
+        var flen = Math.sqrt(fdx * fdx + fdy * fdy);
+        if (flen > 0) {
+          sentinelShots.push({
+            x: e.x, y: e.y,
+            vx: (fdx / flen) * 120,
+            vy: (fdy / flen) * 120,
+            alive: true,
+            age: 0
+          });
+        }
+        e.state = "cooldown";
+        e.stateTimer = 2.0;
+      }
     }
-    // AMBUSHER and SENTINEL handled in Plan 03
   }
 
   checkEnemiesClear();
@@ -1321,6 +1388,20 @@ function renderEnemies() {
       glowCircle(e.x, e.y, 7, COLORS.white, 10);
     } else if (e.type === "SENTINEL") {
       glowCircle(e.x, e.y, 9, COLORS.gold, 12);
+      // Draw telegraph reticle at player position when in telegraph state
+      if (e.state === "telegraph" && e.stateTimer !== undefined && player) {
+        var elapsed = 0.8 - e.stateTimer;  // 0→0.8s
+        var progress = Math.min(1, elapsed / 0.8);
+        var ringR = 8 + (14 - 8) * progress; // 8→14 px
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        ctx.strokeStyle = COLORS.white;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, ringR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
     } else {
       glowCircle(e.x, e.y, e.r - 2, COLORS.white, 10);
     }
