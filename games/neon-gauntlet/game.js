@@ -1444,6 +1444,11 @@ function startBossClear() {
   if (bossEnt) {
     for (var gi = 0; gi < 8; gi++) { spawnGem(bossEnt.x, bossEnt.y); }
   }
+  // Award the reward XP directly: the spawned gems are visual-only here because
+  // the boss flow goes BOSS_CLEAR -> MODIFIER_DRAFT -> advanceLevel() (which wipes
+  // gems = []) and updateGems() only collects during PLAYING, so the burst is never
+  // walked over. 8 gems x 10 XP each (see updateGems) = guaranteed 80 XP on defeat.
+  addXP(8 * 10);
   levelMapVisible = true;
   gameState = GAME_STATE.BOSS_CLEAR;
   bossClearTimer = 2.0;
