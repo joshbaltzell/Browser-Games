@@ -1131,6 +1131,13 @@ function spawnEnemies() {
              types[i] === "SENTINEL"? 0 : 55,
       alive: true
     });
+    // Initialize type-specific fields
+    if (enemies[enemies.length - 1].type === "RUSHER") {
+      var last = enemies[enemies.length - 1];
+      last.dx = 0; last.dy = -1; // initial direction (will re-aim on first frame)
+      last.stuckTimer = 0;
+      last.lastX = last.x; last.lastY = last.y;
+    }
   }
   doorsSealed = true;
 }
@@ -1255,7 +1262,45 @@ function updateEnemies(dt) {
       }
 
     } else if (e.type === "RUSHER") {
-      // Rusher movement handled in Task 2 (43-02-02)
+      // Initialize dx/dy if missing (safety guard)
+      if (e.dx === undefined) { e.dx = 0; e.dy = -1; e.stuckTimer = 0; e.lastX = e.x; e.lastY = e.y; }
+
+      // Stuck rescue: if barely moved in last 2s, re-aim at player
+      e.stuckTimer += dt;
+      if (e.stuckTimer >= 2.0) {
+        e.stuckTimer = 0;
+        var sdx = player.x - e.x;
+        var sdy = player.y - e.y;
+        var slen = Math.sqrt(sdx * sdx + sdy * sdy);
+        if (slen > 0) { e.dx = sdx / slen; e.dy = sdy / slen; }
+        e.lastX = e.x; e.lastY = e.y;
+      }
+
+      // Re-aim toward player each frame
+      var rdx = player.x - e.x;
+      var rdy = player.y - e.y;
+      var rlen = Math.sqrt(rdx * rdx + rdy * rdy);
+      if (rlen > 0) { e.dx = rdx / rlen; e.dy = rdy / rlen; }
+
+      // Attempt move; wall-bounce on X then Y
+      var rnx = e.x + e.dx * e.speed * dt;
+      var rny = e.y + e.dy * e.speed * dt;
+      var rtcx = Math.floor(rnx / TILE_SIZE);
+      var rtry = Math.floor(e.y / TILE_SIZE);
+      if (rtcx < 0 || rtcx >= cols || rtry < 0 || rtry >= currentRoom.rows ||
+          currentRoom.grid[rtry * cols + rtcx] === 1) {
+        e.dx *= -1;
+        rnx = e.x + e.dx * e.speed * dt;
+      }
+      var rtcx2 = Math.floor(e.x / TILE_SIZE);
+      var rtry2 = Math.floor(rny / TILE_SIZE);
+      if (rtcx2 < 0 || rtcx2 >= cols || rtry2 < 0 || rtry2 >= currentRoom.rows ||
+          currentRoom.grid[rtry2 * cols + rtcx2] === 1) {
+        e.dy *= -1;
+        rny = e.y + e.dy * e.speed * dt;
+      }
+      e.x = rnx;
+      e.y = rny;
     }
     // AMBUSHER and SENTINEL handled in Plan 03
   }
@@ -1263,13 +1308,22 @@ function updateEnemies(dt) {
   checkEnemiesClear();
 }
 
-// renderEnemies() — Wave 1 stub: white circle for every alive enemy.
-// Wave 2 makes this type-aware (purple Stalker, pink Rusher, etc.).
+// renderEnemies() — type-aware: purple Stalker, pink Rusher; AMBUSHER/SENTINEL stubs for Plan 03.
 function renderEnemies() {
   for (var i = 0; i < enemies.length; i++) {
     var e = enemies[i];
     if (!e.alive) continue;
-    glowCircle(e.x, e.y, e.r - 2, COLORS.white, 10);
+    if (e.type === "STALKER") {
+      glowCircle(e.x, e.y, 8, COLORS.purple, 14);
+    } else if (e.type === "RUSHER") {
+      glowCircle(e.x, e.y, 7, COLORS.pink, 18);
+    } else if (e.type === "AMBUSHER") {
+      glowCircle(e.x, e.y, 7, COLORS.white, 10);
+    } else if (e.type === "SENTINEL") {
+      glowCircle(e.x, e.y, 9, COLORS.gold, 12);
+    } else {
+      glowCircle(e.x, e.y, e.r - 2, COLORS.white, 10);
+    }
   }
 }
 
