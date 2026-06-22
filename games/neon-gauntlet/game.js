@@ -1665,6 +1665,13 @@ function renderEnemies() {
         ctx.stroke();
         ctx.restore();
       }
+    } else if (e.type === "CRAWLER") {
+      // Parent (generation=0): large purple glow; sub-Crawler (generation=1): smaller
+      if (e.generation === 0) {
+        glowCircle(e.x, e.y, 8, COLORS.purple, 12);
+      } else {
+        glowCircle(e.x, e.y, 5, COLORS.purple, 8);
+      }
     } else {
       glowCircle(e.x, e.y, e.r - 2, COLORS.white, 10);
     }
@@ -2053,6 +2060,24 @@ function updateBullets(dt) {
           killCount += 1;
           spawnGem(en.x, en.y);
           checkEnemiesClear();
+          // Sub-Crawler split: generation=0 parent spawns 2 smaller sub-Crawlers
+          if (en.type === "CRAWLER" && en.generation === 0) {
+            var offsets = [-8, 8];
+            for (var si = 0; si < 2; si++) {
+              enemies.push({
+                type: "CRAWLER",
+                x: en.x + offsets[si], y: en.y,
+                r: 6,
+                hp: 1, maxHp: 1,
+                speed: 85,
+                alive: true,
+                age: 0,
+                facing: Math.floor(Math.random() * 4),
+                generation: 1
+              });
+            }
+            doorsSealed = true; // re-seal: new enemies just spawned
+          }
         }
         hit = true;
         break;
