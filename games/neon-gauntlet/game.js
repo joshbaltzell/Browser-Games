@@ -831,7 +831,18 @@ function renderRoom(room) {
     }
   }
 
-  // Step 4 — Draw wall edge outlines (value 1 only).
+  // Step 4 — Cover wall tile areas with canvas background color to mask the decorative
+  // grid lines drawn at globalAlpha=0.06 in renderPlaying() before this call.
+  ctx.fillStyle = "#05050c";
+  for (var wr = 0; wr < rows; wr++) {
+    for (var wc = 0; wc < cols; wc++) {
+      if (room.grid[wr * cols + wc] === 1) {
+        ctx.fillRect(originX + wc * TILE_SIZE, originY + wr * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      }
+    }
+  }
+
+  // Step 5 — Draw wall edge outlines (value 1 only).
   // Batched: single beginPath() before the outer loop, one stroke() after — T-40-08 mitigation.
   // Only draw a 0.5px edge where a wall tile borders a floor tile (or out-of-bounds).
   ctx.strokeStyle = "rgba(0,229,255,0.35)";
@@ -956,6 +967,15 @@ function renderDebugOverlay() {
     var sr = Math.floor(room.slotIdx / 4);
     var sc = room.slotIdx % 4;
     ctx.fillText(room.type, sc * SLOT_W + SLOT_W / 2, sr * SLOT_H + SLOT_H / 2);
+  });
+
+  // Layer 4b: Slot (row,col) coordinate annotations below each label
+  ctx.font = "9px \"Segoe UI\", system-ui, sans-serif";
+  ctx.fillStyle = "rgba(154,154,192,0.5)";
+  rooms.forEach(function(room) {
+    var sr = Math.floor(room.slotIdx / 4);
+    var sc = room.slotIdx % 4;
+    ctx.fillText("(" + sr + "," + sc + ")", sc * SLOT_W + SLOT_W / 2, sr * SLOT_H + SLOT_H / 2 + 14);
   });
 
   // Layer 5: Current room highlight (white stroke rect around current room's slot)
