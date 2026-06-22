@@ -54,6 +54,7 @@ let currentLevel = null;  // { rooms, connections, seed, levelNumber }
 let currentRoom  = null;  // reference to the Start room in currentLevel.rooms
 let debugOverlayVisible = false; // toggled by D key; only active when DEBUG=true
 let player = null;        // { x, y, r, speed } — world-space coordinates
+let camera = null;        // { tx, ty, locked, begin(ctx), end(ctx) } — camera transform
 let keys = {};            // tracks currently held keys: keys[e.key] = true/false
 
 // ----------------------------------------------------------------------------
@@ -1013,6 +1014,7 @@ function handleFirstGesture() {
     r: 6,
     speed: 100
   };
+  initCamera();
   const hud = document.getElementById("hud");
   if (hud) hud.classList.remove("hidden");
   document.removeEventListener("keydown", handleFirstGesture);
@@ -1044,6 +1046,73 @@ document.addEventListener("keyup",   function(e) { keys[e.key] = false; });
 // ----------------------------------------------------------------------------
 // Update
 // ----------------------------------------------------------------------------
+
+// initCamera() — called once per room entry (after player is placed).
+// Determines whether the room fits on screen (locked mode) or needs to scroll.
+// Locked mode: camera.tx/ty center the room on canvas and never change.
+// Scroll mode: camera lerps toward keeping player centered, clamped to room bounds.
+function initCamera() {
+  if (!currentRoom || !player) return;
+  var roomW = currentRoom.cols * TILE_SIZE;
+  var roomH = currentRoom.rows * TILE_SIZE;
+  var locked = (roomW <= W - 80) && (roomH <= H - 80);
+
+  var tx, ty;
+  if (locked) {
+    tx = Math.floor((W - roomW) / 2);
+    ty = Math.floor((H - roomH) / 2);
+  } else {
+    // Start centered on player, clamped to room bounds
+    var rawTx = W / 2 - player.x;
+    var rawTy = H / 2 - player.y;
+    var minTx = W - roomW;
+    var maxTx = 0;
+    var minTy = H - roomH;
+    var maxTy = 0;
+    tx = Math.max(minTx, Math.min(maxTx, rawTx));
+    ty = Math.max(minTy, Math.min(maxTy, rawTy));
+  }
+
+  camera = {
+    tx: tx,
+    ty: ty,
+    locked: locked,
+  };
+
+  camera.begin = function(c) {
+    c.save();
+    c.translate(Math.round(camera.tx), Math.round(camera.ty));
+  };
+
+  camera.end = function(c) {
+    c.restore();
+  };
+}
+
+// updateCamera() — called each frame from update(dt).
+// Lock mode: no-op (tx/ty are fixed).
+// Scroll mode: lerp toward player-center target (factor 0.10), clamped to room bounds.
+function updateCamera() {
+  if (!camera || !player || !currentRoom) return;
+  if (camera.locked) return;
+
+  var targetTx = W / 2 - player.x;
+  var targetTy = H / 2 - player.y;
+
+  var roomW = currentRoom.cols * TILE_SIZE;
+  var roomH = currentRoom.rows * TILE_SIZE;
+  var minTx = W - roomW;
+  var maxTx = 0;
+  var minTy = H - roomH;
+  var maxTy = 0;
+
+  targetTx = Math.max(minTx, Math.min(maxTx, targetTx));
+  targetTy = Math.max(minTy, Math.min(maxTy, targetTy));
+
+  camera.tx += (targetTx - camera.tx) * 0.10;
+  camera.ty += (targetTy - camera.ty) * 0.10;
+}
+
 function movePlayer(dt) {
   if (!player || !currentRoom || !currentRoom.grid) return;
 
@@ -1092,6 +1161,7 @@ function movePlayer(dt) {
 function update(dt) {
   if (gameState === GAME_STATE.PLAYING) {
     movePlayer(dt);
+    updateCamera();
   }
 }
 
