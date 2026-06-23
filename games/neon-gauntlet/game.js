@@ -221,6 +221,28 @@ function playTone(opts) {
   }
 }
 
+// playKillSound(type) — short kill blip flavored by enemy class. Three sonic
+// groups (light / medium / heavy) plus a beefier BOSS chord keep rapid chain
+// kills from turning into noise; a 30ms dedup guard prevents audio pile-up.
+var lastKillSoundTime = 0;
+function playKillSound(type) {
+  if (typeof performance !== "undefined") {
+    var nowMs = performance.now();
+    if (nowMs - lastKillSoundTime < 30) return;
+    lastKillSoundTime = nowMs;
+  }
+  if (type === "BOSS") {
+    playTone({ type: "sawtooth", freq: 200, endFreq: 70, dur: 0.22, gain: 0.12 });
+    playTone({ type: "square",   freq: 120, endFreq: 50, dur: 0.22, gain: 0.10 });
+  } else if (type === "SENTINEL" || type === "SNIPER") {
+    playTone({ type: "sawtooth", freq: 180, endFreq: 60, dur: 0.14, gain: 0.09 }); // heavy
+  } else if (type === "RUSHER" || type === "CRAWLER") {
+    playTone({ type: "square", freq: 480, endFreq: 180, dur: 0.06, gain: 0.07 });  // light
+  } else {
+    playTone({ type: "sawtooth", freq: 220, endFreq: 80, dur: 0.10, gain: 0.08 }); // medium: STALKER/AMBUSHER
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Glow helpers
 // ----------------------------------------------------------------------------
@@ -2443,6 +2465,7 @@ function updateBullets(dt) {
             ben.hp -= 1;
             if (ben.hp <= 0) {
               ben.alive = false;
+              playKillSound(ben.type);
               killCount += 1;
               spawnGem(ben.x, ben.y);
               if (ben.elite) spawnGem(ben.x, ben.y);
@@ -2491,6 +2514,7 @@ function updateBullets(dt) {
             chainNearest.hp -= 1;
             if (chainNearest.hp <= 0) {
               chainNearest.alive = false;
+              playKillSound(chainNearest.type);
               killCount += 1;
               spawnGem(chainNearest.x, chainNearest.y);
               if (chainNearest.elite) spawnGem(chainNearest.x, chainNearest.y);
@@ -2509,6 +2533,7 @@ function updateBullets(dt) {
         }
         if (en.hp <= 0) {
           en.alive = false;
+          playKillSound(en.type);
           killCount += 1;
           spawnGem(en.x, en.y);
           if (en.elite) spawnGem(en.x, en.y);
@@ -2546,6 +2571,7 @@ function updateBullets(dt) {
               bhe.hp -= 1;
               if (bhe.hp <= 0) {
                 bhe.alive = false;
+                playKillSound(bhe.type);
                 killCount += 1;
                 spawnGem(bhe.x, bhe.y);
                 if (bhe.elite) spawnGem(bhe.x, bhe.y);
