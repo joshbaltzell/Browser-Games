@@ -175,6 +175,9 @@ let hurtFlash = 0;        // red full-screen flash 0..1; set on player hit, deca
 let muzzleFlash = 0;      // white muzzle flash 0..1 at player; set on fire, decays each frame
 let paused = false;       // P/Esc pause toggle (PLAYING only); freezes update + shows overlay
 let titleMotes = null;    // lazily-seeded drifting motes behind the title wordmark
+let bossBanner = 0;       // seconds remaining on the "⚠ BOSS ⚠" intro banner
+let bestRun = null;       // { level, rooms, kills } loaded from localStorage; null if unavailable
+let deathRecorded = false; // guards one-time best-run write on the DEAD screen
 let lastGemPickupTime = 0; // performance.now() ms of last gem pickup (cascade chime)
 let gemPickupStreak = 0;   // consecutive rapid pickups -> rising chime pitch
 let mapAutoDismissed = true; // true once the level-entry minimap auto-show is dismissed
@@ -1218,7 +1221,8 @@ function restartGame() {
   distMap = null; lastPlayerTile = { r: -1, c: -1 };
   aimTarget = null; aimGrace = 0; fireCooldown = 0;
   gemPickupStreak = 0; lastGemPickupTime = 0;
-  shakeTrauma = 0; hurtFlash = 0; muzzleFlash = 0; paused = false;
+  shakeTrauma = 0; hurtFlash = 0; muzzleFlash = 0; paused = false; bossBanner = 0;
+  deathRecorded = false;
   generateLevel(1, Math.floor(Date.now() / 1000));
   player = {
     x: (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE,
@@ -1371,6 +1375,8 @@ function spawnEnemies() {
       state: "idle"
     });
     doorsSealed = true;
+    bossBanner = 1.8; // ominous intro banner on boss-room entry
+    playTone({ type: "sawtooth", freq: 110, endFreq: 165, dur: 0.6, gain: 0.18 });
     return;
   }
 
@@ -1539,7 +1545,7 @@ function advanceLevel() {
   // Reset all per-room state
   enemies = []; gems = []; sentinelShots = []; bullets = [];
   doorsSealed = false; clearedFloater = null; levelUpFloater = null; transition = null;
-  muzzleFlash = 0; hurtFlash = 0; shakeTrauma = 0; paused = false;
+  muzzleFlash = 0; hurtFlash = 0; shakeTrauma = 0; paused = false; bossBanner = 0;
   levelMapVisible = true;   // auto-show minimap on level entry for orientation
   mapAutoDismissed = false;
   // Place player at new Start room spawn point
@@ -2837,6 +2843,7 @@ function update(dt) {
     if (shakeTrauma > 0) shakeTrauma = Math.max(0, shakeTrauma - 8 * dt);
     if (hurtFlash > 0) hurtFlash = Math.max(0, hurtFlash - 5 * dt);
     if (muzzleFlash > 0) muzzleFlash = Math.max(0, muzzleFlash - 12 * dt);
+    if (bossBanner > 0) bossBanner = Math.max(0, bossBanner - dt);
     if (clearedFloater) {
       clearedFloater.timer -= dt;
       clearedFloater.alpha = Math.max(0, clearedFloater.timer / 1.5);
@@ -2980,6 +2987,24 @@ function renderHpBar() {
     }
     ctx.fillRect(12 + i * 18, 12, 16, 8);
   }
+  ctx.restore();
+}
+
+// renderBossBanner() — pulsing red "⚠ BOSS ⚠" warning near the top on boss-room entry.
+function renderBossBanner() {
+  if (bossBanner <= 0) return;
+  // Fade out over the last 0.6s; hold full opacity before that.
+  var a = Math.min(1, bossBanner / 0.6);
+  var pulse = 0.7 + 0.3 * Math.abs(Math.sin(Date.now() / 180));
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 40px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLORS.pink;
+  ctx.shadowColor = COLORS.pink;
+  ctx.shadowBlur = 18 + 14 * pulse;
+  ctx.fillText("⚠ BOSS ⚠", W / 2, H * 0.2);
   ctx.restore();
 }
 
@@ -3551,6 +3576,7 @@ function renderPlaying() {
   renderSkillPrompt();
   renderClearedFloater();
   renderLevelUpFloater();
+  renderBossBanner();
   renderTransitionOverlay();
   renderPauseOverlay();
 }
