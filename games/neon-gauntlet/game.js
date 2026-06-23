@@ -1477,6 +1477,18 @@ function openDoors() {
   doorsSealed = false;
   playTone({ type: "sine", freq: 660, endFreq: 880, dur: 0.22, gain: 0.12 });
   clearedFloater = { alpha: 1.0, timer: 1.5 };
+  // Pop a cyan spark burst at each door tile so the doors visibly "unlock".
+  if (currentRoom && currentRoom.grid) {
+    var g = currentRoom.grid, cols = currentRoom.cols, rows = currentRoom.rows;
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        var v = g[r * cols + c];
+        if (v >= 2 && v <= 5) {
+          spawnParticleBurst((c + 0.5) * TILE_SIZE, (r + 0.5) * TILE_SIZE, COLORS.cyan);
+        }
+      }
+    }
+  }
 }
 
 // checkEnemiesClear() — called after bullet-enemy hits and from updateEnemies().
