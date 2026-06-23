@@ -3361,10 +3361,29 @@ function renderShop() {
 // Called inside the camera sandwich in renderPlaying().
 function renderBullets() {
   if (!bullets.length) return;
+  // Trail length is a short fixed slice of travel (~0.05s of velocity), so faster
+  // bullets streak longer. Drawn as a fading cyan tail behind the glowing head.
+  var TRAIL_T = 0.05;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.strokeStyle = COLORS.cyan;
+  ctx.shadowColor = COLORS.cyan;
+  ctx.shadowBlur = 8;
   for (var i = 0; i < bullets.length; i++) {
     var b = bullets[i];
     if (!b.alive) continue;
-    glowCircle(b.x, b.y, 3, COLORS.cyan, 10);
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(b.x - b.vx * TRAIL_T, b.y - b.vy * TRAIL_T);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+  for (var j = 0; j < bullets.length; j++) {
+    var bj = bullets[j];
+    if (!bj.alive) continue;
+    glowCircle(bj.x, bj.y, 3, COLORS.cyan, 10);
   }
 }
 
