@@ -98,16 +98,18 @@ const FUSION_SKILLS = [
 // ----------------------------------------------------------------------------
 // Modifier draft constants — blessings (positive) and curses (negative) offered between levels.
 // ----------------------------------------------------------------------------
+// desc text mirrors the apply() formula structure (including min clamps and
+// x-multipliers) so the shown effect stays honest even at edge cases.
 const POSITIVE_MODIFIERS = [
-  { name: "Speed Boost",  apply: function(p) { p.speed += 20; } },
-  { name: "Fortified",    apply: function(p) { p.maxHp += 2; p.hp = Math.min(p.hp + 2, p.maxHp); } },
-  { name: "Hair Trigger", apply: function(p) { p.fireCooldownMult = (p.fireCooldownMult || 1) * 0.8; } },
+  { name: "Speed Boost",  desc: "+20 move speed",              apply: function(p) { p.speed += 20; } },
+  { name: "Fortified",    desc: "+2 max HP (heals 2)",         apply: function(p) { p.maxHp += 2; p.hp = Math.min(p.hp + 2, p.maxHp); } },
+  { name: "Hair Trigger", desc: "Faster fire (cooldown x0.8)", apply: function(p) { p.fireCooldownMult = (p.fireCooldownMult || 1) * 0.8; } },
 ];
 
 const NEGATIVE_MODIFIERS = [
-  { name: "Slowed",       apply: function(p) { p.speed = Math.max(60, p.speed - 15); } },
-  { name: "Brittle",      apply: function(p) { p.maxHp = Math.max(1, p.maxHp - 1); p.hp = Math.min(p.hp, p.maxHp); } },
-  { name: "Sluggish Fire",apply: function(p) { p.fireCooldownMult = (p.fireCooldownMult || 1) * 1.2; } },
+  { name: "Slowed",       desc: "-15 move speed (min 60)",      apply: function(p) { p.speed = Math.max(60, p.speed - 15); } },
+  { name: "Brittle",      desc: "-1 max HP (min 1)",            apply: function(p) { p.maxHp = Math.max(1, p.maxHp - 1); p.hp = Math.min(p.hp, p.maxHp); } },
+  { name: "Sluggish Fire",desc: "Slower fire (cooldown x1.2)",  apply: function(p) { p.fireCooldownMult = (p.fireCooldownMult || 1) * 1.2; } },
 ];
 
 // ----------------------------------------------------------------------------
@@ -2922,10 +2924,15 @@ function renderModifierDraft() {
     ctx.lineWidth = 1.5;
     ctx.strokeRect(boxX, boxY, boxW, boxH);
 
-    // Modifier name centered in box
+    // Modifier name (upper) + effect description (lower)
     ctx.font = "bold 18px 'Segoe UI', system-ui, sans-serif";
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(mods[i].name, W / 2, boxY + boxH / 2);
+    ctx.fillText(mods[i].name, W / 2, boxY + boxH * 0.36);
+    if (mods[i].desc) {
+      ctx.font = "12px 'Segoe UI', system-ui, sans-serif";
+      ctx.fillStyle = "rgba(200,200,224,0.78)";
+      ctx.fillText(mods[i].desc, W / 2, boxY + boxH * 0.68);
+    }
 
     // Keyboard hint "[N]" to the left
     ctx.font = "14px 'Segoe UI', system-ui, sans-serif";
