@@ -2002,11 +2002,13 @@ function renderEnemies() {
         ctx.restore();
       }
     } else if (e.type === "CRAWLER") {
-      // Parent (generation=0): large purple glow; sub-Crawler (generation=1): smaller
+      // Amber/gold glow — distinct from the purple STALKER and from the orange
+      // (#ff8c00) elite ring, so CRAWLERs read clearly at a glance.
+      // Parent (generation=0): larger glow; sub-Crawler (generation=1): smaller.
       if (e.generation === 0) {
-        glowCircle(e.x, e.y, 8, COLORS.purple, 12);
+        glowCircle(e.x, e.y, 8, "#ffd700", 14);
       } else {
-        glowCircle(e.x, e.y, 5, COLORS.purple, 8);
+        glowCircle(e.x, e.y, 5, "#ffd700", 9);
       }
     } else if (e.type === "BOSS") {
       // Core body — large pink glow
