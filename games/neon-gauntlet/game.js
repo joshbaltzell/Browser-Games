@@ -1405,6 +1405,7 @@ function spawnEnemies() {
     });
     doorsSealed = true;
     bossBanner = 1.8; // ominous intro banner on boss-room entry
+    spawnParticleBurst(bossX, bossY, COLORS.pink); // boss materialize pop
     playTone({ type: "sawtooth", freq: 110, endFreq: 165, dur: 0.6, gain: 0.18 });
     return;
   }
@@ -1501,6 +1502,13 @@ function spawnEnemies() {
       enemies[ei].speed = Math.round(enemies[ei].speed * 1.2);
       enemies[ei].elite = true;
     }
+  }
+
+  // Materialize pop: a spark burst at each spawn point so enemies don't appear
+  // out of nowhere. Color-matched to the enemy class (elites read as orange).
+  for (var mi = 0; mi < enemies.length; mi++) {
+    var me = enemies[mi];
+    spawnParticleBurst(me.x, me.y, me.elite ? COLORS.orange : enemyColorFor(me.type));
   }
 }
 
