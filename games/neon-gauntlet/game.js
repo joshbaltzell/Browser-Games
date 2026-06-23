@@ -164,6 +164,7 @@ let bossClearTimer = 0;   // seconds remaining in BOSS_CLEAR overlay
 let skillPoints = 0;      // unspent skill points available to invest
 let skillSelectBranch = 0; // keyboard highlight index 0-4 in skill select overlay
 let levelMapVisible = false; // M key toggle — shows minimap overlay
+let shakeTrauma = 0;      // screen-shake trauma 0..1; rises on player hit, decays each frame
 let modifierDraftStep = 0;    // 0 = blessing pick, 1 = curse pick
 let pendingModifierChoice = -1; // index of chosen blessing awaiting curse selection
 let shopItems = [];
@@ -1619,6 +1620,7 @@ function updateSentinelShots(dt) {
     if (Math.sqrt(pdx * pdx + pdy * pdy) < (4 + player.r)) {
       if (player.invuln <= 0) {
         player.hp -= 1;
+        shakeTrauma = Math.min(1, shakeTrauma + 0.45);
         var sInvDur = player.invulnDuration || INVULN_DURATION;
         player.invuln = sInvDur;
         if (player.hp <= 0) gameState = GAME_STATE.DEAD;
@@ -1836,6 +1838,7 @@ function updateEnemies(dt) {
         var perpDist = Math.sqrt((player.x - closestX) * (player.x - closestX) + (player.y - closestY) * (player.y - closestY));
         if (perpDist < 6 && player.invuln <= 0) {
           player.hp -= 1;
+          shakeTrauma = Math.min(1, shakeTrauma + 0.45);
           var snInvDur = player.invulnDuration || INVULN_DURATION;
           player.invuln = snInvDur;
           if (player.hp <= 0) gameState = GAME_STATE.DEAD;
@@ -1939,6 +1942,7 @@ function updateEnemies(dt) {
     var cdy = player.y - e.y;
     if (Math.sqrt(cdx * cdx + cdy * cdy) < (e.r + player.r) && player.invuln <= 0) {
       player.hp -= ENEMY_CONTACT_DAMAGE;
+      shakeTrauma = Math.min(1, shakeTrauma + 0.45);
       var invDur = player.invulnDuration || INVULN_DURATION;
       player.invuln = invDur;
       if (player.hp <= 0) gameState = GAME_STATE.DEAD;
@@ -2263,6 +2267,12 @@ function initCamera() {
   camera.begin = function(c) {
     c.save();
     c.translate(Math.round(camera.tx), Math.round(camera.ty));
+    if (shakeTrauma > 0.05) {
+      // Non-harmonic sin/cos for smooth oscillating shake (not random teleport jitter).
+      var mag = shakeTrauma * shakeTrauma * 6;
+      var st = Date.now() / 1000;
+      c.translate(Math.sin(st * 47) * mag, Math.cos(st * 31) * mag);
+    }
   };
 
   camera.end = function(c) {
@@ -2690,6 +2700,7 @@ function update(dt) {
     updateGems(dt);
     updateSentinelShots(dt);
     updateParticles(dt);
+    if (shakeTrauma > 0) shakeTrauma = Math.max(0, shakeTrauma - 8 * dt);
     if (clearedFloater) {
       clearedFloater.timer -= dt;
       clearedFloater.alpha = Math.max(0, clearedFloater.timer / 1.5);
