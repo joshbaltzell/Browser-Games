@@ -144,6 +144,7 @@ let camera = null;        // { tx, ty, locked, begin(ctx), end(ctx) } — camera
 let keys = {};            // tracks currently held keys: keys[e.key] = true/false
 let doorsSealed = false;  // true while enemies are alive; seals door traversal
 let enemies = [];         // active enemies for the current room
+let particles = [];       // short-lived death-burst particles: { x,y,vx,vy,life,maxLife,color }
 let gems = [];            // gem drops array: { x, y, vx, vy, alive }
 let sentinelShots = [];   // sentinel projectiles: { x, y, vx, vy, alive, age }
 let xp = 0;               // current XP total
@@ -1314,6 +1315,7 @@ document.addEventListener("keyup",   function(e) { keys[e.key] = false; });
 function spawnEnemies() {
   if (!currentRoom || !currentRoom.spawnList) return;
   enemies = [];
+  particles = []; // clear death-burst particles on room entry (no cross-room bleed)
 
   // Boss room override — spawn one BOSS enemy, seal doors, skip normal SPAWN_TABLE.
   if (currentRoom.type === "BOSS") {
@@ -1637,6 +1639,7 @@ function updateEnemies(dt) {
     var e = enemies[i];
     if (!e.alive) continue;
     e.age += dt;
+    if (e.hitFlash > 0) e.hitFlash -= dt;
 
     if (e.type === "STALKER") {
       // BFS gradient descent — pick adjacent tile with lowest distMap value
@@ -1945,11 +1948,63 @@ function updateEnemies(dt) {
   checkEnemiesClear();
 }
 
+// enemyColorFor(type) — the glow color used for an enemy class (for death particles).
+function enemyColorFor(type) {
+  if (type === "STALKER") return COLORS.purple;
+  if (type === "RUSHER" || type === "BOSS") return COLORS.pink;
+  if (type === "SENTINEL") return COLORS.gold;
+  if (type === "SNIPER") return COLORS.cyan;
+  if (type === "CRAWLER") return "#ffd700";
+  return COLORS.white; // AMBUSHER + default
+}
+
+// spawnParticleBurst(x, y, color) — 6 outward sparks on enemy death (array capped at 60).
+function spawnParticleBurst(x, y, color) {
+  for (var pi = 0; pi < 6; pi++) {
+    if (particles.length >= 60) break;
+    particles.push({
+      x: x, y: y,
+      vx: (Math.random() * 2 - 1) * 90,
+      vy: (Math.random() * 2 - 1) * 90,
+      life: 0.35, maxLife: 0.35, color: color,
+    });
+  }
+}
+
+// updateParticles(dt) — advance and expire death-burst particles.
+function updateParticles(dt) {
+  for (var pi = particles.length - 1; pi >= 0; pi--) {
+    var p = particles[pi];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(pi, 1);
+  }
+}
+
+// renderParticles() — draw death-burst particles (inside the camera transform).
+function renderParticles() {
+  for (var pi = 0; pi < particles.length; pi++) {
+    var p = particles[pi];
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+    glowCircle(p.x, p.y, 2, p.color, 6);
+    ctx.restore();
+  }
+}
+
 // renderEnemies() — type-aware: purple Stalker, pink Rusher; AMBUSHER/SENTINEL stubs for Plan 03.
 function renderEnemies() {
   for (var i = 0; i < enemies.length; i++) {
     var e = enemies[i];
     if (!e.alive) continue;
+    // Hit-flash: brief white halo when recently damaged (set on hit, decays in updateEnemies).
+    if (e.hitFlash > 0) {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, Math.min(1, e.hitFlash / 0.08));
+      glowCircle(e.x, e.y, (e.r || 8) * 1.6, COLORS.white, 12);
+      ctx.restore();
+    }
     if (e.type === "STALKER") {
       glowCircle(e.x, e.y, 8, COLORS.purple, 14);
     } else if (e.type === "RUSHER") {
@@ -2463,9 +2518,11 @@ function updateBullets(dt) {
           var bdyB = ny - ben.y;
           if (Math.sqrt(bdxB * bdxB + bdyB * bdyB) < blastR) {
             ben.hp -= 1;
+            ben.hitFlash = 0.08;
             if (ben.hp <= 0) {
               ben.alive = false;
               playKillSound(ben.type);
+              spawnParticleBurst(ben.x, ben.y, enemyColorFor(ben.type));
               killCount += 1;
               spawnGem(ben.x, ben.y);
               if (ben.elite) spawnGem(ben.x, ben.y);
@@ -2498,6 +2555,7 @@ function updateBullets(dt) {
       if (Math.sqrt(bdx * bdx + bdy * bdy) < (3 + en.r)) {
         var dmg = player ? (player.bulletDmg || 1) : 1;
         en.hp -= dmg;
+        en.hitFlash = 0.08;
         // Bullet chain: deal 1 damage to nearest other enemy within 80px
         if (player && player.bulletChain) {
           var chainNearest = null;
@@ -2512,9 +2570,11 @@ function updateBullets(dt) {
           }
           if (chainNearest !== null) {
             chainNearest.hp -= 1;
+            chainNearest.hitFlash = 0.08;
             if (chainNearest.hp <= 0) {
               chainNearest.alive = false;
               playKillSound(chainNearest.type);
+              spawnParticleBurst(chainNearest.x, chainNearest.y, enemyColorFor(chainNearest.type));
               killCount += 1;
               spawnGem(chainNearest.x, chainNearest.y);
               if (chainNearest.elite) spawnGem(chainNearest.x, chainNearest.y);
@@ -2534,6 +2594,7 @@ function updateBullets(dt) {
         if (en.hp <= 0) {
           en.alive = false;
           playKillSound(en.type);
+          spawnParticleBurst(en.x, en.y, enemyColorFor(en.type));
           killCount += 1;
           spawnGem(en.x, en.y);
           if (en.elite) spawnGem(en.x, en.y);
@@ -2569,9 +2630,11 @@ function updateBullets(dt) {
             var bhdy = ny - bhe.y;
             if (Math.sqrt(bhdx * bhdx + bhdy * bhdy) < blastRH) {
               bhe.hp -= 1;
+              bhe.hitFlash = 0.08;
               if (bhe.hp <= 0) {
                 bhe.alive = false;
                 playKillSound(bhe.type);
+                spawnParticleBurst(bhe.x, bhe.y, enemyColorFor(bhe.type));
                 killCount += 1;
                 spawnGem(bhe.x, bhe.y);
                 if (bhe.elite) spawnGem(bhe.x, bhe.y);
@@ -2626,6 +2689,7 @@ function update(dt) {
     updateEnemies(dt);
     updateGems(dt);
     updateSentinelShots(dt);
+    updateParticles(dt);
     if (clearedFloater) {
       clearedFloater.timer -= dt;
       clearedFloater.alpha = Math.max(0, clearedFloater.timer / 1.5);
@@ -3188,6 +3252,7 @@ function renderPlaying() {
   renderSentinelShots();
   renderGems();
   renderEnemies();
+  renderParticles();
   renderPlayer();
   if (camera) camera.end(ctx);
 
