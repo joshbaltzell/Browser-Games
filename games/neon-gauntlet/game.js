@@ -172,6 +172,9 @@ let skillSelectBranch = 0; // keyboard highlight index 0-4 in skill select overl
 let levelMapVisible = false; // M key toggle — shows minimap overlay
 let shakeTrauma = 0;      // screen-shake trauma 0..1; rises on player hit, decays each frame
 let hurtFlash = 0;        // red full-screen flash 0..1; set on player hit, decays each frame
+let muzzleFlash = 0;      // white muzzle flash 0..1 at player; set on fire, decays each frame
+let paused = false;       // P/Esc pause toggle (PLAYING only); freezes update + shows overlay
+let titleMotes = null;    // lazily-seeded drifting motes behind the title wordmark
 let lastGemPickupTime = 0; // performance.now() ms of last gem pickup (cascade chime)
 let gemPickupStreak = 0;   // consecutive rapid pickups -> rising chime pitch
 let mapAutoDismissed = true; // true once the level-entry minimap auto-show is dismissed
@@ -1215,7 +1218,7 @@ function restartGame() {
   distMap = null; lastPlayerTile = { r: -1, c: -1 };
   aimTarget = null; aimGrace = 0; fireCooldown = 0;
   gemPickupStreak = 0; lastGemPickupTime = 0;
-  shakeTrauma = 0; hurtFlash = 0;
+  shakeTrauma = 0; hurtFlash = 0; muzzleFlash = 0; paused = false;
   generateLevel(1, Math.floor(Date.now() / 1000));
   player = {
     x: (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE,
@@ -1518,6 +1521,7 @@ function advanceLevel() {
   // Reset all per-room state
   enemies = []; gems = []; sentinelShots = []; bullets = [];
   doorsSealed = false; clearedFloater = null; levelUpFloater = null; transition = null;
+  muzzleFlash = 0; hurtFlash = 0; shakeTrauma = 0; paused = false;
   levelMapVisible = true;   // auto-show minimap on level entry for orientation
   mapAutoDismissed = false;
   // Place player at new Start room spawn point
@@ -2594,6 +2598,7 @@ function updateAim(dt) {
       }
       var cooldown = FIRE_COOLDOWN * (player.fireCooldownMult || 1);
       fireCooldown = cooldown;
+      muzzleFlash = 1;
       playTone({ type: "sine", freq: 880, endFreq: 660, dur: 0.06, gain: 0.07 });
     }
   }
@@ -2812,6 +2817,7 @@ function update(dt) {
     updateParticles(dt);
     if (shakeTrauma > 0) shakeTrauma = Math.max(0, shakeTrauma - 8 * dt);
     if (hurtFlash > 0) hurtFlash = Math.max(0, hurtFlash - 5 * dt);
+    if (muzzleFlash > 0) muzzleFlash = Math.max(0, muzzleFlash - 12 * dt);
     if (clearedFloater) {
       clearedFloater.timer -= dt;
       clearedFloater.alpha = Math.max(0, clearedFloater.timer / 1.5);
@@ -2899,6 +2905,13 @@ function renderPlayer() {
   // Invuln flicker: hide every other 0.1s interval while invulnerable
   if (player.invuln > 0 && Math.floor(player.invuln / 0.1) % 2 === 0) return;
   glowCircle(player.x, player.y, player.r, COLORS.cyan, 18);
+  // Muzzle flash: a quick white pop layered over the player the instant a shot leaves.
+  if (muzzleFlash > 0) {
+    ctx.save();
+    ctx.globalAlpha = muzzleFlash;
+    glowCircle(player.x, player.y, player.r + 3 * muzzleFlash, COLORS.white, 10 + 18 * muzzleFlash);
+    ctx.restore();
+  }
 }
 
 // renderHpBar() — draws the player HP bar in screen-space (outside camera transform).
