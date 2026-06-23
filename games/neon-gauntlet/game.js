@@ -3074,6 +3074,39 @@ function renderHurtFlash() {
   ctx.restore();
 }
 
+// renderBossHealthBar() — wide pink HP bar across the top during the boss fight,
+// so the climax has a visible progress readout. Screen-space; boss rooms only.
+function renderBossHealthBar() {
+  if (!currentRoom || currentRoom.type !== "BOSS") return;
+  var boss = null;
+  for (var i = 0; i < enemies.length; i++) {
+    if (enemies[i].type === "BOSS" && enemies[i].alive) { boss = enemies[i]; break; }
+  }
+  if (!boss) return;
+  var bw = Math.min(360, W * 0.6), bh = 12;
+  var bx = (W - bw) / 2, by = 26;
+  var frac = Math.max(0, Math.min(1, boss.hp / boss.maxHp));
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.font = "bold 12px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLORS.pink;
+  ctx.shadowColor = COLORS.pink;
+  ctx.shadowBlur = 8;
+  ctx.fillText("BOSS", W / 2, by - 5);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.fillRect(bx, by, bw, bh);
+  ctx.fillStyle = COLORS.pink;
+  ctx.shadowColor = COLORS.pink;
+  ctx.shadowBlur = 10;
+  ctx.fillRect(bx, by, bw * frac, bh);
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(255,59,107,0.6)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(bx, by, bw, bh);
+  ctx.restore();
+}
+
 // renderLowHpVignette() — pulsing red edge vignette when the player is near death.
 // Screen-space; drawn after the camera sandwich. Ramps in below 40% HP and pulses
 // faster as HP drops, so danger is felt peripherally without watching the HUD bar.
@@ -3632,6 +3665,7 @@ function renderPlaying() {
   // is retired to avoid two HP representations (kept defined but uncalled).
   renderLowHpVignette();
   renderHurtFlash();
+  renderBossHealthBar();
   renderLevelMap();
   renderObjectiveHint();
   renderSkillPrompt();
