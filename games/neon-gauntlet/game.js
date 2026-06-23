@@ -155,6 +155,7 @@ let sentinelShots = [];   // sentinel projectiles: { x, y, vx, vy, alive, age }
 let xp = 0;               // current XP total
 let xpToNext = 100;       // XP threshold for next level-up
 let clearedFloater = null; // { alpha, timer } — "CLEARED" text overlay
+let levelUpFloater = null; // { alpha, timer } — "LEVEL UP" overlay on skill-point gain
 let transition = null;    // { phase, timer, duration, targetRoom } — room fade transition
 let distMap = null;       // Float32Array of hop distances from player tile; null until first gesture
 let lastPlayerTile = { r: -1, c: -1 }; // cached player tile to skip redundant BFS
@@ -1209,7 +1210,7 @@ function restartGame() {
   xp = 0; xpToNext = 100; killCount = 0; roomsCleared = 0;
   currentLevelNum = 1; bossClearTimer = 0;
   levelMapVisible = false; modifierDraftStep = 0; pendingModifierChoice = -1;
-  doorsSealed = false; clearedFloater = null; transition = null;
+  doorsSealed = false; clearedFloater = null; levelUpFloater = null; transition = null;
   distMap = null; lastPlayerTile = { r: -1, c: -1 };
   aimTarget = null; aimGrace = 0; fireCooldown = 0;
   gemPickupStreak = 0; lastGemPickupTime = 0;
@@ -1514,7 +1515,7 @@ function advanceLevel() {
   generateLevel(currentLevelNum, seed);
   // Reset all per-room state
   enemies = []; gems = []; sentinelShots = []; bullets = [];
-  doorsSealed = false; clearedFloater = null; transition = null;
+  doorsSealed = false; clearedFloater = null; levelUpFloater = null; transition = null;
   levelMapVisible = true;   // auto-show minimap on level entry for orientation
   mapAutoDismissed = false;
   // Place player at new Start room spawn point
@@ -1537,9 +1538,17 @@ function addXP(amount) {
   // magnet) reopen it endlessly. The player opens the tree on demand with S;
   // renderSkillPrompt() cues them when points are waiting. while() banks all
   // pending levels from a single large award (e.g. the boss XP burst).
+  var leveled = false;
   while (xp >= xpToNext) {
     xp -= xpToNext;
     skillPoints += 1;
+    leveled = true;
+  }
+  // Moment-of-impact feedback so a banked skill point reads instantly, even
+  // though the skill tree stays closed until the player opens it (S/Tab).
+  if (leveled) {
+    levelUpFloater = { alpha: 1.0, timer: 1.4 };
+    playTone({ type: "triangle", freq: 523, endFreq: 1047, dur: 0.28, gain: 0.14 });
   }
 }
 
@@ -2212,6 +2221,23 @@ function renderClearedFloater() {
   ctx.restore();
 }
 
+// renderLevelUpFloater() — gold "LEVEL UP" cue shown briefly when a skill point is
+// banked. Offset below center to avoid overlapping the "CLEARED" floater. Timer
+// decrement handled in update(dt). Called outside the camera sandwich.
+function renderLevelUpFloater() {
+  if (!levelUpFloater || levelUpFloater.alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = levelUpFloater.alpha;
+  ctx.font = "bold 28px 'Segoe UI', system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = COLORS.gold;
+  ctx.shadowColor = COLORS.gold;
+  ctx.shadowBlur = 20;
+  ctx.fillText("LEVEL UP", W / 2, H / 2 + 70);
+  ctx.restore();
+}
+
 // checkDoorTraversal() — detects when the player steps onto a door tile and starts
 // a fade-out transition toward the connected room. Only fires when doors are open
 // and no transition is already in progress.
@@ -2778,6 +2804,11 @@ function update(dt) {
       clearedFloater.timer -= dt;
       clearedFloater.alpha = Math.max(0, clearedFloater.timer / 1.5);
       if (clearedFloater.timer <= 0) clearedFloater = null;
+    }
+    if (levelUpFloater) {
+      levelUpFloater.timer -= dt;
+      levelUpFloater.alpha = Math.max(0, levelUpFloater.timer / 1.4);
+      if (levelUpFloater.timer <= 0) levelUpFloater = null;
     }
     // checkDoorTraversal must run before updateTransition: the guard `!transition` inside
     // checkDoorTraversal relies on transition being null from the previous frame.
@@ -3374,6 +3405,7 @@ function renderPlaying() {
   renderObjectiveHint();
   renderSkillPrompt();
   renderClearedFloater();
+  renderLevelUpFloater();
   renderTransitionOverlay();
 }
 
