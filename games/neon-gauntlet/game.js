@@ -1317,6 +1317,7 @@ document.addEventListener("keydown", function(e) {
       if (modifierDraftStep === 0) {
         pendingModifierChoice = idx;
         modifierDraftStep = 1;
+        playTone({ type: "sine", freq: 700, endFreq: 950, dur: 0.12, gain: 0.12 }); // blessing pick
       } else if (modifierDraftStep === 1) {
         // Guard: pendingModifierChoice must be valid (T-45-03b)
         if (pendingModifierChoice < 0) return;
@@ -1324,6 +1325,7 @@ document.addEventListener("keydown", function(e) {
         NEGATIVE_MODIFIERS[idx].apply(player);
         modifierDraftStep = 0;
         pendingModifierChoice = -1;
+        playTone({ type: "triangle", freq: 440, endFreq: 660, dur: 0.2, gain: 0.13 }); // draft confirmed
         advanceLevel();
       }
     }
@@ -1353,6 +1355,9 @@ document.addEventListener("keydown", function(e) {
         xp -= sitem.cost;
         sitem.apply(player);
         sitem.sold = true;
+        playTone({ type: "triangle", freq: 587, endFreq: 880, dur: 0.16, gain: 0.14 }); // purchase
+      } else {
+        playTone({ type: "square", freq: 200, endFreq: 120, dur: 0.12, gain: 0.10 }); // denied
       }
     } else if (e.key === "Escape" || e.key === "e" || e.key === "E") {
       gameState = GAME_STATE.PLAYING;
@@ -1633,6 +1638,8 @@ function investSkill(branchKey) {
   skillPoints -= skillDef.cost;
   skillDef.apply(player);
   tiers[branchKey] = tier + 1;
+  // Confirmation chime so investing a point feels committed.
+  playTone({ type: "triangle", freq: 660, endFreq: 990, dur: 0.12, gain: 0.12 });
   // Check fusion unlock conditions
   for (var fi = 0; fi < FUSION_SKILLS.length; fi++) {
     var fusion = FUSION_SKILLS[fi];
@@ -1642,6 +1649,8 @@ function investSkill(branchKey) {
         player.fusionUnlocked.indexOf(fusion.name) === -1) {
       fusion.apply(player);
       player.fusionUnlocked.push(fusion.name);
+      // Richer ascending chord for the rarer fusion unlock.
+      playTone({ type: "sawtooth", freq: 440, endFreq: 1320, dur: 0.45, gain: 0.16 });
     }
   }
 }
