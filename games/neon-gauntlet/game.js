@@ -171,6 +171,7 @@ let skillPoints = 0;      // unspent skill points available to invest
 let skillSelectBranch = 0; // keyboard highlight index 0-4 in skill select overlay
 let levelMapVisible = false; // M key toggle — shows minimap overlay
 let shakeTrauma = 0;      // screen-shake trauma 0..1; rises on player hit, decays each frame
+let hurtFlash = 0;        // red full-screen flash 0..1; set on player hit, decays each frame
 let lastGemPickupTime = 0; // performance.now() ms of last gem pickup (cascade chime)
 let gemPickupStreak = 0;   // consecutive rapid pickups -> rising chime pitch
 let mapAutoDismissed = true; // true once the level-entry minimap auto-show is dismissed
@@ -1214,6 +1215,7 @@ function restartGame() {
   distMap = null; lastPlayerTile = { r: -1, c: -1 };
   aimTarget = null; aimGrace = 0; fireCooldown = 0;
   gemPickupStreak = 0; lastGemPickupTime = 0;
+  shakeTrauma = 0; hurtFlash = 0;
   generateLevel(1, Math.floor(Date.now() / 1000));
   player = {
     x: (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE,
@@ -1646,6 +1648,15 @@ function renderGems() {
   }
 }
 
+// registerPlayerHit() — shared feedback for every point of contact damage:
+// screen shake, a red hurt flash, and a low thud. Called from all three damage
+// sites (sentinel shot, sniper shot, enemy contact) right after hp is decremented.
+function registerPlayerHit() {
+  shakeTrauma = Math.min(1, shakeTrauma + 0.45);
+  hurtFlash = 1;
+  playTone({ type: "square", freq: 180, endFreq: 70, dur: 0.16, gain: 0.16 });
+}
+
 // updateSentinelShots(dt) — moves sentinel homing projectiles toward player.
 // Re-aims each frame; wall hit or 4s lifetime destroys shot.
 // Player contact removes shot without damage (HP system added in Phase 44).
@@ -1689,7 +1700,7 @@ function updateSentinelShots(dt) {
     if (Math.sqrt(pdx * pdx + pdy * pdy) < (4 + player.r)) {
       if (player.invuln <= 0) {
         player.hp -= 1;
-        shakeTrauma = Math.min(1, shakeTrauma + 0.45);
+        registerPlayerHit();
         var sInvDur = player.invulnDuration || INVULN_DURATION;
         player.invuln = sInvDur;
         if (player.hp <= 0) gameState = GAME_STATE.DEAD;
@@ -1907,7 +1918,7 @@ function updateEnemies(dt) {
         var perpDist = Math.sqrt((player.x - closestX) * (player.x - closestX) + (player.y - closestY) * (player.y - closestY));
         if (perpDist < 6 && player.invuln <= 0) {
           player.hp -= 1;
-          shakeTrauma = Math.min(1, shakeTrauma + 0.45);
+          registerPlayerHit();
           var snInvDur = player.invulnDuration || INVULN_DURATION;
           player.invuln = snInvDur;
           if (player.hp <= 0) gameState = GAME_STATE.DEAD;
@@ -2011,7 +2022,7 @@ function updateEnemies(dt) {
     var cdy = player.y - e.y;
     if (Math.sqrt(cdx * cdx + cdy * cdy) < (e.r + player.r) && player.invuln <= 0) {
       player.hp -= ENEMY_CONTACT_DAMAGE;
-      shakeTrauma = Math.min(1, shakeTrauma + 0.45);
+      registerPlayerHit();
       var invDur = player.invulnDuration || INVULN_DURATION;
       player.invuln = invDur;
       if (player.hp <= 0) gameState = GAME_STATE.DEAD;
@@ -2800,6 +2811,7 @@ function update(dt) {
     updateSentinelShots(dt);
     updateParticles(dt);
     if (shakeTrauma > 0) shakeTrauma = Math.max(0, shakeTrauma - 8 * dt);
+    if (hurtFlash > 0) hurtFlash = Math.max(0, hurtFlash - 5 * dt);
     if (clearedFloater) {
       clearedFloater.timer -= dt;
       clearedFloater.alpha = Math.max(0, clearedFloater.timer / 1.5);
@@ -2906,6 +2918,16 @@ function renderHpBar() {
     }
     ctx.fillRect(12 + i * 18, 12, 16, 8);
   }
+  ctx.restore();
+}
+
+// renderHurtFlash() — brief red wash over the whole screen the instant the player
+// takes damage. Decays in update(dt); pairs with the screen shake from registerPlayerHit().
+function renderHurtFlash() {
+  if (hurtFlash <= 0) return;
+  ctx.save();
+  ctx.fillStyle = "rgba(255,59,107," + (hurtFlash * 0.32).toFixed(3) + ")";
+  ctx.fillRect(0, 0, W, H);
   ctx.restore();
 }
 
@@ -3422,6 +3444,7 @@ function renderPlaying() {
   // HP is shown by the DOM HUD bar (updateHud); the old canvas renderHpBar()
   // is retired to avoid two HP representations (kept defined but uncalled).
   renderLowHpVignette();
+  renderHurtFlash();
   renderLevelMap();
   renderObjectiveHint();
   renderSkillPrompt();
