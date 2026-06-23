@@ -2909,6 +2909,26 @@ function renderHpBar() {
   ctx.restore();
 }
 
+// renderLowHpVignette() — pulsing red edge vignette when the player is near death.
+// Screen-space; drawn after the camera sandwich. Ramps in below 40% HP and pulses
+// faster as HP drops, so danger is felt peripherally without watching the HUD bar.
+function renderLowHpVignette() {
+  if (!player) return;
+  var frac = player.hp / player.maxHp;
+  if (frac > 0.4) return;
+  // Intensity 0..1 as HP falls from 40% to 0%; pulse speed rises with intensity.
+  var intensity = Math.min(1, (0.4 - frac) / 0.4);
+  var pulse = 0.55 + 0.45 * Math.abs(Math.sin(Date.now() / (260 - 120 * intensity)));
+  var alpha = 0.18 + 0.40 * intensity * pulse;
+  ctx.save();
+  var grad = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.28, W / 2, H / 2, Math.max(W, H) * 0.62);
+  grad.addColorStop(0, "rgba(255,59,107,0)");
+  grad.addColorStop(1, "rgba(255,59,107," + alpha.toFixed(3) + ")");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
 // renderLevelMap() — M key minimap overlay (top-right corner).
 // Shows all rooms in the current level colored by type; current room has a white border;
 // cleared rooms show a check mark.
@@ -3401,6 +3421,7 @@ function renderPlaying() {
   // Step 4 — HUD overlays outside camera transform (screen-space)
   // HP is shown by the DOM HUD bar (updateHud); the old canvas renderHpBar()
   // is retired to avoid two HP representations (kept defined but uncalled).
+  renderLowHpVignette();
   renderLevelMap();
   renderObjectiveHint();
   renderSkillPrompt();
