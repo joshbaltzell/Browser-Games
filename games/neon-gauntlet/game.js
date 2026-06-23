@@ -1343,6 +1343,12 @@ document.addEventListener("keydown", function(e) {
     if (e.key === "m" || e.key === "M") {
       levelMapVisible = !levelMapVisible;
     }
+  } else if (gameState === GAME_STATE.DEAD) {
+    // Keyboard restart so players don't have to find the click target.
+    if (e.key === "r" || e.key === "R" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      restartGame();
+    }
   } else if (gameState === GAME_STATE.SHOP) {
     if (e.key === "1" || e.key === "2" || e.key === "3") {
       e.preventDefault();
@@ -3314,6 +3320,15 @@ function renderDead() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText("RESTART", W / 2, btnY + btnH / 2);
+  ctx.restore();
+
+  // Input hint
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "12px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = "#9a9ac0";
+  ctx.fillText("click  ·  or press R / Enter", W / 2, btnY + btnH + 18);
   ctx.restore();
 }
 
