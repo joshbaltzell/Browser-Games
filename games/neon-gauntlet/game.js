@@ -118,6 +118,11 @@ const NEGATIVE_MODIFIERS = [
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
+// HUD DOM elements (script runs at end of <body>, so these already exist).
+const hpFillEl = document.getElementById("hp-fill");
+const xpFillEl = document.getElementById("xp-fill");
+const levelLabelEl = document.getElementById("level");
+
 let W = 0;
 let H = 0;
 function resize() {
@@ -2718,7 +2723,20 @@ function updateBullets(dt) {
   }
 }
 
+// updateHud() — sync the DOM HUD (HP/XP bars + level label) to game state each
+// frame. Runs in every state so it never freezes (e.g. XP spent in the shop).
+function updateHud() {
+  if (hpFillEl && player) {
+    hpFillEl.style.width = Math.max(0, player.hp / player.maxHp * 100) + "%";
+  }
+  if (xpFillEl) {
+    xpFillEl.style.width = Math.max(0, Math.min(100, (xp / xpToNext) * 100)) + "%";
+  }
+  if (levelLabelEl) levelLabelEl.textContent = currentLevelNum;
+}
+
 function update(dt) {
+  updateHud();
   if (gameState === GAME_STATE.BOSS_CLEAR) {
     bossClearTimer -= dt;
     if (bossClearTimer <= 0) {
@@ -3326,7 +3344,8 @@ function renderPlaying() {
   if (camera) camera.end(ctx);
 
   // Step 4 — HUD overlays outside camera transform (screen-space)
-  renderHpBar();
+  // HP is shown by the DOM HUD bar (updateHud); the old canvas renderHpBar()
+  // is retired to avoid two HP representations (kept defined but uncalled).
   renderLevelMap();
   renderObjectiveHint();
   renderClearedFloater();
