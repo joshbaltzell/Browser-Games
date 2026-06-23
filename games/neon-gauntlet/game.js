@@ -2850,6 +2850,36 @@ function renderTitle() {
   ctx.fillStyle = "#05050c";
   ctx.fillRect(0, 0, W, H);
 
+  // Drifting neon motes — lazily seeded, animated each frame, wrapped at edges.
+  // Gives the menu ambient life without any assets. Drawn behind the grid + wordmark.
+  if (titleMotes === null) {
+    titleMotes = [];
+    var moteColors = [COLORS.cyan, COLORS.purple, COLORS.pink];
+    for (var mi = 0; mi < 44; mi++) {
+      titleMotes.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: (Math.random() * 2 - 1) * 12,
+        vy: (Math.random() * 2 - 1) * 12,
+        r: 1 + Math.random() * 2.5,
+        color: moteColors[mi % moteColors.length],
+        alpha: 0.15 + Math.random() * 0.35,
+      });
+    }
+  }
+  ctx.save();
+  for (var mj = 0; mj < titleMotes.length; mj++) {
+    var mo = titleMotes[mj];
+    // ~60fps fixed step is fine for decoration; wrap around the screen edges.
+    mo.x += mo.vx * 0.016;
+    mo.y += mo.vy * 0.016;
+    if (mo.x < -4) mo.x = W + 4; else if (mo.x > W + 4) mo.x = -4;
+    if (mo.y < -4) mo.y = H + 4; else if (mo.y > H + 4) mo.y = -4;
+    ctx.globalAlpha = mo.alpha;
+    glowCircle(mo.x, mo.y, mo.r, mo.color, 8);
+  }
+  ctx.restore();
+
   // Decorative grid
   ctx.save();
   ctx.globalAlpha = 0.04;
