@@ -178,6 +178,7 @@ let titleMotes = null;    // lazily-seeded drifting motes behind the title wordm
 let bossBanner = 0;       // seconds remaining on the "⚠ BOSS ⚠" intro banner
 let bestRun = null;       // { level, rooms, kills } loaded from localStorage; null if unavailable
 let deathRecorded = false; // guards one-time best-run write on the DEAD screen
+let lastRunWasRecord = false; // true if the most recent death beat the prior best
 let lastGemPickupTime = 0; // performance.now() ms of last gem pickup (cascade chime)
 let gemPickupStreak = 0;   // consecutive rapid pickups -> rising chime pitch
 let mapAutoDismissed = true; // true once the level-entry minimap auto-show is dismissed
@@ -1208,6 +1209,34 @@ function handleFirstGesture() {
 }
 document.addEventListener("keydown", handleFirstGesture);
 document.addEventListener("pointerup", handleFirstGesture);
+
+// loadBestRun() — read the persisted best run from localStorage into bestRun.
+// localStorage can throw or be unavailable under file:// — failures leave bestRun null.
+function loadBestRun() {
+  try {
+    var raw = localStorage.getItem("neon_gauntlet_best");
+    if (raw) {
+      var parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.level === "number") bestRun = parsed;
+    }
+  } catch (e) { bestRun = null; }
+}
+
+// recordRun() — merge the just-ended run into the per-field best and persist it.
+// Returns true if this run set a new record (higher level, or same level + more kills).
+function recordRun() {
+  var run = { level: currentLevelNum, rooms: roomsCleared, kills: killCount };
+  var isRecord = !bestRun || run.level > bestRun.level ||
+                 (run.level === bestRun.level && run.kills > bestRun.kills);
+  var merged = {
+    level: Math.max(run.level, bestRun ? bestRun.level : 0),
+    rooms: Math.max(run.rooms, bestRun ? bestRun.rooms : 0),
+    kills: Math.max(run.kills, bestRun ? bestRun.kills : 0),
+  };
+  bestRun = merged;
+  try { localStorage.setItem("neon_gauntlet_best", JSON.stringify(merged)); } catch (e) {}
+  return isRecord;
+}
 
 // restartGame() — resets all run state and begins a fresh level 1 run.
 // Called from the DEAD screen restart button click.
@@ -2954,6 +2983,13 @@ function renderTitle() {
   ctx.font = "15px 'Segoe UI', system-ui, sans-serif";
   ctx.fillStyle = "rgba(154,154,192," + alpha + ")";
   ctx.fillText("PRESS ANY KEY OR CLICK TO START", W / 2, wordmarkY + 120);
+
+  // Persisted best run, if any.
+  if (bestRun) {
+    ctx.font = "13px 'Segoe UI', system-ui, sans-serif";
+    ctx.fillStyle = COLORS.gold;
+    ctx.fillText("BEST  —  LEVEL " + bestRun.level + "  ·  " + bestRun.kills + " KILLS", W / 2, wordmarkY + 152);
+  }
 }
 
 function renderPlayer() {
@@ -3159,6 +3195,12 @@ function renderLevelMap() {
 // renderDead() — full-screen death overlay with stats and restart prompt.
 // Called from render() when gameState === GAME_STATE.DEAD.
 function renderDead() {
+  // Record the run once on first DEAD frame, then read back the merged best.
+  if (!deathRecorded) {
+    lastRunWasRecord = recordRun();
+    deathRecorded = true;
+  }
+
   // Semi-transparent overlay
   ctx.fillStyle = "rgba(5,5,12,0.85)";
   ctx.fillRect(0, 0, W, H);
@@ -3185,6 +3227,25 @@ function renderDead() {
   ctx.fillText("LEVEL  " + (currentLevel ? currentLevel.levelNumber : 1), W / 2, H * 0.50);
   ctx.fillText("ROOMS CLEARED  " + roomsCleared, W / 2, H * 0.57);
   ctx.fillText("KILLS  " + killCount, W / 2, H * 0.64);
+  ctx.restore();
+
+  // Best-run line (persisted across sessions) + a "NEW BEST!" cue when beaten.
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  if (lastRunWasRecord) {
+    ctx.font = "bold 16px 'Segoe UI', system-ui, sans-serif";
+    ctx.fillStyle = COLORS.gold;
+    ctx.shadowColor = COLORS.gold;
+    ctx.shadowBlur = 12;
+    ctx.fillText("★ NEW BEST ★", W / 2, H * 0.685);
+    ctx.shadowBlur = 0;
+  }
+  if (bestRun) {
+    ctx.font = "13px 'Segoe UI', system-ui, sans-serif";
+    ctx.fillStyle = "#9a9ac0";
+    ctx.fillText("BEST  —  LEVEL " + bestRun.level + "  ·  " + bestRun.kills + " KILLS", W / 2, H * 0.71);
+  }
   ctx.restore();
 
   // Restart button — outlined rect with label
@@ -3602,4 +3663,5 @@ function loop(ts) {
   render();
   requestAnimationFrame(loop);
 }
+loadBestRun(); // hydrate persisted best run before the title screen first draws
 requestAnimationFrame(loop);
