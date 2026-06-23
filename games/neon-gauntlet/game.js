@@ -1791,6 +1791,42 @@ function updateSentinelShots(dt) {
 }
 
 // updateEnemies(dt) — routes each alive enemy to its type-specific movement.
+// stepBFSChase(e, dt) — move enemy one step down the shared BFS flow field toward
+// the player (descend distMap to the lowest-distance passable neighbor). This is the
+// same maze-routing logic the Stalker/Boss use; factored out so the Ambusher can
+// route around walls when it has no line of sight instead of jamming straight-line.
+function stepBFSChase(e, dt) {
+  if (distMap === null || !currentRoom) return;
+  var cols = currentRoom.cols, rows = currentRoom.rows;
+  var er = Math.floor(e.y / TILE_SIZE);
+  var ec = Math.floor(e.x / TILE_SIZE);
+  var best = Infinity, bestRow = er, bestCol = ec;
+  var dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (var d = 0; d < 4; d++) {
+    var nr = er + dirs[d][0];
+    var nc = ec + dirs[d][1];
+    if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+    var idx = nr * cols + nc;
+    if (currentRoom.grid[idx] === 1) continue; // wall
+    var val = distMap[idx];
+    if (val < best) { best = val; bestRow = nr; bestCol = nc; }
+  }
+  var tx = (bestCol + 0.5) * TILE_SIZE;
+  var ty = (bestRow + 0.5) * TILE_SIZE;
+  var ddx = tx - e.x, ddy = ty - e.y;
+  var dlen = Math.sqrt(ddx * ddx + ddy * ddy);
+  if (dlen <= 0) return;
+  var mx = (ddx / dlen) * e.speed * dt;
+  var my = (ddy / dlen) * e.speed * dt;
+  // Axis-split solid check (same pattern as movePlayer / Stalker).
+  var tc2 = Math.floor((e.x + mx) / TILE_SIZE);
+  var tr2 = Math.floor(e.y / TILE_SIZE);
+  if (tc2 >= 0 && tc2 < cols && tr2 >= 0 && tr2 < rows && currentRoom.grid[tr2 * cols + tc2] !== 1) e.x += mx;
+  var tc3 = Math.floor(e.x / TILE_SIZE);
+  var tr3 = Math.floor((e.y + my) / TILE_SIZE);
+  if (tc3 >= 0 && tc3 < cols && tr3 >= 0 && tr3 < rows && currentRoom.grid[tr3 * cols + tc3] !== 1) e.y += my;
+}
+
 // Stalker: BFS gradient descent via distMap. Rusher: charge+wall-bounce.
 // AMBUSHER and SENTINEL handled in Plan 03.
 function updateEnemies(dt) {
@@ -1889,6 +1925,13 @@ function updateEnemies(dt) {
       e.y = rny;
 
     } else if (e.type === "AMBUSHER") {
+      // No line of sight → route through the maze via the shared BFS flow field
+      // (previously it only did straight-line steering and jammed on walls).
+      // With LOS it keeps its identity: a straight lunge toward the predicted
+      // intercept point to cut the player off.
+      if (distMap !== null && !hasLOS(e.x, e.y, player.x, player.y)) {
+        stepBFSChase(e, dt);
+      } else {
       // Velocity-prediction intercept
       var apx = player.x + player.vx * 1.5;
       var apy = player.y + player.vy * 1.5;
@@ -1917,6 +1960,7 @@ function updateEnemies(dt) {
           e.y = e.y + amy;
         }
       }
+      } // end LOS-lunge else (no-LOS path uses stepBFSChase above)
 
     } else if (e.type === "SENTINEL") {
       // Stationary — only runs state machine
