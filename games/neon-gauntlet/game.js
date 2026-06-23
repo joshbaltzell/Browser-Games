@@ -1295,6 +1295,12 @@ document.addEventListener("keydown", function(e) {
       }
     }
   } else if (gameState === GAME_STATE.PLAYING) {
+    if (e.key === "p" || e.key === "P" || e.key === "Escape") {
+      e.preventDefault();
+      paused = !paused;
+      return; // toggling pause consumes the key
+    }
+    if (paused) return; // swallow other gameplay inputs while paused
     if (e.key === "Tab") {
       e.preventDefault();
       gameState = GAME_STATE.SKILL_SELECT;
@@ -2805,6 +2811,7 @@ function update(dt) {
   }
   if (gameState === GAME_STATE.SHOP) return;
   if (gameState === GAME_STATE.PLAYING) {
+    if (paused) return; // frozen — no movement/physics/AI while paused
     movePlayer(dt);
     if (player && player.invuln > 0) player.invuln = Math.max(0, player.invuln - dt);
     updateCamera();
@@ -2931,6 +2938,26 @@ function renderHpBar() {
     }
     ctx.fillRect(12 + i * 18, 12, 16, 8);
   }
+  ctx.restore();
+}
+
+// renderPauseOverlay() — dim wash + "PAUSED" text shown over the frozen room.
+function renderPauseOverlay() {
+  if (!paused) return;
+  ctx.save();
+  ctx.fillStyle = "rgba(5,5,12,0.66)";
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 44px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLORS.cyan;
+  ctx.shadowColor = COLORS.cyan;
+  ctx.shadowBlur = 22;
+  ctx.fillText("PAUSED", W / 2, H / 2 - 10);
+  ctx.shadowBlur = 0;
+  ctx.font = "15px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = "#9a9ac0";
+  ctx.fillText("Press P or Esc to resume", W / 2, H / 2 + 30);
   ctx.restore();
 }
 
@@ -3483,6 +3510,7 @@ function renderPlaying() {
   renderClearedFloater();
   renderLevelUpFloater();
   renderTransitionOverlay();
+  renderPauseOverlay();
 }
 
 function render() {
