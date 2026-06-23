@@ -1256,14 +1256,17 @@ document.addEventListener("keydown", function(e) {
   }
 });
 
-// Skill select keyboard handler — invest (1-5), continue (S/Enter/Esc), open from PLAYING (S)
+// Skill select keyboard handler — invest (1-5), close (Tab/Enter/Esc), open from PLAYING (Tab).
+// NOTE: open/close is Tab, NOT S — S is the move-down key (WASD) and double-binding it
+// opened the skill tree every time the player moved down.
 document.addEventListener("keydown", function(e) {
   var branchKeys = ["MARKSMAN", "PHANTOM", "DEMOLITIONS", "CONDUCTOR", "HUNTER"];
   if (gameState === GAME_STATE.SKILL_SELECT) {
     if (e.key >= "1" && e.key <= "5") {
       e.preventDefault();
       investSkill(branchKeys[Number(e.key) - 1]);
-    } else if (e.key === "s" || e.key === "S" || e.key === "Enter" || e.key === "Escape") {
+    } else if (e.key === "Tab" || e.key === "Enter" || e.key === "Escape") {
+      e.preventDefault();
       gameState = GAME_STATE.PLAYING;
     }
   } else if (gameState === GAME_STATE.MODIFIER_DRAFT) {
@@ -1286,7 +1289,8 @@ document.addEventListener("keydown", function(e) {
       }
     }
   } else if (gameState === GAME_STATE.PLAYING) {
-    if (e.key === "s" || e.key === "S") {
+    if (e.key === "Tab") {
+      e.preventDefault();
       gameState = GAME_STATE.SKILL_SELECT;
     }
     if (e.key === "m" || e.key === "M") {
@@ -3222,7 +3226,7 @@ function renderSkillSelect() {
   // Footer
   ctx.font = "14px 'Segoe UI', system-ui, sans-serif";
   ctx.fillStyle = "rgba(255,255,255,0.6)";
-  ctx.fillText("Press 1-5 to invest  |  S / Enter / Esc to continue", W / 2, H - 30);
+  ctx.fillText("Press 1-5 to invest  |  Tab / Enter / Esc to continue", W / 2, H - 30);
 
   ctx.restore();
 }
@@ -3324,7 +3328,7 @@ function renderSkillPrompt() {
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
   var label = skillPoints === 1 ? "1 SKILL POINT" : (skillPoints + " SKILL POINTS");
-  ctx.fillText("★ " + label + " — press S", W / 2, H - 16);
+  ctx.fillText("★ " + label + " — press TAB", W / 2, H - 16);
   ctx.restore();
 }
 
