@@ -167,6 +167,7 @@ let levelMapVisible = false; // M key toggle — shows minimap overlay
 let shakeTrauma = 0;      // screen-shake trauma 0..1; rises on player hit, decays each frame
 let lastGemPickupTime = 0; // performance.now() ms of last gem pickup (cascade chime)
 let gemPickupStreak = 0;   // consecutive rapid pickups -> rising chime pitch
+let mapAutoDismissed = true; // true once the level-entry minimap auto-show is dismissed
 let modifierDraftStep = 0;    // 0 = blessing pick, 1 = curse pick
 let pendingModifierChoice = -1; // index of chosen blessing awaiting curse selection
 let shopItems = [];
@@ -1306,7 +1307,19 @@ document.addEventListener("keydown", function(e) {
 });
 
 // Movement key tracking — unconditional, all game states
-document.addEventListener("keydown", function(e) { keys[e.key] = true; });
+document.addEventListener("keydown", function(e) {
+  keys[e.key] = true;
+  // First movement input after a level-entry auto-show dismisses the minimap.
+  if (levelMapVisible && !mapAutoDismissed) {
+    var mk = e.key;
+    if (mk === "w" || mk === "W" || mk === "a" || mk === "A" ||
+        mk === "s" || mk === "S" || mk === "d" || mk === "D" ||
+        mk === "ArrowUp" || mk === "ArrowDown" || mk === "ArrowLeft" || mk === "ArrowRight") {
+      levelMapVisible = false;
+      mapAutoDismissed = true;
+    }
+  }
+});
 document.addEventListener("keyup",   function(e) { keys[e.key] = false; });
 
 // ----------------------------------------------------------------------------
@@ -1493,7 +1506,8 @@ function advanceLevel() {
   // Reset all per-room state
   enemies = []; gems = []; sentinelShots = []; bullets = [];
   doorsSealed = false; clearedFloater = null; transition = null;
-  levelMapVisible = false;
+  levelMapVisible = true;   // auto-show minimap on level entry for orientation
+  mapAutoDismissed = false;
   // Place player at new Start room spawn point
   player.x = (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE;
   player.y = (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE;
@@ -2913,12 +2927,23 @@ function renderLevelMap() {
       ctx.restore();
     }
 
-    // Cleared rooms: checkmark
+    // Cleared rooms: checkmark; uncleared non-START rooms: a type badge.
     if (room.cleared === true) {
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("✓", cellX + CELL_W / 2, cellY + CELL_H / 2);
+    } else if (room.type !== "START") {
+      var badge = { NORMAL: "N", ELITE: "E", SHOP: "$", BOSS: "B" }[room.type] || "?";
+      ctx.save();
+      ctx.font = "bold 10px 'Segoe UI', system-ui, sans-serif";
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowColor = "rgba(0,0,0,0.85)";
+      ctx.shadowBlur = 2;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(badge, cellX + CELL_W / 2, cellY + CELL_H / 2);
+      ctx.restore();
     }
   }
 
