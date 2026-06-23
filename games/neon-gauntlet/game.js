@@ -1140,7 +1140,7 @@ function handleFirstGesture() {
     x: (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE,
     y: (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE,
     r: 6,
-    speed: 100,
+    speed: 150,
     vx: 0,
     vy: 0,
     hp: 5,
@@ -1183,7 +1183,7 @@ function restartGame() {
     x: (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE,
     y: (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE,
     r: 6,
-    speed: 100,
+    speed: 150,
     vx: 0,
     vy: 0,
     hp: 5,
@@ -2659,11 +2659,18 @@ function renderTitle() {
   ctx.shadowColor = "transparent";
   ctx.fillText("DUNGEON CRAWLER", W / 2, wordmarkY + 28);
 
+  // How to play — controls + objective (onboarding clarity)
+  ctx.font = "14px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = "#c8c8e0";
+  ctx.fillText("WASD / ARROW KEYS to move  —  your weapon fires automatically", W / 2, wordmarkY + 62);
+  ctx.fillStyle = "#9a9ac0";
+  ctx.fillText("Clear every room to open the doors, then descend.  Grow stronger and beat the boss.", W / 2, wordmarkY + 84);
+
   // Prompt with pulsing opacity
   const alpha = 0.45 + 0.55 * Math.abs(Math.sin(Date.now() / 600));
   ctx.font = "15px 'Segoe UI', system-ui, sans-serif";
   ctx.fillStyle = "rgba(154,154,192," + alpha + ")";
-  ctx.fillText("PRESS ANY KEY OR CLICK TO START", W / 2, H * 0.42 + 56);
+  ctx.fillText("PRESS ANY KEY OR CLICK TO START", W / 2, wordmarkY + 120);
 }
 
 function renderPlayer() {
@@ -3094,6 +3101,27 @@ function renderBullets() {
   }
 }
 
+// renderObjectiveHint() — first-level onboarding cue. While a room is sealed
+// with enemies still alive on level 1, remind the player of the core loop.
+// Auto-hides once the room is cleared and never shows again past level 1.
+function renderObjectiveHint() {
+  if (currentLevelNum !== 1 || !doorsSealed) return;
+  var anyAlive = false;
+  for (var i = 0; i < enemies.length; i++) {
+    if (enemies[i].alive) { anyAlive = true; break; }
+  }
+  if (!anyAlive) return;
+  ctx.save();
+  ctx.font = "15px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = "rgba(200,200,224,0.9)";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.shadowColor = COLORS.cyan;
+  ctx.shadowBlur = 8;
+  ctx.fillText("Defeat all enemies to open the doors", W / 2, 16);
+  ctx.restore();
+}
+
 function renderPlaying() {
   // Step 1 — Clear to background
   ctx.fillStyle = "#05050c";
@@ -3131,6 +3159,7 @@ function renderPlaying() {
   // Step 4 — HUD overlays outside camera transform (screen-space)
   renderHpBar();
   renderLevelMap();
+  renderObjectiveHint();
   renderClearedFloater();
   renderTransitionOverlay();
 }
