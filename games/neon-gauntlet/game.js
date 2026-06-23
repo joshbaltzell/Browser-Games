@@ -165,6 +165,8 @@ let skillPoints = 0;      // unspent skill points available to invest
 let skillSelectBranch = 0; // keyboard highlight index 0-4 in skill select overlay
 let levelMapVisible = false; // M key toggle — shows minimap overlay
 let shakeTrauma = 0;      // screen-shake trauma 0..1; rises on player hit, decays each frame
+let lastGemPickupTime = 0; // performance.now() ms of last gem pickup (cascade chime)
+let gemPickupStreak = 0;   // consecutive rapid pickups -> rising chime pitch
 let modifierDraftStep = 0;    // 0 = blessing pick, 1 = curse pick
 let pendingModifierChoice = -1; // index of chosen blessing awaiting curse selection
 let shopItems = [];
@@ -1204,6 +1206,7 @@ function restartGame() {
   doorsSealed = false; clearedFloater = null; transition = null;
   distMap = null; lastPlayerTile = { r: -1, c: -1 };
   aimTarget = null; aimGrace = 0; fireCooldown = 0;
+  gemPickupStreak = 0; lastGemPickupTime = 0;
   generateLevel(1, Math.floor(Date.now() / 1000));
   player = {
     x: (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE,
@@ -1558,10 +1561,40 @@ function updateGems(dt) {
     gem.vy *= friction;
     gem.x += gem.vx * dt;
     gem.y += gem.vy * dt;
+    // Magnet pull after the room is cleared — sweep gems to the player so
+    // collection isn't a tedious lap. Full-room-diagonal radius => nothing stranded.
+    if (!doorsSealed && currentRoom) {
+      var mx = player.x - gem.x;
+      var my = player.y - gem.y;
+      var mlen = Math.sqrt(mx * mx + my * my);
+      var roomDiag = Math.sqrt(
+        Math.pow(currentRoom.cols * TILE_SIZE, 2) + Math.pow(currentRoom.rows * TILE_SIZE, 2)
+      );
+      if (mlen > 0 && mlen < roomDiag) {
+        gem.vx += (mx / mlen) * 200 * dt;
+        gem.vy += (my / mlen) * 200 * dt;
+      }
+      var gspd = Math.sqrt(gem.vx * gem.vx + gem.vy * gem.vy);
+      if (gspd > 220) { gem.vx = gem.vx / gspd * 220; gem.vy = gem.vy / gspd * 220; }
+    }
     var gx = gem.x - player.x;
     var gy = gem.y - player.y;
     if (Math.sqrt(gx * gx + gy * gy) < 16) {
       gem.alive = false;
+      // Cascade chime: rapid consecutive pickups climb in pitch for a satisfying sweep.
+      var nowMs = (typeof performance !== "undefined") ? performance.now() : 0;
+      if (nowMs - lastGemPickupTime < 150) {
+        gemPickupStreak = Math.min(gemPickupStreak + 1, 6);
+      } else {
+        gemPickupStreak = 0;
+      }
+      lastGemPickupTime = nowMs;
+      playTone({
+        type: "sine",
+        freq: Math.min(660 + gemPickupStreak * 110, 990),
+        endFreq: Math.min(880 + gemPickupStreak * 110, 1100),
+        dur: 0.07, gain: 0.07,
+      });
       addXP(10);
       gems.splice(i, 1);
     }
