@@ -1528,10 +1528,14 @@ function advanceLevel() {
 // addXP() — adds amount to xp; on level-up awards a skill point and opens skill select.
 function addXP(amount) {
   xp += amount;
-  if (xp >= xpToNext) {
+  // Bank skill points on level-up; do NOT force the skill-select modal open.
+  // Auto-opening on every threshold made rapid gem pickups (esp. with the gem
+  // magnet) reopen it endlessly. The player opens the tree on demand with S;
+  // renderSkillPrompt() cues them when points are waiting. while() banks all
+  // pending levels from a single large award (e.g. the boss XP burst).
+  while (xp >= xpToNext) {
     xp -= xpToNext;
     skillPoints += 1;
-    gameState = GAME_STATE.SKILL_SELECT;
   }
 }
 
@@ -3308,6 +3312,22 @@ function renderObjectiveHint() {
   ctx.restore();
 }
 
+// renderSkillPrompt() — non-intrusive cue that skill points are available.
+// Replaces the old auto-open-on-level-up behavior so leveling never interrupts.
+function renderSkillPrompt() {
+  if (!player || skillPoints <= 0) return;
+  ctx.save();
+  ctx.font = "bold 15px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLORS.gold;
+  ctx.shadowColor = COLORS.gold;
+  ctx.shadowBlur = 8;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  var label = skillPoints === 1 ? "1 SKILL POINT" : (skillPoints + " SKILL POINTS");
+  ctx.fillText("★ " + label + " — press S", W / 2, H - 16);
+  ctx.restore();
+}
+
 function renderPlaying() {
   // Step 1 — Clear to background
   ctx.fillStyle = "#05050c";
@@ -3348,6 +3368,7 @@ function renderPlaying() {
   // is retired to avoid two HP representations (kept defined but uncalled).
   renderLevelMap();
   renderObjectiveHint();
+  renderSkillPrompt();
   renderClearedFloater();
   renderTransitionOverlay();
 }
