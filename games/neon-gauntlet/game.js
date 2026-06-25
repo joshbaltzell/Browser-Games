@@ -1857,6 +1857,74 @@ function updateKeycards(dt) {
   }
 }
 
+// renderKeycards() — draws each live keycard in world-space as a pulsing gold glow
+// with a minimal geometric key silhouette. Called inside camera sandwich.
+function renderKeycards() {
+  for (var i = 0; i < keycards.length; i++) {
+    var kc = keycards[i];
+    if (!kc.alive) continue;
+    ctx.save();
+    // Gentle opacity pulse
+    ctx.globalAlpha = 0.75 + 0.25 * Math.abs(Math.sin(Date.now() / 400));
+    // Gold glow circle (bow of the key)
+    glowCircle(kc.x, kc.y, 5, COLORS.gold, 16);
+    // Small inner circle to emphasize the bow
+    ctx.beginPath();
+    ctx.arc(kc.x, kc.y, 3, 0, Math.PI * 2);
+    ctx.strokeStyle = COLORS.gold;
+    ctx.shadowColor = COLORS.gold;
+    ctx.shadowBlur = 8;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Vertical blade stroke extending downward
+    ctx.beginPath();
+    ctx.moveTo(kc.x, kc.y + 3);
+    ctx.lineTo(kc.x, kc.y + 9);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Short horizontal tooth on the blade
+    ctx.beginPath();
+    ctx.moveTo(kc.x, kc.y + 7);
+    ctx.lineTo(kc.x + 3, kc.y + 7);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// renderKeyHUD() — draws the key icon + "KEY" label in screen-space HUD when hasKeycard is true.
+// Positioned to the right of the HP bar segments (outside camera — screen-space).
+function renderKeyHUD() {
+  if (!player || !player.hasKeycard) return;
+  var iconX = 12 + (player.maxHp || 5) * 18 + 14;
+  var iconY = 16;
+  ctx.save();
+  // Bow circle
+  glowCircle(iconX, iconY - 2, 4, COLORS.gold, 10);
+  ctx.strokeStyle = COLORS.gold;
+  ctx.shadowColor = COLORS.gold;
+  ctx.shadowBlur = 8;
+  ctx.lineWidth = 1.5;
+  // Blade
+  ctx.beginPath();
+  ctx.moveTo(iconX, iconY + 2);
+  ctx.lineTo(iconX, iconY + 7);
+  ctx.stroke();
+  // Tooth
+  ctx.beginPath();
+  ctx.moveTo(iconX, iconY + 5);
+  ctx.lineTo(iconX + 3, iconY + 5);
+  ctx.stroke();
+  // "KEY" label
+  ctx.font = "bold 9px 'Segoe UI', system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = COLORS.gold;
+  ctx.shadowBlur = 6;
+  ctx.fillText("KEY", iconX + 8, iconY);
+  ctx.restore();
+}
+
 // registerPlayerHit() — shared feedback for every point of contact damage:
 // screen shake, a red hurt flash, and a low thud. Called from all three damage
 // sites (sentinel shot, sniper shot, enemy contact) right after hp is decremented.
@@ -4052,6 +4120,7 @@ function renderPlaying() {
   renderBullets();
   renderSentinelShots();
   renderGems();
+  renderKeycards();
   renderEnemies();
   renderParticles();
   renderPlayer();
@@ -4061,6 +4130,7 @@ function renderPlaying() {
   // HP is shown by the DOM HUD bar (updateHud); the old canvas renderHpBar()
   // is retired to avoid two HP representations (kept defined but uncalled).
   renderLowHpVignette();
+  renderKeyHUD();
   renderHurtFlash();
   renderBossHealthBar();
   renderLevelMap();
