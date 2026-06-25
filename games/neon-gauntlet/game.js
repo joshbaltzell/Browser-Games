@@ -1248,14 +1248,15 @@ function handleFirstGesture() {
     vy: 0,
     hp: 5,
     maxHp: 5,
-    invuln: 0
+    invuln: 0,
+    hasKeycard: false
   };
   player.skillTiers = { MARKSMAN: 0, PHANTOM: 0, DEMOLITIONS: 0, CONDUCTOR: 0, HUNTER: 0 };
   player.fusionUnlocked = [];
   player.vx = 0; player.vy = 0;
   skillPoints = 0;
   initCamera();
-  enemies = []; gems = []; sentinelShots = []; xp = 0;
+  enemies = []; gems = []; keycards = []; sentinelShots = []; xp = 0;
   killCount = 0; roomsCleared = 0;
   spawnEnemies();
   if (currentRoom && currentRoom.type === "START") currentRoom.cleared = true;
@@ -1301,7 +1302,7 @@ function recordRun() {
 // restartGame() — resets all run state and begins a fresh level 1 run.
 // Called from the DEAD screen restart button click.
 function restartGame() {
-  enemies = []; gems = []; sentinelShots = []; bullets = [];
+  enemies = []; gems = []; keycards = []; sentinelShots = []; bullets = [];
   shopItems = [];
   xp = 0; xpToNext = 100; killCount = 0; roomsCleared = 0;
   currentLevelNum = 1; bossClearTimer = 0;
@@ -1322,7 +1323,8 @@ function restartGame() {
     vy: 0,
     hp: 5,
     maxHp: 5,
-    invuln: 0
+    invuln: 0,
+    hasKeycard: false
   };
   player.skillTiers = { MARKSMAN: 0, PHANTOM: 0, DEMOLITIONS: 0, CONDUCTOR: 0, HUNTER: 0 };
   player.fusionUnlocked = [];
@@ -1698,6 +1700,7 @@ function advanceLevel() {
   generateLevel(currentLevelNum, seed);
   // Reset all per-room state
   enemies = []; gems = []; keycards = []; sentinelShots = []; bullets = [];
+  if (player) player.hasKeycard = false;
   doorsSealed = false; clearedFloater = null; levelUpFloater = null; transition = null;
   muzzleFlash = 0; hurtFlash = 0; shakeTrauma = 0; paused = false; bossBanner = 0;
   levelMapVisible = true;   // auto-show minimap on level entry for orientation
@@ -1831,6 +1834,26 @@ function renderGems() {
     var gem = gems[i];
     if (!gem.alive) continue;
     glowCircle(gem.x, gem.y, 4, COLORS.gold, 14);
+  }
+}
+
+// updateKeycards(dt) — checks player overlap with world keycard pickups.
+// On contact (radius 20px): grants hasKeycard, plays two-note ascending tone, removes pickup.
+function updateKeycards(dt) {
+  if (!player) return;
+  for (var i = keycards.length - 1; i >= 0; i--) {
+    var kc = keycards[i];
+    if (!kc.alive) { keycards.splice(i, 1); continue; }
+    var dx = kc.x - player.x;
+    var dy = kc.y - player.y;
+    if (Math.sqrt(dx * dx + dy * dy) < 20) {
+      kc.alive = false;
+      player.hasKeycard = true;
+      // Two-note ascending signal: C5→E5 feel, quick arpeggio
+      playTone({ type: "triangle", freq: 523, endFreq: 659, dur: 0.12, gain: 0.14 });
+      playTone({ type: "triangle", freq: 659, endFreq: 880, dur: 0.12, gain: 0.10 });
+      keycards.splice(i, 1);
+    }
   }
 }
 
@@ -2660,7 +2683,7 @@ function updateTransition(dt) {
   if (transition.timer <= 0) {
     if (transition.phase === "out") {
       currentRoom = transition.targetRoom;
-      enemies = []; gems = []; sentinelShots = [];
+      enemies = []; gems = []; keycards = []; sentinelShots = [];
       doorsSealed = false;
       clearedFloater = null;
       aimTarget = null; bullets = [];
@@ -3230,6 +3253,7 @@ function update(dt) {
     updateBullets(dt);
     updateEnemies(dt);
     updateGems(dt);
+    updateKeycards(dt);
     updateSentinelShots(dt);
     updateParticles(dt);
     if (shakeTrauma > 0) shakeTrauma = Math.max(0, shakeTrauma - 8 * dt);
