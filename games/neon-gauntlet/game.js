@@ -2194,6 +2194,7 @@ function enemyColorFor(type) {
   if (type === "SENTINEL") return COLORS.gold;
   if (type === "SNIPER") return COLORS.cyan;
   if (type === "CRAWLER") return "#ffd700";
+  if (type === "WARDEN") return COLORS.purple;
   return COLORS.white; // AMBUSHER + default
 }
 
@@ -2328,6 +2329,21 @@ function renderEnemies() {
       } else {
         glowCircle(e.x, e.y, 5, "#ffd700", 9);
       }
+    } else if (e.type === "WARDEN") {
+      // Heavy shielded enemy — purple body, cyan front shield-arc stroke.
+      // Arc spans ±WARDEN_SHIELD_HALF_ARC centered on e.facing so the player can
+      // read exactly which side is blocked and watch it rotate toward them.
+      glowCircle(e.x, e.y, 11, COLORS.purple, 14);
+      ctx.save();
+      ctx.strokeStyle = COLORS.cyan;
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = COLORS.cyan;
+      ctx.shadowBlur = 12;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r + 4, e.facing - WARDEN_SHIELD_HALF_ARC, e.facing + WARDEN_SHIELD_HALF_ARC);
+      ctx.stroke();
+      ctx.restore();
     } else if (e.type === "BOSS") {
       // Core body — large pink glow
       glowCircle(e.x, e.y, 18, COLORS.pink, 24);
