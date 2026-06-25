@@ -40,7 +40,7 @@ const SPAWN_TABLE = {
 };
 const INVULN_DURATION = 1.5;      // seconds of invulnerability after taking a hit
 const ENEMY_CONTACT_DAMAGE = 1;   // HP lost on direct enemy contact
-const WARDEN_TURN_RATE = (120 * Math.PI) / 180;    // radians/sec — angular-speed cap (ENMY-08 criterion 2)
+const WARDEN_TURN_RATE = (60 * Math.PI) / 180;     // radians/sec — angular-speed cap (ENMY-08 criterion 2); 60°/s is outrun-able
 const WARDEN_SHIELD_HALF_ARC = (70 * Math.PI) / 180; // half of the ~140° front shield arc (criterion 1)
 const DETONATOR_BLAST_RADIUS = 28;   // world px (~1.75 tiles) — generous enough to punish camping, escapable by retreating (ENMY-09 criterion 3)
 const DETONATOR_TELEGRAPH = 0.7;     // seconds of pulsing-ring warning before detonation
@@ -2531,7 +2531,9 @@ function checkDoorTraversal() {
     var connKey = a + "-" + b;
     if (!currentLevel.connections[connKey]) return;
 
-    transition = { phase: "out", timer: 0.25, duration: 0.25, targetRoom: targetRoom };
+    // entryDir: the direction the player will enter the target room (opposite of traversal dir)
+    var oppDir = { N: "S", S: "N", E: "W", W: "E" };
+    transition = { phase: "out", timer: 0.25, duration: 0.25, targetRoom: targetRoom, entryDir: oppDir[dir] };
     playTone({ type: "sine", freq: 300, endFreq: 150, dur: 0.20, gain: 0.10 });
   }
 }
@@ -2551,8 +2553,31 @@ function updateTransition(dt) {
       aimTarget = null; bullets = [];
       distMap = null;
       lastPlayerTile = { r: -1, c: -1 };
-      player.x = (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE;
-      player.y = (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE;
+      // Place the player just inside the door they entered from.
+      // entryDir is the direction of the door on the target room's border (e.g. "W" means
+      // the player walked East and arrives through the target room's West door).
+      // Fall back to spawnPoint if the entry door cannot be located.
+      var placed = false;
+      if (transition.entryDir) {
+        var eDir = transition.entryDir;
+        var eRows = currentRoom.rows;
+        var eCols = currentRoom.cols;
+        var eMidR = Math.floor(eRows / 2);
+        var eMidC = Math.floor(eCols / 2);
+        // Interior tile 1 step inward from the door border — guaranteed floor by placeDoors()
+        var eTx, eTy;
+        if      (eDir === "N") { eTy = 1;         eTx = eMidC; }
+        else if (eDir === "S") { eTy = eRows - 2; eTx = eMidC; }
+        else if (eDir === "E") { eTy = eMidR;     eTx = eCols - 2; }
+        else                   { eTy = eMidR;     eTx = 1; }       // "W"
+        player.x = (eTx + 0.5) * TILE_SIZE;
+        player.y = (eTy + 0.5) * TILE_SIZE;
+        placed = true;
+      }
+      if (!placed) {
+        player.x = (currentRoom.spawnPoint.tx + 0.5) * TILE_SIZE;
+        player.y = (currentRoom.spawnPoint.ty + 0.5) * TILE_SIZE;
+      }
       initCamera();
       spawnEnemies();
       transition = { phase: "in", timer: 0.25, duration: 0.25, targetRoom: null };
