@@ -2264,6 +2264,24 @@ function updateEnemies(dt) {
       if (distMap === null) continue; // guard: BFS not yet computed
       stepBFSChase(e, dt);
 
+    } else if (e.type === "GUARDIAN") {
+      // Elite Warden variant — identical capped-turn-rate shield AI, heavier stats.
+      // (a) Rotate facing toward player, clamped to WARDEN_TURN_RATE radians/sec.
+      if (player) {
+        var gDesired = Math.atan2(player.y - e.y, player.x - e.x);
+        var gDelta = gDesired - e.facing;
+        // Normalize to -PI..PI (shortest angular path)
+        while (gDelta >  Math.PI) gDelta -= Math.PI * 2;
+        while (gDelta < -Math.PI) gDelta += Math.PI * 2;
+        var gMaxTurn = WARDEN_TURN_RATE * dt;
+        if (gDelta >  gMaxTurn) gDelta =  gMaxTurn;
+        if (gDelta < -gMaxTurn) gDelta = -gMaxTurn;
+        e.facing += gDelta;
+      }
+      // (b) Chase via the shared BFS flow field — no per-enemy pathfinding (same as Warden).
+      if (distMap === null) continue; // guard: BFS not yet computed
+      stepBFSChase(e, dt);
+
     } else if (e.type === "DETONATOR") {
       // State machine: charge → telegraph → detonate+die
       if (e.state === "charge") {
@@ -2315,6 +2333,7 @@ function enemyColorFor(type) {
   if (type === "CRAWLER") return "#ffd700";
   if (type === "WARDEN") return COLORS.purple;
   if (type === "DETONATOR") return COLORS.orange;
+  if (type === "GUARDIAN") return COLORS.gold;
   return COLORS.white; // AMBUSHER + default
 }
 
@@ -2480,6 +2499,20 @@ function renderEnemies() {
       ctx.strokeStyle = COLORS.cyan;
       ctx.lineWidth = 2.5;
       ctx.shadowColor = COLORS.cyan;
+      ctx.shadowBlur = 12;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r + 4, e.facing - WARDEN_SHIELD_HALF_ARC, e.facing + WARDEN_SHIELD_HALF_ARC);
+      ctx.stroke();
+      ctx.restore();
+    } else if (e.type === "GUARDIAN") {
+      // Elite Vault guardian — gold body (larger glow than Warden for elite feel) + gold shield arc.
+      // Distinct from Warden's purple/cyan to signal a special, tougher enemy.
+      glowCircle(e.x, e.y, e.r, COLORS.gold, 20);
+      ctx.save();
+      ctx.strokeStyle = COLORS.gold;
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = COLORS.gold;
       ctx.shadowBlur = 12;
       ctx.globalAlpha = 0.9;
       ctx.beginPath();
@@ -3018,9 +3051,9 @@ function updateBullets(dt) {
       var bdx = nx - en.x;
       var bdy = ny - en.y;
       if (Math.sqrt(bdx * bdx + bdy * bdy) < (3 + en.r)) {
-        // WARDEN shield-arc check — if bullet arrives from the front arc, block it.
+        // WARDEN / GUARDIAN shield-arc check — if bullet arrives from the front arc, block it.
         // Must run BEFORE hp subtraction; also overrides bulletPenetrate.
-        if (en.type === "WARDEN") {
+        if (en.type === "WARDEN" || en.type === "GUARDIAN") {
           var wBulletAngle = Math.atan2(ny - en.y, nx - en.x);
           var wArcDelta = wBulletAngle - en.facing;
           // Normalize to -PI..PI
@@ -3103,6 +3136,14 @@ function updateBullets(dt) {
           if (en.type === "DETONATOR" && !en.detonated) {
             en.detonated = true;
             detonateAt(en.x, en.y);
+          }
+          // GUARDIAN death (ENMY-10): drop keycard at Guardian's position and mark
+          // the Vault room cleared directly. Fires exactly once (single-spawn enemy).
+          if (en.type === "GUARDIAN" && currentRoom && currentRoom.type === "VAULT") {
+            keycards.push({ x: en.x, y: en.y, alive: true });
+            currentRoom.cleared = true;
+            // Short unlock-preview tone to signal the drop
+            playTone({ type: "triangle", freq: 440, endFreq: 660, dur: 0.18, gain: 0.10 });
           }
           checkEnemiesClear(); // runs after sub-Crawlers are in enemies[]
         }
