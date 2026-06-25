@@ -2816,6 +2816,21 @@ function updateBullets(dt) {
       var bdx = nx - en.x;
       var bdy = ny - en.y;
       if (Math.sqrt(bdx * bdx + bdy * bdy) < (3 + en.r)) {
+        // WARDEN shield-arc check — if bullet arrives from the front arc, block it.
+        // Must run BEFORE hp subtraction; also overrides bulletPenetrate.
+        if (en.type === "WARDEN") {
+          var wBulletAngle = Math.atan2(ny - en.y, nx - en.x);
+          var wArcDelta = wBulletAngle - en.facing;
+          // Normalize to -PI..PI
+          while (wArcDelta >  Math.PI) wArcDelta -= Math.PI * 2;
+          while (wArcDelta < -Math.PI) wArcDelta += Math.PI * 2;
+          if (Math.abs(wArcDelta) <= WARDEN_SHIELD_HALF_ARC) {
+            // Bullet hits the shield — spark, consume bullet, no HP change.
+            spawnParticleBurst(nx, ny, COLORS.cyan);
+            hit = true;
+            break; // stop checking other enemies; bullet is consumed
+          }
+        }
         var dmg = player ? (player.bulletDmg || 1) : 1;
         en.hp -= dmg;
         en.hitFlash = 0.08;
