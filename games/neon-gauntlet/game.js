@@ -42,6 +42,9 @@ const INVULN_DURATION = 1.5;      // seconds of invulnerability after taking a h
 const ENEMY_CONTACT_DAMAGE = 1;   // HP lost on direct enemy contact
 const WARDEN_TURN_RATE = (120 * Math.PI) / 180;    // radians/sec — angular-speed cap (ENMY-08 criterion 2)
 const WARDEN_SHIELD_HALF_ARC = (70 * Math.PI) / 180; // half of the ~140° front shield arc (criterion 1)
+const DETONATOR_BLAST_RADIUS = 28;   // world px (~1.75 tiles) — generous enough to punish camping, escapable by retreating (ENMY-09 criterion 3)
+const DETONATOR_TELEGRAPH = 0.7;     // seconds of pulsing-ring warning before detonation
+const DETONATOR_HALT_DIST = 2 * TILE_SIZE; // straight-line trigger range (~2 tiles) to halt and enter telegraph
 
 // ----------------------------------------------------------------------------
 // Skill tree constants
@@ -2208,6 +2211,28 @@ function spawnParticleBurst(x, y, color) {
       vy: (Math.random() * 2 - 1) * 90,
       life: 0.35, maxLife: 0.35, color: color,
     });
+  }
+}
+
+// detonateAt(wx, wy) — Detonator AoE explosion: blast particles, explosion tone,
+// and invuln-aware contact damage to the player if within DETONATOR_BLAST_RADIUS.
+// Idempotent-safe: callers (timer path and bullet-kill path) manage e.alive/e.detonated.
+function detonateAt(wx, wy) {
+  // (a) Blast particles — primary orange burst + secondary gold burst for depth
+  spawnParticleBurst(wx, wy, COLORS.orange);
+  spawnParticleBurst(wx, wy, COLORS.gold);
+  // (b) Explosion tone — low sawtooth sweep (160 → 50 Hz, 0.25s)
+  playTone({ type: "sawtooth", freq: 160, endFreq: 50, dur: 0.25, gain: 0.14 });
+  // (c) Invuln-aware player damage — exact same idiom as enemy contact damage
+  if (player) {
+    var dbdx = player.x - wx;
+    var dbdy = player.y - wy;
+    if (Math.sqrt(dbdx * dbdx + dbdy * dbdy) < DETONATOR_BLAST_RADIUS && player.invuln <= 0) {
+      player.hp -= ENEMY_CONTACT_DAMAGE;
+      registerPlayerHit();
+      player.invuln = player.invulnDuration || INVULN_DURATION;
+      if (player.hp <= 0) gameState = GAME_STATE.DEAD;
+    }
   }
 }
 
