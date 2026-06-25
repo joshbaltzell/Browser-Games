@@ -466,6 +466,60 @@ function generateLevel(levelNumber, seed) {
       typeMap[remainingSlots[ri]] = "NORMAL";
     }
 
+    // VAULT placement (Plan 48-01): pick one off-critical-path NORMAL slot for the Vault.
+    // Step 1: compute the BFS shortest-path set from startSlotIdx to bossSlotIdx.
+    // hopsMap already gives BFS distances from start. Reverse-trace from boss back to start,
+    // at each step following neighbors whose hop count is exactly (current - 1).
+    var criticalPathSet = {};
+    criticalPathSet[startSlotIdx] = true;
+    criticalPathSet[bossSlotIdx]  = true;
+    // frontier starts at boss; trace back via hopsMap
+    var cpFrontier = [bossSlotIdx];
+    while (cpFrontier.length > 0) {
+      var cpNext = [];
+      for (var cpi = 0; cpi < cpFrontier.length; cpi++) {
+        var cpCur = cpFrontier[cpi];
+        var cpRow = Math.floor(cpCur / 4);
+        var cpDirs = [cpCur - 4, cpCur + 4, cpCur + 1, cpCur - 1];
+        for (var cpd = 0; cpd < cpDirs.length; cpd++) {
+          var cpNb = cpDirs[cpd];
+          if (!placedSet[cpNb]) continue;
+          if (cpNb === cpCur + 1 || cpNb === cpCur - 1) {
+            if (Math.floor(cpNb / 4) !== cpRow) continue;
+          }
+          if (cpNb < 0 || cpNb > 15) continue;
+          var cpKey = Math.min(cpCur, cpNb) + "-" + Math.max(cpCur, cpNb);
+          if (!connections[cpKey]) continue;
+          // Neighbor is on the shortest path if its hop count is exactly (cpCur hops - 1)
+          if (hopsMap[cpNb] === hopsMap[cpCur] - 1 && !criticalPathSet[cpNb]) {
+            criticalPathSet[cpNb] = true;
+            cpNext.push(cpNb);
+          }
+        }
+      }
+      cpFrontier = cpNext;
+    }
+
+    // Step 2: find the first remainingSlots[2+] slot not on the critical path — assign VAULT.
+    // Level must have at least 6 rooms (3+ remaining; [0]=ELITE, [1]=SHOP, [2+]=NORMAL candidates).
+    // If no off-path NORMAL candidate exists, return null to trigger retry.
+    if (placedSlots.length < 6) {
+      // Not enough rooms to guarantee an off-path NORMAL slot for VAULT.
+      return null;
+    }
+    var vaultSlot = -1;
+    for (var vi = 2; vi < remainingSlots.length; vi++) {
+      if (!criticalPathSet[remainingSlots[vi]]) {
+        vaultSlot = remainingSlots[vi];
+        break;
+      }
+    }
+    if (vaultSlot === -1) {
+      // All NORMAL candidates are on the critical path — retry.
+      return null;
+    }
+    typeMap[vaultSlot] = "VAULT";
+
     // Build room objects (D-02, D-03)
     var rooms = placedSlots.map(function(slotIdx, id) {
       var type = typeMap[slotIdx];
@@ -556,7 +610,7 @@ function generateLevel(levelNumber, seed) {
     if (room.type === "START" || room.type === "BOSS" || room.type === "SHOP") {
       buildOpenRoom(room);
     } else {
-      // NORMAL or ELITE
+      // NORMAL, ELITE, or VAULT — carved maze interior
       carveRoom(room, carveRng);
     }
   });
@@ -591,7 +645,7 @@ function generateLevel(levelNumber, seed) {
       if (doorUnreachable) break;
     }
 
-    if (doorUnreachable && (room.type === "NORMAL" || room.type === "ELITE")) {
+    if (doorUnreachable && (room.type === "NORMAL" || room.type === "ELITE" || room.type === "VAULT")) {
       // Single retry: re-carve with offset seed.
       var retrySeed = level.seed + 1000 + room.id;
       carveRoom(room, mulberry32(retrySeed));
@@ -3419,6 +3473,7 @@ function renderLevelMap() {
     "ELITE":  COLORS.gold,
     "SHOP":   "#336633",
     "BOSS":   COLORS.pink,
+    "VAULT":  COLORS.gold,
   };
 
   // Draw each room cell
@@ -3451,7 +3506,7 @@ function renderLevelMap() {
       ctx.textBaseline = "middle";
       ctx.fillText("✓", cellX + CELL_W / 2, cellY + CELL_H / 2);
     } else if (room.type !== "START") {
-      var badge = { NORMAL: "N", ELITE: "E", SHOP: "$", BOSS: "B" }[room.type] || "?";
+      var badge = { "NORMAL": "N", "ELITE": "E", "SHOP": "$", "BOSS": "B", "VAULT": "V" }[room.type] || "?";
       ctx.save();
       ctx.font = "bold 10px 'Segoe UI', system-ui, sans-serif";
       ctx.fillStyle = "#ffffff";
