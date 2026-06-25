@@ -1460,30 +1460,34 @@ function spawnEnemies() {
     enemies.push({
       type: types[i],
       x: wx, y: wy,
-      r: types[i] === "SNIPER"  ? 10 :
-         types[i] === "CRAWLER" ? 8 :
-         types[i] === "WARDEN"  ? 11 : 10,
-      hp: types[i] === "STALKER" ? 2 :
-          types[i] === "RUSHER"  ? 1 :
-          types[i] === "AMBUSHER"? 2 :
-          types[i] === "SENTINEL"? 3 :
-          types[i] === "SNIPER"  ? 2 :
-          types[i] === "CRAWLER" ? 2 :
-          types[i] === "WARDEN"  ? 4 : 2,
-      maxHp: types[i] === "STALKER" ? 2 :
-             types[i] === "RUSHER"  ? 1 :
-             types[i] === "AMBUSHER"? 2 :
-             types[i] === "SENTINEL"? 3 :
-             types[i] === "SNIPER"  ? 2 :
-             types[i] === "CRAWLER" ? 2 :
-             types[i] === "WARDEN"  ? 4 : 2,
-      speed: types[i] === "STALKER" ? 55 :
-             types[i] === "RUSHER"  ? 130 :
-             types[i] === "AMBUSHER"? 75 :
-             types[i] === "SENTINEL"? 0 :
-             types[i] === "SNIPER"  ? 0 :
-             types[i] === "CRAWLER" ? 65 :
-             types[i] === "WARDEN"  ? 45 : 55,
+      r: types[i] === "SNIPER"     ? 10 :
+         types[i] === "CRAWLER"   ? 8 :
+         types[i] === "WARDEN"    ? 11 :
+         types[i] === "DETONATOR" ? 9 : 10,
+      hp: types[i] === "STALKER"   ? 2 :
+          types[i] === "RUSHER"    ? 1 :
+          types[i] === "AMBUSHER"  ? 2 :
+          types[i] === "SENTINEL"  ? 3 :
+          types[i] === "SNIPER"    ? 2 :
+          types[i] === "CRAWLER"   ? 2 :
+          types[i] === "WARDEN"    ? 4 :
+          types[i] === "DETONATOR" ? 2 : 2,
+      maxHp: types[i] === "STALKER"   ? 2 :
+             types[i] === "RUSHER"    ? 1 :
+             types[i] === "AMBUSHER"  ? 2 :
+             types[i] === "SENTINEL"  ? 3 :
+             types[i] === "SNIPER"    ? 2 :
+             types[i] === "CRAWLER"   ? 2 :
+             types[i] === "WARDEN"    ? 4 :
+             types[i] === "DETONATOR" ? 2 : 2,
+      speed: types[i] === "STALKER"   ? 55 :
+             types[i] === "RUSHER"    ? 130 :
+             types[i] === "AMBUSHER"  ? 75 :
+             types[i] === "SENTINEL"  ? 0 :
+             types[i] === "SNIPER"    ? 0 :
+             types[i] === "CRAWLER"   ? 65 :
+             types[i] === "WARDEN"    ? 45 :
+             types[i] === "DETONATOR" ? 120 : 55,
       alive: true,
       age: 0
     });
@@ -1517,6 +1521,12 @@ function spawnEnemies() {
       warden.facing = player
         ? Math.atan2(player.y - wy, player.x - wx)
         : -Math.PI / 2;
+    }
+    if (enemies[enemies.length - 1].type === "DETONATOR") {
+      var deto = enemies[enemies.length - 1];
+      deto.state = "charge";
+      deto.detoTimer = 0;   // telegraph countdown — only used once state = "telegraph"
+      deto.detonated = false; // flag prevents double-detonation across timer and bullet-kill paths
     }
   }
   doorsSealed = true;
@@ -2173,6 +2183,32 @@ function updateEnemies(dt) {
       // (b) Chase via the shared BFS flow field — same as Stalker/Ambusher.
       if (distMap === null) continue; // guard: BFS not yet computed
       stepBFSChase(e, dt);
+
+    } else if (e.type === "DETONATOR") {
+      // State machine: charge → telegraph → detonate+die
+      if (e.state === "charge") {
+        // Chase via shared BFS flow field (criterion 5 — no per-enemy pathfinding)
+        if (distMap === null) continue; // guard: BFS not yet computed
+        stepBFSChase(e, dt);
+        // Transition to telegraph when within ~2 tiles straight-line distance
+        if (player) {
+          var detdx = player.x - e.x;
+          var detdy = player.y - e.y;
+          if (Math.sqrt(detdx * detdx + detdy * detdy) <= DETONATOR_HALT_DIST) {
+            e.state = "telegraph";
+            e.detoTimer = DETONATOR_TELEGRAPH;
+          }
+        }
+      } else if (e.state === "telegraph") {
+        // Halted — no movement; countdown to detonation
+        e.detoTimer -= dt;
+        if (e.detoTimer <= 0) {
+          // Timer expired — detonate and die
+          e.detonated = true; // prevent double-detonation from bullet-kill path
+          detonateAt(e.x, e.y);
+          e.alive = false;    // checkEnemiesClear() at loop end handles room-clear gate
+        }
+      }
     }
 
     // Enemy contact damage — runs for all alive enemies after type-specific movement
