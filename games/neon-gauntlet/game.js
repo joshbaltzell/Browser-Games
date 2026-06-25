@@ -156,6 +156,7 @@ let doorsSealed = false;  // true while enemies are alive; seals door traversal
 let enemies = [];         // active enemies for the current room
 let particles = [];       // short-lived death-burst particles: { x,y,vx,vy,life,maxLife,color }
 let gems = [];            // gem drops array: { x, y, vx, vy, alive }
+let keycards = [];        // keycard pickup objects: { x, y, alive } — dropped by Guardian on death
 let sentinelShots = [];   // sentinel projectiles: { x, y, vx, vy, alive, age }
 let xp = 0;               // current XP total
 let xpToNext = 100;       // XP threshold for next level-up
@@ -1480,6 +1481,31 @@ function spawnEnemies() {
     return;
   }
 
+  // Vault room override — spawn one GUARDIAN enemy, seal doors, skip normal SPAWN_TABLE.
+  if (currentRoom.type === "VAULT") {
+    var vaultSpawn = currentRoom.spawnList[0];
+    var vaultX = vaultSpawn ? (vaultSpawn.tx + 0.5) * TILE_SIZE : (currentRoom.cols * TILE_SIZE) / 2;
+    var vaultY = vaultSpawn ? (vaultSpawn.ty + 0.5) * TILE_SIZE : (currentRoom.rows * TILE_SIZE) / 2;
+    var guardian = {
+      type: "GUARDIAN",
+      x: vaultX, y: vaultY,
+      r: 13,
+      hp: 8, maxHp: 8,
+      speed: 40,
+      alive: true,
+      age: 0
+    };
+    // facing: angle from Guardian toward player at spawn; fall back to straight up if no player
+    guardian.facing = player
+      ? Math.atan2(player.y - vaultY, player.x - vaultX)
+      : -Math.PI / 2;
+    enemies.push(guardian);
+    doorsSealed = true;
+    spawnParticleBurst(vaultX, vaultY, COLORS.gold); // guardian materialize pop
+    playTone({ type: "sawtooth", freq: 90, endFreq: 130, dur: 0.5, gain: 0.15 }); // ominous lower intro tone
+    return;
+  }
+
   // Shop room — no combat; populate shop inventory and open shop overlay.
   // One-time per room entry: build the catalog once and persist it on the room
   // so re-entering a cleared shop shows the already-purchased (sold) state
@@ -1671,7 +1697,7 @@ function advanceLevel() {
   var seed = Math.floor(Date.now() / 1000) + currentLevelNum * 997;
   generateLevel(currentLevelNum, seed);
   // Reset all per-room state
-  enemies = []; gems = []; sentinelShots = []; bullets = [];
+  enemies = []; gems = []; keycards = []; sentinelShots = []; bullets = [];
   doorsSealed = false; clearedFloater = null; levelUpFloater = null; transition = null;
   muzzleFlash = 0; hurtFlash = 0; shakeTrauma = 0; paused = false; bossBanner = 0;
   levelMapVisible = true;   // auto-show minimap on level entry for orientation
