@@ -34,9 +34,9 @@ const MAX_BULLETS      = 12;   // max live bullets on screen
 const SPAWN_TABLE = {
   1: ["STALKER", "RUSHER", "STALKER"],
   2: ["STALKER", "RUSHER", "RUSHER"],
-  3: ["STALKER", "AMBUSHER", "SENTINEL"],
-  4: ["RUSHER", "AMBUSHER", "SENTINEL"],
-  5: ["SNIPER", "CRAWLER", "SENTINEL"],
+  3: ["STALKER", "AMBUSHER", "WARDEN"],    // Warden introduced mid-game: mixed with familiar enemies
+  4: ["RUSHER", "WARDEN", "DETONATOR"],    // Both new threats at level 4 alongside RUSHER
+  5: ["SNIPER", "CRAWLER", "DETONATOR"],   // Detonator persists into hardest tier with existing threats
 };
 const INVULN_DURATION = 1.5;      // seconds of invulnerability after taking a hit
 const ENEMY_CONTACT_DAMAGE = 1;   // HP lost on direct enemy contact
