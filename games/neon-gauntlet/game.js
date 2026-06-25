@@ -40,6 +40,8 @@ const SPAWN_TABLE = {
 };
 const INVULN_DURATION = 1.5;      // seconds of invulnerability after taking a hit
 const ENEMY_CONTACT_DAMAGE = 1;   // HP lost on direct enemy contact
+const WARDEN_TURN_RATE = (120 * Math.PI) / 180;    // radians/sec — angular-speed cap (ENMY-08 criterion 2)
+const WARDEN_SHIELD_HALF_ARC = (70 * Math.PI) / 180; // half of the ~140° front shield arc (criterion 1)
 
 // ----------------------------------------------------------------------------
 // Skill tree constants
@@ -1455,26 +1457,30 @@ function spawnEnemies() {
     enemies.push({
       type: types[i],
       x: wx, y: wy,
-      r: types[i] === "SNIPER" ? 10 :
-         types[i] === "CRAWLER" ? 8 : 10,
+      r: types[i] === "SNIPER"  ? 10 :
+         types[i] === "CRAWLER" ? 8 :
+         types[i] === "WARDEN"  ? 11 : 10,
       hp: types[i] === "STALKER" ? 2 :
           types[i] === "RUSHER"  ? 1 :
           types[i] === "AMBUSHER"? 2 :
           types[i] === "SENTINEL"? 3 :
           types[i] === "SNIPER"  ? 2 :
-          types[i] === "CRAWLER" ? 2 : 2,
+          types[i] === "CRAWLER" ? 2 :
+          types[i] === "WARDEN"  ? 4 : 2,
       maxHp: types[i] === "STALKER" ? 2 :
              types[i] === "RUSHER"  ? 1 :
              types[i] === "AMBUSHER"? 2 :
              types[i] === "SENTINEL"? 3 :
              types[i] === "SNIPER"  ? 2 :
-             types[i] === "CRAWLER" ? 2 : 2,
+             types[i] === "CRAWLER" ? 2 :
+             types[i] === "WARDEN"  ? 4 : 2,
       speed: types[i] === "STALKER" ? 55 :
              types[i] === "RUSHER"  ? 130 :
              types[i] === "AMBUSHER"? 75 :
              types[i] === "SENTINEL"? 0 :
              types[i] === "SNIPER"  ? 0 :
-             types[i] === "CRAWLER" ? 65 : 55,
+             types[i] === "CRAWLER" ? 65 :
+             types[i] === "WARDEN"  ? 45 : 55,
       alive: true,
       age: 0
     });
@@ -1501,6 +1507,13 @@ function spawnEnemies() {
       var craw = enemies[enemies.length - 1];
       craw.facing = Math.floor(Math.random() * 4); // 0=N 1=E 2=S 3=W
       craw.generation = 0;
+    }
+    if (enemies[enemies.length - 1].type === "WARDEN") {
+      var warden = enemies[enemies.length - 1];
+      // facing: angle from Warden toward player at spawn; fall back to straight up if no player
+      warden.facing = player
+        ? Math.atan2(player.y - wy, player.x - wx)
+        : -Math.PI / 2;
     }
   }
   doorsSealed = true;
@@ -2139,6 +2152,24 @@ function updateEnemies(dt) {
           e.y = e.y + bmy;
         }
       }
+
+    } else if (e.type === "WARDEN") {
+      // (a) Rotate facing toward player, clamped to WARDEN_TURN_RATE radians/sec.
+      // Guard: distMap may be null on first frame; still run facing update.
+      if (player) {
+        var wDesired = Math.atan2(player.y - e.y, player.x - e.x);
+        var wDelta = wDesired - e.facing;
+        // Normalize delta into -PI..PI (shortest angular path)
+        while (wDelta >  Math.PI) wDelta -= Math.PI * 2;
+        while (wDelta < -Math.PI) wDelta += Math.PI * 2;
+        var wMaxTurn = WARDEN_TURN_RATE * dt;
+        if (wDelta >  wMaxTurn) wDelta =  wMaxTurn;
+        if (wDelta < -wMaxTurn) wDelta = -wMaxTurn;
+        e.facing += wDelta;
+      }
+      // (b) Chase via the shared BFS flow field — same as Stalker/Ambusher.
+      if (distMap === null) continue; // guard: BFS not yet computed
+      stepBFSChase(e, dt);
     }
 
     // Enemy contact damage — runs for all alive enemies after type-specific movement
