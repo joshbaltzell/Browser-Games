@@ -2234,6 +2234,7 @@ function enemyColorFor(type) {
   if (type === "SNIPER") return COLORS.cyan;
   if (type === "CRAWLER") return "#ffd700";
   if (type === "WARDEN") return COLORS.purple;
+  if (type === "DETONATOR") return COLORS.orange;
   return COLORS.white; // AMBUSHER + default
 }
 
@@ -2405,6 +2406,25 @@ function renderEnemies() {
       ctx.arc(e.x, e.y, e.r + 4, e.facing - WARDEN_SHIELD_HALF_ARC, e.facing + WARDEN_SHIELD_HALF_ARC);
       ctx.stroke();
       ctx.restore();
+    } else if (e.type === "DETONATOR") {
+      // Fast orange charging enemy — neon body
+      glowCircle(e.x, e.y, 9, COLORS.orange, 16);
+      // Telegraph state: pulsing warning ring showing exact blast footprint (criterion 3)
+      if (e.state === "telegraph") {
+        var detoProgress = Math.max(0, Math.min(1, (DETONATOR_TELEGRAPH - e.detoTimer) / DETONATOR_TELEGRAPH));
+        var detoAlpha = 0.4 + 0.5 * Math.abs(Math.sin(e.age * 12)); // rapid pulse
+        var detoLineW = 1.5 + 1.5 * detoProgress; // thickens as detonation approaches
+        ctx.save();
+        ctx.strokeStyle = COLORS.orange;
+        ctx.shadowColor = COLORS.orange;
+        ctx.shadowBlur = 10 + 8 * detoProgress;
+        ctx.lineWidth = detoLineW;
+        ctx.globalAlpha = detoAlpha;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, DETONATOR_BLAST_RADIUS, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
     } else if (e.type === "BOSS") {
       // Core body — large pink glow
       glowCircle(e.x, e.y, 18, COLORS.pink, 24);
@@ -2971,6 +2991,13 @@ function updateBullets(dt) {
               });
             }
             doorsSealed = true; // re-seal: new sub-Crawlers just spawned
+          }
+          // Death-detonation (ENMY-09 criterion 4): a Detonator killed point-blank by a
+          // bullet still explodes. Guard by en.detonated so the timer path and this path
+          // cannot both fire — exactly one blast per Detonator lifetime.
+          if (en.type === "DETONATOR" && !en.detonated) {
+            en.detonated = true;
+            detonateAt(en.x, en.y);
           }
           checkEnemiesClear(); // runs after sub-Crawlers are in enemies[]
         }
