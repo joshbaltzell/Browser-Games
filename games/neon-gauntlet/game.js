@@ -3502,6 +3502,38 @@ function renderBossBanner() {
   ctx.restore();
 }
 
+// renderBossDoorLabel() — pulsing gold "KEY REQUIRED" label shown in screen-space when the
+// player is adjacent to the BOSS room and does not yet hold the keycard.
+// Rendered outside the camera transform so it tracks the screen, not world space.
+function renderBossDoorLabel() {
+  if (gameState !== GAME_STATE.PLAYING) return;
+  if (!currentRoom || !currentLevel || !player || player.hasKeycard) return;
+  // Find the BOSS room in this level
+  var bossRoom = null;
+  var rooms = currentLevel.rooms;
+  for (var i = 0; i < rooms.length; i++) {
+    if (rooms[i].type === "BOSS") { bossRoom = rooms[i]; break; }
+  }
+  if (!bossRoom) return;
+  // Check adjacency: a connection key between currentRoom.slotIdx and bossRoom.slotIdx must exist
+  var a = Math.min(currentRoom.slotIdx, bossRoom.slotIdx);
+  var b = Math.max(currentRoom.slotIdx, bossRoom.slotIdx);
+  var connKey = a + "-" + b;
+  if (!currentLevel.connections[connKey]) return;
+  // Draw the label — gently pulsing alpha, gold glow
+  var alpha = 0.7 + 0.3 * Math.abs(Math.sin(Date.now() / 600));
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 18px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = COLORS.gold;
+  ctx.shadowColor = COLORS.gold;
+  ctx.shadowBlur = 14;
+  ctx.fillText("KEY REQUIRED", W / 2, H * 0.18);
+  ctx.restore();
+}
+
 // renderPauseOverlay() — dim wash + "PAUSED" text shown over the frozen room.
 function renderPauseOverlay() {
   if (!paused) return;
@@ -4142,6 +4174,7 @@ function renderPlaying() {
   renderClearedFloater();
   renderLevelUpFloater();
   renderBossBanner();
+  renderBossDoorLabel();
   renderTransitionOverlay();
   renderPauseOverlay();
 }
