@@ -1107,7 +1107,8 @@ function renderRoom(room) {
   // Step 6 — Draw door glow dots (tile values 2–5: N/E/S/W doors)
   var pulse = Math.sin(Date.now() / 800);
   var doorR = 3 + pulse * 1.5;
-  var doorColor = doorsSealed ? COLORS.pink : (room.type === "BOSS" && player && !player.hasKeycard) ? COLORS.gold : COLORS.cyan;
+  var levelHasVault = currentLevel && currentLevel.rooms && currentLevel.rooms.some(function(r) { return r.type === "VAULT"; });
+  var doorColor = doorsSealed ? COLORS.pink : (room.type === "BOSS" && player && !player.hasKeycard && levelHasVault) ? COLORS.gold : COLORS.cyan;
   for (var dr2 = 0; dr2 < rows; dr2++) {
     for (var dc2 = 0; dc2 < cols; dc2++) {
       if (room.grid[dr2 * cols + dc2] >= 2) {
@@ -2730,7 +2731,9 @@ function checkDoorTraversal() {
     if (!targetRoom) return;
 
     // Boss door keycard gate: block traversal into BOSS room if player lacks keycard
-    if (targetRoom.type === "BOSS" && player && !player.hasKeycard) return;
+    // Only applies when this level actually contains a VAULT room (and thus a keycard to find).
+    var levelHasVault2 = currentLevel && currentLevel.rooms && currentLevel.rooms.some(function(r) { return r.type === "VAULT"; });
+    if (targetRoom.type === "BOSS" && player && !player.hasKeycard && levelHasVault2) return;
 
     // Verify the connection exists in currentLevel.connections (keys stored as "A-B" smaller-first)
     var a = Math.min(currentRoom.slotIdx, targetSlot);
@@ -3508,6 +3511,8 @@ function renderBossBanner() {
 function renderBossDoorLabel() {
   if (gameState !== GAME_STATE.PLAYING) return;
   if (!currentRoom || !currentLevel || !player || player.hasKeycard) return;
+  // Only show the label when this level has a VAULT room (and thus a keycard to find).
+  if (!currentLevel.rooms || !currentLevel.rooms.some(function(r) { return r.type === "VAULT"; })) return;
   // Find the BOSS room in this level
   var bossRoom = null;
   var rooms = currentLevel.rooms;
