@@ -6,7 +6,29 @@
 - ✅ **v3.0 Feature Expansion** — Phases 12–31 (shipped 2026-06-08)
 - ✅ **v4.0 LexiGrid** — Phases 32–38 (shipped 2026-06-10)
 - ✅ **v5.0 Neon Gauntlet** — Phases 39–46 (shipped 2026-06-22)
-- 🚧 **v6.0 Neon Gauntlet: Zelda Feel (Slice 1)** — Phases 47–49 (in progress)
+- ⏸ **v6.0 Neon Gauntlet: Zelda Feel (Slice 1)** — Phases 47–49 (PAUSED at Phase 48, 33%)
+- 🚧 **v7.0 Ten Game Drafts** — Phases 50–59 (in progress)
+
+---
+
+## v7.0 Ten Game Drafts (Phases 50–59)
+
+Build a playable core-mechanic **draft** of each of the 10 candidate games from the 101-idea tournament (2026-06-28). One phase = one game's draft = its Phase-1 (`01-01-PLAN.md`) implemented into `games/<slug>/`, running from `file://` and registered on the hub. Deeper phases (style → twist → content → ship) remain in each game's package roadmap (`.planning/game-concepts/<slug>/`) for later promotion to its own milestone.
+
+| Phase | Game (slug) | Req | Draft proves | Score |
+|-------|-------------|-----|--------------|:----:|
+| 50 | coroner-crossword | DRAFT-01 | committing a crossword answer locks intersecting letters; a contradiction is visibly rejected | 35 |
+| 51 | stained-glass-saint | DRAFT-02 | rotate tiles to route a beam through subtractive-color panes onto a target hue | 34 |
+| 52 | hush | DRAFT-03 | actions spend a decaying noise meter; a guard hears the meter past a threshold | 33 |
+| 53 | echo-cartographer | DRAFT-04 | a ping reveals walls briefly and lures a predator to the ping origin | 33 |
+| 54 | cartographers-curse | DRAFT-05 | freehand-draw walls on an ink budget; enemies spawn into your lines | 32 |
+| 55 | knit-one | DRAFT-06 | a verlet-rope thread loops over a peg and bears a hanging weight | 30 |
+| 56 | last-words | DRAFT-07 | chain part-of-speech cards into a valid sentence that casts literally | 30 |
+| 57 | switchback | DRAFT-08 | one-button parabolic gravity flip + momentum; banks off a curve; no tunneling | 28 |
+| 58 | vanishing-point | DRAFT-09 | drag objects through depth so size scales with distance to bridge a gap | 28 |
+| 59 | notary-of-the-damned | DRAFT-10 | stamp a queue against a rulebook; denied souls pile up and obscure the desk | 28 |
+
+Cross-cutting: **HUB-01** (each draft registered on the hub), **INFRA-01** (file://-safe, no build/modules/network, gated audio), **INFRA-02** (`node --check` clean + canvas/script wired). Built in parallel via the `build-10-game-drafts` workflow.
 
 ---
 
@@ -139,9 +161,10 @@ Plans:
   4. Without the keycard, the boss room door stays sealed and displays a "KEY REQUIRED" indicator even when adjacent rooms are cleared — the player cannot enter the boss room.
   5. Once the player holds the keycard, the boss door unlocks (visible state change) and admits the player into the boss room.
 
-**Plans:** 5 plans
+**Plans:** 0/5 plans executed
 
 Plans:
+
 - [ ] 48-01-PLAN.md — VAULT room placement: BFS critical path, off-path NORMAL→VAULT reassignment, carveRoom() wiring, minimap gold color
 - [ ] 48-02-PLAN.md — GUARDIAN enemy (ENMY-10): Warden-variant AI + gold render, VAULT spawn override, death→keycard drop + room.cleared
 - [ ] 48-03-PLAN.md — Keycard pickup system: player.hasKeycard run state, world pickup object, HUD key icon
@@ -215,5 +238,15 @@ Plans:
 | 45. skill-tree-map-escalation-boss | v5.0 | 4/4 | Complete | 2026-06-22 |
 | 46. elite-shop-polish | v5.0 | 2/2 | Complete | 2026-06-22 |
 | 47. movement-demand-enemies | v6.0 | 3/3 | Complete    | 2026-06-25 |
-| 48. vault-guardian-locked-boss-door | v6.0 | 0/TBD | Not started | - |
-| 49. minimap-lock-key-wayfinding | v6.0 | 0/TBD | Not started | - |
+| 48. vault-guardian-locked-boss-door | v6.0 | 0/5 | ⏸ Paused | - |
+| 49. minimap-lock-key-wayfinding | v6.0 | 0/TBD | ⏸ Paused | - |
+| 50. coroner-crossword-draft | v7.0 | 1/1 | Built | 2026-06-28 |
+| 51. stained-glass-saint-draft | v7.0 | 1/1 | Built | 2026-06-28 |
+| 52. hush-draft | v7.0 | 1/1 | Built | 2026-06-28 |
+| 53. echo-cartographer-draft | v7.0 | 1/1 | Built | 2026-06-28 |
+| 54. cartographers-curse-draft | v7.0 | 1/1 | Built | 2026-06-28 |
+| 55. knit-one-draft | v7.0 | 1/1 | Built | 2026-06-28 |
+| 56. last-words-draft | v7.0 | 1/1 | Built | 2026-06-28 |
+| 57. switchback-draft | v7.0 | 1/1 | Built | 2026-06-28 |
+| 58. vanishing-point-draft | v7.0 | 1/1 | Built | 2026-06-28 |
+| 59. notary-of-the-damned-draft | v7.0 | 1/1 | Built | 2026-06-28 |
