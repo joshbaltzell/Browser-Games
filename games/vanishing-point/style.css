@@ -4,10 +4,11 @@ body {
   padding: 0;
   height: 100%;
   overflow: hidden;
+  /* de Chirico dusk: a low amber sun bleeding into shadow-violet sky. */
   background:
-    radial-gradient(120% 90% at 50% 18%, #2a2138 0%, #14101f 55%, #0a0712 100%);
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-  color: #f3ead8;
+    radial-gradient(140% 100% at 50% 30%, #c98a4e 0%, #6b4a5e 28%, #2a1f3a 62%, #150f22 100%);
+  font-family: "Times New Roman", Georgia, "Segoe UI", system-ui, serif;
+  color: #f3e6cf;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -27,12 +28,13 @@ body {
 
 #game {
   display: block;
-  border-radius: 14px;
-  background: #0c0916;
+  border-radius: 10px;
+  background: #1a1226;
+  /* warm sun-glow framing, long shadow below — feels lit from the horizon. */
   box-shadow:
-    0 0 0 1px rgba(255, 178, 92, 0.16),
-    0 0 70px -12px rgba(255, 178, 92, 0.28),
-    0 30px 80px -30px rgba(0, 0, 0, 0.9);
+    0 0 0 1px rgba(214, 158, 92, 0.22),
+    0 0 90px -10px rgba(214, 158, 92, 0.32),
+    0 36px 90px -30px rgba(0, 0, 0, 0.92);
   touch-action: none;
   cursor: pointer;
 }

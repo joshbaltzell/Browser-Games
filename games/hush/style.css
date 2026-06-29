@@ -11,9 +11,12 @@ body {
   padding: 0;
   height: 100%;
   overflow: hidden;
-  background: #0a0b0d;
+  /* A barely-there charcoal field with a faint breathing vignette behind the
+     play area — the page itself holds its breath. */
+  background:
+    radial-gradient(120% 120% at 50% 40%, #0d1014 0%, #070809 70%, #050506 100%);
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-  color: #e8eaed;
+  color: #eef1f6;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -30,11 +33,12 @@ body {
 #game {
   display: block;
   /* JS sets the CSS width/height to preserve the 10:7 aspect ratio. */
-  background: #101216;
-  border-radius: 10px;
+  background: #0b0d10;
+  border-radius: 12px;
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 24px 80px -30px rgba(0, 0, 0, 0.9);
+    0 0 0 1px rgba(180, 200, 240, 0.10),
+    0 0 60px -10px rgba(120, 150, 220, 0.10),
+    0 30px 90px -30px rgba(0, 0, 0, 0.95);
   touch-action: none;
   cursor: default;
 }

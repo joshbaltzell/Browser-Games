@@ -1,50 +1,70 @@
 /*
- * ECHO CARTOGRAPHER — Phase 1: Core Mechanic Prototype.
+ * ECHO CARTOGRAPHER — Phases 1–3.
  *
- * The world is total black void. The only way to SEE is to press SPACE and emit
- * a ringwave: an expanding circle that lights wall segments chalk-white ONLY
- * along its live front, revealing the room in expanding slices. Revealed
- * fragments linger as fading ghost-outlines (~1s) so you can navigate by memory
- * between flashes. Every ping also draws a blind predator toward the ping
- * origin — it hunts the sound, not you. Idle when you stay quiet.
+ * Phase 1 (core): the world is total black void. Press SPACE to emit a ringwave
+ * that lights wall segments chalk-white ONLY along its live front, revealing the
+ * room in expanding slices. Revealed fragments linger as fading ghost-outlines
+ * (~1s) so you can navigate by memory between flashes. Every ping draws a blind
+ * predator toward the ping origin — it hunts the sound, not you.
  *
- * Goal of this prototype: prove map-from-fragments navigation is fun on a
- * laptop, fully playable with audio OFF.
+ * Phase 2 (style & identity): the signature look — chalk wireframe on pure void,
+ * scanning ring sweep, decaying ghost afterimages with a faint bloom, an
+ * ever-present red ripple telegraph for the predator, predator wall-routing, and
+ * a full Web Audio identity (low cave drone ambience, ping sweep, rising
+ * proximity hum, capture/win stings) plus a particle system on ping/capture/win.
+ *
+ * Phase 3 (the twist): FALSE-PINGING. Hold the aim and fire a decoy ping offset
+ * from you. It reveals real geometry at a remote spot AND the blind predator
+ * pathfinds to the decoy's origin as if it were you — so you lure it off your
+ * route, then slip through memorized corridors in total silence (moving without
+ * pinging never attracts it). Gated: the decoy unlocks only from level 2 on,
+ * where the layout cannot be solved by naive pinging alone.
  *
  * Pure vanilla JS + Canvas 2D. No modules, no assets, no fetch — runs from
- * file://. Audio is synthesized lazily and only after a first user gesture
- * (stub here in Phase 1; sound lands in Phase 2).
+ * file://. Audio is synthesized lazily and resumed on first user gesture.
  *
- * Sections: Constants -> Canvas/state -> Audio stub -> Geometry helpers ->
- * Levels -> Input -> Init/reset -> Update -> Render -> Main loop.
+ * Sections: Constants -> Canvas/state -> Audio -> Particles -> Geometry ->
+ * Levels -> Pathfinding -> Input -> Init/reset -> Update -> Render -> Loop.
  */
 
 "use strict";
 
 // ----------------------------------------------------------------------------
-// Constants / tunables (Phase 1 feel knobs live here)
+// Constants / tunables
 // ----------------------------------------------------------------------------
 const TAU = Math.PI * 2;
 
 const COLORS = {
-  void: "#000000",
-  wallFront: "#ffffff",   // chalk-white live front intersection
-  ghost: "#cfe8ff",       // fading ghost-outline tint (cool chalk)
-  player: "#8fffd0",      // cartographer marker
+  void: "#02040a",        // not pure black — a deep abyssal blue-black
+  voidEdge: "#000003",    // vignette toward the corners
+  wallFront: "#f4fbff",   // chalk-white live front intersection
+  wallGlow: "#7fb6ff",    // cool bloom behind the live front
+  ghost: "#a9d8ff",       // fading ghost-outline tint (cool chalk)
+  ghostWarm: "#cfe8ff",
+  player: "#7dffce",      // cartographer marker (phosphor green)
+  playerGlow: "#1effa8",
   predator: "#ff4d5e",    // blind hunter telegraph
+  predatorDeep: "#7a0010",
   exit: "#ffd27a",        // goal marker
-  hud: "#6b7d88",         // muted HUD text
-  hudBright: "#cfe0ea",
+  exitGlow: "#ff9d3c",
+  decoy: "#ff8ad6",       // false-ping accent (magenta)
+  decoyGlow: "#ff3ea5",
+  hud: "#5d7280",         // muted HUD text
+  hudBright: "#bcd6e6",
 };
 
 // Ping behaviour.
 const PING_SPEED = 620;        // px/sec the front expands
-const PING_MAX_RADIUS = 900;   // front dies past this
+const PING_MAX_RADIUS = 1000;  // front dies past this
 const PING_BAND = 14;          // half-thickness of the "live front" reveal band
 const PING_COOLDOWN = 0.85;    // seconds between pings (rationed reveals)
 
+// False ping (decoy).
+const DECOY_REACH = 230;       // how far the decoy origin is thrown from player
+const DECOY_COOLDOWN = 2.2;    // decoys are pricier than real pings
+
 // Ghost-outline afterimage.
-const GHOST_LIFE = 1.05;       // seconds for a revealed segment to fade out
+const GHOST_LIFE = 1.15;       // seconds for a revealed segment to fade out
 
 // Player.
 const PLAYER_R = 9;
@@ -53,9 +73,9 @@ const PLAYER_SPEED = 190;      // px/sec
 // Predator.
 const PRED_R = 13;
 const PRED_HUNT_SPEED = 130;   // px/sec while homing on a ping origin
-const PRED_IDLE_SPEED = 52;    // px/sec slow wander when no recent ping
+const PRED_IDLE_SPEED = 50;    // px/sec slow wander when no recent ping
 const PRED_CATCH = 18;         // contact distance that ends the attempt
-const PRED_ARRIVE = 22;        // distance at which it "reaches" a ping origin
+const PRED_ARRIVE = 24;        // distance at which it "reaches" a target node
 const PRED_IDLE_RETARGET = 1.8;// seconds between picking a new idle wander point
 
 // ----------------------------------------------------------------------------
@@ -67,30 +87,53 @@ const ctx = canvas.getContext("2d");
 let W = 0, H = 0;            // CSS pixel size of the canvas
 let dpr = 1;
 
-const STATE = { TITLE: "title", PLAYING: "playing", CAUGHT: "caught", WON: "won" };
+const STATE = { TITLE: "title", PLAYING: "playing", CAUGHT: "caught", WON: "won", CLEARED: "cleared" };
 let state = STATE.TITLE;
 
+let levelIndex = 0;         // current level (0-based)
 let level = null;           // current level data (geometry)
 let player = { x: 0, y: 0, r: PLAYER_R };
-let predator = { x: 0, y: 0, r: PRED_R, mode: "idle", tx: 0, ty: 0, idleTimer: 0 };
-let pings = [];             // active ringwaves {x,y,radius}
-let ghosts = [];            // revealed fragments {x1,y1,x2,y2,life}
-let cooldown = 0;           // ping cooldown timer
+let predator = {
+  x: 0, y: 0, r: PRED_R, mode: "idle", tx: 0, ty: 0, idleTimer: 0,
+  path: [], pathStep: 0, rippleT: 0,
+};
+let pings = [];             // active ringwaves {x,y,radius,decoy}
+let ghosts = [];            // revealed fragments {x1,y1,x2,y2,life,decoy}
+let cooldown = 0;           // real ping cooldown timer
+let decoyCooldown = 0;      // decoy cooldown timer
 let pingCount = 0;          // pings used this attempt
+let clearTime = 0;          // seconds elapsed this attempt (for best-time score)
+let introT = 0;             // per-level intro banner fade timer
+let transition = 0;         // level-enter wipe transition (1 -> 0)
+let aiming = false;         // holding the aim for a decoy
+let aimAng = 0;             // aim direction for the decoy
 let showDebug = false;
+let shake = 0;              // screen-shake magnitude
+let flash = 0;              // full-screen flash (capture/win)
+let flashColor = "#fff";
 
-// localStorage best (fewest pings to clear).
-const LS_KEY = "echoCartographer.bestPings";
-let bestPings = loadBest();
+// Mouse aim (optional)
+let mouseX = 0, mouseY = 0, hasMouse = false;
 
-function loadBest() {
-  try {
-    const v = parseInt(localStorage.getItem(LS_KEY), 10);
-    return Number.isFinite(v) ? v : null;
-  } catch (e) { return null; }
+// localStorage: best per level + highest level cleared.
+const LS_BEST = "echoCartographer.best";   // JSON map levelIndex->bestPings
+const LS_PROG = "echoCartographer.progress"; // highest level unlocked
+let bestMap = loadBestMap();
+let progress = loadProgress();
+
+function loadBestMap() {
+  try { return JSON.parse(localStorage.getItem(LS_BEST)) || {}; }
+  catch (e) { return {}; }
 }
-function saveBest(v) {
-  try { localStorage.setItem(LS_KEY, String(v)); } catch (e) { /* ignore */ }
+function saveBestMap() {
+  try { localStorage.setItem(LS_BEST, JSON.stringify(bestMap)); } catch (e) {}
+}
+function loadProgress() {
+  try { const v = parseInt(localStorage.getItem(LS_PROG), 10); return Number.isFinite(v) ? v : 0; }
+  catch (e) { return 0; }
+}
+function saveProgress() {
+  try { localStorage.setItem(LS_PROG, String(progress)); } catch (e) {}
 }
 
 // ----------------------------------------------------------------------------
@@ -108,81 +151,573 @@ function resize() {
 }
 window.addEventListener("resize", () => {
   resize();
-  // Re-fit the current level to the new viewport so geometry stays on-screen.
   if (level) layoutLevel();
 });
 
 // ----------------------------------------------------------------------------
-// Audio — first-gesture unlock stub (Phase 2 fills in real synthesis)
+// Audio — Web Audio synthesis, unlocked on first user gesture.
 // ----------------------------------------------------------------------------
 let audioCtx = null;
+let masterGain = null;
+let droneNodes = null;     // persistent cave ambience
+let proxOsc = null, proxGain = null, proxFilter = null; // predator proximity hum
 let audioReady = false;
+
 function unlockAudio() {
   if (audioReady) return;
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (AC) {
-      audioCtx = new AC();
-      if (audioCtx.state === "suspended") audioCtx.resume();
-    }
+    if (!AC) { audioReady = true; return; }
+    audioCtx = new AC();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.9;
+    masterGain.connect(audioCtx.destination);
+    startDrone();
+    startProximityHum();
+    if (audioCtx.state === "suspended") audioCtx.resume();
   } catch (e) { /* file:// safe — never throw */ }
-  audioReady = true; // mark attempted regardless; no sound emitted in Phase 1
+  audioReady = true;
+}
+
+function now() { return audioCtx ? audioCtx.currentTime : 0; }
+
+// Low, breathing cave drone — two detuned sines through a slow LFO on gain.
+function startDrone() {
+  if (!audioCtx) return;
+  const g = audioCtx.createGain();
+  g.gain.value = 0.0;
+  g.connect(masterGain);
+
+  const o1 = audioCtx.createOscillator();
+  o1.type = "sine"; o1.frequency.value = 46;
+  const o2 = audioCtx.createOscillator();
+  o2.type = "sine"; o2.frequency.value = 57.3; // gentle beat against o1
+  o1.connect(g); o2.connect(g);
+
+  // slow swelling LFO so the dark feels alive
+  const lfo = audioCtx.createOscillator();
+  lfo.type = "sine"; lfo.frequency.value = 0.08;
+  const lfoGain = audioCtx.createGain();
+  lfoGain.gain.value = 0.018;
+  lfo.connect(lfoGain); lfoGain.connect(g.gain);
+
+  o1.start(); o2.start(); lfo.start();
+  g.gain.setValueAtTime(0, now());
+  g.gain.linearRampToValueAtTime(0.05, now() + 4);
+  droneNodes = { g, o1, o2, lfo };
+}
+
+// Persistent proximity hum; volume/pitch driven each frame from predator dist.
+function startProximityHum() {
+  if (!audioCtx) return;
+  proxOsc = audioCtx.createOscillator();
+  proxOsc.type = "sawtooth";
+  proxOsc.frequency.value = 60;
+  proxFilter = audioCtx.createBiquadFilter();
+  proxFilter.type = "lowpass";
+  proxFilter.frequency.value = 220;
+  proxGain = audioCtx.createGain();
+  proxGain.gain.value = 0.0;
+  proxOsc.connect(proxFilter); proxFilter.connect(proxGain); proxGain.connect(masterGain);
+  proxOsc.start();
+}
+
+// Update the proximity hum from a 0..1 closeness value (1 = right on top).
+function setProximity(closeness) {
+  if (!proxGain || !proxOsc || !proxFilter) return;
+  const t = now();
+  const target = closeness <= 0 ? 0 : 0.02 + closeness * closeness * 0.16;
+  proxGain.gain.setTargetAtTime(target, t, 0.08);
+  proxOsc.frequency.setTargetAtTime(54 + closeness * 110, t, 0.1);
+  proxFilter.frequency.setTargetAtTime(200 + closeness * 900, t, 0.1);
+}
+
+// A ping "sweep": a falling-then-rising filtered chirp. Decoy variant is pitched
+// up and more metallic so the lie sounds different from the truth.
+function sndPing(decoy) {
+  if (!audioCtx) return;
+  const t = now();
+  const o = audioCtx.createOscillator();
+  o.type = decoy ? "square" : "triangle";
+  const f = audioCtx.createBiquadFilter();
+  f.type = "bandpass";
+  f.Q.value = 6;
+  const g = audioCtx.createGain();
+  o.connect(f); f.connect(g); g.connect(masterGain);
+
+  const base = decoy ? 920 : 540;
+  o.frequency.setValueAtTime(base, t);
+  o.frequency.exponentialRampToValueAtTime(base * 0.45, t + 0.5);
+  f.frequency.setValueAtTime(base * 1.4, t);
+  f.frequency.exponentialRampToValueAtTime(base * 3.2, t + 0.5);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(decoy ? 0.18 : 0.26, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+  o.start(t); o.stop(t + 0.6);
+}
+
+// Capture sting — harsh descending growl + noise burst.
+function sndCapture() {
+  if (!audioCtx) return;
+  const t = now();
+  const o = audioCtx.createOscillator();
+  o.type = "sawtooth";
+  o.frequency.setValueAtTime(220, t);
+  o.frequency.exponentialRampToValueAtTime(38, t + 0.7);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+  const f = audioCtx.createBiquadFilter();
+  f.type = "lowpass"; f.frequency.value = 700;
+  o.connect(f); f.connect(g); g.connect(masterGain);
+  o.start(t); o.stop(t + 0.95);
+  // noise burst
+  noiseBurst(0.4, 0.35);
+}
+
+// Win sting — clean ascending bell triad.
+function sndWin() {
+  if (!audioCtx) return;
+  const t = now();
+  [523.25, 659.25, 783.99].forEach((freq, i) => {
+    const o = audioCtx.createOscillator();
+    o.type = "sine"; o.frequency.value = freq;
+    const g = audioCtx.createGain();
+    const st = t + i * 0.09;
+    g.gain.setValueAtTime(0.0001, st);
+    g.gain.exponentialRampToValueAtTime(0.2, st + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, st + 0.9);
+    o.connect(g); g.connect(masterGain);
+    o.start(st); o.stop(st + 0.95);
+  });
+}
+
+function noiseBurst(dur, vol) {
+  if (!audioCtx) return;
+  const t = now();
+  const frames = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, frames, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const g = audioCtx.createGain();
+  g.gain.value = vol;
+  const f = audioCtx.createBiquadFilter();
+  f.type = "lowpass"; f.frequency.value = 1200;
+  src.connect(f); f.connect(g); g.connect(masterGain);
+  src.start(t);
+}
+
+// ----------------------------------------------------------------------------
+// Particles — small pooled accent system (ping ripples, capture, win).
+// ----------------------------------------------------------------------------
+let particles = [];
+function spawnParticles(x, y, n, color, opts) {
+  opts = opts || {};
+  const spd = opts.speed || 90;
+  const life = opts.life || 0.7;
+  const size = opts.size || 2.2;
+  for (let i = 0; i < n; i++) {
+    const a = (opts.angle != null) ? opts.angle + (Math.random() - 0.5) * (opts.spread || TAU)
+                                   : Math.random() * TAU;
+    const s = spd * (0.4 + Math.random() * 0.8);
+    particles.push({
+      x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: life * (0.6 + Math.random() * 0.6), maxLife: life,
+      color, size: size * (0.6 + Math.random() * 0.8),
+    });
+  }
+  if (particles.length > 600) particles.splice(0, particles.length - 600);
+}
+function updateParticles(dt) {
+  for (const p of particles) {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 0.94; p.vy *= 0.94;
+    p.life -= dt;
+  }
+  particles = particles.filter((p) => p.life > 0);
 }
 
 // ----------------------------------------------------------------------------
 // Geometry helpers
 // ----------------------------------------------------------------------------
-// Distance from point P to segment AB; returns {d, t} (t = projection param).
 function pointSegDist(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1, dy = y2 - y1;
   const len2 = dx * dx + dy * dy || 1e-9;
   let t = ((px - x1) * dx + (py - y1) * dy) / len2;
   t = Math.max(0, Math.min(1, t));
   const cx = x1 + t * dx, cy = y1 + t * dy;
-  const ddx = px - cx, ddy = py - cy;
-  return { d: Math.hypot(ddx, ddy), t, cx, cy };
+  return { d: Math.hypot(px - cx, py - cy), t, cx, cy };
+}
+
+// Segment-vs-segment intersection test (used by pathfinder visibility).
+function segsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const d1 = cross(cx, cy, dx, dy, ax, ay);
+  const d2 = cross(cx, cy, dx, dy, bx, by);
+  const d3 = cross(ax, ay, bx, by, cx, cy);
+  const d4 = cross(ax, ay, bx, by, dx, dy);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+  return false;
+}
+function cross(ax, ay, bx, by, px, py) {
+  return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
 }
 
 // ----------------------------------------------------------------------------
 // Levels — authored in normalized [0..1] coords; laid out to the viewport.
-// Phase 1 ships one greybox teaching room. wallsN are normalized segments.
+// Each level: walls, player start, exit, predator start, decoyAllowed flag, and
+// optional waypoint graph nodes (normalized) the predator routes along.
 // ----------------------------------------------------------------------------
-const RAW_LEVEL = {
-  // Player & exit & predator in normalized coords.
-  playerN: { x: 0.16, y: 0.78 },
-  exitN: { x: 0.84, y: 0.20 },
-  predN: { x: 0.84, y: 0.80 },
-  // Outer room + a couple of interior walls forming a corridor & dead-end.
-  wallsN: [
-    // Outer boundary
-    [0.08, 0.10, 0.92, 0.10],
-    [0.92, 0.10, 0.92, 0.90],
-    [0.92, 0.90, 0.08, 0.90],
-    [0.08, 0.90, 0.08, 0.10],
-    // Interior: a partial vertical wall creating a corridor on the left
-    [0.40, 0.10, 0.40, 0.60],
-    // A horizontal shelf forming a dead-end pocket
-    [0.40, 0.60, 0.66, 0.60],
-    // A second vertical baffle on the right side
-    [0.66, 0.40, 0.66, 0.90],
-  ],
-};
+// Helper: standard outer-box walls in normalized coords.
+function box(x0, y0, x1, y1) {
+  return [
+    [x0, y0, x1, y0],
+    [x1, y0, x1, y1],
+    [x1, y1, x0, y1],
+    [x0, y1, x0, y0],
+  ];
+}
+
+// Per-level difficulty hints (overrides applied at start). Curve summary:
+//   1–2  geometry-only, predator absent/trivial (learn ping->read->move)
+//   3–4  predator pressure introduced, no decoy
+//   5    decoy unlocked & taught in a forgiving room
+//   6–10 silent-route + decoy puzzles of rising tension
+const RAW_LEVELS = [
+  // ---- ACT I: LEARN TO SEE (geometry only, predator harmless) --------------
+
+  // L1 — FIRST LIGHT: a bent corridor. No real threat. Just ping, read, walk.
+  {
+    name: "FIRST LIGHT",
+    blurb: "Press SPACE to ping. Walls light along the wavefront, then fade. Walk to the gold exit.",
+    decoy: false, predSpeed: 0, // predator effectively dormant
+    playerN: { x: 0.16, y: 0.78 },
+    exitN: { x: 0.84, y: 0.20 },
+    predN: { x: 0.84, y: 0.84 },
+    wallsN: [
+      ...box(0.08, 0.10, 0.92, 0.90),
+      [0.40, 0.10, 0.40, 0.60],
+      [0.40, 0.60, 0.66, 0.60],
+      [0.66, 0.40, 0.66, 0.90],
+    ],
+    nodesN: [
+      { x: 0.24, y: 0.78 }, { x: 0.24, y: 0.20 },
+      { x: 0.53, y: 0.20 }, { x: 0.53, y: 0.50 },
+      { x: 0.78, y: 0.30 }, { x: 0.78, y: 0.78 },
+    ],
+  },
+
+  // L2 — SWITCHBACK: a longer zig-zag to trust your memory between pings.
+  {
+    name: "SWITCHBACK",
+    blurb: "Reveals fade fast — move from memory between pings. The dark is still empty here.",
+    decoy: false, predSpeed: 0,
+    playerN: { x: 0.14, y: 0.14 },
+    exitN: { x: 0.86, y: 0.86 },
+    predN: { x: 0.86, y: 0.14 },
+    wallsN: [
+      ...box(0.08, 0.08, 0.92, 0.92),
+      [0.08, 0.32, 0.72, 0.32],
+      [0.28, 0.56, 0.92, 0.56],
+      [0.08, 0.74, 0.72, 0.74],
+    ],
+    nodesN: [
+      { x: 0.20, y: 0.20 }, { x: 0.80, y: 0.20 },
+      { x: 0.80, y: 0.44 }, { x: 0.20, y: 0.44 },
+      { x: 0.20, y: 0.64 }, { x: 0.80, y: 0.64 },
+      { x: 0.80, y: 0.84 }, { x: 0.20, y: 0.84 },
+    ],
+  },
+
+  // ---- ACT II: THE HUNTER WAKES (predator pressure, no decoy) ---------------
+
+  // L3 — IT HEARS YOU: predator alive but slow. Every ping calls it closer.
+  {
+    name: "IT HEARS YOU",
+    blurb: "Now something stirs. Every ping draws the red hunter to where you pinged. Ping less.",
+    decoy: false, predSpeed: 95,
+    playerN: { x: 0.15, y: 0.50 },
+    exitN: { x: 0.85, y: 0.50 },
+    predN: { x: 0.50, y: 0.18 },
+    wallsN: [
+      ...box(0.08, 0.10, 0.92, 0.90),
+      [0.34, 0.10, 0.34, 0.66],
+      [0.66, 0.34, 0.66, 0.90],
+    ],
+    nodesN: [
+      { x: 0.20, y: 0.50 }, { x: 0.24, y: 0.78 },
+      { x: 0.50, y: 0.78 }, { x: 0.50, y: 0.22 },
+      { x: 0.78, y: 0.22 }, { x: 0.80, y: 0.50 },
+    ],
+  },
+
+  // L4 — SPIRAL: tighter inward spiral, hunter is faster. Plan your pings.
+  {
+    name: "THE SPIRAL",
+    blurb: "Wind inward to the exit. The hunter is quicker now — a wrong ping is a wrong room.",
+    decoy: false, predSpeed: 120,
+    playerN: { x: 0.50, y: 0.50 },
+    exitN: { x: 0.12, y: 0.12 },
+    predN: { x: 0.88, y: 0.88 },
+    wallsN: [
+      ...box(0.08, 0.08, 0.92, 0.92),
+      [0.22, 0.22, 0.78, 0.22],
+      [0.78, 0.22, 0.78, 0.78],
+      [0.78, 0.78, 0.22, 0.78],
+      [0.22, 0.78, 0.22, 0.36],
+      [0.36, 0.36, 0.64, 0.36],
+      [0.64, 0.36, 0.64, 0.64],
+      [0.64, 0.64, 0.36, 0.64],
+    ],
+    nodesN: [
+      { x: 0.50, y: 0.50 }, { x: 0.50, y: 0.50 - 0.0 },
+      { x: 0.15, y: 0.50 }, { x: 0.15, y: 0.15 },
+      { x: 0.85, y: 0.15 }, { x: 0.85, y: 0.85 },
+      { x: 0.15, y: 0.85 }, { x: 0.15, y: 0.30 },
+      { x: 0.70, y: 0.30 }, { x: 0.70, y: 0.70 }, { x: 0.30, y: 0.70 },
+    ],
+  },
+
+  // ---- ACT III: THE LIE (decoy unlocked) -----------------------------------
+
+  // L5 — THE LIE: forgiving room to learn the decoy. Lure it up, slip across.
+  {
+    name: "THE LIE",
+    blurb: "New power: hold SHIFT + aim (or right-click) to throw a DECOY. The blind hunter chases the lie.",
+    decoy: true, predSpeed: 115,
+    playerN: { x: 0.14, y: 0.50 },
+    exitN: { x: 0.88, y: 0.50 },
+    predN: { x: 0.52, y: 0.50 },
+    wallsN: [
+      ...box(0.06, 0.10, 0.94, 0.90),
+      [0.50, 0.10, 0.50, 0.40],
+      [0.50, 0.60, 0.50, 0.90],
+      [0.28, 0.30, 0.72, 0.30],
+      [0.28, 0.70, 0.72, 0.70],
+    ],
+    nodesN: [
+      { x: 0.20, y: 0.50 }, { x: 0.40, y: 0.50 },
+      { x: 0.50, y: 0.50 }, { x: 0.60, y: 0.50 }, { x: 0.80, y: 0.50 },
+      { x: 0.40, y: 0.20 }, { x: 0.60, y: 0.20 },
+      { x: 0.40, y: 0.80 }, { x: 0.60, y: 0.80 },
+    ],
+  },
+
+  // L6 — TWO DOORS: predator camps center. Decoy one side, take the other.
+  {
+    name: "TWO DOORS",
+    blurb: "Two ways through, one watched. Throw the lie down the door you won't use.",
+    decoy: true, predSpeed: 125,
+    playerN: { x: 0.14, y: 0.50 },
+    exitN: { x: 0.86, y: 0.50 },
+    predN: { x: 0.50, y: 0.50 },
+    wallsN: [
+      ...box(0.08, 0.08, 0.92, 0.92),
+      [0.40, 0.08, 0.40, 0.34],
+      [0.40, 0.50, 0.40, 0.92],
+      [0.60, 0.08, 0.60, 0.50],
+      [0.60, 0.66, 0.60, 0.92],
+    ],
+    nodesN: [
+      { x: 0.24, y: 0.50 }, { x: 0.32, y: 0.22 }, { x: 0.32, y: 0.78 },
+      { x: 0.50, y: 0.22 }, { x: 0.50, y: 0.78 },
+      { x: 0.68, y: 0.22 }, { x: 0.68, y: 0.78 }, { x: 0.78, y: 0.50 },
+    ],
+  },
+
+  // L7 — THE GAUNTLET: a long throat. Bait it deep, then run the corridor silent.
+  {
+    name: "THE GAUNTLET",
+    blurb: "One long throat to the exit. Lure the hunter off it, then run it in silence.",
+    decoy: true, predSpeed: 130,
+    playerN: { x: 0.12, y: 0.85 },
+    exitN: { x: 0.88, y: 0.15 },
+    predN: { x: 0.50, y: 0.50 },
+    wallsN: [
+      ...box(0.08, 0.08, 0.92, 0.92),
+      [0.08, 0.40, 0.66, 0.40],
+      [0.34, 0.60, 0.92, 0.60],
+      [0.66, 0.08, 0.66, 0.40],
+      [0.34, 0.60, 0.34, 0.92],
+    ],
+    nodesN: [
+      { x: 0.20, y: 0.84 }, { x: 0.20, y: 0.50 },
+      { x: 0.50, y: 0.50 }, { x: 0.50, y: 0.74 }, { x: 0.80, y: 0.74 },
+      { x: 0.80, y: 0.50 }, { x: 0.50, y: 0.24 }, { x: 0.80, y: 0.24 },
+      { x: 0.20, y: 0.24 },
+    ],
+  },
+
+  // L8 — CROSSROADS: a plus-shaped chamber, hunter at the hub. Misdirect it.
+  {
+    name: "CROSSROADS",
+    blurb: "Four arms, one hunter at the heart. Send the lie down an arm and cross while it's away.",
+    decoy: true, predSpeed: 135,
+    playerN: { x: 0.50, y: 0.86 },
+    exitN: { x: 0.50, y: 0.14 },
+    predN: { x: 0.50, y: 0.50 },
+    wallsN: [
+      ...box(0.08, 0.08, 0.92, 0.92),
+      [0.08, 0.40, 0.40, 0.40], [0.40, 0.40, 0.40, 0.08],
+      [0.60, 0.08, 0.60, 0.40], [0.60, 0.40, 0.92, 0.40],
+      [0.92, 0.60, 0.60, 0.60], [0.60, 0.60, 0.60, 0.92],
+      [0.40, 0.92, 0.40, 0.60], [0.40, 0.60, 0.08, 0.60],
+    ],
+    nodesN: [
+      { x: 0.50, y: 0.50 }, { x: 0.50, y: 0.20 }, { x: 0.50, y: 0.80 },
+      { x: 0.20, y: 0.50 }, { x: 0.80, y: 0.50 },
+      { x: 0.24, y: 0.24 }, { x: 0.76, y: 0.24 },
+      { x: 0.24, y: 0.76 }, { x: 0.76, y: 0.76 },
+    ],
+  },
+
+  // L9 — THE MAZE: dense layout, fast hunter. Silent memory + a decoy to time it.
+  {
+    name: "THE MAZE",
+    blurb: "Deep dark, fast hunter. Map it in fragments, then move silent. Spend the lie wisely.",
+    decoy: true, predSpeed: 142,
+    playerN: { x: 0.13, y: 0.13 },
+    exitN: { x: 0.87, y: 0.87 },
+    predN: { x: 0.87, y: 0.13 },
+    wallsN: [
+      ...box(0.08, 0.08, 0.92, 0.92),
+      [0.28, 0.08, 0.28, 0.50], [0.28, 0.50, 0.50, 0.50],
+      [0.50, 0.26, 0.50, 0.74], [0.50, 0.26, 0.72, 0.26],
+      [0.72, 0.26, 0.72, 0.68], [0.28, 0.68, 0.72, 0.68],
+      [0.08, 0.70, 0.28, 0.70], [0.28, 0.70, 0.28, 0.92],
+    ],
+    nodesN: [
+      { x: 0.18, y: 0.18 }, { x: 0.18, y: 0.60 }, { x: 0.18, y: 0.82 },
+      { x: 0.40, y: 0.18 }, { x: 0.40, y: 0.60 },
+      { x: 0.61, y: 0.40 }, { x: 0.61, y: 0.18 },
+      { x: 0.82, y: 0.18 }, { x: 0.82, y: 0.80 }, { x: 0.50, y: 0.82 },
+    ],
+  },
+
+  // L10 — INTO THE DEEP: the finale. Twin throats, fastest hunter, tight exit.
+  {
+    name: "INTO THE DEEP",
+    blurb: "The deepest dark. Everything you've learned — the map, the silence, the lie. Map it all.",
+    decoy: true, predSpeed: 150,
+    playerN: { x: 0.12, y: 0.50 },
+    exitN: { x: 0.88, y: 0.50 },
+    predN: { x: 0.50, y: 0.50 },
+    wallsN: [
+      ...box(0.06, 0.08, 0.94, 0.92),
+      [0.30, 0.08, 0.30, 0.38], [0.30, 0.62, 0.30, 0.92],
+      [0.30, 0.38, 0.52, 0.38], [0.30, 0.62, 0.52, 0.62],
+      [0.52, 0.20, 0.52, 0.38], [0.52, 0.62, 0.52, 0.80],
+      [0.70, 0.08, 0.70, 0.38], [0.70, 0.62, 0.70, 0.92],
+      [0.52, 0.20, 0.70, 0.20], [0.52, 0.80, 0.70, 0.80],
+    ],
+    nodesN: [
+      { x: 0.18, y: 0.50 }, { x: 0.24, y: 0.24 }, { x: 0.24, y: 0.76 },
+      { x: 0.41, y: 0.50 }, { x: 0.61, y: 0.50 },
+      { x: 0.61, y: 0.14 }, { x: 0.61, y: 0.86 },
+      { x: 0.80, y: 0.24 }, { x: 0.80, y: 0.76 }, { x: 0.82, y: 0.50 },
+    ],
+  },
+];
 
 // Live (pixel-space) geometry, recomputed on layout.
 function layoutLevel() {
-  const M = 40; // screen margin
+  const raw = RAW_LEVELS[levelIndex];
+  const M = 44;
   const ax = M, ay = M, bw = W - M * 2, bh = H - M * 2;
   const toX = (n) => ax + n * bw;
   const toY = (n) => ay + n * bh;
 
   level = {
-    walls: RAW_LEVEL.wallsN.map(([x1, y1, x2, y2]) => ({
+    name: raw.name,
+    blurb: raw.blurb || "",
+    decoy: !!raw.decoy,
+    // predSpeed: 0 means the hunter is dormant (early teaching levels).
+    huntSpeed: (raw.predSpeed != null) ? raw.predSpeed : PRED_HUNT_SPEED,
+    dormant: raw.predSpeed === 0,
+    walls: raw.wallsN.map(([x1, y1, x2, y2]) => ({
       x1: toX(x1), y1: toY(y1), x2: toX(x2), y2: toY(y2),
     })),
-    exit: { x: toX(RAW_LEVEL.exitN.x), y: toY(RAW_LEVEL.exitN.y), r: 22 },
-    playerStart: { x: toX(RAW_LEVEL.playerN.x), y: toY(RAW_LEVEL.playerN.y) },
-    predStart: { x: toX(RAW_LEVEL.predN.x), y: toY(RAW_LEVEL.predN.y) },
+    exit: { x: toX(raw.exitN.x), y: toY(raw.exitN.y), r: 24 },
+    playerStart: { x: toX(raw.playerN.x), y: toY(raw.playerN.y) },
+    predStart: { x: toX(raw.predN.x), y: toY(raw.predN.y) },
+    nodes: (raw.nodesN || []).map((n) => ({ x: toX(n.x), y: toY(n.y) })),
   };
+  buildNavGraph();
+}
+
+// ----------------------------------------------------------------------------
+// Pathfinding — a tiny visibility graph over authored nodes (+ dynamic
+// start/goal) so the predator routes AROUND walls (PRED-04). If no graph is
+// authored, the predator falls back to wall-sliding steering.
+// ----------------------------------------------------------------------------
+let navAdj = [];   // adjacency list over level.nodes indices
+function buildNavGraph() {
+  navAdj = [];
+  const N = level.nodes;
+  for (let i = 0; i < N.length; i++) navAdj.push([]);
+  for (let i = 0; i < N.length; i++) {
+    for (let j = i + 1; j < N.length; j++) {
+      if (lineClear(N[i].x, N[i].y, N[j].x, N[j].y)) {
+        const d = Math.hypot(N[i].x - N[j].x, N[i].y - N[j].y);
+        navAdj[i].push({ to: j, w: d });
+        navAdj[j].push({ to: i, w: d });
+      }
+    }
+  }
+}
+
+// True if the segment A->B does not cross any wall (with a little inset margin).
+function lineClear(ax, ay, bx, by) {
+  for (const w of level.walls) {
+    if (segsIntersect(ax, ay, bx, by, w.x1, w.y1, w.x2, w.y2)) return false;
+  }
+  return true;
+}
+
+// Dijkstra from the predator's nearest visible node to the goal's nearest node;
+// returns an array of pixel waypoints (ending at gx,gy) or [{x:gx,y:gy}] direct.
+function planPath(sx, sy, gx, gy) {
+  const N = level.nodes;
+  if (!N.length || lineClear(sx, sy, gx, gy)) return [{ x: gx, y: gy }];
+
+  const startNode = nearestVisibleNode(sx, sy);
+  const goalNode = nearestVisibleNode(gx, gy);
+  if (startNode < 0 || goalNode < 0) return [{ x: gx, y: gy }];
+
+  const dist = new Array(N.length).fill(Infinity);
+  const prev = new Array(N.length).fill(-1);
+  const seen = new Array(N.length).fill(false);
+  dist[startNode] = 0;
+  for (let it = 0; it < N.length; it++) {
+    let u = -1, best = Infinity;
+    for (let i = 0; i < N.length; i++) if (!seen[i] && dist[i] < best) { best = dist[i]; u = i; }
+    if (u < 0) break;
+    seen[u] = true;
+    if (u === goalNode) break;
+    for (const e of navAdj[u]) {
+      if (dist[u] + e.w < dist[e.to]) { dist[e.to] = dist[u] + e.w; prev[e.to] = u; }
+    }
+  }
+  if (dist[goalNode] === Infinity) return [{ x: gx, y: gy }];
+
+  const chain = [];
+  for (let n = goalNode; n >= 0; n = prev[n]) chain.unshift(n);
+  const pts = chain.map((i) => ({ x: N[i].x, y: N[i].y }));
+  pts.push({ x: gx, y: gy });
+  return pts;
+}
+
+function nearestVisibleNode(x, y) {
+  let best = -1, bd = Infinity;
+  for (let i = 0; i < level.nodes.length; i++) {
+    const n = level.nodes[i];
+    const d = Math.hypot(n.x - x, n.y - y);
+    if (d < bd && lineClear(x, y, n.x, n.y)) { bd = d; best = i; }
+  }
+  return best;
 }
 
 // ----------------------------------------------------------------------------
@@ -191,63 +726,123 @@ function layoutLevel() {
 const keys = Object.create(null);
 
 window.addEventListener("keydown", (e) => {
-  // Audio unlock on first gesture.
   unlockAudio();
-
   const k = e.key.toLowerCase();
-
-  // Prevent scrolling on arrows/space.
-  if ([" ", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) {
-    e.preventDefault();
-  }
+  if ([" ", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) e.preventDefault();
 
   if (state === STATE.TITLE) {
-    if (k === "enter" || k === " ") { startGame(); return; }
+    if (k === "enter" || k === " ") { startLevel(progress > 0 ? Math.min(progress, RAW_LEVELS.length - 1) : 0); return; }
   }
-
-  if (state === STATE.CAUGHT || state === STATE.WON) {
-    if (k === "enter" || k === "r" || k === " ") { startGame(); return; }
+  if (state === STATE.CAUGHT) {
+    if (k === "enter" || k === "r" || k === " ") { startLevel(levelIndex); return; }
+  }
+  if (state === STATE.WON) {
+    if (k === "enter" || k === " " || k === "r") { advanceLevel(); return; }
+  }
+  if (state === STATE.CLEARED) {
+    if (k === "enter" || k === " " || k === "r") { state = STATE.TITLE; return; }
   }
 
   if (state === STATE.PLAYING) {
-    if (k === " ") { tryPing(); }
-    if (k === "r") { startGame(); return; }
+    if (k === " " && !e.repeat) { tryPing(); }
+    if (k === "r") { startLevel(levelIndex); return; }
     if (k === "`" || k === "~") { showDebug = !showDebug; }
+    // Decoy aim: hold Shift (or F) then press a direction / use mouse, release to fire.
+    if ((k === "shift" || k === "f") && level.decoy) { aiming = true; }
   }
 
   keys[k] = true;
 });
 
 window.addEventListener("keyup", (e) => {
-  keys[e.key.toLowerCase()] = false;
+  const k = e.key.toLowerCase();
+  if (state === STATE.PLAYING && (k === "shift" || k === "f") && aiming) {
+    fireDecoy();
+    aiming = false;
+  }
+  keys[k] = false;
 });
 
-// Click also unlocks audio + advances title / end screens.
-canvas.addEventListener("pointerdown", () => {
-  unlockAudio();
-  if (state === STATE.TITLE) { startGame(); return; }
-  if (state === STATE.CAUGHT || state === STATE.WON) { startGame(); return; }
-  if (state === STATE.PLAYING) { tryPing(); }
+canvas.addEventListener("pointermove", (e) => {
+  mouseX = e.clientX; mouseY = e.clientY; hasMouse = true;
 });
+
+canvas.addEventListener("pointerdown", (e) => {
+  unlockAudio();
+  mouseX = e.clientX; mouseY = e.clientY; hasMouse = true;
+  if (state === STATE.TITLE) { startLevel(progress > 0 ? Math.min(progress, RAW_LEVELS.length - 1) : 0); return; }
+  if (state === STATE.CAUGHT) { startLevel(levelIndex); return; }
+  if (state === STATE.WON) { advanceLevel(); return; }
+  if (state === STATE.CLEARED) { state = STATE.TITLE; return; }
+  if (state === STATE.PLAYING) {
+    // Right-click (or with decoy unlocked, hold) fires a decoy toward cursor.
+    if (e.button === 2 && level.decoy) { aimAng = Math.atan2(mouseY - player.y, mouseX - player.x); fireDecoy(); }
+    else { tryPing(); }
+  }
+});
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// Compute the current aim direction from keys or mouse.
+function currentAimAngle() {
+  let dx = 0, dy = 0;
+  if (keys["arrowleft"] || keys["a"]) dx -= 1;
+  if (keys["arrowright"] || keys["d"]) dx += 1;
+  if (keys["arrowup"] || keys["w"]) dy -= 1;
+  if (keys["arrowdown"] || keys["s"]) dy += 1;
+  if (dx !== 0 || dy !== 0) return Math.atan2(dy, dx);
+  if (hasMouse) return Math.atan2(mouseY - player.y, mouseX - player.x);
+  return aimAng;
+}
 
 // ----------------------------------------------------------------------------
 // Ping emission
 // ----------------------------------------------------------------------------
 function tryPing() {
+  if (aiming) return; // holding aim suppresses a real ping
   if (cooldown > 0) return;
-  pings.push({ x: player.x, y: player.y, radius: 0 });
+  pings.push({ x: player.x, y: player.y, radius: 0, decoy: false });
   cooldown = PING_COOLDOWN;
   pingCount++;
-  // Predator hunts the sound: home on this ping origin.
+  // Predator hunts the sound: route to this ping origin (PRED-01).
+  lurePredatorTo(player.x, player.y);
+  // juice
+  sndPing(false);
+  spawnParticles(player.x, player.y, 18, COLORS.wallGlow, { speed: 130, life: 0.55, size: 2.4 });
+}
+
+// Fire a decoy ping offset from the player along the aim direction (TWIST-01).
+function fireDecoy() {
+  if (!level.decoy || decoyCooldown > 0) return;
+  aimAng = currentAimAngle();
+  // place the origin a fixed reach away, clamped to a clear-ish spot in bounds
+  let ox = player.x + Math.cos(aimAng) * DECOY_REACH;
+  let oy = player.y + Math.sin(aimAng) * DECOY_REACH;
+  ox = Math.max(30, Math.min(W - 30, ox));
+  oy = Math.max(30, Math.min(H - 30, oy));
+  pings.push({ x: ox, y: oy, radius: 0, decoy: true });
+  decoyCooldown = DECOY_COOLDOWN;
+  pingCount++; // decoys still count as sound made
+  // The blind predator believes the lie: it hunts the decoy origin (TWIST-02).
+  lurePredatorTo(ox, oy);
+  sndPing(true);
+  spawnParticles(ox, oy, 22, COLORS.decoyGlow, { speed: 150, life: 0.6, size: 2.6 });
+  spawnParticles(player.x, player.y, 8, COLORS.decoy, { speed: 70, life: 0.4, angle: aimAng, spread: 0.7 });
+}
+
+// Send the predator hunting toward (x,y) by planning a wall-respecting path.
+function lurePredatorTo(x, y) {
+  if (level && level.dormant) return; // teaching levels: the dark is empty
   predator.mode = "hunt";
-  predator.tx = player.x;
-  predator.ty = player.y;
+  predator.tx = x; predator.ty = y;
+  predator.path = planPath(predator.x, predator.y, x, y);
+  predator.pathStep = 0;
 }
 
 // ----------------------------------------------------------------------------
 // Init / reset
 // ----------------------------------------------------------------------------
-function startGame() {
+function startLevel(idx) {
+  levelIndex = Math.max(0, Math.min(idx, RAW_LEVELS.length - 1));
   layoutLevel();
   player.x = level.playerStart.x;
   player.y = level.playerStart.y;
@@ -256,39 +851,56 @@ function startGame() {
   predator.y = level.predStart.y;
   predator.r = PRED_R;
   predator.mode = "idle";
-  predator.tx = predator.x;
-  predator.ty = predator.y;
-  predator.idleTimer = 0;
+  predator.tx = predator.x; predator.ty = predator.y;
+  predator.idleTimer = 0; predator.path = []; predator.pathStep = 0;
   pings = [];
   ghosts = [];
-  cooldown = 0;
+  particles = [];
+  cooldown = 0; decoyCooldown = 0;
   pingCount = 0;
+  clearTime = 0;
+  introT = 4.5;       // show the level intro banner, then fade it
+  transition = 1;     // play the enter-wipe
+  aiming = false;
+  shake = 0; flash = 0;
   state = STATE.PLAYING;
+  unlockAudio();
+}
+
+function advanceLevel() {
+  if (levelIndex + 1 < RAW_LEVELS.length) {
+    startLevel(levelIndex + 1);
+  } else {
+    state = STATE.CLEARED;
+  }
 }
 
 // ----------------------------------------------------------------------------
 // Update
 // ----------------------------------------------------------------------------
 function update(dt) {
-  if (state !== STATE.PLAYING) return;
+  // Always tick particles / shake / flash so end screens animate.
+  updateParticles(dt);
+  shake = Math.max(0, shake - dt * 60);
+  flash = Math.max(0, flash - dt * 2.2);
+  transition = Math.max(0, transition - dt * 1.6);
 
+  if (state !== STATE.PLAYING) { setProximity(0); return; }
+
+  clearTime += dt;
+  introT = Math.max(0, introT - dt);
   cooldown = Math.max(0, cooldown - dt);
+  decoyCooldown = Math.max(0, decoyCooldown - dt);
+  if (aiming) aimAng = currentAimAngle();
 
   updatePlayer(dt);
   updatePings(dt);
   updateGhosts(dt);
   updatePredator(dt);
+  updateProximityAudio();
 
-  // Win: reach exit.
-  if (Math.hypot(player.x - level.exit.x, player.y - level.exit.y) < level.exit.r) {
-    onWin();
-    return;
-  }
-
-  // Lose: predator contact.
-  if (Math.hypot(player.x - predator.x, player.y - predator.y) < PRED_CATCH) {
-    state = STATE.CAUGHT;
-  }
+  if (Math.hypot(player.x - level.exit.x, player.y - level.exit.y) < level.exit.r) { onWin(); return; }
+  if (Math.hypot(player.x - predator.x, player.y - predator.y) < PRED_CATCH) { onCaught(); }
 }
 
 function updatePlayer(dt) {
@@ -298,26 +910,17 @@ function updatePlayer(dt) {
   if (keys["arrowup"] || keys["w"]) dy -= 1;
   if (keys["arrowdown"] || keys["s"]) dy += 1;
   if (dx === 0 && dy === 0) return;
-
   const len = Math.hypot(dx, dy) || 1;
   dx /= len; dy /= len;
-
   const step = PLAYER_SPEED * dt;
-  // Move axis-by-axis and resolve collisions independently so we slide along
-  // walls rather than sticking.
   moveAndCollide(dx * step, 0);
   moveAndCollide(0, dy * step);
+  // NOTE: moving silently does NOT touch the predator (TWIST-04).
 }
 
-// Try to move the player by (mx,my); if the new position overlaps any wall
-// within the player's radius, cancel that axis (block-on-axis).
 function moveAndCollide(mx, my) {
-  const nx = player.x + mx;
-  const ny = player.y + my;
-  if (!collidesAt(nx, ny, player.r)) {
-    player.x = nx;
-    player.y = ny;
-  }
+  const nx = player.x + mx, ny = player.y + my;
+  if (!collidesAt(nx, ny, player.r)) { player.x = nx; player.y = ny; }
 }
 
 function collidesAt(x, y, r) {
@@ -328,95 +931,88 @@ function collidesAt(x, y, r) {
 }
 
 function updatePings(dt) {
-  for (const p of pings) {
-    p.radius += PING_SPEED * dt;
-  }
-  // For each ping, reveal wall portions where the front currently crosses,
-  // spawning fresh ghost fragments along the live band.
-  for (const p of pings) {
-    revealAlongFront(p);
-  }
-  // Cull dead pings.
+  for (const p of pings) { p.radius += PING_SPEED * dt; revealAlongFront(p); }
   pings = pings.filter((p) => p.radius <= PING_MAX_RADIUS);
 }
 
-// Walk each wall segment in small steps; any sample within the live front band
-// (|dist(origin,sample) - radius| < BAND) spawns/refreshes a ghost dot-segment.
 function revealAlongFront(p) {
   for (const w of level.walls) {
     const segLen = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
     const steps = Math.max(2, Math.ceil(segLen / 6));
-    let runStart = null; // start of a contiguous revealed run (param t)
+    let runStart = null;
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       const sx = w.x1 + (w.x2 - w.x1) * t;
       const sy = w.y1 + (w.y2 - w.y1) * t;
       const d = Math.hypot(sx - p.x, sy - p.y);
       const onFront = Math.abs(d - p.radius) < PING_BAND;
-      if (onFront && runStart === null) {
-        runStart = t;
-      } else if (!onFront && runStart !== null) {
-        spawnGhost(w, runStart, (i - 1) / steps);
-        runStart = null;
-      }
+      if (onFront && runStart === null) runStart = t;
+      else if (!onFront && runStart !== null) { spawnGhost(w, runStart, (i - 1) / steps, p.decoy); runStart = null; }
     }
-    if (runStart !== null) spawnGhost(w, runStart, 1);
+    if (runStart !== null) spawnGhost(w, runStart, 1, p.decoy);
   }
 }
 
-function spawnGhost(w, t0, t1) {
+function spawnGhost(w, t0, t1, decoy) {
   if (t1 <= t0) t1 = Math.min(1, t0 + 0.02);
-  const gx1 = w.x1 + (w.x2 - w.x1) * t0;
-  const gy1 = w.y1 + (w.y2 - w.y1) * t0;
-  const gx2 = w.x1 + (w.x2 - w.x1) * t1;
-  const gy2 = w.y1 + (w.y2 - w.y1) * t1;
-  ghosts.push({ x1: gx1, y1: gy1, x2: gx2, y2: gy2, life: GHOST_LIFE });
+  ghosts.push({
+    x1: w.x1 + (w.x2 - w.x1) * t0, y1: w.y1 + (w.y2 - w.y1) * t0,
+    x2: w.x1 + (w.x2 - w.x1) * t1, y2: w.y1 + (w.y2 - w.y1) * t1,
+    life: GHOST_LIFE, decoy: !!decoy,
+  });
 }
 
 function updateGhosts(dt) {
   for (const g of ghosts) g.life -= dt;
   ghosts = ghosts.filter((g) => g.life > 0);
-  // Keep the ghost array bounded for steady framerate.
   if (ghosts.length > 4000) ghosts.splice(0, ghosts.length - 4000);
 }
 
 function updatePredator(dt) {
+  predator.rippleT += dt;
   if (predator.mode === "hunt") {
-    const dx = predator.tx - predator.x;
-    const dy = predator.ty - predator.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < PRED_ARRIVE) {
-      // Reached the ping origin; lapse into idle wander.
-      predator.mode = "idle";
-      predator.idleTimer = 0;
-      pickIdleTarget();
+    // follow planned waypoints to the lure target
+    const wp = predator.path[predator.pathStep];
+    if (!wp) {
+      predator.mode = "idle"; predator.idleTimer = 0; pickIdleTarget();
     } else {
-      stepToward(dx / dist, dy / dist, PRED_HUNT_SPEED * dt);
+      const dx = wp.x - predator.x, dy = wp.y - predator.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < PRED_ARRIVE) {
+        predator.pathStep++;
+        if (predator.pathStep >= predator.path.length) {
+          // reached the lure origin (it expected "you" there) — lapse to idle
+          predator.mode = "idle"; predator.idleTimer = 0; pickIdleTarget();
+        }
+      } else {
+        stepToward(dx / dist, dy / dist, level.huntSpeed * dt);
+      }
     }
   } else {
-    // Idle: slow wander to occasional random points.
+    // Dormant predators (teaching levels) do not even wander.
+    if (level.dormant) return;
     predator.idleTimer -= dt;
-    if (predator.idleTimer <= 0) {
-      predator.idleTimer = PRED_IDLE_RETARGET;
-      pickIdleTarget();
-    }
-    const dx = predator.tx - predator.x;
-    const dy = predator.ty - predator.y;
+    if (predator.idleTimer <= 0) { predator.idleTimer = PRED_IDLE_RETARGET; pickIdleTarget(); }
+    const dx = predator.tx - predator.x, dy = predator.ty - predator.y;
     const dist = Math.hypot(dx, dy);
     if (dist > 4) stepToward(dx / dist, dy / dist, PRED_IDLE_SPEED * dt);
   }
 }
 
 function pickIdleTarget() {
-  // Wander a short distance from current position, biased to stay in bounds.
+  // prefer wandering toward an authored node so idle drift stays in playable space
+  if (level.nodes.length) {
+    const n = level.nodes[(Math.random() * level.nodes.length) | 0];
+    if (lineClear(predator.x, predator.y, n.x, n.y)) { predator.tx = n.x; predator.ty = n.y; return; }
+  }
   const ang = Math.random() * TAU;
   const reach = 80 + Math.random() * 140;
   predator.tx = Math.max(40, Math.min(W - 40, predator.x + Math.cos(ang) * reach));
   predator.ty = Math.max(40, Math.min(H - 40, predator.y + Math.sin(ang) * reach));
 }
 
-// Move predator toward a unit direction, but don't pass through walls
-// (axis-resolved like the player). Phase 1 keeps this simple.
+// Move predator, wall-resolved per-axis (PRED-04 already enforced by path, this
+// is the safety net so it never tunnels through geometry).
 function stepToward(ux, uy, amt) {
   const tryMove = (mx, my) => {
     const nx = predator.x + mx, ny = predator.y + my;
@@ -426,56 +1022,130 @@ function stepToward(ux, uy, amt) {
   tryMove(0, uy * amt);
 }
 
+function updateProximityAudio() {
+  const d = Math.hypot(player.x - predator.x, player.y - predator.y);
+  const near = 320; // start humming within this distance
+  const closeness = Math.max(0, Math.min(1, 1 - d / near));
+  setProximity(closeness);
+}
+
+// Normalize a stored best entry to {pings, time} (old format was a bare number).
+function getBest(idx) {
+  const v = bestMap[String(idx)];
+  if (v == null) return null;
+  if (typeof v === "number") return { pings: v, time: null };
+  return v;
+}
+
 function onWin() {
   state = STATE.WON;
-  if (bestPings === null || pingCount < bestPings) {
-    bestPings = pingCount;
-    saveBest(bestPings);
-  }
+  // Best = fewest pings, and separately fastest time.
+  const key = String(levelIndex);
+  const prev = getBest(levelIndex);
+  const next = {
+    pings: prev ? Math.min(prev.pings, pingCount) : pingCount,
+    time: prev && prev.time != null ? Math.min(prev.time, clearTime) : clearTime,
+  };
+  bestMap[key] = next; saveBestMap();
+  if (levelIndex + 1 > progress) { progress = levelIndex + 1; saveProgress(); }
+  flash = 0.7; flashColor = COLORS.exit;
+  shake = 6;
+  spawnParticles(level.exit.x, level.exit.y, 60, COLORS.exitGlow, { speed: 220, life: 1.0, size: 3 });
+  sndWin();
+}
+
+function onCaught() {
+  state = STATE.CAUGHT;
+  flash = 0.9; flashColor = COLORS.predator;
+  shake = 14;
+  spawnParticles(player.x, player.y, 50, COLORS.predator, { speed: 200, life: 0.9, size: 3 });
+  sndCapture();
 }
 
 // ----------------------------------------------------------------------------
 // Render
 // ----------------------------------------------------------------------------
 function render() {
-  // Clear to void.
-  ctx.fillStyle = COLORS.void;
-  ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  // screen shake
+  if (shake > 0.2) {
+    ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+  }
 
-  if (state === STATE.TITLE) { renderTitle(); return; }
+  // void + vignette
+  drawVoid();
+
+  if (state === STATE.TITLE) { ctx.restore(); renderTitle(); return; }
+  if (state === STATE.CLEARED) { ctx.restore(); renderCleared(); return; }
 
   renderWorld();
+  ctx.restore();
+
+  // full-screen flash overlay (above shake transform)
+  if (flash > 0.001) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(0.5, flash * 0.5);
+    ctx.fillStyle = flashColor;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // level-enter wipe: a descending dark veil that lifts as the level begins
+  if (transition > 0.001) {
+    ctx.save();
+    ctx.fillStyle = COLORS.void;
+    ctx.globalAlpha = Math.min(1, transition);
+    const veil = H * transition;
+    ctx.fillRect(0, 0, W, veil);
+    // a thin chalk scan-line at the leading edge
+    ctx.globalAlpha = Math.min(1, transition) * 0.6;
+    ctx.strokeStyle = COLORS.wallGlow;
+    ctx.lineWidth = 1.5;
+    line(0, veil, W, veil);
+    ctx.restore();
+  }
 
   if (state === STATE.CAUGHT) renderEnd("CAUGHT", COLORS.predator, "The hunter found your sound.");
   if (state === STATE.WON) renderEnd("ESCAPED", COLORS.exit, bestText());
 }
 
-function bestText() {
-  const best = (bestPings === null) ? pingCount : bestPings;
-  return `Pings used: ${pingCount}   ·   Best: ${best}`;
+function drawVoid() {
+  ctx.fillStyle = COLORS.void;
+  ctx.fillRect(-40, -40, W + 80, H + 80);
+  // radial vignette toward corners for depth
+  const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.75);
+  g.addColorStop(0, "rgba(0,0,0,0)");
+  g.addColorStop(1, COLORS.voidEdge);
+  ctx.fillStyle = g;
+  ctx.fillRect(-40, -40, W + 80, H + 80);
 }
 
 function renderWorld() {
-  // Ghost-outlines (fading chalk fragments) — the heart of map-from-fragments.
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // Ghost-outlines (fading chalk fragments) with a soft bloom underlay.
   for (const g of ghosts) {
     const a = Math.max(0, g.life / GHOST_LIFE);
-    ctx.strokeStyle = COLORS.ghost;
-    ctx.globalAlpha = a * 0.85;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(g.x1, g.y1);
-    ctx.lineTo(g.x2, g.y2);
-    ctx.stroke();
+    const tint = g.decoy ? COLORS.decoy : COLORS.ghost;
+    // bloom
+    ctx.strokeStyle = tint;
+    ctx.globalAlpha = a * 0.18;
+    ctx.lineWidth = 6;
+    line(g.x1, g.y1, g.x2, g.y2);
+    // crisp line
+    ctx.globalAlpha = a * 0.9;
+    ctx.lineWidth = 1.8;
+    line(g.x1, g.y1, g.x2, g.y2);
   }
   ctx.globalAlpha = 1;
 
-  // Live ping fronts: bright chalk-white intersection points along each wall.
+  // Live ping fronts: bright chalk-white intersections + a colored glow.
   for (const p of pings) {
-    const fade = 1 - p.radius / PING_MAX_RADIUS;
-    ctx.strokeStyle = COLORS.wallFront;
-    ctx.globalAlpha = Math.max(0, fade);
-    ctx.lineWidth = 3;
+    const fade = Math.max(0, 1 - p.radius / PING_MAX_RADIUS);
+    const frontGlow = p.decoy ? COLORS.decoyGlow : COLORS.wallGlow;
+    const frontCore = p.decoy ? COLORS.decoy : COLORS.wallFront;
+
     for (const w of level.walls) {
       const segLen = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
       const steps = Math.max(2, Math.ceil(segLen / 6));
@@ -487,15 +1157,14 @@ function renderWorld() {
         const d = Math.hypot(sx - p.x, sy - p.y);
         const onFront = Math.abs(d - p.radius) < PING_BAND;
         if (onFront && runStart === null) runStart = t;
-        else if (!onFront && runStart !== null) {
-          drawSeg(w, runStart, (i - 1) / steps);
-          runStart = null;
-        }
+        else if (!onFront && runStart !== null) { drawFrontSeg(w, runStart, (i - 1) / steps, fade, frontGlow, frontCore); runStart = null; }
       }
-      if (runStart !== null) drawSeg(w, runStart, 1);
+      if (runStart !== null) drawFrontSeg(w, runStart, 1, fade, frontGlow, frontCore);
     }
-    // Faint expanding ring guide so the player feels the front sweep.
-    ctx.globalAlpha = Math.max(0, fade) * 0.12;
+
+    // faint expanding ring guide
+    ctx.globalAlpha = fade * 0.10;
+    ctx.strokeStyle = frontGlow;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.radius, 0, TAU);
@@ -503,77 +1172,122 @@ function renderWorld() {
   }
   ctx.globalAlpha = 1;
 
-  // Exit marker — a soft beacon (always faintly visible so there's a goal).
+  // Particles (under markers).
+  drawParticles();
+
   drawExit();
-
-  // Predator telegraph — a plain red marker for Phase 1 (full ripple in P2),
-  // but already always-visible for fairness.
   drawPredator();
-
-  // Player marker — always faintly visible so you never lose yourself.
+  drawAim();      // decoy aim indicator (only while aiming + unlocked)
   drawPlayer();
 
   renderHUD();
 }
 
-function drawSeg(w, t0, t1) {
+function line(x1, y1, x2, y2) {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+
+function drawFrontSeg(w, t0, t1, fade, glow, core) {
   if (t1 < t0) return;
-  const x1 = w.x1 + (w.x2 - w.x1) * t0;
-  const y1 = w.y1 + (w.y2 - w.y1) * t0;
-  const x2 = w.x1 + (w.x2 - w.x1) * t1;
-  const y2 = w.y1 + (w.y2 - w.y1) * t1;
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
+  const x1 = w.x1 + (w.x2 - w.x1) * t0, y1 = w.y1 + (w.y2 - w.y1) * t0;
+  const x2 = w.x1 + (w.x2 - w.x1) * t1, y2 = w.y1 + (w.y2 - w.y1) * t1;
+  // glow
+  ctx.strokeStyle = glow;
+  ctx.globalAlpha = fade * 0.5;
+  ctx.lineWidth = 7;
+  line(x1, y1, x2, y2);
+  // core
+  ctx.strokeStyle = core;
+  ctx.globalAlpha = fade;
+  ctx.lineWidth = 3;
+  line(x1, y1, x2, y2);
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const a = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * a, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawExit() {
   const e = level.exit;
   const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 500);
   ctx.save();
-  ctx.globalAlpha = 0.25 + pulse * 0.3;
+  ctx.strokeStyle = COLORS.exitGlow;
+  ctx.globalAlpha = 0.18 + pulse * 0.18;
+  ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, TAU); ctx.stroke();
   ctx.strokeStyle = COLORS.exit;
+  ctx.globalAlpha = 0.4 + pulse * 0.4;
   ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(e.x, e.y, e.r, 0, TAU);
-  ctx.stroke();
-  ctx.globalAlpha = 0.5 + pulse * 0.4;
+  ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, TAU); ctx.stroke();
+  ctx.globalAlpha = 0.7 + pulse * 0.3;
   ctx.fillStyle = COLORS.exit;
-  ctx.beginPath();
-  ctx.arc(e.x, e.y, 3, 0, TAU);
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawPlayer() {
-  ctx.save();
-  ctx.fillStyle = COLORS.player;
-  ctx.globalAlpha = 0.9;
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, player.r * 0.5, 0, TAU);
-  ctx.fill();
-  // Faint halo so you can always find yourself in the dark.
-  ctx.globalAlpha = 0.18;
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, player.r, 0, TAU);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(e.x, e.y, 3, 0, TAU); ctx.fill();
   ctx.restore();
 }
 
 function drawPredator() {
   ctx.save();
-  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 220);
-  // Persistent dim red telegraph (fairness): visible with no ping, audio off.
-  ctx.globalAlpha = 0.35 + pulse * 0.25;
+  const t = performance.now() / 1000;
+  // PRED-02: persistent red ripple telegraph (concentric, always visible).
+  for (let i = 0; i < 3; i++) {
+    const ph = (predator.rippleT * 1.1 + i / 3) % 1;
+    const rr = predator.r * (0.5 + ph * 2.2);
+    ctx.globalAlpha = (1 - ph) * (predator.mode === "hunt" ? 0.5 : 0.3);
+    ctx.strokeStyle = COLORS.predator;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(predator.x, predator.y, rr, 0, TAU); ctx.stroke();
+  }
+  // core glow
+  const pulse = 0.5 + 0.5 * Math.sin(t * 5);
+  ctx.globalAlpha = 0.25 + pulse * 0.18;
+  ctx.fillStyle = COLORS.predatorDeep;
+  ctx.beginPath(); ctx.arc(predator.x, predator.y, predator.r, 0, TAU); ctx.fill();
+  ctx.globalAlpha = 0.7 + pulse * 0.3;
   ctx.fillStyle = COLORS.predator;
-  ctx.beginPath();
-  ctx.arc(predator.x, predator.y, predator.r * 0.45, 0, TAU);
-  ctx.fill();
-  ctx.globalAlpha = 0.12 + pulse * 0.12;
-  ctx.beginPath();
-  ctx.arc(predator.x, predator.y, predator.r, 0, TAU);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(predator.x, predator.y, predator.r * 0.42, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
+function drawPlayer() {
+  ctx.save();
+  // halo
+  ctx.fillStyle = COLORS.playerGlow;
+  ctx.globalAlpha = 0.16;
+  ctx.beginPath(); ctx.arc(player.x, player.y, player.r * 1.4, 0, TAU); ctx.fill();
+  // core
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = COLORS.player;
+  ctx.beginPath(); ctx.arc(player.x, player.y, player.r * 0.5, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
+// Decoy aim arc — appears only while a decoy is being aimed (unlocked levels).
+function drawAim() {
+  if (!level.decoy) return;
+  if (!aiming) return; // keep it clean: only show while actually aiming
+  const ang = aimAng;
+  const ox = player.x + Math.cos(ang) * DECOY_REACH;
+  const oy = player.y + Math.sin(ang) * DECOY_REACH;
+  ctx.save();
+  ctx.setLineDash([4, 6]);
+  ctx.strokeStyle = COLORS.decoy;
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 1.5;
+  line(player.x, player.y, ox, oy);
+  ctx.setLineDash([]);
+  const ready = decoyCooldown <= 0;
+  ctx.globalAlpha = ready ? 0.8 : 0.3;
+  ctx.strokeStyle = COLORS.decoyGlow;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(ox, oy, 14, 0, TAU); ctx.stroke();
   ctx.restore();
 }
 
@@ -585,119 +1299,197 @@ function renderHUD() {
   ctx.font = "13px system-ui, sans-serif";
   ctx.textBaseline = "top";
 
-  // Ping cooldown / count.
+  ctx.fillStyle = COLORS.hudBright;
+  ctx.fillText(`LEVEL ${levelIndex + 1}/${RAW_LEVELS.length} · ${level.name}`, 16, 14);
+
   const ready = cooldown <= 0;
-  ctx.fillStyle = ready ? COLORS.hudBright : COLORS.hud;
-  ctx.fillText(ready ? "PING READY  (space)" : "recharging…", 16, 14);
+  ctx.fillStyle = ready ? COLORS.player : COLORS.hud;
+  ctx.fillText(ready ? "PING READY (space)" : "recharging…", 16, 34);
 
   ctx.fillStyle = COLORS.hud;
-  ctx.fillText(`pings: ${pingCount}`, 16, 32);
-  if (bestPings !== null) ctx.fillText(`best: ${bestPings}`, 16, 48);
+  ctx.fillText(`pings: ${pingCount}   time: ${fmtTime(clearTime)}`, 16, 52);
+  const bk = getBest(levelIndex);
+  if (bk != null) ctx.fillText(`best: ${bk.pings} pings${bk.time != null ? " / " + fmtTime(bk.time) : ""}`, 200, 52);
 
-  // Cooldown bar.
-  const bw = 120, bx = 16, by = 70;
-  ctx.globalAlpha = 0.3;
-  ctx.fillStyle = COLORS.hud;
-  ctx.fillRect(bx, by, bw, 4);
-  ctx.globalAlpha = 0.9;
-  ctx.fillStyle = ready ? COLORS.player : COLORS.hudBright;
-  const frac = 1 - cooldown / PING_COOLDOWN;
-  ctx.fillRect(bx, by, bw * Math.max(0, Math.min(1, frac)), 4);
+  // ping cooldown bar
+  const bw = 120, bx = 16, by = 74;
+  ctx.globalAlpha = 0.3; ctx.fillStyle = COLORS.hud; ctx.fillRect(bx, by, bw, 4);
+  ctx.globalAlpha = 0.95; ctx.fillStyle = ready ? COLORS.player : COLORS.hudBright;
+  ctx.fillRect(bx, by, bw * Math.max(0, Math.min(1, 1 - cooldown / PING_COOLDOWN)), 4);
   ctx.globalAlpha = 1;
 
-  // Bottom hint.
+  // decoy affordance (only when unlocked)
+  if (level.decoy) {
+    const dReady = decoyCooldown <= 0;
+    ctx.fillStyle = dReady ? COLORS.decoy : COLORS.hud;
+    ctx.fillText(dReady ? "DECOY READY (hold Shift+aim, or right-click)" : "decoy charging…", 16, 88);
+    const dby = 108;
+    ctx.globalAlpha = 0.3; ctx.fillStyle = COLORS.hud; ctx.fillRect(bx, dby, bw, 4);
+    ctx.globalAlpha = 0.95; ctx.fillStyle = dReady ? COLORS.decoyGlow : COLORS.hudBright;
+    ctx.fillRect(bx, dby, bw * Math.max(0, Math.min(1, 1 - decoyCooldown / DECOY_COOLDOWN)), 4);
+    ctx.globalAlpha = 1;
+  }
+
+  // bottom hint
   ctx.fillStyle = COLORS.hud;
   ctx.textBaseline = "bottom";
-  ctx.fillText("SPACE ping  ·  WASD/arrows move  ·  R reset", 16, H - 14);
+  const hint = level.decoy
+    ? "SPACE ping · WASD/arrows move · SHIFT(hold)+aim or right-click = DECOY · R reset"
+    : "SPACE ping · WASD/arrows move · R reset";
+  ctx.fillText(hint, 16, H - 14);
 
   if (showDebug) {
-    ctx.fillStyle = "#79f";
-    ctx.textBaseline = "top";
-    ctx.fillText(`pings:${pings.length} ghosts:${ghosts.length} pred:${predator.mode}`, 16, 92);
+    ctx.fillStyle = "#79f"; ctx.textBaseline = "top";
+    ctx.fillText(`pings:${pings.length} ghosts:${ghosts.length} parts:${particles.length} pred:${predator.mode} step:${predator.pathStep}/${predator.path.length}`, 16, 130);
   }
   ctx.restore();
+
+  drawIntroBanner();
+}
+
+// Per-level onboarding banner: the level name + a one-line "what's new" hint that
+// fades after a few seconds, so a first-time player learns each idea in context.
+function drawIntroBanner() {
+  if (introT <= 0 || !level.blurb) return;
+  // Fade in quickly, hold, then fade out over the last second.
+  const a = Math.min(1, introT) * Math.min(1, (4.5 - introT) * 4 + 1);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, a));
+  ctx.textAlign = "center";
+
+  const cx = W / 2, cy = H * 0.16;
+  // panel
+  ctx.font = "13px system-ui, sans-serif";
+  const tw = Math.max(ctx.measureText(level.blurb).width, 260) + 48;
+  ctx.fillStyle = "rgba(2,8,16,0.72)";
+  ctx.fillRect(cx - tw / 2, cy - 30, tw, 60);
+  ctx.strokeStyle = COLORS.wallGlow; ctx.globalAlpha *= 0.8;
+  ctx.lineWidth = 1; ctx.strokeRect(cx - tw / 2, cy - 30, tw, 60);
+  ctx.globalAlpha = Math.max(0, Math.min(1, a));
+
+  ctx.fillStyle = COLORS.wallFront;
+  ctx.font = "700 16px system-ui, sans-serif";
+  ctx.fillText(`LEVEL ${levelIndex + 1} — ${level.name}`, cx, cy - 18);
+  ctx.fillStyle = COLORS.hudBright;
+  ctx.font = "13px system-ui, sans-serif";
+  ctx.fillText(level.blurb, cx, cy + 6);
+  ctx.restore();
+}
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return (m > 0 ? m + ":" + String(sec).padStart(2, "0") : sec + "s");
+}
+
+function bestText() {
+  const bk = getBest(levelIndex);
+  const bestPings = (bk == null) ? pingCount : bk.pings;
+  const bestTime = (bk == null || bk.time == null) ? clearTime : bk.time;
+  const next = (levelIndex + 1 < RAW_LEVELS.length) ? "  ·  next level →" : "  ·  final level!";
+  return `This run: ${pingCount} pings / ${fmtTime(clearTime)}   ·   Best: ${bestPings} / ${fmtTime(bestTime)}${next}`;
 }
 
 function renderTitle() {
   ctx.save();
   ctx.textAlign = "center";
 
-  // Title.
   ctx.fillStyle = COLORS.wallFront;
   ctx.font = "700 clamp(28px, 6vw, 54px) system-ui, sans-serif";
-  ctx.fillText("ECHO CARTOGRAPHER", W / 2, H / 2 - 90);
+  ctx.fillText("ECHO CARTOGRAPHER", W / 2, H / 2 - 110);
 
-  ctx.fillStyle = COLORS.ghost;
-  ctx.globalAlpha = 0.75;
+  ctx.fillStyle = COLORS.ghost; ctx.globalAlpha = 0.8;
   ctx.font = "16px system-ui, sans-serif";
-  ctx.fillText("See by sound. The dark hunts your echoes.", W / 2, H / 2 - 48);
+  ctx.fillText("See by sound. The dark hunts your echoes.", W / 2, H / 2 - 66);
   ctx.globalAlpha = 1;
 
-  // One-line how-to.
-  ctx.fillStyle = COLORS.hudBright;
-  ctx.font = "15px system-ui, sans-serif";
-  ctx.fillText("SPACE = ping (lights walls, but draws the hunter) · WASD/arrows = move", W / 2, H / 2);
+  ctx.fillStyle = COLORS.hudBright; ctx.font = "15px system-ui, sans-serif";
+  ctx.fillText("SPACE = ping (lights walls, but draws the hunter) · WASD/arrows = move", W / 2, H / 2 - 18);
 
-  // Reach the gold exit. Don't get caught.
-  ctx.fillStyle = COLORS.exit;
-  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = COLORS.decoy; ctx.globalAlpha = 0.9;
   ctx.font = "14px system-ui, sans-serif";
-  ctx.fillText("Reach the gold exit. Don't let the red hunter touch you.", W / 2, H / 2 + 28);
+  ctx.fillText("Later: hold SHIFT + aim (or right-click) to throw a DECOY and lure the hunter away.", W / 2, H / 2 + 12);
   ctx.globalAlpha = 1;
 
-  // Prompt (pulsing).
+  ctx.fillStyle = COLORS.exit; ctx.globalAlpha = 0.85; ctx.font = "14px system-ui, sans-serif";
+  ctx.fillText("Reach the gold exit. Don't let the red hunter touch you.", W / 2, H / 2 + 42);
+  ctx.globalAlpha = 1;
+
+  if (progress > 0) {
+    const resumeAt = Math.min(progress, RAW_LEVELS.length - 1) + 1;
+    const cleared = Math.min(progress, RAW_LEVELS.length);
+    ctx.fillStyle = COLORS.hud; ctx.font = "13px system-ui, sans-serif";
+    const msg = (progress >= RAW_LEVELS.length)
+      ? `All ${RAW_LEVELS.length} levels cleared — replay from level ${resumeAt}`
+      : `Resuming at level ${resumeAt} of ${RAW_LEVELS.length}  ·  ${cleared} cleared`;
+    ctx.fillText(msg, W / 2, H / 2 + 72);
+  } else {
+    ctx.fillStyle = COLORS.hud; ctx.font = "13px system-ui, sans-serif";
+    ctx.fillText(`${RAW_LEVELS.length} levels of deepening dark`, W / 2, H / 2 + 72);
+  }
+
   const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 400);
-  ctx.fillStyle = COLORS.player;
-  ctx.globalAlpha = 0.5 + pulse * 0.5;
+  ctx.fillStyle = COLORS.player; ctx.globalAlpha = 0.5 + pulse * 0.5;
   ctx.font = "700 18px system-ui, sans-serif";
-  ctx.fillText("Press SPACE or click to begin", W / 2, H / 2 + 80);
+  ctx.fillText("Press SPACE or click to begin", W / 2, H / 2 + 104);
   ctx.restore();
 }
 
 function renderEnd(title, color, sub) {
   ctx.save();
-  // Dim the world slightly.
-  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
   ctx.fillRect(0, 0, W, H);
-
   ctx.textAlign = "center";
   ctx.fillStyle = color;
   ctx.font = "700 clamp(32px, 7vw, 60px) system-ui, sans-serif";
   ctx.fillText(title, W / 2, H / 2 - 30);
-
-  ctx.fillStyle = COLORS.hudBright;
-  ctx.font = "16px system-ui, sans-serif";
+  ctx.fillStyle = COLORS.hudBright; ctx.font = "16px system-ui, sans-serif";
   ctx.fillText(sub, W / 2, H / 2 + 14);
-
   const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 400);
-  ctx.fillStyle = COLORS.player;
-  ctx.globalAlpha = 0.5 + pulse * 0.5;
+  ctx.fillStyle = COLORS.player; ctx.globalAlpha = 0.5 + pulse * 0.5;
   ctx.font = "700 16px system-ui, sans-serif";
-  ctx.fillText("Press SPACE / R / click to try again", W / 2, H / 2 + 56);
+  const prompt = (state === STATE.WON)
+    ? "Press SPACE / click to continue"
+    : "Press SPACE / R / click to try again";
+  ctx.fillText(prompt, W / 2, H / 2 + 56);
+  ctx.restore();
+}
+
+function renderCleared() {
+  ctx.save();
+  ctx.textAlign = "center";
+  // celebratory drifting particles
+  if (Math.random() < 0.4) {
+    spawnParticles(Math.random() * W, H + 10, 1, Math.random() < 0.5 ? COLORS.exit : COLORS.player,
+      { speed: 60, life: 2.5, size: 2.5, angle: -Math.PI / 2, spread: 0.6 });
+  }
+  drawParticles();
+  ctx.fillStyle = COLORS.exit;
+  ctx.font = "700 clamp(30px, 6.5vw, 56px) system-ui, sans-serif";
+  ctx.fillText("YOU MAPPED THE DARK", W / 2, H / 2 - 30);
+  ctx.fillStyle = COLORS.hudBright; ctx.font = "16px system-ui, sans-serif";
+  ctx.fillText("Every corridor learned. Every lie believed. Every echo silenced.", W / 2, H / 2 + 12);
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 400);
+  ctx.fillStyle = COLORS.player; ctx.globalAlpha = 0.5 + pulse * 0.5;
+  ctx.font = "700 16px system-ui, sans-serif";
+  ctx.fillText("Press SPACE / click for the title", W / 2, H / 2 + 56);
   ctx.restore();
 }
 
 // ----------------------------------------------------------------------------
 // Main loop — fixed-timestep update + rAF render
 // ----------------------------------------------------------------------------
-const FIXED = 1 / 120;       // physics step
-let acc = 0;
-let last = 0;
+const FIXED = 1 / 120;
+let acc = 0, last = 0;
 
-function frame(now) {
-  if (!last) last = now;
-  let dt = (now - last) / 1000;
-  last = now;
-  if (dt > 0.25) dt = 0.25; // clamp after tab-out
-
+function frame(now2) {
+  if (!last) last = now2;
+  let dt = (now2 - last) / 1000;
+  last = now2;
+  if (dt > 0.25) dt = 0.25;
   acc += dt;
   let guard = 0;
-  while (acc >= FIXED && guard < 600) {
-    update(FIXED);
-    acc -= FIXED;
-    guard++;
-  }
-
+  while (acc >= FIXED && guard < 600) { update(FIXED); acc -= FIXED; guard++; }
   render();
   requestAnimationFrame(frame);
 }

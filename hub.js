@@ -171,7 +171,7 @@ const GAMES = [
   {
     title: "Echo Cartographer",
     description:
-      "Navigate a pitch-black cave by sound alone. Press space to fire a sonar ping that paints the walls chalk-white in expanding slices, then fade to ghost-outlines you must remember — while a blind predator homes in on the very echoes you need to see.",
+      "Navigate a pitch-black cave by sound alone. Space fires a real ping that reveals walls — right-click fires a decoy ping that throws the predator off your trail. Every echo you need to see is also a dinner bell.",
     path: "games/echo-cartographer/index.html",
     tags: ["stealth", "puzzle", "atmospheric"],
     accent: "#8fffd0",
@@ -201,7 +201,7 @@ const GAMES = [
   {
     title: "Last Words",
     description:
-      "A deckbuilder where every card is a word. Chain them into a grammatically valid sentence, then watch it get cast LITERALLY — \"BURN the GUARD twice\" scorches the enemy, but \"the GUARD STRIKES YOU\" turns the blow on yourself.",
+      "A deckbuilder where every card is a word. Chain them into a grammatically valid sentence, cast it LITERALLY — \"BURN the GUARD twice\" scorches the enemy. Press Tab to arm MIS-GRAMMAR: break the rules on purpose and wield the resulting chaos.",
     path: "games/last-words/index.html",
     tags: ["deckbuilder", "card combat", "word puzzle"],
     accent: "#b3261e",
@@ -221,7 +221,7 @@ const GAMES = [
   {
     title: "Vanishing Point",
     description:
-      "Inside a one-point-perspective plaza, you don't resize anything — you slide objects through depth. Park a worthless speck by the horizon, drag it forward, and watch it swell into the exact platform that bridges the chasm.",
+      "Inside a one-point-perspective plaza, you don't resize anything — you slide objects through depth. Later levels let you grab the SUN itself and drag the vanishing point to a new position, rewiring all perspective in the scene.",
     path: "games/vanishing-point/index.html",
     tags: ["puzzle", "perspective", "physics-lite"],
     accent: "#ffb25c",

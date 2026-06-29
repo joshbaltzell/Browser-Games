@@ -4,6 +4,7 @@
   --ribbon: #b3261e;
   --faded: #8a8174;
   --bleed: #6b1410;
+  --desk: #14110d;
 }
 
 * {
@@ -16,9 +17,11 @@ body {
   padding: 0;
   height: 100%;
   overflow: hidden;
+  /* A dim wooden desk under a single lamp — the writer's room. */
   background:
-    radial-gradient(120% 90% at 50% 0%, #2a2622 0%, #1a1714 60%, #100e0c 100%);
-  font-family: "Courier New", "Courier", monospace;
+    radial-gradient(130% 100% at 50% 18%, #3a3026 0%, #221b14 55%, #0d0a07 100%);
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua",
+    Palatino, Georgia, "Times New Roman", serif;
   color: var(--paper);
   user-select: none;
   -webkit-user-select: none;
@@ -36,11 +39,14 @@ body {
 #game {
   display: block;
   /* JS sets the pixel width/height to keep the 3:2 aspect ratio. */
-  border-radius: 6px;
+  border-radius: 3px;
+  /* The sheet of paper, with a torn-feeling edge and a warm lamp glow. */
   background: var(--paper);
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.4),
-    0 24px 80px -24px rgba(0, 0, 0, 0.9);
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 2px 0 rgba(255, 250, 235, 0.04),
+    0 30px 90px -20px rgba(0, 0, 0, 0.95),
+    0 0 140px -30px rgba(255, 220, 150, 0.18);
   touch-action: none;
   cursor: pointer;
 }
