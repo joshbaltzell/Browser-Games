@@ -1,0 +1,42 @@
+/* Knit One — cozy felt-and-fiber physics toy.
+   Phase 1 is grey-box, but we hint the warm wool palette in the chrome. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(130% 90% at 50% 0%, #2b2620 0%, #1c1813 55%, #14110d 100%);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: #efe4cf;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Centre the fixed-aspect play area. */
+#stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+#game {
+  display: block;
+  /* JS sets the CSS width/height to keep the 9:6.4 aspect ratio. */
+  border-radius: 18px;
+  background: #211c16;
+  box-shadow:
+    0 0 0 1px rgba(214, 178, 110, 0.18),
+    0 0 60px -12px rgba(214, 178, 110, 0.30),
+    0 30px 80px -30px rgba(0, 0, 0, 0.9);
+  touch-action: none;
+  cursor: crosshair;
+}

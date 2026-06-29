@@ -1,0 +1,38 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 30%, #1a1208 0%, #0c0a10 55%, #060509 100%);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: #f3ead8;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Stage centres the fixed 16:9 play area. */
+#stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+}
+
+#game {
+  display: block;
+  border-radius: 14px;
+  background: #07060c;
+  box-shadow:
+    0 0 0 1px rgba(255, 159, 28, 0.16),
+    0 0 60px -12px rgba(64, 224, 208, 0.28),
+    0 26px 70px -28px rgba(0, 0, 0, 0.9);
+  touch-action: none;
+  cursor: pointer;
+}

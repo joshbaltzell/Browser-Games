@@ -1,0 +1,38 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 18%, #2a2138 0%, #14101f 55%, #0a0712 100%);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: #f3ead8;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Stage centres the fixed-aspect play area. */
+#stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+#game {
+  display: block;
+  border-radius: 14px;
+  background: #0c0916;
+  box-shadow:
+    0 0 0 1px rgba(255, 178, 92, 0.16),
+    0 0 70px -12px rgba(255, 178, 92, 0.28),
+    0 30px 80px -30px rgba(0, 0, 0, 0.9);
+  touch-action: none;
+  cursor: pointer;
+}

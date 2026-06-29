@@ -1,0 +1,32 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #2a2114 0%, #1a140c 55%, #100c07 100%);
+  font-family: "Georgia", "Palatino Linotype", serif;
+  color: #e9dcc0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+#game {
+  display: block;
+  background: #d8c49a;
+  border-radius: 8px;
+  box-shadow:
+    0 0 0 2px rgba(80, 56, 30, 0.6),
+    0 24px 70px -24px rgba(0, 0, 0, 0.9);
+  cursor: crosshair;
+  touch-action: none;
+}

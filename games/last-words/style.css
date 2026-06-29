@@ -1,0 +1,46 @@
+:root {
+  --paper: #ede4cf;
+  --carbon: #221e1a;
+  --ribbon: #b3261e;
+  --faded: #8a8174;
+  --bleed: #6b1410;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #2a2622 0%, #1a1714 60%, #100e0c 100%);
+  font-family: "Courier New", "Courier", monospace;
+  color: var(--paper);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Stage centres the fixed-aspect play area. */
+#stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+#game {
+  display: block;
+  /* JS sets the pixel width/height to keep the 3:2 aspect ratio. */
+  border-radius: 6px;
+  background: var(--paper);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 24px 80px -24px rgba(0, 0, 0, 0.9);
+  touch-action: none;
+  cursor: pointer;
+}

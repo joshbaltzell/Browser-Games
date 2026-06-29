@@ -1,0 +1,43 @@
+:root {
+  --paper: #d9cfb8;
+  --ink: #2a2622;
+  --bg: #14110d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #211c14 0%, #14110d 60%, #0c0a07 100%);
+  font-family: "Courier New", "Courier", monospace;
+  color: var(--paper);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+#game {
+  display: block;
+  /* JS sets the pixel width/height to keep the aspect ratio. */
+  border-radius: 6px;
+  background: #0c0a07;
+  box-shadow:
+    0 0 0 1px rgba(217, 207, 184, 0.12),
+    0 24px 80px -30px rgba(0, 0, 0, 0.9);
+  touch-action: none;
+  cursor: default;
+}

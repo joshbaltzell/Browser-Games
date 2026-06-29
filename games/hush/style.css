@@ -1,0 +1,40 @@
+/* Hush — stark, ASMR-minimalist stealth. Charcoal page, centered canvas,
+   no scrollbars. All screens render on the canvas itself. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0a0b0d;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: #e8eaed;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Stage centres the fixed-aspect play area. */
+#stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+#game {
+  display: block;
+  /* JS sets the CSS width/height to preserve the 10:7 aspect ratio. */
+  background: #101216;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 24px 80px -30px rgba(0, 0, 0, 0.9);
+  touch-action: none;
+  cursor: default;
+}
