@@ -1049,6 +1049,11 @@ function startLevel(idx) {
   particles = [];
   cooldown = 0; decoyCooldown = 0;
   footstepTimer = 0; stillTimer = 0;
+  // WR-01: restore the listening-pause drone duck to its un-ducked baseline —
+  // otherwise a duck engaged right before CAUGHT/WON persists into the next
+  // attempt/level since update() stops calling updateFootstepAudio() while
+  // not STATE.PLAYING.
+  if (droneNodes) droneNodes.g.gain.setTargetAtTime(0.05, now(), 0.1);
   dripTimer = 3 + Math.random() * 5;
   pingCount = 0;
   clearTime = 0;
