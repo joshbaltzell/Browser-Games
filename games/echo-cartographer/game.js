@@ -67,8 +67,14 @@ const DECOY_COOLDOWN = 2.2;    // decoys are pricier than real pings
 const PRED_HB_INTERVAL = 2.6;  // seconds between heartbeats
 const PRED_HB_RADIUS = 160;    // dies sooner than player pings
 
-// Ghost-outline afterimage.
-const GHOST_LIFE = 0.9;        // seconds for a revealed segment to fade out
+// Ghost-outline afterimage (TENS-04). Revealed segments no longer fade out and
+// vanish — they age continuously over a long lifespan and floor at a small
+// non-zero alpha, so a learned wall stays faintly visible forever (navigate
+// by memory). 24s comfortably spans several PING_COOLDOWN (1.3s) and
+// PRED_HB_INTERVAL (2.6s) cycles, so "revealed two pings ago" reads visibly
+// dimmer than "just revealed".
+const GHOST_LIFE = 24;         // seconds for a revealed segment to age from bright to its floor
+const GHOST_FLOOR_ALPHA = 0.07; // minimum alpha a fully-aged segment ever settles to (never 0)
 
 // Player.
 const PLAYER_R = 9;
@@ -1236,6 +1242,18 @@ function revealAlongFront(p) {
   }
 }
 
+// Non-linear age-to-alpha curve (TENS-04): fast-bright phase then a long slow
+// tail, flooring at GHOST_FLOOR_ALPHA rather than reaching 0. Exponential
+// decay with exponent 3 front-loads the brightness drop in the first few
+// seconds (clearly visible "just revealed vs a moment ago" contrast) then
+// trails off slowly for the remainder of GHOST_LIFE, never dropping below
+// the floor. All reveal sources (player ping, decoy, predator heartbeat)
+// share this one curve.
+function ghostAlpha(life) {
+  const t = Math.max(0, Math.min(1, life / GHOST_LIFE));
+  return GHOST_FLOOR_ALPHA + (1 - GHOST_FLOOR_ALPHA) * Math.pow(t, 3);
+}
+
 function spawnGhost(w, t0, t1, decoy, predHB) {
   if (t1 <= t0) t1 = Math.min(1, t0 + 0.02);
   ghosts.push({
@@ -1246,8 +1264,13 @@ function spawnGhost(w, t0, t1, decoy, predHB) {
 }
 
 function updateGhosts(dt) {
-  for (const g of ghosts) g.life -= dt;
-  ghosts = ghosts.filter((g) => g.life > 0);
+  // Age every ghost, but floor (never delete) so learned walls stay faintly
+  // visible forever — ghostAlpha already floors the render alpha once life
+  // reaches this tiny epsilon, so we just need life to stop going negative.
+  for (const g of ghosts) {
+    g.life -= dt;
+    if (g.life < dt) g.life = dt;
+  }
   if (ghosts.length > 4000) ghosts.splice(0, ghosts.length - 4000);
 }
 
@@ -1438,7 +1461,7 @@ function renderWorld() {
 
   // Ghost-outlines (fading chalk fragments) with a soft bloom underlay.
   for (const g of ghosts) {
-    const a = Math.max(0, g.life / GHOST_LIFE);
+    const a = ghostAlpha(g.life);
     const tint = g.predHB ? COLORS.predator : (g.decoy ? COLORS.decoy : COLORS.ghost);
     // bloom
     ctx.strokeStyle = tint;
