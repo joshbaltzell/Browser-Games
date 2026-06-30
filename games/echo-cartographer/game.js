@@ -1073,12 +1073,24 @@ function updatePings(dt) {
   pings = pings.filter((p) => p.radius <= (p.predHB ? PRED_HB_RADIUS : PING_MAX_RADIUS));
 }
 
+// AUDIO-01: collapses the 4 code-level predator behaviors into the 3 audio
+// states, branching only on existing fields (predator.stalking,
+// predator.mode, level.patrol) — no new predator behavior fields invented.
+// Precedence: stalking > hunt > patrol > idle-wander.
+function predatorAudioState() {
+  if (predator.stalking) return "breath";
+  if (predator.mode === "hunt") return "hunt";
+  if (level.patrol && level.patrol.length > 0) return "pulse";
+  return "grumble";
+}
+
 function updatePredatorHeartbeat(dt) {
   if (level.dormant) return;
   predator.hbTimer -= dt;
   if (predator.hbTimer <= 0) {
     predator.hbTimer = predator.stalking ? 0.65 : PRED_HB_INTERVAL;
     pings.push({ x: predator.x, y: predator.y, radius: 0, predHB: true });
+    predatorVoice(predatorAudioState(), panForX(predator.x), predOcclusion);
   }
 }
 
