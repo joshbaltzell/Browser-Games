@@ -156,6 +156,16 @@ let freezeFrames = 0;
 const CAPTURE_WHITE_DUR = 0.08;  // ~80ms opaque white window at the start of captureStage
 let captureStage = 0;
 
+// TENS-03: in-world ping-cooldown ring around the player dot, additional to
+// the top-left HUD bar. pingReadyPulse is a ONE-SHOT decaying timer that
+// spikes the instant `cooldown` crosses from >0 to <=0 (never a continuous
+// idle pulse); prevCooldown is the previous-frame cooldown value used to
+// detect that exact edge. Both are dt-driven and decay/reset like
+// shake/flash/captureStage above.
+let pingReadyPulse = 0;
+const PING_PULSE_DECAY = 1 / 0.3; // ~0.3s to fade back to 0
+let prevCooldown = 0;
+
 // Mouse aim (optional)
 let mouseX = 0, mouseY = 0, hasMouse = false;
 
@@ -1145,6 +1155,9 @@ function startLevel(idx) {
   // TENS-02: reset the capture sequence so a freeze/blackout engaged on a
   // prior capture never bleeds into the new attempt.
   freezeFrames = 0; captureStage = 0;
+  // TENS-03: reset the ping-ready ring's completion-pulse state so a pulse
+  // mid-fire never bleeds across levels/retries.
+  pingReadyPulse = 0; prevCooldown = 0;
   state = STATE.PLAYING;
   unlockAudio();
 }
@@ -1195,12 +1208,19 @@ function update(dt) {
   // freeze, update() is skipped entirely by frame(), so captureStage holds at
   // 0 until the freeze releases, then begins counting.
   captureStage += dt;
+  // TENS-03: decay the one-shot ping-ready completion pulse every frame
+  // (always-run, like shake/flash) so it fades even across state changes.
+  pingReadyPulse = Math.max(0, pingReadyPulse - dt * PING_PULSE_DECAY);
 
   if (state !== STATE.PLAYING) { setProximity(0); return; }
 
   clearTime += dt;
   introT = Math.max(0, introT - dt);
   cooldown = Math.max(0, cooldown - dt);
+  // TENS-03: detect the exact >0 -> <=0 ready-crossing (fires the one-shot
+  // pulse exactly once, never while idle/ready) before updating prevCooldown.
+  if (prevCooldown > 0 && cooldown <= 0) pingReadyPulse = 1;
+  prevCooldown = cooldown;
   decoyCooldown = Math.max(0, decoyCooldown - dt);
   if (aiming) aimAng = currentAimAngle();
 
@@ -1767,6 +1787,33 @@ function drawPlayer() {
   ctx.globalAlpha = 0.95;
   ctx.fillStyle = COLORS.player;
   ctx.beginPath(); ctx.arc(player.x, player.y, player.r * 0.5, 0, TAU); ctx.fill();
+  ctx.restore();
+
+  drawCooldownRing();
+}
+
+// TENS-03: in-world clockwise cooldown ring around the player dot — an
+// at-a-glance "can I ping?" readout additional to the top-left HUD bar
+// (game.js renderHUD(), ~line 1819). Reuses the EXACT same fraction the HUD
+// bar uses so ring and bar always agree, and tracks the real-ping `cooldown`
+// only (never decoyCooldown — drawAim() already shows a decoy-ready ring at
+// the decoy origin). Flares brighter for ~0.3s via pingReadyPulse the instant
+// the cooldown completes.
+function drawCooldownRing() {
+  const frac = Math.max(0, Math.min(1, 1 - cooldown / PING_COOLDOWN));
+  const ringR = player.r * 2.2;
+  const start = -Math.PI / 2; // begin the sweep at the top, fill clockwise
+  ctx.save();
+  ctx.strokeStyle = COLORS.wallGlow;
+  ctx.lineWidth = 2 + pingReadyPulse * 1.5;
+  ctx.globalAlpha = 0.5 + pingReadyPulse * 0.5;
+  ctx.beginPath();
+  if (frac >= 1) {
+    ctx.arc(player.x, player.y, ringR, 0, TAU);
+  } else if (frac > 0) {
+    ctx.arc(player.x, player.y, ringR, start, start + frac * TAU);
+  }
+  ctx.stroke();
   ctx.restore();
 }
 
