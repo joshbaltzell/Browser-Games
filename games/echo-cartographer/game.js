@@ -315,6 +315,26 @@ function noiseBurst(dur, vol) {
   src.start(t);
 }
 
+// AUDIO-02: linear stereo-pan curve keyed to world X relative to the player.
+// Full left/right pan is reached at a half-screen-width offset. Pure function
+// (no audio nodes) so it can also be sampled by callers deciding pan values.
+function panForX(x) {
+  if (!W) return 0;
+  return Math.max(-1, Math.min(1, (x - player.x) / (W / 2)));
+}
+
+// Per-call panner factory: creates one StereoPannerNode wired to masterGain.
+// Callers connect their own gain/source chain into the returned node instead
+// of connecting straight to masterGain, e.g. `g.connect(makePanner(pan))`.
+// Predator-voice and drip synths (Plans 02/03) route through this.
+function makePanner(pan) {
+  if (!audioCtx) return null;
+  const p = audioCtx.createStereoPanner();
+  p.pan.value = Math.max(-1, Math.min(1, pan));
+  p.connect(masterGain);
+  return p;
+}
+
 // ----------------------------------------------------------------------------
 // Particles — small pooled accent system (ping ripples, capture, win).
 // ----------------------------------------------------------------------------
@@ -607,7 +627,9 @@ const RAW_LEVELS = [
     ],
     nodesN: [
       { x: 0.22, y: 0.30 }, { x: 0.22, y: 0.70 },
+      { x: 0.44, y: 0.50 },  // left S-gap connector: visible from both left nodes and center
       { x: 0.50, y: 0.20 }, { x: 0.50, y: 0.50 }, { x: 0.50, y: 0.80 },
+      { x: 0.56, y: 0.50 },  // right S-gap connector: visible from both center and right nodes
       { x: 0.78, y: 0.30 }, { x: 0.78, y: 0.70 },
     ],
     patrolN: [
