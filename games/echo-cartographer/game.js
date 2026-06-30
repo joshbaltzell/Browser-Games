@@ -98,6 +98,15 @@ const PRED_SENSE_RADIUS = 150; // within this distance it hears footsteps and ho
 // with speed.
 const FOOTSTEP_INTERVAL = 0.32; // seconds between footstep clicks while moving
 const LISTEN_PAUSE_DELAY = 0.4; // seconds of stillness before the drone ducks
+
+// Proximity grain noise (TENS-06): a raw on-screen danger-pressure overlay,
+// occlusion-free by design — present even behind a wall, since it represents
+// rising panic, not literal sightline. Dot count interpolates linearly between
+// these distance/count endpoints and is zero at/beyond GRAIN_FAR_DIST.
+const GRAIN_FAR_DIST = 200;   // distance at/beyond which grain is fully gone
+const GRAIN_NEAR_DIST = 60;   // distance at/within which grain hits max density
+const GRAIN_MIN_DOTS = 15;    // dot count at GRAIN_FAR_DIST
+const GRAIN_MAX_DOTS = 150;   // dot count at/within GRAIN_NEAR_DIST
 const DRONE_DUCK = 0.5;         // drone gain multiplier during the listening pause
 
 // ----------------------------------------------------------------------------
@@ -1516,6 +1525,8 @@ function renderWorld() {
   drawAim();      // decoy aim indicator (only while aiming + unlocked)
   drawPlayer();
 
+  drawGrain();    // proximity grain noise (TENS-06) — last world step, under the HUD
+
   renderHUD();
 }
 
@@ -1537,6 +1548,29 @@ function drawFrontSeg(w, t0, t1, fade, glow, core) {
   ctx.globalAlpha = fade;
   ctx.lineWidth = 3;
   line(x1, y1, x2, y2);
+}
+
+// Proximity grain noise (TENS-06): scattered low-alpha monochrome fillRect
+// dots, density rising as the predator closes. Occlusion-free (no lineClear
+// check) — a raw danger-pressure overlay, not a sightline effect. Drawn as
+// the last world-layer step before renderHUD() so HUD text stays legible.
+function drawGrain() {
+  const d = Math.hypot(player.x - predator.x, player.y - predator.y);
+  if (d >= GRAIN_FAR_DIST) return;
+  const dc = Math.max(GRAIN_NEAR_DIST, Math.min(GRAIN_FAR_DIST, d));
+  const t = (GRAIN_FAR_DIST - dc) / (GRAIN_FAR_DIST - GRAIN_NEAR_DIST); // 0 far -> 1 near
+  const count = Math.round(GRAIN_MIN_DOTS + (GRAIN_MAX_DOTS - GRAIN_MIN_DOTS) * t);
+
+  ctx.save();
+  ctx.fillStyle = "#e8e8f0";
+  for (let i = 0; i < count; i++) {
+    ctx.globalAlpha = 0.04 + Math.random() * 0.08;
+    const x = Math.random() * W;
+    const y = Math.random() * H;
+    const size = 1 + Math.random();
+    ctx.fillRect(x, y, size, size);
+  }
+  ctx.restore();
 }
 
 function drawParticles() {
