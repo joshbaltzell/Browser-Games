@@ -1168,7 +1168,10 @@ function updateFootstepAudio(dt) {
 
 // AUDIO-06: cave drips fire on a dt-driven 3-8s countdown (no setInterval, to
 // avoid drift if the tab is backgrounded), each randomly panned left/right.
+// WR-03: short-circuit when there's no AudioContext so the countdown doesn't
+// silently churn through scheduled drips as no-ops on unsupported browsers.
 function updateAmbience(dt) {
+  if (!audioCtx) return;
   dripTimer -= dt;
   if (dripTimer <= 0) {
     const pan = (Math.random() * 1.2) - 0.6;
