@@ -57,7 +57,7 @@ const COLORS = {
 const PING_SPEED = 620;        // px/sec the front expands
 const PING_MAX_RADIUS = 220;   // front dies past this — keeps reveal LOCAL (not full-level)
 const PING_BAND = 14;          // half-thickness of the "live front" reveal band
-const PING_COOLDOWN = 0.85;    // seconds between pings (rationed reveals)
+const PING_COOLDOWN = 1.3;     // seconds between pings (rationed reveals)
 
 // False ping (decoy).
 const DECOY_REACH = 230;       // how far the decoy origin is thrown from player
@@ -68,7 +68,7 @@ const PRED_HB_INTERVAL = 2.6;  // seconds between heartbeats
 const PRED_HB_RADIUS = 160;    // dies sooner than player pings
 
 // Ghost-outline afterimage.
-const GHOST_LIFE = 1.6;        // seconds for a revealed segment to fade out
+const GHOST_LIFE = 0.9;        // seconds for a revealed segment to fade out
 
 // Player.
 const PLAYER_R = 9;
@@ -77,7 +77,7 @@ const PLAYER_SPEED = 190;      // px/sec
 // Predator.
 const PRED_R = 13;
 const PRED_HUNT_SPEED = 130;   // px/sec while homing on a ping origin
-const PRED_IDLE_SPEED = 50;    // px/sec slow wander when no recent ping
+const PRED_IDLE_SPEED = 70;    // px/sec slow wander when no recent ping
 const PRED_CATCH = 18;         // contact distance that ends the attempt
 const PRED_ARRIVE = 24;        // distance at which it "reaches" a target node
 const PRED_IDLE_RETARGET = 1.8;// seconds between picking a new idle wander point
@@ -442,7 +442,7 @@ const RAW_LEVELS = [
   {
     name: "IT HEARS YOU",
     blurb: "Now something stirs. Every ping draws the red hunter to where you pinged. Ping less.",
-    decoy: false, predSpeed: 95,
+    decoy: false, predSpeed: 140,
     playerN: { x: 0.15, y: 0.50 },
     exitN: { x: 0.85, y: 0.50 },
     predN: { x: 0.50, y: 0.18 },
@@ -462,7 +462,7 @@ const RAW_LEVELS = [
   {
     name: "THE SPIRAL",
     blurb: "Wind inward to the exit. The hunter is quicker now — a wrong ping is a wrong room.",
-    decoy: false, predSpeed: 120,
+    decoy: false, predSpeed: 165,
     playerN: { x: 0.50, y: 0.50 },
     exitN: { x: 0.12, y: 0.12 },
     predN: { x: 0.88, y: 0.88 },
@@ -491,7 +491,7 @@ const RAW_LEVELS = [
   {
     name: "THE LIE",
     blurb: "New power: hold SHIFT + aim (or right-click) to throw a DECOY. The blind hunter chases the lie.",
-    decoy: true, predSpeed: 115,
+    decoy: true, predSpeed: 158,
     playerN: { x: 0.14, y: 0.50 },
     exitN: { x: 0.88, y: 0.50 },
     predN: { x: 0.52, y: 0.50 },
@@ -514,7 +514,7 @@ const RAW_LEVELS = [
   {
     name: "TWO DOORS",
     blurb: "Two ways through, one watched. Throw the lie down the door you won't use.",
-    decoy: true, predSpeed: 125,
+    decoy: true, predSpeed: 172,
     playerN: { x: 0.14, y: 0.50 },
     exitN: { x: 0.86, y: 0.50 },
     predN: { x: 0.50, y: 0.50 },
@@ -536,7 +536,7 @@ const RAW_LEVELS = [
   {
     name: "THE GAUNTLET",
     blurb: "One long throat to the exit. Lure the hunter off it, then run it in silence.",
-    decoy: true, predSpeed: 130,
+    decoy: true, predSpeed: 179,
     playerN: { x: 0.12, y: 0.85 },
     exitN: { x: 0.88, y: 0.15 },
     predN: { x: 0.50, y: 0.50 },
@@ -559,7 +559,7 @@ const RAW_LEVELS = [
   {
     name: "CROSSROADS",
     blurb: "Four arms, one hunter at the heart. Send the lie down an arm and cross while it's away.",
-    decoy: true, predSpeed: 135,
+    decoy: true, predSpeed: 184,
     playerN: { x: 0.50, y: 0.86 },
     exitN: { x: 0.50, y: 0.14 },
     predN: { x: 0.50, y: 0.50 },
@@ -582,7 +582,7 @@ const RAW_LEVELS = [
   {
     name: "THE MAZE",
     blurb: "Deep dark, fast hunter. Map it in fragments, then move silent. Spend the lie wisely.",
-    decoy: true, predSpeed: 142,
+    decoy: true, predSpeed: 188,
     playerN: { x: 0.13, y: 0.13 },
     exitN: { x: 0.87, y: 0.87 },
     predN: { x: 0.87, y: 0.13 },
@@ -605,7 +605,7 @@ const RAW_LEVELS = [
   {
     name: "INTO THE DEEP",
     blurb: "The deepest dark. Everything you've learned — the map, the silence, the lie. Map it all.",
-    decoy: true, predSpeed: 150,
+    decoy: true, predSpeed: 194,
     playerN: { x: 0.12, y: 0.50 },
     exitN: { x: 0.88, y: 0.50 },
     predN: { x: 0.50, y: 0.50 },
