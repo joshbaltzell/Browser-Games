@@ -2115,11 +2115,17 @@ function frame(now2) {
     // always-run preamble (captureStage += dt among others) even though the
     // state is no longer PLAYING, which can inflate captureStage before the
     // freeze branch ever engages and skip the documented white-flash window.
+    // CR-02: only short-circuit on the tick where the transition actually
+    // happens DURING this loop. If state was already non-PLAYING at loop
+    // entry (every CAUGHT/WON tick after the triggering frame), let the loop
+    // drain acc normally so captureStage/flash/shake/particles keep tracking
+    // real elapsed time instead of being capped at one FIXED tick per frame.
+    const wasPlayingAtEntry = state === STATE.PLAYING;
     while (acc >= FIXED && guard < 600) {
       update(FIXED);
       acc -= FIXED;
       guard++;
-      if (state !== STATE.PLAYING) { acc = 0; break; }
+      if (wasPlayingAtEntry && state !== STATE.PLAYING) { acc = 0; break; }
     }
   }
   render();
