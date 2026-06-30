@@ -192,6 +192,11 @@ let audioCtx = null;
 let masterGain = null;
 let droneNodes = null;     // persistent cave ambience
 let proxOsc = null, proxGain = null, proxFilter = null; // predator proximity hum
+// TENS-01: close-range (~80px) rising tension tone — STACKS on top of the
+// 320px proxOsc hum above (does not replace it). Mirrors the proxOsc/proxGain/
+// proxFilter trio so updateProximityAudio() can drive both with the same
+// setTargetAtTime ramp pattern.
+let tensionOsc = null, tensionGain = null, tensionFilter = null;
 let audioReady = false;
 let predOcclusion = 1;     // per-frame wall-occlusion factor (OCCLUSION_ATTEN when blocked, else 1); read by Plan 02's predator voice
 let footstepTimer = 0;     // dt countdown to the next footstep click while moving
@@ -210,6 +215,7 @@ function unlockAudio() {
     masterGain.connect(audioCtx.destination);
     startDrone();
     startProximityHum();
+    startTensionTone();
     if (audioCtx.state === "suspended") audioCtx.resume();
   } catch (e) { /* file:// safe — never throw */ }
   audioReady = true;
@@ -268,6 +274,53 @@ function setProximity(closeness, occ = 1) {
   proxGain.gain.setTargetAtTime(target, t, 0.08);
   proxOsc.frequency.setTargetAtTime(54 + closeness * 110, t, 0.1);
   proxFilter.frequency.setTargetAtTime(200 + closeness * 900, t, 0.1);
+}
+
+// TENS-01: build the close-range tension-tone chain. A second, distinct-timbre
+// oscillator (triangle, to read as a tightening tone above the proxOsc
+// sawtooth hum) through a bandpass filter, gain starts silent. Routed to
+// masterGain ONLY (never audioCtx.destination), same as every other voice.
+function startTensionTone() {
+  if (!audioCtx) return;
+  tensionOsc = audioCtx.createOscillator();
+  tensionOsc.type = "triangle";
+  tensionOsc.frequency.value = 200;
+  tensionFilter = audioCtx.createBiquadFilter();
+  tensionFilter.type = "bandpass";
+  tensionFilter.Q.value = 4;
+  tensionFilter.frequency.value = 500;
+  tensionGain = audioCtx.createGain();
+  tensionGain.gain.value = 0.0;
+  tensionOsc.connect(tensionFilter); tensionFilter.connect(tensionGain); tensionGain.connect(masterGain);
+  tensionOsc.start();
+}
+
+// TENS-01: drive the tension tone from an 80px closeness value (1 = on top of
+// the predator). Same setTargetAtTime ramp style and occlusion-aware via the
+// same `occ`/predOcclusion factor passed in from updateProximityAudio() — no
+// second distance calc or raycast.
+function setTensionTone(closeness80, occ = 1) {
+  if (!tensionGain || !tensionOsc || !tensionFilter) return;
+  const t = now();
+  const target = (closeness80 <= 0 ? 0 : closeness80 * 0.2) * occ;
+  tensionGain.gain.setTargetAtTime(target, t, 0.08);
+  tensionOsc.frequency.setTargetAtTime(200 + closeness80 * 300, t, 0.1);
+}
+
+// TENS-01: capture-silence cut. Zeroes BOTH the tension tone and the 320px
+// proximity hum INSTANTLY (cancel + setValueAtTime, not a setTargetAtTime
+// fade) so the silence reads as an abrupt cut right before sndCapture() — the
+// cave drone (droneNodes) is deliberately untouched.
+function cutTensionAudio() {
+  const t = now();
+  if (tensionGain) {
+    tensionGain.gain.cancelScheduledValues(t);
+    tensionGain.gain.setValueAtTime(0, t);
+  }
+  if (proxGain) {
+    proxGain.gain.cancelScheduledValues(t);
+    proxGain.gain.setValueAtTime(0, t);
+  }
 }
 
 // A ping "sweep": a falling-then-rising filtered chirp. Decoy variant is pitched
@@ -1371,6 +1424,10 @@ function updateProximityAudio() {
   const occ = occluded ? OCCLUSION_ATTEN : 1;
   predOcclusion = occ;
   setProximity(closeness, occ);
+  // TENS-01: NEW close-range tension tone, stacked on the hum above — reuses
+  // the same `d` and `occ` already computed here (no second distance calc).
+  const closeness80 = Math.max(0, Math.min(1, 1 - d / 80));
+  setTensionTone(closeness80, occ);
 }
 
 // Normalize a stored best entry to {pings, time} (old format was a bare number).
@@ -1403,6 +1460,9 @@ function onCaught() {
   flash = 0.9; flashColor = COLORS.predator;
   shake = 14;
   spawnParticles(player.x, player.y, 50, COLORS.predator, { speed: 200, life: 0.9, size: 3 });
+  // TENS-01: cut the tension tone + proximity hum to instant silence —
+  // the silence is the hit, landing right before the capture sting.
+  cutTensionAudio();
   sndCapture();
 }
 
