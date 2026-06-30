@@ -130,6 +130,12 @@ let predator = {
 };
 let pings = [];             // active ringwaves {x,y,radius,decoy}
 let ghosts = [];            // revealed fragments {x1,y1,x2,y2,life,decoy}
+// TENS-05: faint chalk-X marks left at each decoy's origin, separate from
+// ghosts — a 3s TRANSIENT that DELETES on expiry (unlike ghosts, which now
+// floor per TENS-04). {x, y, life}.
+let decoyMarks = [];
+const DECOY_MARK_LIFE = 3;  // seconds the chalk-X lingers before fading out
+const DECOY_MARK_SIZE = 7;  // half-size of each crossed stroke (~14px X)
 let cooldown = 0;           // real ping cooldown timer
 let decoyCooldown = 0;      // decoy cooldown timer
 let pingCount = 0;          // pings used this attempt
@@ -1101,6 +1107,9 @@ function fireDecoy() {
   ox = Math.max(30, Math.min(W - 30, ox));
   oy = Math.max(30, Math.min(H - 30, oy));
   pings.push({ x: ox, y: oy, radius: 0, decoy: true });
+  // TENS-05: leave a lingering chalk-X at the decoy's exact (clamped) origin
+  // so the player can see exactly where the false signal landed.
+  decoyMarks.push({ x: ox, y: oy, life: DECOY_MARK_LIFE });
   decoyCooldown = DECOY_COOLDOWN;
   pingCount++; // decoys still count as sound made
   // The blind predator believes the lie: it hunts the decoy origin (TWIST-02).
@@ -1137,6 +1146,7 @@ function startLevel(idx) {
   predator.hbTimer = 1.4; predator.stalking = false; predator.patrolStep = 0;
   pings = [];
   ghosts = [];
+  decoyMarks = [];
   particles = [];
   cooldown = 0; decoyCooldown = 0;
   footstepTimer = 0; stillTimer = 0;
@@ -1228,6 +1238,7 @@ function update(dt) {
   updateFootstepAudio(dt);
   updatePings(dt);
   updateGhosts(dt);
+  updateDecoyMarks(dt);
   updatePredatorHeartbeat(dt);
   updatePredator(dt);
   updateProximityAudio();
@@ -1377,6 +1388,14 @@ function updateGhosts(dt) {
     if (g.life < dt) g.life = dt;
   }
   if (ghosts.length > 4000) ghosts.splice(0, ghosts.length - 4000);
+}
+
+// TENS-05: age decoy chalk-X marks and DELETE them at life<=0 — unlike
+// Plan 01's floored ghosts, decoyMarks are a 3s transient, not a forever-faint
+// wall, so this is a sibling updater that filters rather than clamps.
+function updateDecoyMarks(dt) {
+  for (const m of decoyMarks) m.life -= dt;
+  decoyMarks = decoyMarks.filter((m) => m.life > 0);
 }
 
 function updatePredator(dt) {
@@ -1606,6 +1625,8 @@ function renderWorld() {
   }
   ctx.globalAlpha = 1;
 
+  drawDecoyMarks();
+
   // Live ping fronts: bright chalk-white intersections + a colored glow.
   for (const p of pings) {
     const maxR = p.predHB ? PRED_HB_RADIUS : PING_MAX_RADIUS;
@@ -1654,6 +1675,32 @@ function renderWorld() {
 
 function line(x1, y1, x2, y2) {
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+
+// TENS-05: faint chalk-X lingering at each decoy's origin so the player can
+// see exactly where the false signal landed. Separate from drawAim()'s
+// aiming-only dashed line + ready-ring (game.js drawAim()) and from the
+// instantaneous fire particle burst (fireDecoy()) — this persists ~3s and
+// fades LINEARLY via decoyMarks' life/DECOY_MARK_LIFE ratio.
+function drawDecoyMarks() {
+  for (const m of decoyMarks) {
+    const a = Math.max(0, m.life / DECOY_MARK_LIFE);
+    const s = DECOY_MARK_SIZE;
+    ctx.save();
+    // soft bloom
+    ctx.strokeStyle = COLORS.decoyGlow;
+    ctx.globalAlpha = a * 0.35;
+    ctx.lineWidth = 4;
+    line(m.x - s, m.y - s, m.x + s, m.y + s);
+    line(m.x - s, m.y + s, m.x + s, m.y - s);
+    // crisp chalk-X
+    ctx.strokeStyle = COLORS.decoy;
+    ctx.globalAlpha = a * 0.7;
+    ctx.lineWidth = 1.6;
+    line(m.x - s, m.y - s, m.x + s, m.y + s);
+    line(m.x - s, m.y + s, m.x + s, m.y - s);
+    ctx.restore();
+  }
 }
 
 function drawFrontSeg(w, t0, t1, fade, glow, core) {
