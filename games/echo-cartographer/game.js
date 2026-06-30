@@ -55,7 +55,7 @@ const COLORS = {
 
 // Ping behaviour.
 const PING_SPEED = 620;        // px/sec the front expands
-const PING_MAX_RADIUS = 1000;  // front dies past this
+const PING_MAX_RADIUS = 220;   // front dies past this — keeps reveal LOCAL (not full-level)
 const PING_BAND = 14;          // half-thickness of the "live front" reveal band
 const PING_COOLDOWN = 0.85;    // seconds between pings (rationed reveals)
 
@@ -64,7 +64,7 @@ const DECOY_REACH = 230;       // how far the decoy origin is thrown from player
 const DECOY_COOLDOWN = 2.2;    // decoys are pricier than real pings
 
 // Ghost-outline afterimage.
-const GHOST_LIFE = 1.15;       // seconds for a revealed segment to fade out
+const GHOST_LIFE = 1.6;        // seconds for a revealed segment to fade out
 
 // Player.
 const PLAYER_R = 9;
@@ -399,7 +399,7 @@ const RAW_LEVELS = [
     predN: { x: 0.84, y: 0.84 },
     wallsN: [
       ...box(0.08, 0.10, 0.92, 0.90),
-      [0.40, 0.10, 0.40, 0.60],
+      [0.40, 0.24, 0.40, 0.60],   // gap at top (y<0.24) lets player cross to the right side
       [0.40, 0.60, 0.66, 0.60],
       [0.66, 0.40, 0.66, 0.90],
     ],
