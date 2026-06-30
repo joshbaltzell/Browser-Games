@@ -74,6 +74,10 @@ const GHOST_LIFE = 0.9;        // seconds for a revealed segment to fade out
 const PLAYER_R = 9;
 const PLAYER_SPEED = 190;      // px/sec
 
+// Wall occlusion (AUDIO-05): predator-channel audio is attenuated, never
+// fully muted, when no clear sightline exists between predator and player.
+const OCCLUSION_ATTEN = 0.35;
+
 // Predator.
 const PRED_R = 13;
 const PRED_HUNT_SPEED = 130;   // px/sec while homing on a ping origin
@@ -167,6 +171,7 @@ let masterGain = null;
 let droneNodes = null;     // persistent cave ambience
 let proxOsc = null, proxGain = null, proxFilter = null; // predator proximity hum
 let audioReady = false;
+let predOcclusion = 1;     // per-frame wall-occlusion factor (OCCLUSION_ATTEN when blocked, else 1); read by Plan 02's predator voice
 
 function unlockAudio() {
   if (audioReady) return;
@@ -228,10 +233,12 @@ function startProximityHum() {
 }
 
 // Update the proximity hum from a 0..1 closeness value (1 = right on top).
-function setProximity(closeness) {
+// `occ` is the wall-occlusion multiplier (AUDIO-05): defaults to 1 (no
+// occlusion) so existing callers are unaffected.
+function setProximity(closeness, occ = 1) {
   if (!proxGain || !proxOsc || !proxFilter) return;
   const t = now();
-  const target = closeness <= 0 ? 0 : 0.02 + closeness * closeness * 0.16;
+  const target = (closeness <= 0 ? 0 : 0.02 + closeness * closeness * 0.16) * occ;
   proxGain.gain.setTargetAtTime(target, t, 0.08);
   proxOsc.frequency.setTargetAtTime(54 + closeness * 110, t, 0.1);
   proxFilter.frequency.setTargetAtTime(200 + closeness * 900, t, 0.1);
@@ -1106,7 +1113,10 @@ function updateProximityAudio() {
   const d = Math.hypot(player.x - predator.x, player.y - predator.y);
   const near = 320; // start humming within this distance
   const closeness = Math.max(0, Math.min(1, 1 - d / near));
-  setProximity(closeness);
+  const occluded = !lineClear(predator.x, predator.y, player.x, player.y);
+  const occ = occluded ? OCCLUSION_ATTEN : 1;
+  predOcclusion = occ;
+  setProximity(closeness, occ);
 }
 
 // Normalize a stored best entry to {pings, time} (old format was a bare number).
