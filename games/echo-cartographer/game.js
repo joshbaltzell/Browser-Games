@@ -1728,6 +1728,35 @@ function drawPredator() {
   ctx.restore();
 }
 
+// TENS-02: chalk-white STROKE-ONLY outline at the predator's frozen position,
+// drawn on the CAUGHT death screen instead of the normal pulsing drawPredator.
+// predator.x/predator.y are already frozen — update() returns early once
+// state !== STATE.PLAYING, so the position never advances after capture.
+// Deliberately distinct from drawPredator(): no filled core, no pulsing
+// ripples, cool-chalk palette (not COLORS.predator). Fades from clearly
+// visible toward a dim floor over the death-screen lifetime, driven by
+// captureStage (the same elapsed-time-up timer that drives the white->black
+// overlay in render() — it keeps counting for the rest of the CAUGHT screen
+// after the white window passes, so it doubles as the death-screen clock).
+const GHOST_FADE_DUR = 2.5;    // seconds over which the outline dims to its floor
+const GHOST_FADE_FLOOR = 0.18; // never fully vanishes — stays faintly visible
+function drawPredatorGhost() {
+  const t = Math.max(0, Math.min(1, captureStage / GHOST_FADE_DUR));
+  const a = 1 - (1 - GHOST_FADE_FLOOR) * t;
+  ctx.save();
+  // soft bloom
+  ctx.globalAlpha = a * 0.35;
+  ctx.strokeStyle = COLORS.wallGlow;
+  ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.arc(predator.x, predator.y, predator.r * 1.15, 0, TAU); ctx.stroke();
+  // crisp chalk-white stroke outline
+  ctx.globalAlpha = a * 0.9;
+  ctx.strokeStyle = COLORS.wallFront;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.arc(predator.x, predator.y, predator.r * 1.15, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+
 function drawPlayer() {
   ctx.save();
   // halo
@@ -1909,8 +1938,19 @@ function renderTitle() {
 
 function renderEnd(title, color, sub) {
   ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.5)";
-  ctx.fillRect(0, 0, W, H);
+  // TENS-02: CAUGHT gets a full opaque-black background (hiding ghosts/walls/
+  // particles drawn earlier by renderWorld()) plus the fading chalk-outline
+  // predator at its frozen position. WON (and any other use) keeps the
+  // original 50% overlay and never draws the chalk outline — ESCAPED is
+  // unchanged.
+  if (state === STATE.CAUGHT) {
+    ctx.fillStyle = COLORS.void;
+    ctx.fillRect(0, 0, W, H);
+    drawPredatorGhost();
+  } else {
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.fillRect(0, 0, W, H);
+  }
   ctx.textAlign = "center";
   ctx.fillStyle = color;
   ctx.font = "700 clamp(32px, 7vw, 60px) system-ui, sans-serif";
