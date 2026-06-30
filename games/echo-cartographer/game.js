@@ -81,6 +81,7 @@ const PRED_IDLE_SPEED = 70;    // px/sec slow wander when no recent ping
 const PRED_CATCH = 18;         // contact distance that ends the attempt
 const PRED_ARRIVE = 24;        // distance at which it "reaches" a target node
 const PRED_IDLE_RETARGET = 1.8;// seconds between picking a new idle wander point
+const PRED_SENSE_RADIUS = 150; // within this distance it hears footsteps and homes in directly
 
 // ----------------------------------------------------------------------------
 // Canvas + global state
@@ -99,7 +100,7 @@ let level = null;           // current level data (geometry)
 let player = { x: 0, y: 0, r: PLAYER_R };
 let predator = {
   x: 0, y: 0, r: PRED_R, mode: "idle", tx: 0, ty: 0, idleTimer: 0,
-  path: [], pathStep: 0, rippleT: 0, hbTimer: 1.4,
+  path: [], pathStep: 0, rippleT: 0, hbTimer: 1.4, stalking: false, patrolStep: 0,
 };
 let pings = [];             // active ringwaves {x,y,radius,decoy}
 let ghosts = [];            // revealed fragments {x1,y1,x2,y2,life,decoy}
@@ -513,11 +514,12 @@ const RAW_LEVELS = [
   // L6 — TWO DOORS: predator camps center. Decoy one side, take the other.
   {
     name: "TWO DOORS",
-    blurb: "Two ways through, one watched. Throw the lie down the door you won't use.",
+    // L6 — TWO DOORS: predator patrols between the two door midpoints; time your crossing.
+    blurb: "Two ways through. Watch the red pulse — it patrols between the doors. Time your crossing.",
     decoy: true, predSpeed: 172,
     playerN: { x: 0.14, y: 0.50 },
     exitN: { x: 0.86, y: 0.50 },
-    predN: { x: 0.50, y: 0.50 },
+    predN: { x: 0.50, y: 0.22 },
     wallsN: [
       ...box(0.08, 0.08, 0.92, 0.92),
       [0.40, 0.08, 0.40, 0.34],
@@ -530,12 +532,15 @@ const RAW_LEVELS = [
       { x: 0.50, y: 0.22 }, { x: 0.50, y: 0.78 },
       { x: 0.68, y: 0.22 }, { x: 0.68, y: 0.78 }, { x: 0.78, y: 0.50 },
     ],
+    patrolN: [
+      { x: 0.50, y: 0.22 }, { x: 0.50, y: 0.78 },
+    ],
   },
 
-  // L7 — THE GAUNTLET: a long throat. Bait it deep, then run the corridor silent.
+  // L7 — THE GAUNTLET: predator patrols the central corridor. Bait it off the path, then run.
   {
     name: "THE GAUNTLET",
-    blurb: "One long throat to the exit. Lure the hunter off it, then run it in silence.",
+    blurb: "The hunter patrols the only road. Decoy it off the path, then run it in silence.",
     decoy: true, predSpeed: 179,
     playerN: { x: 0.12, y: 0.85 },
     exitN: { x: 0.88, y: 0.15 },
@@ -553,12 +558,15 @@ const RAW_LEVELS = [
       { x: 0.80, y: 0.50 }, { x: 0.50, y: 0.24 }, { x: 0.80, y: 0.24 },
       { x: 0.20, y: 0.24 },
     ],
+    patrolN: [
+      { x: 0.20, y: 0.50 }, { x: 0.80, y: 0.50 },
+    ],
   },
 
-  // L8 — CROSSROADS: a plus-shaped chamber, hunter at the hub. Misdirect it.
+  // L8 — CROSSROADS: predator circuits the hub. Decoy one arm, cross the cleared path.
   {
     name: "CROSSROADS",
-    blurb: "Four arms, one hunter at the heart. Send the lie down an arm and cross while it's away.",
+    blurb: "The hunter circles the heart. Send the lie down one arm — slip across while it commits.",
     decoy: true, predSpeed: 184,
     playerN: { x: 0.50, y: 0.86 },
     exitN: { x: 0.50, y: 0.14 },
@@ -576,28 +584,36 @@ const RAW_LEVELS = [
       { x: 0.24, y: 0.24 }, { x: 0.76, y: 0.24 },
       { x: 0.24, y: 0.76 }, { x: 0.76, y: 0.76 },
     ],
+    patrolN: [
+      { x: 0.50, y: 0.20 }, { x: 0.80, y: 0.50 },
+      { x: 0.50, y: 0.80 }, { x: 0.20, y: 0.50 },
+    ],
   },
 
-  // L9 — THE MAZE: dense layout, fast hunter. Silent memory + a decoy to time it.
+  // L9 — THE SENTINEL: open arena, fast predator on a tight figure-8 patrol.
+  //   You must cross its path twice to reach the exit. Timing is everything.
   {
-    name: "THE MAZE",
-    blurb: "Deep dark, fast hunter. Map it in fragments, then move silent. Spend the lie wisely.",
+    name: "THE SENTINEL",
+    blurb: "No maze to hide in — an open cave with one fast guard on a figure-8 loop. Time your crossing.",
     decoy: true, predSpeed: 188,
-    playerN: { x: 0.13, y: 0.13 },
-    exitN: { x: 0.87, y: 0.87 },
-    predN: { x: 0.87, y: 0.13 },
+    playerN: { x: 0.12, y: 0.50 },
+    exitN: { x: 0.88, y: 0.50 },
+    predN: { x: 0.50, y: 0.28 },
     wallsN: [
       ...box(0.08, 0.08, 0.92, 0.92),
-      [0.28, 0.08, 0.28, 0.50], [0.28, 0.50, 0.50, 0.50],
-      [0.50, 0.26, 0.50, 0.74], [0.50, 0.26, 0.72, 0.26],
-      [0.72, 0.26, 0.72, 0.68], [0.28, 0.68, 0.72, 0.68],
-      [0.08, 0.70, 0.28, 0.70], [0.28, 0.70, 0.28, 0.92],
+      [0.38, 0.08, 0.38, 0.44], [0.38, 0.56, 0.38, 0.92],
+      [0.62, 0.08, 0.62, 0.44], [0.62, 0.56, 0.62, 0.92],
+      [0.38, 0.44, 0.50, 0.44], [0.50, 0.56, 0.62, 0.56],
     ],
     nodesN: [
-      { x: 0.18, y: 0.18 }, { x: 0.18, y: 0.60 }, { x: 0.18, y: 0.82 },
-      { x: 0.40, y: 0.18 }, { x: 0.40, y: 0.60 },
-      { x: 0.61, y: 0.40 }, { x: 0.61, y: 0.18 },
-      { x: 0.82, y: 0.18 }, { x: 0.82, y: 0.80 }, { x: 0.50, y: 0.82 },
+      { x: 0.22, y: 0.30 }, { x: 0.22, y: 0.70 },
+      { x: 0.50, y: 0.20 }, { x: 0.50, y: 0.50 }, { x: 0.50, y: 0.80 },
+      { x: 0.78, y: 0.30 }, { x: 0.78, y: 0.70 },
+    ],
+    patrolN: [
+      { x: 0.50, y: 0.20 }, { x: 0.78, y: 0.30 },
+      { x: 0.78, y: 0.70 }, { x: 0.50, y: 0.80 },
+      { x: 0.22, y: 0.70 }, { x: 0.22, y: 0.30 },
     ],
   },
 
@@ -648,6 +664,7 @@ function layoutLevel() {
     playerStart: { x: toX(raw.playerN.x), y: toY(raw.playerN.y) },
     predStart: { x: toX(raw.predN.x), y: toY(raw.predN.y) },
     nodes: (raw.nodesN || []).map((n) => ({ x: toX(n.x), y: toY(n.y) })),
+    patrol: (raw.patrolN || []).map((n) => ({ x: toX(n.x), y: toY(n.y) })),
   };
   buildNavGraph();
 }
@@ -856,7 +873,8 @@ function startLevel(idx) {
   predator.r = PRED_R;
   predator.mode = "idle";
   predator.tx = predator.x; predator.ty = predator.y;
-  predator.idleTimer = 0; predator.path = []; predator.pathStep = 0; predator.hbTimer = 1.4;
+  predator.idleTimer = 0; predator.path = []; predator.pathStep = 0;
+  predator.hbTimer = 1.4; predator.stalking = false; predator.patrolStep = 0;
   pings = [];
   ghosts = [];
   particles = [];
@@ -944,7 +962,7 @@ function updatePredatorHeartbeat(dt) {
   if (level.dormant) return;
   predator.hbTimer -= dt;
   if (predator.hbTimer <= 0) {
-    predator.hbTimer = PRED_HB_INTERVAL;
+    predator.hbTimer = predator.stalking ? 0.65 : PRED_HB_INTERVAL;
     pings.push({ x: predator.x, y: predator.y, radius: 0, predHB: true });
   }
 }
@@ -984,8 +1002,27 @@ function updateGhosts(dt) {
 
 function updatePredator(dt) {
   predator.rippleT += dt;
+  if (level.dormant) return;
+
+  // --- STALK MODE: within sense radius it hears footsteps and homes in directly ---
+  const toPl = Math.hypot(player.x - predator.x, player.y - predator.y);
+  if (toPl < PRED_SENSE_RADIUS) {
+    if (!predator.stalking) {
+      predator.stalking = true;
+      predator.hbTimer = 0; // pulse immediately on detection
+    }
+    stepToward((player.x - predator.x) / toPl, (player.y - predator.y) / toPl, level.huntSpeed * dt);
+    return;
+  }
+  if (predator.stalking) {
+    predator.stalking = false;
+    predator.mode = "idle";
+    predator.idleTimer = 0;
+    pickIdleTarget();
+  }
+
+  // --- HUNT MODE: pathfind toward last-heard ping origin ---
   if (predator.mode === "hunt") {
-    // follow planned waypoints to the lure target
     const wp = predator.path[predator.pathStep];
     if (!wp) {
       predator.mode = "idle"; predator.idleTimer = 0; pickIdleTarget();
@@ -995,16 +1032,23 @@ function updatePredator(dt) {
       if (dist < PRED_ARRIVE) {
         predator.pathStep++;
         if (predator.pathStep >= predator.path.length) {
-          // reached the lure origin (it expected "you" there) — lapse to idle
           predator.mode = "idle"; predator.idleTimer = 0; pickIdleTarget();
         }
       } else {
         stepToward(dx / dist, dy / dist, level.huntSpeed * dt);
       }
     }
+    return;
+  }
+
+  // --- IDLE MODE: patrol loop if the level defines one, else random wander ---
+  if (level.patrol && level.patrol.length > 0) {
+    const pt = level.patrol[predator.patrolStep % level.patrol.length];
+    const dx = pt.x - predator.x, dy = pt.y - predator.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < PRED_ARRIVE) predator.patrolStep++;
+    else stepToward(dx / dist, dy / dist, PRED_IDLE_SPEED * dt);
   } else {
-    // Dormant predators (teaching levels) do not even wander.
-    if (level.dormant) return;
     predator.idleTimer -= dt;
     if (predator.idleTimer <= 0) { predator.idleTimer = PRED_IDLE_RETARGET; pickIdleTarget(); }
     const dx = predator.tx - predator.x, dy = predator.ty - predator.y;
