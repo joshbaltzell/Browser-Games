@@ -348,6 +348,86 @@ function makePanner(pan) {
   return p;
 }
 
+// AUDIO-01/AUDIO-02: the predator's three-state voice. `audioState` is one of
+// "grumble" (idle-wander), "hunt" (intensity variant of grumble, NOT a 4th
+// timbre), "pulse" (patrol), or "breath" (stalking). `pan` comes from
+// panForX(predator.x); `occ` is the wall-occlusion multiplier from
+// updateProximityAudio's predOcclusion (1 = open line of sight). Every branch
+// scales its peak gain by occ and routes through makePanner into masterGain —
+// never audioCtx.destination — matching the per-call node style of
+// sndPing/sndCapture/noiseBurst.
+function predatorVoice(audioState, pan, occ) {
+  if (!audioCtx) return;
+  const t = now();
+  const panner = makePanner(pan);
+  if (!panner) return;
+
+  if (audioState === "grumble" || audioState === "hunt") {
+    // Low detuned-sine rumble, same construction family as startDrone's
+    // o1/o2 but shaped as a short discrete blip rather than a continuous
+    // drone. Hunt is louder and slightly higher-pitched — an intensity
+    // lift on the SAME timbre, not a different waveform.
+    const hunting = audioState === "hunt";
+    const f1 = hunting ? 50 : 44;
+    const f2 = hunting ? 63 : 55;
+    const peak = hunting ? 0.16 : 0.10;
+    const dur = hunting ? 0.4 : 0.5;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * occ), t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    g.connect(panner);
+
+    const o1 = audioCtx.createOscillator();
+    o1.type = "sine"; o1.frequency.value = f1;
+    const o2 = audioCtx.createOscillator();
+    o2.type = "sine"; o2.frequency.value = f2;
+    o1.connect(g); o2.connect(g);
+    o1.start(t); o2.start(t);
+    o1.stop(t + dur + 0.05); o2.stop(t + dur + 0.05);
+  } else if (audioState === "pulse") {
+    // Rhythmic mid-low triangle blip through a bandpass, with two short
+    // staccato hits so it reads rhythmically distinct from the single-hit
+    // grumble.
+    const peak = 0.12;
+    const o = audioCtx.createOscillator();
+    o.type = "triangle"; o.frequency.value = 170;
+    const f = audioCtx.createBiquadFilter();
+    f.type = "bandpass"; f.Q.value = 4; f.frequency.value = 170;
+    const g = audioCtx.createGain();
+    o.connect(f); f.connect(g); g.connect(panner);
+
+    const hit = (st) => {
+      g.gain.setValueAtTime(0.0001, st);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * occ), st + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, st + 0.1);
+    };
+    hit(t);
+    hit(t + 0.12);
+    o.start(t); o.stop(t + 0.26);
+  } else if (audioState === "breath") {
+    // Filtered-noise whoosh — the only voice using noise, making it
+    // unmistakably airy versus the two pitched voices. Bandpassed (not the
+    // heavy 1200Hz lowpass noiseBurst uses) so it sits higher and "breathy."
+    const dur = 0.35;
+    const peak = 0.10;
+    const frames = Math.floor(audioCtx.sampleRate * dur);
+    const buf = audioCtx.createBuffer(1, frames, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const f = audioCtx.createBiquadFilter();
+    f.type = "bandpass"; f.Q.value = 0.9; f.frequency.value = 900;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * occ), t + dur * 0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(panner);
+    src.start(t);
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Particles — small pooled accent system (ping ripples, capture, win).
 // ----------------------------------------------------------------------------
