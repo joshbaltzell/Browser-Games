@@ -1060,9 +1060,24 @@ function startLevel(idx) {
   unlockAudio();
 }
 
+// AUDIO-08: act-break silence. Levels 2/6/10 (0-based indices 1/5/9) are the
+// final level of an act — fade all audio to silence for ~1.5s before the next
+// level's audio swells back in. Lives here (not onWin()) so the win bell sting
+// is never silenced; non-act-final advances are unchanged.
 function advanceLevel() {
   if (levelIndex + 1 < RAW_LEVELS.length) {
-    startLevel(levelIndex + 1);
+    const actBreak = (levelIndex === 1 || levelIndex === 5 || levelIndex === 9);
+    if (actBreak && masterGain) {
+      const t = now();
+      masterGain.gain.setTargetAtTime(0, t, 0.4);
+      const next = levelIndex + 1;
+      setTimeout(() => {
+        startLevel(next);
+        if (masterGain) masterGain.gain.setTargetAtTime(0.9, now(), 0.4);
+      }, 1500);
+    } else {
+      startLevel(levelIndex + 1);
+    }
   } else {
     state = STATE.CLEARED;
   }
