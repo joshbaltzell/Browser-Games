@@ -257,6 +257,12 @@ function sndPing(decoy) {
   const g = audioCtx.createGain();
   o.connect(f); f.connect(g); g.connect(masterGain);
 
+  // AUDIO-07: this square@920Hz-vs-triangle@540Hz split (plus the 0.18/0.26
+  // gain difference below) already gives the decoy a distinct, shipped,
+  // playtested "same family, recognizably different" identity. Do NOT
+  // regress this to a literal same-waveform pitch-ratio multiplier — that
+  // would chase a spec number written before this sound existed and undo
+  // a decision that's already satisfied AUDIO-07.
   const base = decoy ? 920 : 540;
   o.frequency.setValueAtTime(base, t);
   o.frequency.exponentialRampToValueAtTime(base * 0.45, t + 0.5);
