@@ -927,7 +927,7 @@ window.addEventListener("keydown", (e) => {
     if (k === "enter" || k === "r" || k === " ") { startLevel(levelIndex); return; }
   }
   if (state === STATE.WON) {
-    if (k === "enter" || k === " " || k === "r") { advanceLevel(); return; }
+    if ((k === "enter" || k === " " || k === "r") && !e.repeat) { advanceLevel(); return; }
   }
   if (state === STATE.CLEARED) {
     if (k === "enter" || k === " " || k === "r") { state = STATE.TITLE; return; }
@@ -1064,16 +1064,23 @@ function startLevel(idx) {
 // final level of an act — fade all audio to silence for ~1.5s before the next
 // level's audio swells back in. Lives here (not onWin()) so the win bell sting
 // is never silenced; non-act-final advances are unchanged.
+// CR-01: guards the 1.5s act-break window against repeated/held input —
+// without this, re-entering advanceLevel() during the deferred startLevel()
+// call stacks competing masterGain ramps and startLevel() calls.
+let actBreakPending = false;
 function advanceLevel() {
+  if (actBreakPending) return;
   if (levelIndex + 1 < RAW_LEVELS.length) {
     const actBreak = (levelIndex === 1 || levelIndex === 5 || levelIndex === 9);
     if (actBreak && masterGain) {
+      actBreakPending = true;
       const t = now();
       masterGain.gain.setTargetAtTime(0, t, 0.4);
       const next = levelIndex + 1;
       setTimeout(() => {
         startLevel(next);
         if (masterGain) masterGain.gain.setTargetAtTime(0.9, now(), 0.4);
+        actBreakPending = false;
       }, 1500);
     } else {
       startLevel(levelIndex + 1);
