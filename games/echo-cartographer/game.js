@@ -1681,6 +1681,23 @@ function line(x1, y1, x2, y2) {
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
 }
 
+// WR-03: shared two-pass "soft bloom, then crisp core" stroke helper. Used by
+// drawDecoyMarks(), drawFrontSeg(), and drawPredatorGhost() — each draws a
+// different shape (X of two lines, a single segment, an arc) so this takes a
+// drawShapeFn callback rather than baking in geometry. Callers are still
+// responsible for ctx.save()/ctx.restore() around the call so globalAlpha
+// changes don't leak.
+function strokeGlowThenCrisp(drawShapeFn, glow) {
+  ctx.strokeStyle = glow.color;
+  ctx.globalAlpha = glow.alpha;
+  ctx.lineWidth = glow.width;
+  drawShapeFn();
+  ctx.strokeStyle = glow.coreColor;
+  ctx.globalAlpha = glow.coreAlpha;
+  ctx.lineWidth = glow.coreWidth;
+  drawShapeFn();
+}
+
 // TENS-05: faint chalk-X lingering at each decoy's origin so the player can
 // see exactly where the false signal landed. Separate from drawAim()'s
 // aiming-only dashed line + ready-ring (game.js drawAim()) and from the
@@ -1691,18 +1708,13 @@ function drawDecoyMarks() {
     const a = Math.max(0, m.life / DECOY_MARK_LIFE);
     const s = DECOY_MARK_SIZE;
     ctx.save();
-    // soft bloom
-    ctx.strokeStyle = COLORS.decoyGlow;
-    ctx.globalAlpha = a * 0.35;
-    ctx.lineWidth = 4;
-    line(m.x - s, m.y - s, m.x + s, m.y + s);
-    line(m.x - s, m.y + s, m.x + s, m.y - s);
-    // crisp chalk-X
-    ctx.strokeStyle = COLORS.decoy;
-    ctx.globalAlpha = a * 0.7;
-    ctx.lineWidth = 1.6;
-    line(m.x - s, m.y - s, m.x + s, m.y + s);
-    line(m.x - s, m.y + s, m.x + s, m.y - s);
+    strokeGlowThenCrisp(() => {
+      line(m.x - s, m.y - s, m.x + s, m.y + s);
+      line(m.x - s, m.y + s, m.x + s, m.y - s);
+    }, {
+      color: COLORS.decoyGlow, alpha: a * 0.35, width: 4,
+      coreColor: COLORS.decoy, coreAlpha: a * 0.7, coreWidth: 1.6,
+    });
     ctx.restore();
   }
 }
@@ -1711,16 +1723,10 @@ function drawFrontSeg(w, t0, t1, fade, glow, core) {
   if (t1 < t0) return;
   const x1 = w.x1 + (w.x2 - w.x1) * t0, y1 = w.y1 + (w.y2 - w.y1) * t0;
   const x2 = w.x1 + (w.x2 - w.x1) * t1, y2 = w.y1 + (w.y2 - w.y1) * t1;
-  // glow
-  ctx.strokeStyle = glow;
-  ctx.globalAlpha = fade * 0.5;
-  ctx.lineWidth = 7;
-  line(x1, y1, x2, y2);
-  // core
-  ctx.strokeStyle = core;
-  ctx.globalAlpha = fade;
-  ctx.lineWidth = 3;
-  line(x1, y1, x2, y2);
+  strokeGlowThenCrisp(() => line(x1, y1, x2, y2), {
+    color: glow, alpha: fade * 0.5, width: 7,
+    coreColor: core, coreAlpha: fade, coreWidth: 3,
+  });
 }
 
 // Proximity grain noise (TENS-06): scattered low-alpha monochrome fillRect
@@ -1815,16 +1821,12 @@ function drawPredatorGhost() {
   const t = Math.max(0, Math.min(1, captureStage / GHOST_FADE_DUR));
   const a = 1 - (1 - GHOST_FADE_FLOOR) * t;
   ctx.save();
-  // soft bloom
-  ctx.globalAlpha = a * 0.35;
-  ctx.strokeStyle = COLORS.wallGlow;
-  ctx.lineWidth = 5;
-  ctx.beginPath(); ctx.arc(predator.x, predator.y, predator.r * 1.15, 0, TAU); ctx.stroke();
-  // crisp chalk-white stroke outline
-  ctx.globalAlpha = a * 0.9;
-  ctx.strokeStyle = COLORS.wallFront;
-  ctx.lineWidth = 1.8;
-  ctx.beginPath(); ctx.arc(predator.x, predator.y, predator.r * 1.15, 0, TAU); ctx.stroke();
+  strokeGlowThenCrisp(() => {
+    ctx.beginPath(); ctx.arc(predator.x, predator.y, predator.r * 1.15, 0, TAU); ctx.stroke();
+  }, {
+    color: COLORS.wallGlow, alpha: a * 0.35, width: 5,
+    coreColor: COLORS.wallFront, coreAlpha: a * 0.9, coreWidth: 1.8,
+  });
   ctx.restore();
 }
 
