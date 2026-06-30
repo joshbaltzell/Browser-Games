@@ -143,6 +143,19 @@ let shake = 0;              // screen-shake magnitude
 let flash = 0;              // full-screen flash (capture/win)
 let flashColor = "#fff";
 
+// TENS-02: capture choreography state. freezeFrames is a per-rAF counter
+// (NOT dt-driven) decremented once per rendered frame in frame() to hold the
+// image for exactly 3 render frames before any update() runs again.
+// captureStage is a SINGLE elapsed-time-up timer (counts UP from 0, dt-driven,
+// in update()'s always-run preamble) representing how long the CAUGHT death
+// screen has been visible: render() maps captureStage < CAPTURE_WHITE_DUR to
+// an opaque white flash and everything after to opaque black, and
+// drawPredatorGhost() also reads captureStage as its fade-over-time source —
+// one field serves both the 2-stage overlay split and the chalk-outline fade.
+let freezeFrames = 0;
+const CAPTURE_WHITE_DUR = 0.08;  // ~80ms opaque white window at the start of captureStage
+let captureStage = 0;
+
 // Mouse aim (optional)
 let mouseX = 0, mouseY = 0, hasMouse = false;
 
@@ -1129,6 +1142,9 @@ function startLevel(idx) {
   transition = 1;     // play the enter-wipe
   aiming = false;
   shake = 0; flash = 0;
+  // TENS-02: reset the capture sequence so a freeze/blackout engaged on a
+  // prior capture never bleeds into the new attempt.
+  freezeFrames = 0; captureStage = 0;
   state = STATE.PLAYING;
   unlockAudio();
 }
@@ -1172,6 +1188,13 @@ function update(dt) {
   shake = Math.max(0, shake - dt * 60);
   flash = Math.max(0, flash - dt * 2.2);
   transition = Math.max(0, transition - dt * 1.6);
+  // TENS-02: captureStage counts UP (elapsed time on the CAUGHT death screen)
+  // so it animates while state===CAUGHT; this preamble runs even when
+  // state!==PLAYING (the early-return below is AFTER this block). Note this
+  // line only executes when update() actually runs — during the 3-frame
+  // freeze, update() is skipped entirely by frame(), so captureStage holds at
+  // 0 until the freeze releases, then begins counting.
+  captureStage += dt;
 
   if (state !== STATE.PLAYING) { setProximity(0); return; }
 
@@ -1457,7 +1480,12 @@ function onWin() {
 
 function onCaught() {
   state = STATE.CAUGHT;
-  flash = 0.9; flashColor = COLORS.predator;
+  // TENS-02: replaces the old single-fade flash field (formerly set here)
+  // with the 3-beat capture sequence — 3-frame freeze, then captureStage
+  // drives the white->black overlay (see frame()/update()/render()).
+  // onWin()'s flash assignment is untouched.
+  freezeFrames = 3;
+  captureStage = 0;
   shake = 14;
   spawnParticles(player.x, player.y, 50, COLORS.predator, { speed: 200, life: 0.9, size: 3 });
   // TENS-01: cut the tension tone + proximity hum to instant silence —
@@ -1490,6 +1518,20 @@ function render() {
     ctx.save();
     ctx.globalAlpha = Math.min(0.5, flash * 0.5);
     ctx.fillStyle = flashColor;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // TENS-02: capture white->black overlay — a SEPARATE opaque overlay from
+  // the `flash` block above (which caps at 0.5 alpha and is unchanged for
+  // WON/other paths). Only active once the 3-frame freeze has released and
+  // captureStage starts counting up (state===CAUGHT the whole time it runs).
+  // First CAPTURE_WHITE_DUR seconds: opaque white bleach. After that: opaque
+  // black, which persists and sits under renderEnd()'s CAUGHT screen.
+  if (state === STATE.CAUGHT) {
+    ctx.save();
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = captureStage < CAPTURE_WHITE_DUR ? "#ffffff" : COLORS.void;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
@@ -1918,8 +1960,17 @@ function frame(now2) {
   last = now2;
   if (dt > 0.25) dt = 0.25;
   acc += dt;
-  let guard = 0;
-  while (acc >= FIXED && guard < 600) { update(FIXED); acc -= FIXED; guard++; }
+  // TENS-02: while freezeFrames > 0, hold the image — skip the update
+  // accumulator entirely (not just one iteration) so the held frames do not
+  // cause a catch-up burst-replay of update() once the freeze releases, then
+  // decrement once per rendered frame. render() always still runs.
+  if (freezeFrames > 0) {
+    acc = 0;
+    freezeFrames--;
+  } else {
+    let guard = 0;
+    while (acc >= FIXED && guard < 600) { update(FIXED); acc -= FIXED; guard++; }
+  }
   render();
   requestAnimationFrame(frame);
 }
