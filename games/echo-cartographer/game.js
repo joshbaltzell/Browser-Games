@@ -1213,10 +1213,14 @@ function update(dt) {
   transition = Math.max(0, transition - dt * 1.6);
   // TENS-02: captureStage counts UP (elapsed time on the CAUGHT death screen)
   // so it animates while state===CAUGHT; this preamble runs even when
-  // state!==PLAYING (the early-return below is AFTER this block). Note this
-  // line only executes when update() actually runs — during the 3-frame
-  // freeze, update() is skipped entirely by frame(), so captureStage holds at
-  // 0 until the freeze releases, then begins counting.
+  // state!==PLAYING (the early-return below is AFTER this block). During the
+  // 3-frame freeze, update() is skipped entirely by frame(), so captureStage
+  // holds at 0 until the freeze releases, then begins counting. CR-01: this
+  // guarantee depends on frame()'s accumulator loop breaking immediately on
+  // any state transition out of PLAYING — without that break, leftover
+  // backlog iterations in the same rAF tick would keep calling this preamble
+  // (and inflating captureStage) after capture/win fires but before the
+  // freeze branch engages.
   captureStage += dt;
   // TENS-03: decay the one-shot ping-ready completion pulse every frame
   // (always-run, like shake/flash) so it fades even across state changes.
@@ -2103,7 +2107,18 @@ function frame(now2) {
     freezeFrames--;
   } else {
     let guard = 0;
-    while (acc >= FIXED && guard < 600) { update(FIXED); acc -= FIXED; guard++; }
+    // CR-01: stop draining the backlog the instant a frame's update() call
+    // transitions state away from PLAYING (capture or win). Without this,
+    // remaining backlog iterations in the same rAF tick still run update()'s
+    // always-run preamble (captureStage += dt among others) even though the
+    // state is no longer PLAYING, which can inflate captureStage before the
+    // freeze branch ever engages and skip the documented white-flash window.
+    while (acc >= FIXED && guard < 600) {
+      update(FIXED);
+      acc -= FIXED;
+      guard++;
+      if (state !== STATE.PLAYING) { acc = 0; break; }
+    }
   }
   render();
   requestAnimationFrame(frame);
