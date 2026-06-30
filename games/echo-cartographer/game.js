@@ -63,6 +63,10 @@ const PING_COOLDOWN = 0.85;    // seconds between pings (rationed reveals)
 const DECOY_REACH = 230;       // how far the decoy origin is thrown from player
 const DECOY_COOLDOWN = 2.2;    // decoys are pricier than real pings
 
+// Predator heartbeat pings (red, smaller radius — reveal walls near the predator).
+const PRED_HB_INTERVAL = 2.6;  // seconds between heartbeats
+const PRED_HB_RADIUS = 160;    // dies sooner than player pings
+
 // Ghost-outline afterimage.
 const GHOST_LIFE = 1.6;        // seconds for a revealed segment to fade out
 
@@ -95,7 +99,7 @@ let level = null;           // current level data (geometry)
 let player = { x: 0, y: 0, r: PLAYER_R };
 let predator = {
   x: 0, y: 0, r: PRED_R, mode: "idle", tx: 0, ty: 0, idleTimer: 0,
-  path: [], pathStep: 0, rippleT: 0,
+  path: [], pathStep: 0, rippleT: 0, hbTimer: 1.4,
 };
 let pings = [];             // active ringwaves {x,y,radius,decoy}
 let ghosts = [];            // revealed fragments {x1,y1,x2,y2,life,decoy}
@@ -852,7 +856,7 @@ function startLevel(idx) {
   predator.r = PRED_R;
   predator.mode = "idle";
   predator.tx = predator.x; predator.ty = predator.y;
-  predator.idleTimer = 0; predator.path = []; predator.pathStep = 0;
+  predator.idleTimer = 0; predator.path = []; predator.pathStep = 0; predator.hbTimer = 1.4;
   pings = [];
   ghosts = [];
   particles = [];
@@ -896,6 +900,7 @@ function update(dt) {
   updatePlayer(dt);
   updatePings(dt);
   updateGhosts(dt);
+  updatePredatorHeartbeat(dt);
   updatePredator(dt);
   updateProximityAudio();
 
@@ -932,7 +937,16 @@ function collidesAt(x, y, r) {
 
 function updatePings(dt) {
   for (const p of pings) { p.radius += PING_SPEED * dt; revealAlongFront(p); }
-  pings = pings.filter((p) => p.radius <= PING_MAX_RADIUS);
+  pings = pings.filter((p) => p.radius <= (p.predHB ? PRED_HB_RADIUS : PING_MAX_RADIUS));
+}
+
+function updatePredatorHeartbeat(dt) {
+  if (level.dormant) return;
+  predator.hbTimer -= dt;
+  if (predator.hbTimer <= 0) {
+    predator.hbTimer = PRED_HB_INTERVAL;
+    pings.push({ x: predator.x, y: predator.y, radius: 0, predHB: true });
+  }
 }
 
 function revealAlongFront(p) {
@@ -947,18 +961,18 @@ function revealAlongFront(p) {
       const d = Math.hypot(sx - p.x, sy - p.y);
       const onFront = Math.abs(d - p.radius) < PING_BAND;
       if (onFront && runStart === null) runStart = t;
-      else if (!onFront && runStart !== null) { spawnGhost(w, runStart, (i - 1) / steps, p.decoy); runStart = null; }
+      else if (!onFront && runStart !== null) { spawnGhost(w, runStart, (i - 1) / steps, p.decoy, p.predHB); runStart = null; }
     }
-    if (runStart !== null) spawnGhost(w, runStart, 1, p.decoy);
+    if (runStart !== null) spawnGhost(w, runStart, 1, p.decoy, p.predHB);
   }
 }
 
-function spawnGhost(w, t0, t1, decoy) {
+function spawnGhost(w, t0, t1, decoy, predHB) {
   if (t1 <= t0) t1 = Math.min(1, t0 + 0.02);
   ghosts.push({
     x1: w.x1 + (w.x2 - w.x1) * t0, y1: w.y1 + (w.y2 - w.y1) * t0,
     x2: w.x1 + (w.x2 - w.x1) * t1, y2: w.y1 + (w.y2 - w.y1) * t1,
-    life: GHOST_LIFE, decoy: !!decoy,
+    life: GHOST_LIFE, decoy: !!decoy, predHB: !!predHB,
   });
 }
 
@@ -1127,7 +1141,7 @@ function renderWorld() {
   // Ghost-outlines (fading chalk fragments) with a soft bloom underlay.
   for (const g of ghosts) {
     const a = Math.max(0, g.life / GHOST_LIFE);
-    const tint = g.decoy ? COLORS.decoy : COLORS.ghost;
+    const tint = g.predHB ? COLORS.predator : (g.decoy ? COLORS.decoy : COLORS.ghost);
     // bloom
     ctx.strokeStyle = tint;
     ctx.globalAlpha = a * 0.18;
@@ -1142,9 +1156,10 @@ function renderWorld() {
 
   // Live ping fronts: bright chalk-white intersections + a colored glow.
   for (const p of pings) {
-    const fade = Math.max(0, 1 - p.radius / PING_MAX_RADIUS);
-    const frontGlow = p.decoy ? COLORS.decoyGlow : COLORS.wallGlow;
-    const frontCore = p.decoy ? COLORS.decoy : COLORS.wallFront;
+    const maxR = p.predHB ? PRED_HB_RADIUS : PING_MAX_RADIUS;
+    const fade = Math.max(0, 1 - p.radius / maxR);
+    const frontGlow = p.predHB ? COLORS.predatorDeep : (p.decoy ? COLORS.decoyGlow : COLORS.wallGlow);
+    const frontCore = p.predHB ? COLORS.predator : (p.decoy ? COLORS.decoy : COLORS.wallFront);
 
     for (const w of level.walls) {
       const segLen = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
