@@ -87,6 +87,13 @@ const PRED_ARRIVE = 24;        // distance at which it "reaches" a target node
 const PRED_IDLE_RETARGET = 1.8;// seconds between picking a new idle wander point
 const PRED_SENSE_RADIUS = 150; // within this distance it hears footsteps and homes in directly
 
+// Footsteps / listening pause (AUDIO-03/AUDIO-04). PLAYER_SPEED is constant
+// (no sprint), so footstep cadence is one fixed rhythm rather than scaling
+// with speed.
+const FOOTSTEP_INTERVAL = 0.32; // seconds between footstep clicks while moving
+const LISTEN_PAUSE_DELAY = 0.4; // seconds of stillness before the drone ducks
+const DRONE_DUCK = 0.5;         // drone gain multiplier during the listening pause
+
 // ----------------------------------------------------------------------------
 // Canvas + global state
 // ----------------------------------------------------------------------------
@@ -172,6 +179,10 @@ let droneNodes = null;     // persistent cave ambience
 let proxOsc = null, proxGain = null, proxFilter = null; // predator proximity hum
 let audioReady = false;
 let predOcclusion = 1;     // per-frame wall-occlusion factor (OCCLUSION_ATTEN when blocked, else 1); read by Plan 02's predator voice
+let footstepTimer = 0;     // dt countdown to the next footstep click while moving
+let stillTimer = 0;        // dt-accumulated stillness duration (AUDIO-03 listening pause)
+let playerMoving = false;  // movement-key INPUT intent, set by updatePlayer, read by updateFootstepAudio
+let dripTimer = 3 + Math.random() * 5; // dt countdown to the next cave drip (AUDIO-06)
 
 function unlockAudio() {
   if (audioReady) return;
@@ -326,6 +337,49 @@ function noiseBurst(dur, vol) {
   f.type = "lowpass"; f.frequency.value = 1200;
   src.connect(f); f.connect(g); g.connect(masterGain);
   src.start(t);
+}
+
+// AUDIO-04: footstep "click" — a short, dry, high-passed noise tick. Deliberately
+// NOT a reuse of noiseBurst (that's a 1200Hz-lowpass, longer capture thud); this
+// is ~10ms and high-passed for a dry tick character. Stays centered (no panner)
+// since player-originated sounds are not spatially panned.
+function footstepClick() {
+  if (!audioCtx) return;
+  const t = now();
+  const dur = 0.01;
+  const frames = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+  const buf = audioCtx.createBuffer(1, frames, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const f = audioCtx.createBiquadFilter();
+  f.type = "highpass"; f.frequency.value = 1800;
+  const g = audioCtx.createGain();
+  g.gain.value = 0.05;
+  src.connect(f); f.connect(g); g.connect(masterGain);
+  src.start(t);
+}
+
+// AUDIO-06: cave drip — a short watery, pitched, panned transient. Distinct from
+// the dry centered footstepClick: tonal/pitched, downward glide, and randomly
+// panned via makePanner (Plan 01) rather than centered.
+function caveDrip(pan) {
+  if (!audioCtx) return;
+  const t = now();
+  const dur = 0.18;
+  const panner = makePanner(pan);
+  if (!panner) return;
+  const o = audioCtx.createOscillator();
+  o.type = "sine";
+  o.frequency.setValueAtTime(900, t);
+  o.frequency.exponentialRampToValueAtTime(500, t + 0.08);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.06, t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(panner);
+  o.start(t); o.stop(t + dur + 0.02);
 }
 
 // AUDIO-02: linear stereo-pan curve keyed to world X relative to the player.
@@ -994,6 +1048,8 @@ function startLevel(idx) {
   ghosts = [];
   particles = [];
   cooldown = 0; decoyCooldown = 0;
+  footstepTimer = 0; stillTimer = 0;
+  dripTimer = 3 + Math.random() * 5;
   pingCount = 0;
   clearTime = 0;
   introT = 4.5;       // show the level intro banner, then fade it
@@ -1031,11 +1087,13 @@ function update(dt) {
   if (aiming) aimAng = currentAimAngle();
 
   updatePlayer(dt);
+  updateFootstepAudio(dt);
   updatePings(dt);
   updateGhosts(dt);
   updatePredatorHeartbeat(dt);
   updatePredator(dt);
   updateProximityAudio();
+  updateAmbience(dt);
 
   if (Math.hypot(player.x - level.exit.x, player.y - level.exit.y) < level.exit.r) { onWin(); return; }
   if (Math.hypot(player.x - predator.x, player.y - predator.y) < PRED_CATCH) { onCaught(); }
@@ -1047,6 +1105,10 @@ function updatePlayer(dt) {
   if (keys["arrowright"] || keys["d"]) dx += 1;
   if (keys["arrowup"] || keys["w"]) dy -= 1;
   if (keys["arrowdown"] || keys["s"]) dy += 1;
+  // AUDIO-03/04: movement-key INPUT intent, not net displacement — pushing
+  // into a wall still counts as "moving" and must not trigger the listening
+  // pause reward.
+  playerMoving = !(dx === 0 && dy === 0);
   if (dx === 0 && dy === 0) return;
   const len = Math.hypot(dx, dy) || 1;
   dx /= len; dy /= len;
@@ -1054,6 +1116,38 @@ function updatePlayer(dt) {
   moveAndCollide(dx * step, 0);
   moveAndCollide(0, dy * step);
   // NOTE: moving silently does NOT touch the predator (TWIST-04).
+}
+
+// AUDIO-03/AUDIO-04: rhythmic centered footstep clicks while a movement key is
+// held; after LISTEN_PAUSE_DELAY seconds of zero movement INPUT, duck the cave
+// drone (~50%) as a "listening pause" reward. The proximity hum is untouched —
+// it's diegetic predator-distance info the player still needs while still.
+function updateFootstepAudio(dt) {
+  if (playerMoving) {
+    stillTimer = 0;
+    footstepTimer -= dt;
+    if (footstepTimer <= 0) {
+      footstepClick();
+      footstepTimer = FOOTSTEP_INTERVAL;
+    }
+    if (droneNodes) droneNodes.g.gain.setTargetAtTime(0.05, now(), 0.3);
+  } else {
+    stillTimer += dt;
+    if (stillTimer >= LISTEN_PAUSE_DELAY) {
+      if (droneNodes) droneNodes.g.gain.setTargetAtTime(0.05 * DRONE_DUCK, now(), 0.3);
+    }
+  }
+}
+
+// AUDIO-06: cave drips fire on a dt-driven 3-8s countdown (no setInterval, to
+// avoid drift if the tab is backgrounded), each randomly panned left/right.
+function updateAmbience(dt) {
+  dripTimer -= dt;
+  if (dripTimer <= 0) {
+    const pan = (Math.random() * 1.2) - 0.6;
+    caveDrip(pan);
+    dripTimer = 3 + Math.random() * 5;
+  }
 }
 
 function moveAndCollide(mx, my) {
