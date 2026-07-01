@@ -781,11 +781,17 @@ const RAW_LEVELS = [
   },
 
   // L4 — SPIRAL: tighter inward spiral, hunter is faster. Plan your pings.
+  // LVL-01 audit nudge (Phase 63): spawn shifted from dead-center (0.50) to
+  // 0.40 on x, toward the innermost ring's gap. The 220px ping radius now
+  // also reaches the middle ring's near wall (~215px, was ~334px from dead
+  // center) so the first outward turn reads alongside the innermost ring on
+  // one ping — the spiral's core "wind in, then out" shape is legible from
+  // spawn without requiring the full route. Wall geometry untouched.
   {
     name: "THE SPIRAL",
     blurb: "Wind inward to the exit. The hunter is quicker now — a wrong ping is a wrong room.",
     decoy: false, predSpeed: 165,
-    playerN: { x: 0.50, y: 0.50 },
+    playerN: { x: 0.40, y: 0.50 },
     exitN: { x: 0.12, y: 0.12 },
     predN: { x: 0.88, y: 0.88 },
     wallsN: [
