@@ -143,6 +143,7 @@ let predator = {
   x: 0, y: 0, r: PRED_R, mode: "idle", tx: 0, ty: 0, idleTimer: 0,
   path: [], pathStep: 0, rippleT: 0, hbTimer: 1.4, stalking: false, patrolStep: 0,
   heading: 0, // PRED-01: radians, 0 = facing +x; holds last value while stationary
+  ambushTimer: 0, // PRED-02: seconds remaining in an ambush hold; authoritative value set in startLevel()
 };
 let pings = [];             // active ringwaves {x,y,radius,decoy}
 let ghosts = [];            // revealed fragments {x1,y1,x2,y2,life,decoy}
@@ -815,6 +816,9 @@ const RAW_LEVELS = [
     patrolN: [
       { x: 0.50, y: 0.22 }, { x: 0.50, y: 0.78 },
     ],
+    // PRED-02 smoke test: predator lies in wait at the top doorway chokepoint
+    // instead of patrolling on spawn — breaks on 120px proximity or 15s.
+    ambushN: { x: 0.50, y: 0.22 },
   },
 
   // L7 — THE GAUNTLET: predator patrols the central corridor. Bait it off the path, then run.
@@ -947,6 +951,9 @@ function layoutLevel() {
     predStart: { x: toX(raw.predN.x), y: toY(raw.predN.y) },
     nodes: (raw.nodesN || []).map((n) => ({ x: toX(n.x), y: toY(n.y) })),
     patrol: (raw.patrolN || []).map((n) => ({ x: toX(n.x), y: toY(n.y) })),
+    // PRED-02: optional ambush chokepoint, same normalized N-suffix convention
+    // as patrolN/playerN/exitN — null when the level has no ambush configured.
+    ambush: raw.ambushN ? { x: toX(raw.ambushN.x), y: toY(raw.ambushN.y) } : null,
   };
   buildNavGraph();
 }
@@ -1161,6 +1168,16 @@ function startLevel(idx) {
   predator.idleTimer = 0; predator.path = []; predator.pathStep = 0;
   predator.hbTimer = 1.4; predator.stalking = false; predator.patrolStep = 0;
   predator.heading = 0;
+  // PRED-02: level-load-anchored 15s ambush countdown, reset every attempt.
+  predator.ambushTimer = 15;
+  // If this level configures an ambush chokepoint, spawn the predator DIRECTLY
+  // there in "ambush" mode instead of the default idle spawn/wander — the
+  // ambush point IS the effective spawn position, not a path target.
+  if (level.ambush) {
+    predator.x = level.ambush.x;
+    predator.y = level.ambush.y;
+    predator.mode = "ambush";
+  }
   pings = [];
   ghosts = [];
   decoyMarks = [];
