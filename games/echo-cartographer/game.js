@@ -228,6 +228,22 @@ function saveProgress() {
   try { localStorage.setItem(LS_PROG, String(progress)); } catch (e) {}
 }
 
+// LVL-04: in-world mechanic labels (chalk text teaching a new verb the moment
+// it first matters). seenLabels is a persistent map keyed by mechanic name
+// ("ping", "decoy") — once a mechanic's label has been shown+used (or expired)
+// once, it is recorded here forever so returning players never see it again,
+// distinct from the per-attempt labelState render set (see startLevel()).
+const LS_LABELS = "echoCartographer.seenLabels"; // JSON map mechanic->true
+let seenLabels = loadSeenLabels();
+
+function loadSeenLabels() {
+  try { return JSON.parse(localStorage.getItem(LS_LABELS)) || {}; }
+  catch (e) { return {}; }
+}
+function saveSeenLabels() {
+  try { localStorage.setItem(LS_LABELS, JSON.stringify(seenLabels)); } catch (e) {}
+}
+
 // ----------------------------------------------------------------------------
 // Canvas sizing (resize-to-window, DPR-aware)
 // ----------------------------------------------------------------------------
@@ -730,6 +746,13 @@ const RAW_LEVELS = [
       { x: 0.62, y: 0.20 },   // heading up the exit column
       { x: 0.84, y: 0.20 },   // exit
     ],
+    // LVL-04: in-world chalk label teaching "ping to see" right where the
+    // T-junction first demands it — a few steps up the spawn corridor from
+    // the junction itself, so it's read on the walk in, before the player
+    // needs to decide direction.
+    labelsN: [
+      { x: 0.18, y: 0.70, mechanic: "ping", text: "PING — press SPACE to see" },
+    ],
   },
 
   // L2 — SWITCHBACK: a longer zig-zag to trust your memory between pings.
@@ -860,6 +883,12 @@ const RAW_LEVELS = [
       { x: 0.50, y: 0.50 }, { x: 0.60, y: 0.50 }, { x: 0.80, y: 0.50 },
       { x: 0.40, y: 0.20 }, { x: 0.60, y: 0.20 },
       { x: 0.40, y: 0.80 }, { x: 0.60, y: 0.80 },
+    ],
+    // LVL-04: in-world chalk label teaching the brand-new decoy verb, placed
+    // at the central corridor mouth — between spawn and the decoy wall gap —
+    // right where the predator's proximity first makes "throw a lie" useful.
+    labelsN: [
+      { x: 0.40, y: 0.50, mechanic: "decoy", text: "DECOY — SHIFT + aim throws a lie" },
     ],
   },
 
@@ -1093,6 +1122,12 @@ function layoutLevel() {
     huntTrigger: raw.huntTriggerN
       ? { x: toX(raw.huntTriggerN.x), y: toY(raw.huntTriggerN.y), radius: raw.huntTriggerN.radius * bw }
       : null,
+    // LVL-04: optional in-world mechanic labels, same normalized N-suffix
+    // convention as patrolN/ambushN. Levels without labelsN get an empty
+    // array (no label rendered).
+    labels: (raw.labelsN || []).map((l) => ({
+      x: toX(l.x), y: toY(l.y), mechanic: l.mechanic, text: l.text,
+    })),
   };
   buildNavGraph();
 }
