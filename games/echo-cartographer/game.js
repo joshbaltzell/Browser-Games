@@ -1311,6 +1311,21 @@ function update(dt) {
   updatePings(dt);
   updateGhosts(dt);
   updateDecoyMarks(dt);
+
+  // PRED-03: one-shot trigger — checked BEFORE updatePredatorHeartbeat() so
+  // the halved heartbeat interval and forced "breath" audio apply starting
+  // on the very frame the player crosses into huntTrigger's radius, not one
+  // frame later. Fires exactly once per attempt on first entry (huntTriggered
+  // latch prevents any re-fire on subsequent entries during the same attempt).
+  if (level.huntTrigger && !predator.huntTriggered) {
+    const d = Math.hypot(player.x - level.huntTrigger.x, player.y - level.huntTrigger.y);
+    if (d < level.huntTrigger.radius) {
+      predator.huntTriggered = true;
+      predator.huntBurstActive = true;
+      predator.huntBurstTimer = HUNT_BURST_DURATION;
+    }
+  }
+
   updatePredatorHeartbeat(dt);
   updatePredator(dt);
   updateProximityAudio();
@@ -1321,17 +1336,6 @@ function update(dt) {
   if (predator.huntBurstActive) {
     predator.huntBurstTimer -= dt;
     if (predator.huntBurstTimer <= 0) predator.huntBurstActive = false;
-  }
-  // PRED-03: one-shot trigger — fires exactly once per attempt on first entry
-  // into the level-authored huntTrigger radius (huntTriggered latch prevents
-  // any re-fire on subsequent entries during the same attempt).
-  if (level.huntTrigger && !predator.huntTriggered) {
-    const d = Math.hypot(player.x - level.huntTrigger.x, player.y - level.huntTrigger.y);
-    if (d < level.huntTrigger.radius) {
-      predator.huntTriggered = true;
-      predator.huntBurstActive = true;
-      predator.huntBurstTimer = HUNT_BURST_DURATION;
-    }
   }
 
   if (Math.hypot(player.x - level.exit.x, player.y - level.exit.y) < level.exit.r) { onWin(); return; }
