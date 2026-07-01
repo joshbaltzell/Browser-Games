@@ -1172,6 +1172,7 @@ function fireDecoy() {
 // Send the predator hunting toward (x,y) by planning a wall-respecting path.
 function lurePredatorTo(x, y) {
   if (level && level.dormant) return; // teaching levels: the dark is empty
+  if (predator.mode === "ambush") return; // ambush breaks only on proximity/timeout, not on lures
   predator.mode = "hunt";
   predator.tx = x; predator.ty = y;
   predator.path = planPath(predator.x, predator.y, x, y);
