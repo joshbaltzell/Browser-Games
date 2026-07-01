@@ -1365,6 +1365,11 @@ function updatePings(dt) {
 // states, branching only on existing fields (predator.stalking,
 // predator.mode, level.patrol) — no new predator behavior fields invented.
 // Precedence: stalking > hunt > patrol > idle-wander.
+// PRED-02: "ambush" mode deliberately has NO dedicated branch here — it falls
+// through to the patrol/grumble mapping below (whichever the level has) and
+// stays quiet via the existing distance/occlusion-attenuated proximity and
+// heartbeat audio (Phase 60), not a new timbre. A forced near-silent/breath
+// branch for ambush is intentionally out of scope (that's PRED-03's job).
 function predatorAudioState() {
   if (predator.stalking) return "breath";
   if (predator.mode === "hunt") return "hunt";
