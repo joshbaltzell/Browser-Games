@@ -914,7 +914,7 @@ const RAW_LEVELS = [
 
   // L6 — TWO DOORS: predator camps center. Decoy one side, take the other.
   // LVL-03 full-reveal exit room (Phase 63, act II finale): a bounded
-  // chamber in the bottom-right corner (walls x=0.74/y=0.76, doorway gap
+  // chamber in the bottom-right corner (walls x=0.70/y=0.76, doorway gap
   // 0.81-0.89 in the top wall) sized so a single ping fired just inside the
   // doorway (normalized 0.85,0.72) reveals every wall of the chamber,
   // including the exit. A box(0.08,0.08,0.92,0.92)-vertically-centered exit
@@ -926,17 +926,31 @@ const RAW_LEVELS = [
   // Per LVL-03's "predator's starting position is revealed" clause: this is
   // the FINAL authoring of the ambush (superseding Phase 62's PRED-02 smoke
   // test at the top door) — ambushN is relocated from the top doorway to
-  // the chamber's far (bottom-left) corner, (0.76,0.88). CODE REVIEW FIX
-  // (CR-01, Phase 63 review): the chamber's original left wall (x=0.78) left
-  // no interior point >= AMBUSH_BREAK_RADIUS (120px) from every point on the
+  // the chamber's far (bottom-left) corner. CODE REVIEW FIX (CR-01, Phase 63
+  // review): the chamber's original left wall (x=0.78) left no interior
+  // point >= AMBUSH_BREAK_RADIUS (120px) from every point on the
   // doorway-to-exit route — a flood-fill confirmed the ambush was
   // unconditionally broken before the player could ever approach, collapsing
   // the "predator is lying in wait, slipping past is a real choice" design
-  // intent. The left wall was pulled out to x=0.74 to give the chamber enough
-  // depth that a far corner exists which is both outside the break radius of
-  // the doorway approach AND the exit (verified ~156px/~131px respectively at
-  // a 1280x800 viewport — see scratch flood-fill in REVIEW-FIX.md) while the
-  // widened chamber still fits within one ping from the doorway (0.85,0.72).
+  // intent. The left wall was pulled out to x=0.74 to give the chamber depth,
+  // verified ~156px/~131px at a 1280x800 viewport — but CR-01's fix was only
+  // checked at that one viewport. CODE REVIEW FIX (CR-02, Phase 63 re-review):
+  // re-running the same flood-fill at 1024x768 — the minimum viewport this
+  // review cycle established as the floor (per 683deef's L1 fix) — showed the
+  // x=0.74 chamber's margins collapsed back to 94-146px against the 120px
+  // radius, breaking the ambush on nearly every natural approach at that
+  // size. The left wall is pulled out further, to x=0.70, and ambushN moves
+  // from (0.76,0.88) to (0.71,0.88) (still the chamber's far bottom-left
+  // corner) so the safe margin holds at BOTH 1024x768 (124-187px doorway,
+  // 150px exit) and 1280x800 (147-231px doorway, 191px exit), re-verified via
+  // the same flood-fill/BFS-safe-route methodology at 1024x768, 1280x800, and
+  // 1920x1080 (see REVIEW-FIX.md for the full per-viewport table). The
+  // chamber's outer-corner distance from the doorway entry ping point grows
+  // with it (195px/229px at 1024x768/1280x800, up from 171px/194px) — still
+  // in the same ballpark as before and not a new single-ping-coverage
+  // regression (the pre-CR-02 geometry already exceeded PING_MAX_RADIUS at
+  // 1920x1080, so exact single-ping coverage was never a guaranteed
+  // invariant at every viewport, only the reference one).
   // patrolN keeps the original top/bottom door midpoints so the "two doors"
   // patrol identity and decoy-timing puzzle for the FIRST door choice are
   // unchanged; only the ambush (the predator's actual start-of-level
@@ -960,11 +974,13 @@ const RAW_LEVELS = [
       [0.60, 0.08, 0.60, 0.50],
       [0.60, 0.66, 0.60, 0.92],
       // Exit chamber (LVL-03): top wall with a doorway gap + left wall.
-      // Left wall pulled out to x=0.74 (CR-01 fix) so the chamber has enough
-      // depth for an ambush point clear of the doorway-to-exit route.
-      [0.74, 0.76, 0.81, 0.76],
+      // Left wall pulled out to x=0.70 (CR-02 fix; was x=0.74 under CR-01,
+      // which only held its margin at 1280x800 — see head comment) so the
+      // chamber has enough depth for an ambush point clear of the
+      // doorway-to-exit route at 1024x768 as well.
+      [0.70, 0.76, 0.81, 0.76],
       [0.89, 0.76, 0.92, 0.76],
-      [0.74, 0.76, 0.74, 0.92],
+      [0.70, 0.76, 0.70, 0.92],
     ],
     nodesN: [
       { x: 0.24, y: 0.50 }, { x: 0.32, y: 0.22 }, { x: 0.32, y: 0.78 },
@@ -981,10 +997,12 @@ const RAW_LEVELS = [
     // that reveals the room — breaks on 120px proximity or 15s, same as
     // before. CR-01 fix: relocated from (0.82,0.80) — which sat only ~67px
     // from the doorway entry, guaranteeing an unavoidable break — to
-    // (0.76,0.88), ~156px from the doorway and ~131px from the exit,
-    // verified via flood-fill that a path exists which never enters the
-    // break radius.
-    ambushN: { x: 0.76, y: 0.88 },
+    // (0.76,0.88), ~156px from the doorway and ~131px from the exit at
+    // 1280x800, but CR-01 never re-checked 1024x768, where the same margin
+    // collapsed to 94-146px. CR-02 fix: relocated again to (0.71,0.88)
+    // (paired with the wall move above), verified 124-187px from the doorway
+    // and ~150px from the exit at 1024x768, and 147-231px/191px at 1280x800.
+    ambushN: { x: 0.71, y: 0.88 },
   },
 
   // L7 — THE GAUNTLET: predator patrols the central corridor. Bait it off the path, then run.
@@ -1072,7 +1090,7 @@ const RAW_LEVELS = [
   // L10 — INTO THE DEEP: the finale. Twin throats, fastest hunter, tight exit.
   // LVL-03 full-reveal exit room (Phase 63, act III finale): the exit moved
   // from the box's vertical center (0.88,0.50) into a bounded chamber in the
-  // top-right corner (walls: bottom wall at y=0.34, left wall at x=0.86 with
+  // top-right corner (walls: bottom wall at y=0.40, left wall at x=0.86 with
   // a doorway gap 0.10-0.18) — a centered exit could NOT satisfy this here
   // either, for the same reason as L6: this level's box(0.06,0.08,0.94,0.92)
   // has far top-right/bottom-right corners ~265-275px from any y=0.50 exit
@@ -1081,21 +1099,33 @@ const RAW_LEVELS = [
   // 0.31) reveals the whole chamber, including the exit. Predator-visibility
   // (LVL-03): as the finale, favors reliability over the static predN (which
   // starts at dead-center, far from every exit-room candidate) — added an
-  // ambushN in the chamber's far corner (0.925,0.315) so the predator is
-  // lying in wait and visible in the same ping, while sitting off to the
-  // side of the direct doorway-to-exit line so slipping past it is still a
-  // real routing decision. CODE REVIEW FIX (CR-01, Phase 63 review): the
-  // chamber's original bottom wall (y=0.28) left no interior point clear of
+  // ambushN in the chamber's far corner so the predator is lying in wait and
+  // visible in the same ping, while sitting off to the side of the direct
+  // doorway-to-exit line so slipping past it is still a real routing
+  // decision. CODE REVIEW FIX (CR-01, Phase 63 review): the chamber's
+  // original bottom wall (y=0.28) left no interior point clear of
   // AMBUSH_BREAK_RADIUS (120px) across the whole doorway-to-exit route — a
   // flood-fill confirmed the ambush was unconditionally broken before the
   // player could reach the chamber. The bottom wall was pushed out to y=0.34
-  // to give the chamber enough depth for a far corner outside the break
-  // radius of BOTH the doorway approach and the exit (verified ~137px/~135px
-  // respectively at a 1280x800 viewport — see REVIEW-FIX.md). Twin-throat
-  // identity preserved: both throats still feed into the same open area
-  // approaching this corner chamber; the upper throat's approach is now
-  // shorter than the lower throat's, an intentional asymmetry rather than a
-  // simplification (both routes remain fully navigable, per the nav-graph
+  // and ambushN moved to (0.925,0.315), verified ~137px/~135px from the
+  // doorway/exit respectively — but only at a 1280x800 viewport. CODE REVIEW
+  // FIX (CR-02, Phase 63 re-review): re-running the same flood-fill at
+  // 1024x768 — the minimum viewport this review cycle established as the
+  // floor (per 683deef's L1 fix) — showed the y=0.34 chamber's margins
+  // collapsed to 111-158px against the 120px radius, breaking the ambush on
+  // most natural approaches at that size. The bottom wall is pushed out
+  // further, to y=0.40, and ambushN moves to (0.925,0.36) (same far corner,
+  // deeper into the chamber) so the safe margin holds at BOTH 1024x768
+  // (137-193px doorway, 165px exit) and 1280x800 (150-207px doorway, 173px
+  // exit), re-verified via the same flood-fill/BFS-safe-route methodology at
+  // 1024x768, 1280x800, and 1920x1080 (see REVIEW-FIX.md for the full
+  // per-viewport table). The wall move is purely vertical (bottom wall only),
+  // so it does not affect the doorway entry point's ping-coverage distance to
+  // the chamber's outer corners — no ping-coverage regression from this fix.
+  // Twin-throat identity preserved: both throats still feed into the same
+  // open area approaching this corner chamber; the upper throat's approach is
+  // now shorter than the lower throat's, an intentional asymmetry rather than
+  // a simplification (both routes remain fully navigable, per the nav-graph
   // check below).
   {
     name: "INTO THE DEEP",
@@ -1112,11 +1142,13 @@ const RAW_LEVELS = [
       [0.70, 0.08, 0.70, 0.38], [0.70, 0.62, 0.70, 0.92],
       [0.52, 0.20, 0.70, 0.20], [0.52, 0.80, 0.70, 0.80],
       // Exit chamber (LVL-03): bottom wall + left wall with a doorway gap.
-      // Bottom wall pushed out to y=0.34 (CR-01 fix) so the chamber has
-      // enough depth for an ambush point clear of the doorway-to-exit route.
-      [0.86, 0.34, 0.94, 0.34],
+      // Bottom wall pushed out to y=0.40 (CR-02 fix; was y=0.34 under CR-01,
+      // which only held its margin at 1280x800 — see head comment) so the
+      // chamber has enough depth for an ambush point clear of the
+      // doorway-to-exit route at 1024x768 as well.
+      [0.86, 0.40, 0.94, 0.40],
       [0.86, 0.08, 0.86, 0.10],
-      [0.86, 0.18, 0.86, 0.34],
+      [0.86, 0.18, 0.86, 0.40],
     ],
     nodesN: [
       { x: 0.18, y: 0.50 }, { x: 0.24, y: 0.24 }, { x: 0.24, y: 0.76 },
@@ -1131,9 +1163,12 @@ const RAW_LEVELS = [
     // / updatePredator()'s AMBUSH MODE block). CR-01 fix: relocated from
     // (0.89,0.22) — which sat only ~115px from the doorway/reveal entry
     // point, guaranteeing an unavoidable break — to (0.925,0.315), ~137px
-    // from the doorway and ~135px from the exit, verified via flood-fill
-    // that a path exists which never enters the break radius.
-    ambushN: { x: 0.925, y: 0.315 },
+    // from the doorway and ~135px from the exit at 1280x800, but CR-01 never
+    // re-checked 1024x768, where the same margin collapsed to 111-158px.
+    // CR-02 fix: relocated again to (0.925,0.36) (paired with the wall move
+    // above), verified 137-193px from the doorway and ~165px from the exit
+    // at 1024x768, and 150-207px/173px at 1280x800.
+    ambushN: { x: 0.925, y: 0.36 },
   },
 ];
 
