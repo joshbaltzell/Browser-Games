@@ -733,24 +733,41 @@ const RAW_LEVELS = [
   },
 
   // L2 — SWITCHBACK: a longer zig-zag to trust your memory between pings.
+  // LVL-03 full-reveal exit room (Phase 63, act I finale): the bottom-right
+  // corner is now a bounded chamber (walls at x=0.82/y=0.72, doorway gap
+  // 0.83-0.91 in the top wall) sized so a single ping fired just inside the
+  // doorway (normalized 0.87,0.70) reveals every wall of the chamber,
+  // including the exit itself. predSpeed is 0 on this level (predator
+  // dormant/harmless, per its Act-I teaching role) so no patrol/ambush was
+  // added — a moving predator would contradict
+  // the "dark is still empty here" framing; the static predN position (far
+  // top-right) is simply not part of this reveal, which is fine since the
+  // predator poses no threat here. The routing decision that remains: the
+  // doorway gap is narrower than the chamber, so entering off-center still
+  // requires reading the revealed walls to line up with the gap and then the
+  // exit beyond it, rather than a straight walk from the corridor.
   {
     name: "SWITCHBACK",
     blurb: "Reveals fade fast — move from memory between pings. The dark is still empty here.",
     decoy: false, predSpeed: 0,
     playerN: { x: 0.14, y: 0.14 },
-    exitN: { x: 0.86, y: 0.86 },
+    exitN: { x: 0.87, y: 0.87 },
     predN: { x: 0.86, y: 0.14 },
     wallsN: [
       ...box(0.08, 0.08, 0.92, 0.92),
       [0.08, 0.32, 0.72, 0.32],
       [0.28, 0.56, 0.92, 0.56],
       [0.08, 0.74, 0.72, 0.74],
+      // Exit chamber (LVL-03): left wall + top wall with a doorway gap.
+      [0.82, 0.72, 0.83, 0.72],
+      [0.91, 0.72, 0.92, 0.72],
+      [0.82, 0.72, 0.82, 0.92],
     ],
     nodesN: [
       { x: 0.20, y: 0.20 }, { x: 0.80, y: 0.20 },
       { x: 0.80, y: 0.44 }, { x: 0.20, y: 0.44 },
       { x: 0.20, y: 0.64 }, { x: 0.80, y: 0.64 },
-      { x: 0.80, y: 0.84 }, { x: 0.20, y: 0.84 },
+      { x: 0.87, y: 0.70 }, { x: 0.87, y: 0.87 }, { x: 0.20, y: 0.84 }, { x: 0.75, y: 0.84 },
     ],
   },
 
