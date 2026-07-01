@@ -92,6 +92,10 @@ const PRED_CATCH = 18;         // contact distance that ends the attempt
 const PRED_ARRIVE = 24;        // distance at which it "reaches" a target node
 const PRED_IDLE_RETARGET = 1.8;// seconds between picking a new idle wander point
 const PRED_SENSE_RADIUS = 150; // within this distance it hears footsteps and homes in directly
+// PRED-02: player-proximity distance that breaks an ambush hold — distinct
+// from PRED_SENSE_RADIUS (stalk detection), always smaller/tighter since an
+// ambushing predator only reacts once the player is nearly on top of it.
+const AMBUSH_BREAK_RADIUS = 120;
 
 // PRED-01: asymmetric/jagged creature silhouette (NOT a regular polygon),
 // offsets relative to predator center in multiples of predator.r. Drawn via
@@ -1439,6 +1443,25 @@ function updateDecoyMarks(dt) {
 function updatePredator(dt) {
   predator.rippleT += dt;
   if (level.dormant) return;
+
+  // --- AMBUSH MODE (PRED-02): holds position at a level-authored chokepoint,
+  // near-silent, until the player steps within AMBUSH_BREAK_RADIUS OR the
+  // level-load-anchored ambushTimer runs out — whichever comes first. Two
+  // independent race conditions, no pause/reset on a partial proximity dip
+  // (the timer counts down monotonically regardless of distance). Placed
+  // BEFORE stalk/hunt/idle so it fully intercepts predator behavior while
+  // ambushing; once broken, the very next frame's stalk/hunt/idle logic
+  // takes over normally.
+  if (predator.mode === "ambush") {
+    predator.ambushTimer -= dt;
+    const toPlAmbush = Math.hypot(player.x - predator.x, player.y - predator.y);
+    if (toPlAmbush < AMBUSH_BREAK_RADIUS || predator.ambushTimer <= 0) {
+      predator.mode = "idle";
+      predator.idleTimer = 0;
+      pickIdleTarget();
+    }
+    return;
+  }
 
   // --- STALK MODE: within sense radius it hears footsteps and homes in directly ---
   const toPl = Math.hypot(player.x - predator.x, player.y - predator.y);
