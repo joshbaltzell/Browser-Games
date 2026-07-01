@@ -127,6 +127,7 @@ let player = { x: 0, y: 0, r: PLAYER_R };
 let predator = {
   x: 0, y: 0, r: PRED_R, mode: "idle", tx: 0, ty: 0, idleTimer: 0,
   path: [], pathStep: 0, rippleT: 0, hbTimer: 1.4, stalking: false, patrolStep: 0,
+  heading: 0, // PRED-01: radians, 0 = facing +x; holds last value while stationary
 };
 let pings = [];             // active ringwaves {x,y,radius,decoy}
 let ghosts = [];            // revealed fragments {x1,y1,x2,y2,life,decoy}
@@ -1144,6 +1145,7 @@ function startLevel(idx) {
   predator.tx = predator.x; predator.ty = predator.y;
   predator.idleTimer = 0; predator.path = []; predator.pathStep = 0;
   predator.hbTimer = 1.4; predator.stalking = false; predator.patrolStep = 0;
+  predator.heading = 0;
   pings = [];
   ghosts = [];
   decoyMarks = [];
@@ -1474,6 +1476,10 @@ function pickIdleTarget() {
 // Move predator, wall-resolved per-axis (PRED-04 already enforced by path, this
 // is the safety net so it never tunnels through geometry).
 function stepToward(ux, uy, amt) {
+  // PRED-01: capture facing only when the direction is nonzero this frame,
+  // so predator.heading HOLDS its last value while stationary (e.g. a future
+  // ambush hold keeps facing its last direction rather than snapping to 0).
+  if (ux !== 0 || uy !== 0) predator.heading = Math.atan2(uy, ux);
   const tryMove = (mx, my) => {
     const nx = predator.x + mx, ny = predator.y + my;
     if (!collidesAt(nx, ny, predator.r)) { predator.x = nx; predator.y = ny; }
