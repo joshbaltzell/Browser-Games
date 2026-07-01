@@ -963,6 +963,34 @@ const RAW_LEVELS = [
   // regression (the pre-CR-02 geometry already exceeded PING_MAX_RADIUS at
   // 1920x1080, so exact single-ping coverage was never a guaranteed
   // invariant at every viewport, only the reference one).
+  // CODE REVIEW FIX (CR-03/WR-06, Phase 63 iteration-3 re-review): CR-02's
+  // ambushN (0.71,0.88) sat only ~0.01 normalized units clear of the x=0.70
+  // wall — collidesAt(ambush, PRED_R=13) collided with that wall at
+  // 1024x768 (9.36px clearance) and 1280x800 (11.92px clearance), a
+  // regression CR-02's break-radius/reachability/nav-graph checks never
+  // exercised. Solved as a system (not a one-number nudge): held the chamber
+  // depth (left wall x=0.70) FIXED — a joint grid search over
+  // {leftX, ambushX, ambushY} proved x=0.70 is the unique feasible chamber
+  // depth that keeps AMBUSH_BREAK_RADIUS (120px) satisfied at 1024x768 at
+  // all (any shallower wall reopens CR-01/CR-02's break-radius violation;
+  // any deeper wall only pushes the ping-reveal corner distance further past
+  // budget with no compensating benefit) — then solved for the ambushN point
+  // maximizing the worse of the two margins (break-radius, wall-clearance)
+  // within that fixed chamber. Moved ambushN to (0.7204,0.892): both margins
+  // hold at all three viewports (break-radius 121.0/142.3/210.0px vs 120px
+  // floor; wall-clearance 19.0/19.9/27.8px vs the PRED_R+5px=18px floor,
+  // checked against every wall in the level, not just the adjacent chamber
+  // wall — the binding wall at 1024x768 is actually the outer box's bottom
+  // edge at y=0.92, 19.04px away, essentially tied with the chamber's own
+  // left wall at 19.09px). WR-06 residual (documented, not silently left):
+  // this is the mathematical ceiling for margin at 1024x768 — under 1px of
+  // slack on each constraint — because deepening the chamber further to buy
+  // more margin only makes the pre-existing ping-reveal miss worse (see
+  // wallsN comment below and WR-06 note there); the two constraints
+  // (break-radius vs. wall-clearance) leave essentially no more room to
+  // maneuver at this chamber depth. A future geometry pass that revisits
+  // this level should treat the chamber shape itself (not just the ambush
+  // point) as the variable if more margin is ever needed.
   // patrolN keeps the original top/bottom door midpoints so the "two doors"
   // patrol identity and decoy-timing puzzle for the FIRST door choice are
   // unchanged; only the ambush (the predator's actual start-of-level
@@ -989,7 +1017,25 @@ const RAW_LEVELS = [
       // Left wall pulled out to x=0.70 (CR-02 fix; was x=0.74 under CR-01,
       // which only held its margin at 1280x800 — see head comment) so the
       // chamber has enough depth for an ambush point clear of the
-      // doorway-to-exit route at 1024x768 as well.
+      // doorway-to-exit route at 1024x768 as well. CR-03/WR-06 (iteration-3
+      // re-review) proved this x=0.70 depth is a forced value, not a free
+      // choice: it is the unique wall position that keeps the ambush's
+      // break-radius margin (>=120px) AND its own wall-clearance margin
+      // (>=PRED_R+5px) satisfied at 1024x768 simultaneously — see the
+      // ambushN comment below for the full joint-solve writeup. A side
+      // effect of this forced depth: the chamber's farthest corner from the
+      // doorway ping point (0.85,0.72) is 228.6px at 1280x800, over
+      // PING_MAX_RADIUS (220px) — WR-06, a pre-existing-adjacent but
+      // newly-introduced-by-CR-02 miss at that one viewport (it held at
+      // 194px before CR-02's widening). This is now a known, documented gap:
+      // 1280x800 does not get the single-ping full-chamber reveal LVL-03's
+      // own comment below promises; 1024x768 (195.5px) still does. No
+      // further wall/ambush geometry change closes this gap without
+      // reopening CR-01/CR-02's break-radius violation (see the joint-solve
+      // proof in the head comment) — closing it for real requires either
+      // relaxing the single-ping guarantee to "at 1024x768 only" in the
+      // level's design comment, or a larger PING_MAX_RADIUS / different
+      // exit-room shape, both out of scope for a geometry-only fix pass.
       [0.70, 0.76, 0.81, 0.76],
       [0.89, 0.76, 0.92, 0.76],
       [0.70, 0.76, 0.70, 0.92],
@@ -1014,7 +1060,20 @@ const RAW_LEVELS = [
     // collapsed to 94-146px. CR-02 fix: relocated again to (0.71,0.88)
     // (paired with the wall move above), verified 124-187px from the doorway
     // and ~150px from the exit at 1024x768, and 147-231px/191px at 1280x800.
-    ambushN: { x: 0.71, y: 0.88 },
+    // CR-03 fix (iteration-3 re-review): (0.71,0.88) was only ~0.01
+    // normalized units clear of the x=0.70 wall, so collidesAt(ambush,
+    // PRED_R=13) collided with it at 1024x768 (9.36px actual clearance) and
+    // 1280x800 (11.92px) — the predator's own render silhouette clipped into
+    // the wall it was meant to be standing beside. Relocated to
+    // (0.7204,0.892), the joint-solve optimum for this fixed chamber depth
+    // (see wallsN comment above): break-radius margin 121.0/142.3/210.0px
+    // and wall-clearance (checked against every wall, not just the adjacent
+    // one) 19.0/19.9/27.8px at 1024x768/1280x800/1920x1080 respectively —
+    // both requirements hold at all three viewports, though with under 1px
+    // of slack at 1024x768, which is the mathematical ceiling for this
+    // chamber shape (see wallsN comment for the proof and the WR-06 residual
+    // ping-reveal gap this forced depth leaves at 1280x800).
+    ambushN: { x: 0.7204, y: 0.892 },
   },
 
   // L7 — THE GAUNTLET: predator patrols the central corridor. Bait it off the path, then run.
@@ -1157,7 +1216,14 @@ const RAW_LEVELS = [
       // Bottom wall pushed out to y=0.40 (CR-02 fix; was y=0.34 under CR-01,
       // which only held its margin at 1280x800 — see head comment) so the
       // chamber has enough depth for an ambush point clear of the
-      // doorway-to-exit route at 1024x768 as well.
+      // doorway-to-exit route at 1024x768 as well. CR-03 re-check
+      // (iteration-3 re-review): re-verified this same holistic
+      // break-radius/wall-clearance/ping-reveal constraint set for L10 (the
+      // review's fix guidance asked to re-check, not assume L10 was fine
+      // just because CR-03/WR-06 were filed against L6 specifically). L10's
+      // wall-clearance violation traced to ambushN.x being too close to the
+      // OUTER box's right edge (x=0.94), not this bottom wall — this wall's
+      // position (y=0.40) did not need to change; see ambushN comment below.
       [0.86, 0.40, 0.94, 0.40],
       [0.86, 0.08, 0.86, 0.10],
       [0.86, 0.18, 0.86, 0.40],
@@ -1180,7 +1246,22 @@ const RAW_LEVELS = [
     // CR-02 fix: relocated again to (0.925,0.36) (paired with the wall move
     // above), verified 137-193px from the doorway and ~165px from the exit
     // at 1024x768, and 150-207px/173px at 1280x800.
-    ambushN: { x: 0.925, y: 0.36 },
+    // CR-03 fix (iteration-3 re-review): CR-02 never checked the predator's
+    // own collision radius against the wall it was moved next to. Re-running
+    // collidesAt(ambush, PRED_R=13) against the live geometry found
+    // (0.925,0.36) collided with the level's OUTER right wall (x=0.94, not
+    // this chamber's own bottom/left walls) at 1024x768 (14.04px clearance)
+    // and 1280x800 (17.88px) — both under the PRED_R+5px=18px floor. Unlike
+    // L6, this level had ample slack: relocated ambushN.x from 0.925 to 0.91
+    // (y unchanged) without touching any wall. Re-verified the full
+    // constraint set at all three viewports: break-radius margin
+    // 131.0/141.3/200.7px (vs 120px floor), wall-clearance 27.2/28.5/39.7px
+    // (vs 18px floor, checked against every wall), and the exit-room
+    // ping-reveal distance is unaffected (163.3/174.3px at 1024x768/1280x800,
+    // same pre-existing 1920x1080-only miss as before — this move does not
+    // touch the ping-reveal geometry at all since only ambushN.x changed,
+    // not any wall).
+    ambushN: { x: 0.91, y: 0.36 },
   },
 ];
 
