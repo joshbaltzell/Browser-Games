@@ -690,24 +690,45 @@ function box(x0, y0, x1, y1) {
 const RAW_LEVELS = [
   // ---- ACT I: LEARN TO SEE (geometry only, predator harmless) --------------
 
-  // L1 — FIRST LIGHT: a bent corridor. No real threat. Just ping, read, walk.
+  // L1 — FIRST LIGHT (LVL-02 redesign, Phase 63): a corridor-to-T-junction
+  // tutorial. Geometry — not the blurb text above — must teach "ping to see
+  // where to go" with zero reading required: a short straight corridor from
+  // spawn opens into a T-junction; the whole corridor+junction sits within
+  // one ping radius of spawn, and one ping fired at the junction reveals a
+  // closed dead-end nub to the left and an open branch curving up-right
+  // toward the exit — enough directional signal to choose correctly without
+  // ever seeing the exit itself on this first ping.
   {
     name: "FIRST LIGHT",
     blurb: "Press SPACE to ping. Walls light along the wavefront, then fade. Walk to the gold exit.",
     decoy: false, predSpeed: 0, // predator effectively dormant
-    playerN: { x: 0.16, y: 0.78 },
+    playerN: { x: 0.18, y: 0.82 },
     exitN: { x: 0.84, y: 0.20 },
     predN: { x: 0.84, y: 0.84 },
     wallsN: [
       ...box(0.08, 0.10, 0.92, 0.90),
-      [0.40, 0.24, 0.40, 0.60],   // gap at top (y<0.24) lets player cross to the right side
-      [0.40, 0.60, 0.66, 0.60],
-      [0.66, 0.40, 0.66, 0.90],
+      // Spawn corridor: straight shot up to the T-junction row (y=0.56).
+      [0.10, 0.90, 0.10, 0.56],
+      [0.24, 0.90, 0.24, 0.56],
+      // Dead-end branch: a short closed nub left of the junction — reads as
+      // "wrong way" once pinged from the junction.
+      [0.10, 0.56, 0.10, 0.46],
+      [0.10, 0.46, 0.16, 0.46],
+      [0.16, 0.46, 0.16, 0.56],
+      // Live branch: opens right from the junction, then curves up toward
+      // the exit's column. The near wall of this branch sits right at the
+      // junction (~7px), so its direction is unmistakable on the first ping.
+      [0.24, 0.56, 0.62, 0.56],
+      [0.16, 0.56, 0.62, 0.30],
+      [0.62, 0.30, 0.62, 0.10],
     ],
     nodesN: [
-      { x: 0.24, y: 0.78 }, { x: 0.24, y: 0.20 },
-      { x: 0.53, y: 0.20 }, { x: 0.53, y: 0.50 },
-      { x: 0.78, y: 0.30 }, { x: 0.78, y: 0.78 },
+      { x: 0.18, y: 0.82 },   // spawn corridor
+      { x: 0.18, y: 0.60 },   // approaching the junction
+      { x: 0.13, y: 0.50 },   // dead-end nub
+      { x: 0.40, y: 0.44 },   // live branch, past the curve
+      { x: 0.62, y: 0.20 },   // heading up the exit column
+      { x: 0.84, y: 0.20 },   // exit
     ],
   },
 
