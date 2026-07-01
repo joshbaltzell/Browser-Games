@@ -93,6 +93,21 @@ const PRED_ARRIVE = 24;        // distance at which it "reaches" a target node
 const PRED_IDLE_RETARGET = 1.8;// seconds between picking a new idle wander point
 const PRED_SENSE_RADIUS = 150; // within this distance it hears footsteps and homes in directly
 
+// PRED-01: asymmetric/jagged creature silhouette (NOT a regular polygon),
+// offsets relative to predator center in multiples of predator.r. Drawn via
+// moveTo/lineTo each frame in local (rotated) space so it reads as an organic
+// hunting shape rather than a radius marker.
+const PRED_SHAPE = [
+  { x: 1.5, y: 0 },       // forward snout point, furthest out
+  { x: 0.5, y: 0.55 },
+  { x: 0.15, y: 1.35 },   // jagged side spike (rear-right)
+  { x: -0.9, y: 0.7 },
+  { x: -1.2, y: 0 },      // blunt rear point
+  { x: -0.9, y: -0.7 },
+  { x: 0.15, y: -1.35 },  // jagged side spike (rear-left)
+  { x: 0.5, y: -0.55 }
+];
+
 // Footsteps / listening pause (AUDIO-03/AUDIO-04). PLAYER_SPEED is constant
 // (no sprint), so footstep cadence is one fixed rhythm rather than scaling
 // with speed.
@@ -1790,24 +1805,45 @@ function drawExit() {
 
 function drawPredator() {
   ctx.save();
+  ctx.translate(predator.x, predator.y);
+  ctx.rotate(predator.heading);
+
   const t = performance.now() / 1000;
-  // PRED-02: persistent red ripple telegraph (concentric, always visible).
+  // PRED-01: stalk-gated pulse — near-static while wandering, visibly "alive"
+  // while stalking. Amplitude (not just the oscillation) is gated on the flag.
+  const pulse = 0.5 + 0.5 * Math.sin(t * 5);
+  const stalkAmt = predator.stalking ? 1 : 0.12;
+
+  // PRED-02: reduced ripple telegraph, intensified only when stalking.
   for (let i = 0; i < 3; i++) {
     const ph = (predator.rippleT * 1.1 + i / 3) % 1;
     const rr = predator.r * (0.5 + ph * 2.2);
-    ctx.globalAlpha = (1 - ph) * (predator.mode === "hunt" ? 0.5 : 0.3);
+    ctx.globalAlpha = (1 - ph) * (predator.mode === "hunt" ? 0.5 : 0.3) * stalkAmt;
     ctx.strokeStyle = COLORS.predator;
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(predator.x, predator.y, rr, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.stroke();
   }
-  // core glow
-  const pulse = 0.5 + 0.5 * Math.sin(t * 5);
-  ctx.globalAlpha = 0.25 + pulse * 0.18;
+
+  // Angular wireframe silhouette in LOCAL space (already translated+rotated).
+  ctx.beginPath();
+  ctx.moveTo(PRED_SHAPE[0].x * predator.r, PRED_SHAPE[0].y * predator.r);
+  for (let i = 1; i < PRED_SHAPE.length; i++) {
+    ctx.lineTo(PRED_SHAPE[i].x * predator.r, PRED_SHAPE[i].y * predator.r);
+  }
+  ctx.closePath();
+  ctx.globalAlpha = 0.25 + pulse * 0.18 * stalkAmt;
   ctx.fillStyle = COLORS.predatorDeep;
-  ctx.beginPath(); ctx.arc(predator.x, predator.y, predator.r, 0, TAU); ctx.fill();
-  ctx.globalAlpha = 0.7 + pulse * 0.3;
+  ctx.fill();
+  ctx.globalAlpha = 0.85 + pulse * 0.15 * stalkAmt;
+  ctx.strokeStyle = COLORS.predator;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Small filled core for body presence, pulsing only when stalking.
+  ctx.globalAlpha = 0.7 + pulse * 0.3 * stalkAmt;
   ctx.fillStyle = COLORS.predator;
-  ctx.beginPath(); ctx.arc(predator.x, predator.y, predator.r * 0.42, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, predator.r * 0.32, 0, TAU); ctx.fill();
+
   ctx.restore();
 }
 
