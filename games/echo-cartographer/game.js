@@ -1418,6 +1418,10 @@ function updatePings(dt) {
 // heartbeat audio (Phase 60), not a new timbre. A forced near-silent/breath
 // branch for ambush is intentionally out of scope (that's PRED-03's job).
 function predatorAudioState() {
+  // PRED-03: the stalk-mode breath audio fires unconditionally for the entire
+  // burst duration, independent of the real proximity-detection flag below,
+  // so this is checked first, before every other branch.
+  if (predator.huntBurstActive) return "breath";
   if (predator.stalking) return "breath";
   if (predator.mode === "hunt") return "hunt";
   if (level.patrol && level.patrol.length > 0) return "pulse";
@@ -1429,6 +1433,10 @@ function updatePredatorHeartbeat(dt) {
   predator.hbTimer -= dt;
   if (predator.hbTimer <= 0) {
     predator.hbTimer = predator.stalking ? 0.65 : PRED_HB_INTERVAL;
+    // PRED-03: applied AFTER the stalking/idle branch resolves, so the 0.5x
+    // stacks on top of whichever base interval was chosen (0.325s during a
+    // stalking burst, 1.3s during an idle burst) rather than overriding it.
+    if (predator.huntBurstActive) predator.hbTimer *= HUNT_HB_MULT;
     pings.push({ x: predator.x, y: predator.y, radius: 0, predHB: true });
     predatorVoice(predatorAudioState(), panForX(predator.x), predOcclusion);
   }
