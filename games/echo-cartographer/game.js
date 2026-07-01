@@ -711,6 +711,18 @@ function box(x0, y0, x1, y1) {
 //   3–4  predator pressure introduced, no decoy
 //   5    decoy unlocked & taught in a forgiving room
 //   6–10 silent-route + decoy puzzles of rising tension
+//
+// MIN_VIEWPORT (Phase 63 review, WR-05): 1024x768 is the minimum supported
+// viewport for this file's geometry-dependent claims (chamber margins,
+// ambush break radii, ping-reveal coverage, nav-graph reachability).
+// resize() (see below) has no minimum-width guard, so smaller viewports are
+// reachable in-game, not hypothetical. Any level-geometry fix that verifies
+// a distance/margin/reveal claim MUST re-check it at 1024x768 specifically,
+// not just at a larger reference viewport — CR-01's chamber-widening fix
+// verified only at 1280x800 and had to be re-fixed one review cycle later
+// (CR-02) once re-checked here. Prefer verifying at 1024x768, 1280x800, and
+// 1920x1080 together so a fix doesn't regress at a different size than the
+// one it was checked against.
 const RAW_LEVELS = [
   // ---- ACT I: LEARN TO SEE (geometry only, predator harmless) --------------
 
