@@ -1742,17 +1742,26 @@ function updatePredator(dt) {
   const burst = predator.huntBurstActive ? HUNT_SPEED_MULT : 1;
 
   // --- AMBUSH MODE (PRED-02): holds position at a level-authored chokepoint,
-  // near-silent, until the player steps within AMBUSH_BREAK_RADIUS OR the
-  // level-load-anchored ambushTimer runs out — whichever comes first. Two
-  // independent race conditions, no pause/reset on a partial proximity dip
-  // (the timer counts down monotonically regardless of distance). Placed
-  // BEFORE stalk/hunt/idle so it fully intercepts predator behavior while
-  // ambushing; once broken, the very next frame's stalk/hunt/idle logic
-  // takes over normally.
+  // near-silent, until the player steps within AMBUSH_BREAK_RADIUS AND has a
+  // clear line of sight to the predator, OR the level-load-anchored
+  // ambushTimer runs out — whichever comes first. CODE REVIEW FIX (WR-02,
+  // Phase 63 review): the proximity check used to be pure Euclidean distance
+  // with no occlusion test, unlike updateProximityAudio()'s lineClear()-gated
+  // predOcclusion — meaning the "blind predator, reacts to sound/pings, not
+  // omniscient" predator (see file header) could sense the player through a
+  // wall corner before any reveal ping or visual contact. Gating on
+  // lineClear() (already used elsewhere in this file for the same occlusion
+  // model) keeps proximity-breaks consistent with that identity. The timer
+  // is still a separate, independent race condition, no pause/reset on a
+  // partial proximity dip (the timer counts down monotonically regardless of
+  // distance/visibility). Placed BEFORE stalk/hunt/idle so it fully
+  // intercepts predator behavior while ambushing; once broken, the very next
+  // frame's stalk/hunt/idle logic takes over normally.
   if (predator.mode === "ambush") {
     predator.ambushTimer -= dt;
     const toPlAmbush = Math.hypot(player.x - predator.x, player.y - predator.y);
-    if (toPlAmbush < AMBUSH_BREAK_RADIUS || predator.ambushTimer <= 0) {
+    const ambushSeesPlayer = toPlAmbush < AMBUSH_BREAK_RADIUS && lineClear(player.x, player.y, predator.x, predator.y);
+    if (ambushSeesPlayer || predator.ambushTimer <= 0) {
       predator.mode = "idle";
       predator.idleTimer = 0;
       pickIdleTarget();
