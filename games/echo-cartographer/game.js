@@ -1005,12 +1005,32 @@ const RAW_LEVELS = [
   },
 
   // L10 — INTO THE DEEP: the finale. Twin throats, fastest hunter, tight exit.
+  // LVL-03 full-reveal exit room (Phase 63, act III finale): the exit moved
+  // from the box's vertical center (0.88,0.50) into a bounded chamber in the
+  // top-right corner (walls: bottom wall at y=0.28, left wall at x=0.86 with
+  // a doorway gap 0.10-0.18) — a centered exit could NOT satisfy this here
+  // either, for the same reason as L6: this level's box(0.06,0.08,0.94,0.92)
+  // has far top-right/bottom-right corners ~265-275px from any y=0.50 exit
+  // regardless of entry point, exceeding PING_MAX_RADIUS=220. A single ping
+  // fired from the open area just outside the doorway (normalized ~0.81,
+  // 0.31) reveals the whole chamber, including the exit. Predator-visibility
+  // (LVL-03): as the finale, favors reliability over the static predN (which
+  // starts at dead-center, far from every exit-room candidate) — added an
+  // ambushN just inside the chamber (0.89,0.22, ~116px from the reveal
+  // entry point) so the predator is lying in wait and visible in the same
+  // ping, while sitting off to the side of the direct doorway-to-exit line
+  // so slipping past it is still a real routing decision. Twin-throat
+  // identity preserved: both throats still feed into the same open area
+  // approaching this corner chamber; the upper throat's approach is now
+  // shorter than the lower throat's, an intentional asymmetry rather than a
+  // simplification (both routes remain fully navigable, per the nav-graph
+  // check below).
   {
     name: "INTO THE DEEP",
     blurb: "The deepest dark. Everything you've learned — the map, the silence, the lie. Map it all.",
     decoy: true, predSpeed: 194,
     playerN: { x: 0.12, y: 0.50 },
-    exitN: { x: 0.88, y: 0.50 },
+    exitN: { x: 0.90, y: 0.13 },
     predN: { x: 0.50, y: 0.50 },
     wallsN: [
       ...box(0.06, 0.08, 0.94, 0.92),
@@ -1019,13 +1039,23 @@ const RAW_LEVELS = [
       [0.52, 0.20, 0.52, 0.38], [0.52, 0.62, 0.52, 0.80],
       [0.70, 0.08, 0.70, 0.38], [0.70, 0.62, 0.70, 0.92],
       [0.52, 0.20, 0.70, 0.20], [0.52, 0.80, 0.70, 0.80],
+      // Exit chamber (LVL-03): bottom wall + left wall with a doorway gap.
+      [0.86, 0.28, 0.94, 0.28],
+      [0.86, 0.08, 0.86, 0.10],
+      [0.86, 0.18, 0.86, 0.28],
     ],
     nodesN: [
       { x: 0.18, y: 0.50 }, { x: 0.24, y: 0.24 }, { x: 0.24, y: 0.76 },
       { x: 0.41, y: 0.50 }, { x: 0.61, y: 0.50 },
       { x: 0.61, y: 0.14 }, { x: 0.61, y: 0.86 },
       { x: 0.80, y: 0.24 }, { x: 0.80, y: 0.76 }, { x: 0.82, y: 0.50 },
+      { x: 0.86, y: 0.14 }, { x: 0.90, y: 0.13 },
     ],
+    // LVL-03 finale ambush: the predator lies in wait just inside the exit
+    // chamber, visible in the same ping that reveals the room. Breaks on
+    // 120px proximity or 15s, same contract as L6's ambush (see startLevel()
+    // / updatePredator()'s AMBUSH MODE block).
+    ambushN: { x: 0.89, y: 0.22 },
   },
 ];
 
