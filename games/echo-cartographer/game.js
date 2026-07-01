@@ -1289,12 +1289,30 @@ function currentAimAngle() {
 // ----------------------------------------------------------------------------
 // Ping emission
 // ----------------------------------------------------------------------------
+// LVL-04: mark a mechanic's label as used — stops it rendering immediately
+// (drawMechanicLabels skips `used` entries regardless of remaining life) and
+// records it PERSISTENTLY in seenLabels so it never renders again on any
+// future attempt or after a page reload. Idempotent/harmless no-op when the
+// mechanic has no active labelState entry (e.g. a level with no label for
+// that mechanic, or a returning player whose label was already filtered out
+// of labelState by startLevel()) — the seenLabels write still happens so a
+// player who somehow used the mechanic before the label rendered is covered.
+function markLabelUsed(mechanic) {
+  const l = labelState.find((s) => s.mechanic === mechanic);
+  if (l) l.used = true;
+  if (!seenLabels[mechanic]) {
+    seenLabels[mechanic] = true;
+    saveSeenLabels();
+  }
+}
+
 function tryPing() {
   if (aiming) return; // holding aim suppresses a real ping
   if (cooldown > 0) return;
   pings.push({ x: player.x, y: player.y, radius: 0, decoy: false });
   cooldown = PING_COOLDOWN;
   pingCount++;
+  markLabelUsed("ping"); // LVL-04: first real ping fades+persists the ping label
   // Predator hunts the sound: route to this ping origin (PRED-01).
   lurePredatorTo(player.x, player.y);
   // juice
@@ -1317,6 +1335,7 @@ function fireDecoy() {
   decoyMarks.push({ x: ox, y: oy, life: DECOY_MARK_LIFE });
   decoyCooldown = DECOY_COOLDOWN;
   pingCount++; // decoys still count as sound made
+  markLabelUsed("decoy"); // LVL-04: first decoy fades+persists the decoy label
   // The blind predator believes the lie: it hunts the decoy origin (TWIST-02).
   lurePredatorTo(ox, oy);
   sndPing(true);
