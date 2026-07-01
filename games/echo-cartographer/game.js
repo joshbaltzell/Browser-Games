@@ -717,11 +717,21 @@ const RAW_LEVELS = [
   // L1 — FIRST LIGHT (LVL-02 redesign, Phase 63): a corridor-to-T-junction
   // tutorial. Geometry — not the blurb text above — must teach "ping to see
   // where to go" with zero reading required: a short straight corridor from
-  // spawn opens into a T-junction; the whole corridor+junction sits within
-  // one ping radius of spawn, and one ping fired at the junction reveals a
-  // closed dead-end nub to the left and an open branch curving up-right
-  // toward the exit — enough directional signal to choose correctly without
-  // ever seeing the exit itself on this first ping.
+  // spawn opens into a T-junction. CODE REVIEW FIX (WR-01, Phase 63 review):
+  // the corridor + junction + live-branch direction (the part of the design
+  // that actually carries the "which way do I go" signal) sits within one
+  // ping radius of spawn at realistic viewports (verified >=1024px wide, the
+  // review's cited minimum), but the dead-end nub's full depth is only
+  // guaranteed to read on that same first ping up to ~1024px-wide windows —
+  // shrunk from its original depth (back wall y=0.46) to y=0.52 to bring it
+  // within PING_MAX_RADIUS (220px) at 1024x768 (~217px) while keeping it
+  // visually legible as a closed pocket; wider windows (1280px+) still need
+  // a second ping to see the nub's back wall fully, same as before this fix.
+  // The core teaching claim — one ping at the junction reveals enough to
+  // choose the live branch over the dead end — holds at common viewport
+  // widths; only the nub's exact depth is viewport-sensitive, consistent
+  // with PING_MAX_RADIUS being a fixed-pixel constant against a
+  // viewport-scaled level (per 63-CONTEXT.md:16).
   {
     name: "FIRST LIGHT",
     blurb: "Press SPACE to ping. Walls light along the wavefront, then fade. Walk to the gold exit.",
@@ -735,10 +745,12 @@ const RAW_LEVELS = [
       [0.10, 0.90, 0.10, 0.56],
       [0.24, 0.90, 0.24, 0.56],
       // Dead-end branch: a short closed nub left of the junction — reads as
-      // "wrong way" once pinged from the junction.
-      [0.10, 0.56, 0.10, 0.46],
-      [0.10, 0.46, 0.16, 0.46],
-      [0.16, 0.46, 0.16, 0.56],
+      // "wrong way" once pinged from the junction. Back wall pulled in to
+      // y=0.52 (WR-01 fix, was 0.46) so it reads within one ping at
+      // realistic viewport widths (see head-comment).
+      [0.10, 0.56, 0.10, 0.52],
+      [0.10, 0.52, 0.16, 0.52],
+      [0.16, 0.52, 0.16, 0.56],
       // Live branch: opens right from the junction, then curves up toward
       // the exit's column. The near wall of this branch sits right at the
       // junction (~7px), so its direction is unmistakable on the first ping.
@@ -749,7 +761,7 @@ const RAW_LEVELS = [
     nodesN: [
       { x: 0.18, y: 0.82 },   // spawn corridor
       { x: 0.18, y: 0.60 },   // approaching the junction
-      { x: 0.13, y: 0.50 },   // dead-end nub
+      { x: 0.13, y: 0.54 },   // dead-end nub (shrunk per WR-01 fix)
       { x: 0.40, y: 0.44 },   // live branch, past the curve
       { x: 0.62, y: 0.20 },   // heading up the exit column
       { x: 0.84, y: 0.20 },   // exit
