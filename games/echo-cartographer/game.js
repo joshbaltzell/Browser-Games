@@ -96,6 +96,14 @@ const PRED_SENSE_RADIUS = 150; // within this distance it hears footsteps and ho
 // from PRED_SENSE_RADIUS (stalk detection), always smaller/tighter since an
 // ambushing predator only reacts once the player is nearly on top of it.
 const AMBUSH_BREAK_RADIUS = 120;
+// PRED-03: mid-level hunt burst — a one-shot-per-attempt LAYERED escalation
+// fired when the player crosses a level-authored trigger zone. It stacks on
+// top of whatever mode is already active (does not force a mode change or a
+// beeline): speed spikes, heartbeat interval halves, and the stalk-mode
+// "breath" voice is forced for the burst duration.
+const HUNT_BURST_DURATION = 8;   // seconds the burst lasts before reverting
+const HUNT_SPEED_MULT = 1.3;     // 30% speed spike per PRED-03
+const HUNT_HB_MULT = 0.5;        // heartbeat interval halved per PRED-03
 
 // PRED-01: asymmetric/jagged creature silhouette (NOT a regular polygon),
 // offsets relative to predator center in multiples of predator.r. Drawn via
@@ -148,6 +156,9 @@ let predator = {
   path: [], pathStep: 0, rippleT: 0, hbTimer: 1.4, stalking: false, patrolStep: 0,
   heading: 0, // PRED-01: radians, 0 = facing +x; holds last value while stationary
   ambushTimer: 0, // PRED-02: seconds remaining in an ambush hold; authoritative value set in startLevel()
+  huntTriggered: false,  // PRED-03: one-shot latch, set true on first entry into level.huntTrigger.radius
+  huntBurstActive: false, // PRED-03: true for HUNT_BURST_DURATION seconds after the trigger fires
+  huntBurstTimer: 0,      // PRED-03: seconds remaining in the current burst
 };
 let pings = [];             // active ringwaves {x,y,radius,decoy}
 let ghosts = [];            // revealed fragments {x1,y1,x2,y2,life,decoy}
@@ -742,6 +753,10 @@ const RAW_LEVELS = [
       { x: 0.50, y: 0.78 }, { x: 0.50, y: 0.22 },
       { x: 0.78, y: 0.22 }, { x: 0.80, y: 0.50 },
     ],
+    // PRED-03 smoke test: mid-corridor trigger near the lower waypoint the
+    // player must pass through en route to the exit. Real per-level hunt
+    // trigger authoring is deferred to Phase 63.
+    huntTriggerN: { x: 0.50, y: 0.78, radius: 0.10 },
   },
 
   // L4 — SPIRAL: tighter inward spiral, hunter is faster. Plan your pings.
@@ -958,6 +973,14 @@ function layoutLevel() {
     // PRED-02: optional ambush chokepoint, same normalized N-suffix convention
     // as patrolN/playerN/exitN — null when the level has no ambush configured.
     ambush: raw.ambushN ? { x: toX(raw.ambushN.x), y: toY(raw.ambushN.y) } : null,
+    // PRED-03: optional mid-level hunt-burst trigger zone, same normalized
+    // N-suffix convention as ambushN, plus a radius. The radius is scaled by
+    // `bw` (the content-box width) rather than a separate axis so a normalized
+    // radius reads as a fraction of the play area's horizontal extent — null
+    // when the level has no hunt trigger configured.
+    huntTrigger: raw.huntTriggerN
+      ? { x: toX(raw.huntTriggerN.x), y: toY(raw.huntTriggerN.y), radius: raw.huntTriggerN.radius * bw }
+      : null,
   };
   buildNavGraph();
 }
@@ -1182,6 +1205,12 @@ function startLevel(idx) {
     predator.y = level.ambush.y;
     predator.mode = "ambush";
   }
+  // PRED-03: reset the hunt-burst latch/state every attempt so the one-shot
+  // trigger fires fresh and a mid-burst capture/retry never carries the burst
+  // into the next attempt.
+  predator.huntTriggered = false;
+  predator.huntBurstActive = false;
+  predator.huntBurstTimer = 0;
   pings = [];
   ghosts = [];
   decoyMarks = [];
