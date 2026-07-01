@@ -1315,6 +1315,24 @@ function update(dt) {
   updateProximityAudio();
   updateAmbience(dt);
 
+  // PRED-03: dt-driven hunt-burst countdown — the burst reverts after
+  // HUNT_BURST_DURATION seconds.
+  if (predator.huntBurstActive) {
+    predator.huntBurstTimer -= dt;
+    if (predator.huntBurstTimer <= 0) predator.huntBurstActive = false;
+  }
+  // PRED-03: one-shot trigger — fires exactly once per attempt on first entry
+  // into the level-authored huntTrigger radius (huntTriggered latch prevents
+  // any re-fire on subsequent entries during the same attempt).
+  if (level.huntTrigger && !predator.huntTriggered) {
+    const d = Math.hypot(player.x - level.huntTrigger.x, player.y - level.huntTrigger.y);
+    if (d < level.huntTrigger.radius) {
+      predator.huntTriggered = true;
+      predator.huntBurstActive = true;
+      predator.huntBurstTimer = HUNT_BURST_DURATION;
+    }
+  }
+
   if (Math.hypot(player.x - level.exit.x, player.y - level.exit.y) < level.exit.r) { onWin(); return; }
   if (Math.hypot(player.x - predator.x, player.y - predator.y) < PRED_CATCH) { onCaught(); }
 }
@@ -1478,6 +1496,11 @@ function updatePredator(dt) {
   predator.rippleT += dt;
   if (level.dormant) return;
 
+  // PRED-03: layered speed multiplier during a hunt burst — scales whatever
+  // speed the active mode already uses without changing mode/targeting or
+  // forcing a beeline.
+  const burst = predator.huntBurstActive ? HUNT_SPEED_MULT : 1;
+
   // --- AMBUSH MODE (PRED-02): holds position at a level-authored chokepoint,
   // near-silent, until the player steps within AMBUSH_BREAK_RADIUS OR the
   // level-load-anchored ambushTimer runs out — whichever comes first. Two
@@ -1504,7 +1527,7 @@ function updatePredator(dt) {
       predator.stalking = true;
       predator.hbTimer = 0; // pulse immediately on detection
     }
-    stepToward((player.x - predator.x) / toPl, (player.y - predator.y) / toPl, level.huntSpeed * dt);
+    stepToward((player.x - predator.x) / toPl, (player.y - predator.y) / toPl, level.huntSpeed * burst * dt);
     return;
   }
   if (predator.stalking) {
@@ -1528,7 +1551,7 @@ function updatePredator(dt) {
           predator.mode = "idle"; predator.idleTimer = 0; pickIdleTarget();
         }
       } else {
-        stepToward(dx / dist, dy / dist, level.huntSpeed * dt);
+        stepToward(dx / dist, dy / dist, level.huntSpeed * burst * dt);
       }
     }
     return;
@@ -1540,13 +1563,13 @@ function updatePredator(dt) {
     const dx = pt.x - predator.x, dy = pt.y - predator.y;
     const dist = Math.hypot(dx, dy);
     if (dist < PRED_ARRIVE) predator.patrolStep++;
-    else stepToward(dx / dist, dy / dist, PRED_IDLE_SPEED * dt);
+    else stepToward(dx / dist, dy / dist, PRED_IDLE_SPEED * burst * dt);
   } else {
     predator.idleTimer -= dt;
     if (predator.idleTimer <= 0) { predator.idleTimer = PRED_IDLE_RETARGET; pickIdleTarget(); }
     const dx = predator.tx - predator.x, dy = predator.ty - predator.y;
     const dist = Math.hypot(dx, dy);
-    if (dist > 4) stepToward(dx / dist, dy / dist, PRED_IDLE_SPEED * dt);
+    if (dist > 4) stepToward(dx / dist, dy / dist, PRED_IDLE_SPEED * burst * dt);
   }
 }
 
