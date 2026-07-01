@@ -864,13 +864,36 @@ const RAW_LEVELS = [
   },
 
   // L6 — TWO DOORS: predator camps center. Decoy one side, take the other.
+  // LVL-03 full-reveal exit room (Phase 63, act II finale): a bounded
+  // chamber in the bottom-right corner (walls x=0.78/y=0.76, doorway gap
+  // 0.81-0.89 in the top wall) sized so a single ping fired just inside the
+  // doorway (normalized 0.85,0.72) reveals every wall of the chamber,
+  // including the exit. A box(0.08,0.08,0.92,0.92)-vertically-centered exit
+  // could NOT satisfy this: the two far box corners (top-right/bottom-right)
+  // sit ~265px apart from any y=0.50 exit regardless of entry point (a hard
+  // geometric floor exceeding PING_MAX_RADIUS=220), so the exit was moved
+  // from (0.86,0.50) into this bottom-right corner pocket near the existing
+  // bottom-door wall, where only one box corner is nearby and coverable.
+  // Per LVL-03's "predator's starting position is revealed" clause: this is
+  // the FINAL authoring of the ambush (superseding Phase 62's PRED-02 smoke
+  // test at the top door) — ambushN is relocated from the top doorway to
+  // just inside this exit chamber (0.82,0.80, ~82px from the entry point),
+  // so the predator is lying in wait INSIDE the room the entry ping reveals.
+  // patrolN keeps the original top/bottom door midpoints so the "two doors"
+  // patrol identity and decoy-timing puzzle for the FIRST door choice are
+  // unchanged; only the ambush (the predator's actual start-of-level
+  // position, per startLevel()'s level.ambush spawn-override) moved to
+  // guard the finale approach. The routing decision survives: the player
+  // sees the whole chamber and the waiting predator in one ping, but the
+  // doorway gap is narrower than the chamber and the predator sits between
+  // the doorway and the exit, so slipping past it (not just walking through
+  // one of the two doors) is still a real choice.
   {
     name: "TWO DOORS",
-    // L6 — TWO DOORS: predator patrols between the two door midpoints; time your crossing.
     blurb: "Two ways through. Watch the red pulse — it patrols between the doors. Time your crossing.",
     decoy: true, predSpeed: 172,
     playerN: { x: 0.14, y: 0.50 },
-    exitN: { x: 0.86, y: 0.50 },
+    exitN: { x: 0.87, y: 0.87 },
     predN: { x: 0.50, y: 0.22 },
     wallsN: [
       ...box(0.08, 0.08, 0.92, 0.92),
@@ -878,18 +901,25 @@ const RAW_LEVELS = [
       [0.40, 0.50, 0.40, 0.92],
       [0.60, 0.08, 0.60, 0.50],
       [0.60, 0.66, 0.60, 0.92],
+      // Exit chamber (LVL-03): top wall with a doorway gap + left wall.
+      [0.78, 0.76, 0.81, 0.76],
+      [0.89, 0.76, 0.92, 0.76],
+      [0.78, 0.76, 0.78, 0.92],
     ],
     nodesN: [
       { x: 0.24, y: 0.50 }, { x: 0.32, y: 0.22 }, { x: 0.32, y: 0.78 },
       { x: 0.50, y: 0.22 }, { x: 0.50, y: 0.78 },
       { x: 0.68, y: 0.22 }, { x: 0.68, y: 0.78 }, { x: 0.78, y: 0.50 },
+      { x: 0.85, y: 0.72 }, { x: 0.87, y: 0.87 },
     ],
     patrolN: [
       { x: 0.50, y: 0.22 }, { x: 0.50, y: 0.78 },
     ],
-    // PRED-02 smoke test: predator lies in wait at the top doorway chokepoint
-    // instead of patrolling on spawn — breaks on 120px proximity or 15s.
-    ambushN: { x: 0.50, y: 0.22 },
+    // LVL-03 final authoring (supersedes Phase 62's PRED-02 top-door smoke
+    // test): the predator ambushes just inside the exit chamber instead of
+    // the top doorway, so it is visible in the same ping that reveals the
+    // room — breaks on 120px proximity or 15s, same as before.
+    ambushN: { x: 0.82, y: 0.80 },
   },
 
   // L7 — THE GAUNTLET: predator patrols the central corridor. Bait it off the path, then run.
