@@ -173,6 +173,14 @@ let decoyCooldown = 0;      // decoy cooldown timer
 let pingCount = 0;          // pings used this attempt
 let clearTime = 0;          // seconds elapsed this attempt (for best-time score)
 let introT = 0;             // per-level intro banner fade timer
+// LVL-04: per-attempt render set for in-world mechanic labels. Rebuilt in
+// startLevel() from level.labels, filtered against the PERSISTENT seenLabels
+// map so a label whose mechanic has already been seen never enters this array
+// (never rendered again on later visits). Each entry: {mechanic, text, x, y,
+// life, used}. `life` counts DOWN from 4s (fades out at 0); `used` is set
+// true the instant the matching mechanic fires for real (markLabelUsed), which
+// stops the render immediately regardless of remaining life.
+let labelState = [];
 let transition = 0;         // level-enter wipe transition (1 -> 0)
 let aiming = false;         // holding the aim for a decoy
 let aimAng = 0;             // aim direction for the decoy
@@ -1374,6 +1382,14 @@ function startLevel(idx) {
   pingCount = 0;
   clearTime = 0;
   introT = 4.5;       // show the level intro banner, then fade it
+  // LVL-04: rebuild the per-attempt label render set from this level's
+  // authored labels, filtering out any mechanic already recorded in the
+  // PERSISTENT seenLabels map — this is a per-attempt VISIBILITY reset only,
+  // it never clears or writes seenLabels itself, so once a label has been
+  // seen it stays out of this array on every future attempt/reload.
+  labelState = (level.labels || [])
+    .filter((l) => !seenLabels[l.mechanic])
+    .map((l) => ({ mechanic: l.mechanic, text: l.text, x: l.x, y: l.y, life: 4, used: false }));
   transition = 1;     // play the enter-wipe
   aiming = false;
   shake = 0; flash = 0;
@@ -1452,6 +1468,10 @@ function update(dt) {
   prevCooldown = cooldown;
   decoyCooldown = Math.max(0, decoyCooldown - dt);
   if (aiming) aimAng = currentAimAngle();
+  // LVL-04: advance each active label's fade timer. drawMechanicLabels()
+  // simply stops drawing once life<=0 (or used); entries are not deleted
+  // here — deletion/persistence-on-use happens in markLabelUsed() (Task 3).
+  for (const l of labelState) l.life = Math.max(0, l.life - dt);
 
   updatePlayer(dt);
   updateFootstepAudio(dt);
@@ -1951,6 +1971,7 @@ function renderWorld() {
   drawPlayer();
 
   drawGrain();    // proximity grain noise (TENS-06) — last world step, under the HUD
+  drawMechanicLabels(); // LVL-04: world-space chalk labels, distinct from the screen-space intro blurb
 
   renderHUD();
 }
@@ -1993,6 +2014,36 @@ function drawDecoyMarks() {
       color: COLORS.decoyGlow, alpha: a * 0.35, width: 4,
       coreColor: COLORS.decoy, coreAlpha: a * 0.7, coreWidth: 1.6,
     });
+    ctx.restore();
+  }
+}
+
+// LVL-04: floating chalk-style in-world mechanic labels. Drawn in WORLD space
+// (called from renderWorld(), same coordinate system as walls/player) so the
+// label pans with the level/camera — deliberately distinct from the
+// screen-space intro blurb banner drawn in renderHUD(). Fades linearly over
+// its 4s life, or stops rendering immediately once markLabelUsed() marks it
+// `used` (first real use of that mechanic).
+function drawMechanicLabels() {
+  for (const l of labelState) {
+    if (l.used || l.life <= 0) continue;
+    const a = Math.min(1, l.life / 4);
+    ctx.save();
+    ctx.globalAlpha = a * 0.85;
+    ctx.fillStyle = COLORS.ghostWarm;
+    ctx.strokeStyle = COLORS.ghost;
+    ctx.font = "13px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    // Soft bloom underlay, then crisp chalk core — matches the file's
+    // established glow-then-crisp convention (strokeGlowThenCrisp) but for
+    // fillText rather than a stroked shape.
+    ctx.globalAlpha = a * 0.25;
+    ctx.font = "700 13px system-ui, sans-serif";
+    ctx.fillText(l.text, l.x, l.y - 1);
+    ctx.globalAlpha = a * 0.85;
+    ctx.font = "13px system-ui, sans-serif";
+    ctx.fillText(l.text, l.x, l.y);
     ctx.restore();
   }
 }
