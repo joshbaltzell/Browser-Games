@@ -816,6 +816,14 @@ const RAW_LEVELS = [
   // ---- ACT III: THE LIE (decoy unlocked) -----------------------------------
 
   // L5 — THE LIE: forgiving room to learn the decoy. Lure it up, slip across.
+  // LVL-01 audit (Phase 63): ACCEPT-AS-IS. The near cross-walls read at
+  // ~95px (well within the 220px ping radius), so the room's near structure
+  // is legible on the first ping. The central vertical decoy wall (~434px
+  // from spawn) is deliberately a second-ping reveal — closing that gap
+  // would require compressing the room to roughly half its width, which
+  // trivializes the very thing this level teaches: the decoy is the
+  // mechanic here, not pure geometry-reading, so some challenge finding the
+  // central wall is intentional.
   {
     name: "THE LIE",
     blurb: "New power: hold SHIFT + aim (or right-click) to throw a DECOY. The blind hunter chases the lie.",
