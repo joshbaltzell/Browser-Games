@@ -143,3 +143,95 @@ function vec3Normalize(a) {
   const len = vec3Length(a);
   return len > 1e-8 ? [a[0] / len, a[1] / len, a[2] / len] : [0, 0, 0];
 }
+
+// ----------------------------------------------------------------------------
+// Geometry — two procedural builders cover every shape in the game (spec S5).
+// Every face is FLAT-shaded: each face gets its own duplicated vertices and a
+// single constant normal, never averaged with a neighboring face. Positions
+// are centered on the local origin (callers position/orient via the model
+// matrix, never by baking an offset into the vertex data).
+// ----------------------------------------------------------------------------
+function makeBox(w, h, d) {
+  const hw = w / 2, hh = h / 2, hd = d / 2;
+  const faces = [
+    { n: [0, 0, 1], v: [[-hw, -hh, hd], [hw, -hh, hd], [hw, hh, hd], [-hw, hh, hd]] },
+    { n: [0, 0, -1], v: [[hw, -hh, -hd], [-hw, -hh, -hd], [-hw, hh, -hd], [hw, hh, -hd]] },
+    { n: [1, 0, 0], v: [[hw, -hh, hd], [hw, -hh, -hd], [hw, hh, -hd], [hw, hh, hd]] },
+    { n: [-1, 0, 0], v: [[-hw, -hh, -hd], [-hw, -hh, hd], [-hw, hh, hd], [-hw, hh, -hd]] },
+    { n: [0, 1, 0], v: [[-hw, hh, hd], [hw, hh, hd], [hw, hh, -hd], [-hw, hh, -hd]] },
+    { n: [0, -1, 0], v: [[-hw, -hh, -hd], [hw, -hh, -hd], [hw, -hh, hd], [-hw, -hh, hd]] },
+  ];
+  const positions = [], normals = [], indices = [];
+  faces.forEach((face, fi) => {
+    const base = fi * 4;
+    face.v.forEach((v) => {
+      positions.push(v[0], v[1], v[2]);
+      normals.push(face.n[0], face.n[1], face.n[2]);
+    });
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  });
+  return {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    indices: new Uint16Array(indices),
+  };
+}
+
+// radiusTop = 0 produces a cone (the top ring collapses to a point and the
+// top-cap fan is skipped entirely — no separate cone builder needed).
+// radiusBottom = 0 produces an inverted cone the same way.
+function makeCylinder(radialSegments, height, radiusTop, radiusBottom) {
+  const hh = height / 2;
+  const positions = [], normals = [], indices = [];
+  let idx = 0;
+
+  // Side wall: one flat quad per segment. Normal = the segment's midpoint
+  // radial direction — exact for a straight cylinder, a reasonable
+  // placeholder approximation for a tapered one (ignores the slant).
+  for (let i = 0; i < radialSegments; i++) {
+    const a0 = (i / radialSegments) * Math.PI * 2;
+    const a1 = ((i + 1) / radialSegments) * Math.PI * 2;
+    const aMid = (a0 + a1) / 2;
+    const nx = Math.cos(aMid), nz = Math.sin(aMid);
+    const quad = [
+      [radiusBottom * Math.cos(a0), -hh, radiusBottom * Math.sin(a0)],
+      [radiusBottom * Math.cos(a1), -hh, radiusBottom * Math.sin(a1)],
+      [radiusTop * Math.cos(a1), hh, radiusTop * Math.sin(a1)],
+      [radiusTop * Math.cos(a0), hh, radiusTop * Math.sin(a0)],
+    ];
+    quad.forEach((v) => { positions.push(v[0], v[1], v[2]); normals.push(nx, 0, nz); });
+    indices.push(idx, idx + 1, idx + 2, idx, idx + 2, idx + 3);
+    idx += 4;
+  }
+
+  if (radiusTop > 0) {
+    const centerIdx = idx;
+    positions.push(0, hh, 0); normals.push(0, 1, 0); idx++;
+    for (let i = 0; i <= radialSegments; i++) {
+      const a = (i / radialSegments) * Math.PI * 2;
+      positions.push(radiusTop * Math.cos(a), hh, radiusTop * Math.sin(a));
+      normals.push(0, 1, 0);
+      idx++;
+    }
+    for (let i = 0; i < radialSegments; i++) indices.push(centerIdx, centerIdx + 1 + i, centerIdx + 2 + i);
+  }
+
+  if (radiusBottom > 0) {
+    const centerIdx = idx;
+    positions.push(0, -hh, 0); normals.push(0, -1, 0); idx++;
+    for (let i = 0; i <= radialSegments; i++) {
+      const a = (i / radialSegments) * Math.PI * 2;
+      positions.push(radiusBottom * Math.cos(a), -hh, radiusBottom * Math.sin(a));
+      normals.push(0, -1, 0);
+      idx++;
+    }
+    // Reversed winding vs. the top cap so it still faces outward (downward).
+    for (let i = 0; i < radialSegments; i++) indices.push(centerIdx, centerIdx + 2 + i, centerIdx + 1 + i);
+  }
+
+  return {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    indices: new Uint16Array(indices),
+  };
+}

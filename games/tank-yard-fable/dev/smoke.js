@@ -21,6 +21,7 @@ const SHIM = `
   mat4Identity, mat4Multiply, mat4Translate, mat4Scale, mat4RotateX, mat4RotateY,
   mat4Perspective, mat4LookAt, mat4Invert, mat4TransformPoint,
   vec3Add, vec3Sub, vec3Scale, vec3Dot, vec3Cross, vec3Length, vec3Normalize,
+  makeBox, makeCylinder,
 };`;
 
 function load() {
@@ -37,6 +38,9 @@ function test(name, fn) {
   catch (e) { failures++; console.log("  FAIL " + name + "\n       " + (e && e.message)); }
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
+function close(actual, expected, tol, msg) {
+  if (Math.abs(actual - expected) > tol) throw new Error((msg || "values differ") + `: ${actual} vs ${expected}`);
+}
 function closeArr(a, b, tol, msg) {
   for (let i = 0; i < a.length; i++) {
     if (Math.abs(a[i] - b[i]) > tol) throw new Error((msg || "arrays differ") + ` at index ${i}: ${a[i]} vs ${b[i]}`);
@@ -108,6 +112,56 @@ test("vec3 basic ops", () => {
   assert(Math.abs(t.vec3Length([3, 4, 0]) - 5) < 1e-9, "3-4-5 triangle");
   const n = t.vec3Normalize([0, 3, 4]);
   assert(Math.abs(t.vec3Length(n) - 1) < 1e-9, "normalized vector has length 1");
+});
+
+console.log("geometry builders");
+
+test("makeBox produces 24 vertices (4 per face x 6 faces) and 36 indices", () => {
+  const box = t.makeBox(2, 1, 3);
+  assert(box.positions.length === 24 * 3, "24 vertices x 3 components");
+  assert(box.normals.length === 24 * 3, "one normal per vertex");
+  assert(box.indices.length === 36, "6 faces x 2 triangles x 3 indices");
+  for (let i = 0; i < box.indices.length; i++) {
+    assert(box.indices[i] < box.positions.length / 3, "every index references a real vertex");
+  }
+});
+
+test("makeBox normals are all unit length", () => {
+  const box = t.makeBox(2, 1, 3);
+  for (let i = 0; i < box.normals.length; i += 3) {
+    const len = Math.hypot(box.normals[i], box.normals[i + 1], box.normals[i + 2]);
+    close(len, 1, 1e-9, `normal at vertex ${i / 3} should be unit length`);
+  }
+});
+
+test("makeCylinder(straight) produces the expected vertex/index counts with both caps", () => {
+  const seg = 8;
+  const cyl = t.makeCylinder(seg, 2, 1, 1); // radiusTop === radiusBottom > 0 -> both caps present
+  const expectedVerts = seg * 4 /* side */ + (1 + seg + 1) /* top cap: center + ring */ + (1 + seg + 1) /* bottom cap */;
+  assert(cyl.positions.length / 3 === expectedVerts, `expected ${expectedVerts} vertices, got ${cyl.positions.length / 3}`);
+  const expectedIndices = seg * 6 /* side */ + seg * 3 /* top cap fan */ + seg * 3 /* bottom cap fan */;
+  assert(cyl.indices.length === expectedIndices, `expected ${expectedIndices} indices, got ${cyl.indices.length}`);
+  for (let i = 0; i < cyl.indices.length; i++) {
+    assert(cyl.indices[i] < cyl.positions.length / 3, "every index references a real vertex");
+  }
+});
+
+test("makeCylinder(radiusTop=0) omits the top cap entirely (cone shape)", () => {
+  const seg = 6;
+  const cone = t.makeCylinder(seg, 2, 0, 1); // radiusTop === 0 -> no top cap
+  const expectedVerts = seg * 4 /* side (degenerate at the tip, still 4 verts/quad) */ + (1 + seg + 1) /* bottom cap only */;
+  assert(cone.positions.length / 3 === expectedVerts, `expected ${expectedVerts} vertices for a cone, got ${cone.positions.length / 3}`);
+});
+
+test("makeCylinder side-wall normals are unit length", () => {
+  const cyl = t.makeCylinder(8, 2, 1, 0.5);
+  const sideVertCount = 8 * 4;
+  for (let i = 0; i < sideVertCount * 3; i += 3) {
+    const len = Math.hypot(cyl.normals[i], cyl.normals[i + 1], cyl.normals[i + 2]);
+    // Tolerance 1e-6, not 1e-9: normals live in a Float32Array, so cos/sin
+    // components carry float32 rounding (~4e-8 worst case for unit vectors).
+    close(len, 1, 1e-6, `side normal at vertex ${i / 3} should be unit length`);
+  }
 });
 
 console.log(`\n${count - failures}/${count} passed`);
