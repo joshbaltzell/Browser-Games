@@ -75,6 +75,24 @@ const GAMES = [
         <circle cx="78" cy="34" r="6" fill="#ffd27a" />
       </svg>`,
   },
+  {
+    title: "Tank Yard Fable",
+    description:
+      "Drive a slow, sturdy tank through a toon-shaded arena, blast an endless stream of enemy tanks, and rack up your survival score.",
+    path: "games/tank-yard-fable/index.html",
+    tags: ["Action", "Survival", "3D"],
+    accent: "#3ddc6a",
+    // Inline SVG art so the hub needs no image assets.
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="0" y="0" width="120" height="80" fill="#242424" />
+        <rect x="30" y="45" width="60" height="20" rx="4" fill="#3ddc6a" />
+        <circle cx="60" cy="42" r="12" fill="#3ddc6a" />
+        <rect x="60" y="38" width="30" height="6" rx="2" fill="#1a1a1a" />
+        <circle cx="25" cy="65" r="6" fill="#1a1a1a" />
+        <circle cx="95" cy="65" r="6" fill="#1a1a1a" />
+      </svg>`,
+  },
 ];
 
 function buildCard(game) {
