@@ -26,6 +26,9 @@ const SHIM = `
   mat4TransformVec4, unprojectPoint, screenRayGroundIntersection, turretAimYaw,
   tankTransforms, updateChaseCam, drawGround,
   HULL_SIZE, TURRET_HEIGHT_OFFSET, BARREL_FORWARD_OFFSET,
+  updateTankMovement, circleCircleCollide, circleAABBCollide, clampToArena,
+  computeTurretAimFromMouse, spawnShell, updateShell,
+  ARENA_HALF_SIZE, TANK_COLLISION_RADIUS, SHELL_SPEED, SHELL_MAX_LIFE,
   get gl() { return gl; },
 };`;
 
@@ -380,6 +383,60 @@ test("updateChaseCam moves partway toward the target on one small step, not inst
   const next = t.updateChaseCam([0, 0, 0], [0, 0, 0], 5, 5, 0, 1 / 60);
   const dist = t.vec3Length(next.pos);
   assert(dist > 0 && dist < t.vec3Length([5, 6, -5]), "one small step should move partway, matching spec S4's lerp requirement");
+});
+
+console.log("player controls: movement, collision, shells");
+
+test("updateTankMovement drives forward along the current facing direction", () => {
+  const next = t.updateTankMovement({ x: 0, z: 0, hullYaw: 0 }, { forward: 1, turn: 0 }, 6, 1.2, 1);
+  closeArr([next.x, next.hullYaw, next.z], [0, 0, 6], 1e-9, "yaw=0 faces +Z, so 1 full second at speed 6 moves 6 units in +Z");
+});
+
+test("updateTankMovement turns the hull without moving when forward=0", () => {
+  const next = t.updateTankMovement({ x: 3, z: 3, hullYaw: 0 }, { forward: 0, turn: 1 }, 6, 1.2, 0.5);
+  close(next.hullYaw, 0.6, 1e-9, "0.5s at 1.2 rad/s = 0.6 rad turned");
+  close(next.x, 3, 1e-9, "no forward input, no movement");
+  close(next.z, 3, 1e-9, "no forward input, no movement");
+});
+
+test("circleCircleCollide detects overlap and non-overlap correctly", () => {
+  assert(t.circleCircleCollide(0, 0, 1, 1.5, 0, 1) === true, "circles 1.5 apart with radii summing to 2 should overlap");
+  assert(t.circleCircleCollide(0, 0, 1, 5, 0, 1) === false, "circles far apart should not overlap");
+});
+
+test("circleAABBCollide detects a circle overlapping a box it's not centered on", () => {
+  assert(t.circleAABBCollide(4.5, 0, 1, 0, 0, 4, 4) === true, "circle just past the box edge (box half-width 4, circle at x=4.5 r=1) should overlap");
+  assert(t.circleAABBCollide(10, 0, 1, 0, 0, 4, 4) === false, "circle far from the box should not overlap");
+});
+
+test("clampToArena keeps a point inside the arena bounds minus the margin", () => {
+  const [x, z] = t.clampToArena(1000, -1000, 2);
+  close(x, t.ARENA_HALF_SIZE - 2, 1e-9);
+  close(z, -(t.ARENA_HALF_SIZE - 2), 1e-9);
+});
+
+test("computeTurretAimFromMouse returns a yaw pointing at the ground-plane hit point", () => {
+  const proj = t.mat4Perspective(Math.PI / 3, 1, 0.1, 100);
+  const view = t.mat4LookAt([0, 10, 0], [0, 0, 0], [0, 0, -1]);
+  const invVP = t.mat4Invert(t.mat4Multiply(proj, view));
+  const relYaw = t.computeTurretAimFromMouse(invVP, 0, 0, 0, 0, 0);
+  assert(relYaw !== null, "a straight-down view's screen center hits the ground");
+});
+
+test("computeTurretAimFromMouse returns null when the ray misses the ground", () => {
+  const proj = t.mat4Perspective(Math.PI / 3, 1, 0.1, 100);
+  const view = t.mat4LookAt([0, 5, 0], [0, 5, -10], [0, 1, 0]);
+  const invVP = t.mat4Invert(t.mat4Multiply(proj, view));
+  assert(t.computeTurretAimFromMouse(invVP, 0, 0, 0, 0, 0) === null, "a horizontal view's screen center misses the ground");
+});
+
+test("spawnShell travels in the turret's absolute facing direction and despawns after SHELL_MAX_LIFE", () => {
+  let shell = t.spawnShell({ x: 0, z: 0, hullYaw: 0, turretYaw: 0 }, true);
+  close(shell.life, t.SHELL_MAX_LIFE, 1e-9);
+  const startZ = shell.z;
+  shell = t.updateShell(shell, 1);
+  assert(shell.z > startZ, "shell should move forward (+Z, matching yaw=0) after 1 second");
+  close(shell.life, t.SHELL_MAX_LIFE - 1, 1e-9);
 });
 
 console.log(`\n${count - failures}/${count} passed`);

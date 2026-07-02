@@ -534,25 +534,140 @@ function updateChaseCam(camPos, camLook, hullX, hullZ, hullYaw, dt) {
 }
 
 // ----------------------------------------------------------------------------
+// Movement, collision, arena bounds — all pure, all 2D (x,z only; spec S6).
+// updateTankMovement is shared by the player (this task) and enemy AI
+// (Task 7) — same function, different speed/turnRate.
+// ----------------------------------------------------------------------------
+const ARENA_HALF_SIZE = 40; // 80x80 arena (spec S6)
+const TANK_COLLISION_RADIUS = 1.6; // approximates the boxy hull for circle collision
+
+function updateTankMovement(state, input, speed, turnRate, dt) {
+  const hullYaw = state.hullYaw + input.turn * turnRate * dt;
+  const forwardDir = mat4TransformPoint(mat4RotateY(mat4Identity(), hullYaw), [0, 0, 1]);
+  const dist = input.forward * speed * dt;
+  return { x: state.x + forwardDir[0] * dist, z: state.z + forwardDir[2] * dist, hullYaw };
+}
+
+function circleCircleCollide(x1, z1, r1, x2, z2, r2) {
+  const dx = x2 - x1, dz = z2 - z1;
+  const minDist = r1 + r2;
+  return dx * dx + dz * dz < minDist * minDist;
+}
+
+function circleAABBCollide(cx, cz, cr, boxX, boxZ, halfW, halfD) {
+  const closestX = Math.max(boxX - halfW, Math.min(cx, boxX + halfW));
+  const closestZ = Math.max(boxZ - halfD, Math.min(cz, boxZ + halfD));
+  const dx = cx - closestX, dz = cz - closestZ;
+  return dx * dx + dz * dz < cr * cr;
+}
+
+function clampToArena(x, z, margin) {
+  const lim = ARENA_HALF_SIZE - margin;
+  return [Math.max(-lim, Math.min(lim, x)), Math.max(-lim, Math.min(lim, z))];
+}
+
+// Composes Task 5's ray-cast + aim-angle functions into the one call input
+// handling actually needs each frame. Returns null (keep the previous
+// turretYaw) if the mouse ray doesn't hit the ground (spec S14 edge case).
+function computeTurretAimFromMouse(invVP, ndcX, ndcY, hullX, hullZ, hullYaw) {
+  const hit = screenRayGroundIntersection(invVP, ndcX, ndcY);
+  if (!hit) return null;
+  return turretAimYaw(hullX, hullZ, hullYaw, hit[0], hit[2]);
+}
+
+const SHELL_SPEED = 20;      // units/sec (spec S9)
+const SHELL_MAX_LIFE = 4;    // seconds before a shell despawns unhit
+const PLAYER_FIRE_COOLDOWN = 0.8;
+
+function spawnShell(tank, ownerIsPlayer) {
+  const absoluteYaw = tank.hullYaw + tank.turretYaw;
+  const dir = mat4TransformPoint(mat4RotateY(mat4Identity(), absoluteYaw), [0, 0, 1]);
+  return {
+    x: tank.x + dir[0] * (BARREL_FORWARD_OFFSET + 0.3),
+    z: tank.z + dir[2] * (BARREL_FORWARD_OFFSET + 0.3),
+    dx: dir[0], dz: dir[2],
+    ownerIsPlayer,
+    life: SHELL_MAX_LIFE,
+  };
+}
+
+function updateShell(shell, dt) {
+  return {
+    x: shell.x + shell.dx * SHELL_SPEED * dt,
+    z: shell.z + shell.dz * SHELL_SPEED * dt,
+    dx: shell.dx, dz: shell.dz,
+    ownerIsPlayer: shell.ownerIsPlayer,
+    life: shell.life - dt,
+  };
+}
+
+// ----------------------------------------------------------------------------
 // Scene assembly — meshes shared across every instance of a shape (spec S5:
 // only ~4 distinct buffer sets in the whole game).
 // ----------------------------------------------------------------------------
-let groundMesh = null, hullMesh = null, turretMesh = null, barrelMesh = null;
+let groundMesh = null, hullMesh = null, turretMesh = null, barrelMesh = null, shellMesh = null;
 function initMeshes() {
   if (!gl) return;
   groundMesh = makeMesh(gl, makeBox(80, 0.2, 80));
   hullMesh = makeMesh(gl, makeBox(HULL_SIZE[0], HULL_SIZE[1], HULL_SIZE[2]));
   turretMesh = makeMesh(gl, makeCylinder(10, 0.7, 0.9, 1.0));
   barrelMesh = makeMesh(gl, makeCylinder(8, 1.6, 0.12, 0.12));
+  shellMesh = makeMesh(gl, makeCylinder(6, 1, 1, 1)); // a low-poly stand-in sphere per spec S9
 }
 
 const PLAYER_COLOR = [0.24, 0.86, 0.42];
 
-// Static for now — no input wired up until Task 6. Proves the ground,
-// camera, and tank composition render together correctly.
+// ----------------------------------------------------------------------------
+// Input — keyboard drive/turn, mouse-driven turret aim, click to fire.
+// ----------------------------------------------------------------------------
+const keys = Object.create(null);
+window.addEventListener("keydown", (e) => { keys[e.key.toLowerCase()] = true; });
+window.addEventListener("keyup", (e) => { keys[e.key.toLowerCase()] = false; });
+
+let mouseNdcX = 0, mouseNdcY = 0;
+canvas.addEventListener("pointermove", (e) => {
+  mouseNdcX = (e.clientX / W) * 2 - 1;
+  mouseNdcY = -((e.clientY / H) * 2 - 1);
+});
+
+let firePressed = false;
+canvas.addEventListener("pointerdown", () => { firePressed = true; });
+
 const player = { x: 0, z: 0, hullYaw: 0, turretYaw: 0 };
+let playerFireCooldown = 0;
 let camPos = [0, CAM_UP_OFFSET, -CAM_BACK_OFFSET];
 let camLook = [0, CAM_LOOK_HEIGHT, 0];
+let shells = [];
+
+function readPlayerDriveInput() {
+  let forward = 0, turn = 0;
+  if (keys["w"] || keys["arrowup"]) forward += 1;
+  if (keys["s"] || keys["arrowdown"]) forward -= 1;
+  if (keys["a"] || keys["arrowleft"]) turn += 1;
+  if (keys["d"] || keys["arrowright"]) turn -= 1;
+  return { forward, turn };
+}
+
+function updatePlayer(dt) {
+  const moved = updateTankMovement(player, readPlayerDriveInput(), 6, 1.2, dt);
+  const [cx, cz] = clampToArena(moved.x, moved.z, TANK_COLLISION_RADIUS);
+  player.x = cx; player.z = cz; player.hullYaw = moved.hullYaw;
+
+  const invVP = mat4Invert(mat4Multiply(projMatrix, viewMatrix));
+  if (invVP) {
+    const aim = computeTurretAimFromMouse(invVP, mouseNdcX, mouseNdcY, player.x, player.z, player.hullYaw);
+    if (aim !== null) player.turretYaw = aim;
+  }
+
+  playerFireCooldown = Math.max(0, playerFireCooldown - dt);
+  if (firePressed && playerFireCooldown <= 0) {
+    shells.push(spawnShell(player, true));
+    playerFireCooldown = PLAYER_FIRE_COOLDOWN;
+  }
+  firePressed = false;
+
+  shells = shells.map((s) => updateShell(s, dt)).filter((s) => s.life > 0);
+}
 
 function drawPlayer() {
   const parts = tankTransforms(player);
@@ -561,16 +676,29 @@ function drawPlayer() {
   drawMesh(barrelMesh, parts.barrelMatrix, [0.15, 0.15, 0.15]);
 }
 
-function frame(nowMs) {
-  updateProjection();
+function drawShells() {
+  for (const s of shells) {
+    const m = mat4Scale(mat4Translate(mat4Identity(), s.x, 1, s.z), 0.25, 0.25, 0.25);
+    drawMesh(shellMesh, m, [1, 0.85, 0.2]);
+  }
+}
 
-  const cam = updateChaseCam(camPos, camLook, player.x, player.z, player.hullYaw, 1 / 60);
+let last = 0;
+function frame(nowMs) {
+  const dt = last ? Math.min(0.25, (nowMs - last) / 1000) : 0;
+  last = nowMs;
+
+  updateProjection();
+  updatePlayer(dt);
+
+  const cam = updateChaseCam(camPos, camLook, player.x, player.z, player.hullYaw, dt);
   camPos = cam.pos; camLook = cam.look;
   viewMatrix = mat4LookAt(camPos, camLook, [0, 1, 0]);
 
   render();
   drawGround(groundMesh, mat4Translate(mat4Identity(), 0, -0.1, 0));
   drawPlayer();
+  drawShells();
 
   requestAnimationFrame(frame);
 }
