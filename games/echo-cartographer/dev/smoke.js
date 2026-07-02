@@ -209,6 +209,14 @@ test("exit starts hidden; a ping front passing over it reveals it", () => {
   assert(g.t.exitFound === true, "near ping reveals exit");
 });
 
+test("the predator's own heartbeat ping does not discover the exit", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(5); // L6 — ambush point starts close to its own exit
+  g.stepSeconds(5); // several heartbeat cycles at proximity
+  assert(g.t.exitFound === false, "heartbeat pings must not auto-reveal the exit");
+});
+
 test("winning by touch still works with the exit undiscovered", () => {
   const g = boot();
   g.key("enter");
@@ -439,6 +447,27 @@ test("F fires a decoy immediately in the last movement direction", () => {
   g.key("f"); g.keyUp("f");
   const after = g.t.pings.filter((p) => p.decoy).length;
   assert(after === before + 1, "tap-F fires without hold/release aiming");
+});
+
+test("F ignores a stale mouse position and uses the last movement direction", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(4); // L5 — decoy unlocked
+  g.key("d"); g.step(5); g.keyUp("d"); // walk right, establishing lastMoveAng = 0 (+x)
+  g.t.decoyCooldown = 0;
+  g.key("f"); g.keyUp("f");
+  const d = g.t.pings.find((p) => p.decoy);
+  assert(d, "decoy fired");
+  assert(d.x > g.t.player.x, "decoy thrown rightward (movement direction), not toward the far mouse position");
+  // decoyKeyboardAngle() must resolve purely from movement/keys — never fall
+  // through to mouse state the way currentAimAngle() does for hold-aim. A
+  // headless pointermove repro isn't clean without extending the harness
+  // (see FIX 3 notes), so this is enforced at the source level instead.
+  const src = fs.readFileSync(GAME_PATH, "utf8");
+  const fnMatch = src.match(/function decoyKeyboardAngle\(\)\s*\{[\s\S]*?\n\}/);
+  assert(fnMatch, "decoyKeyboardAngle() exists");
+  const fnSrc = fnMatch[0];
+  assert(!/hasMouse|mouseX|mouseY/.test(fnSrc), "decoyKeyboardAngle must never consult mouse state");
 });
 
 test("P pauses the simulation; M mutes persistently", () => {

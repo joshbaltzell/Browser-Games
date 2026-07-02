@@ -1597,24 +1597,33 @@ window.addEventListener("keydown", (e) => {
   if (state === STATE.PLAYING) {
     // C10: pause gate — game actions are swallowed while paused; meta keys
     // (pause, mute, sonar assist, restart) stay live.
-    if (k === "p" || k === "escape") { paused = !paused; }
+    if ((k === "p" || k === "escape") && !e.repeat) {
+      paused = !paused;
+      if (paused) { setProximity(0); setTensionTone(0); } // silence continuous predator audio while paused
+    }
     if (k === " " && !e.repeat && !paused) { tryPing(); }
     if (k === "r") { startLevel(levelIndex); return; }
     if (k === "`" || k === "~") { showDebug = !showDebug; }
     // C2: sonar-assist toggle (accessibility/difficulty valve) — restores the
     // old always-visible predator rendering. Persisted.
-    if (k === "v") {
+    if (k === "v" && !e.repeat) {
       sonarAssist = !sonarAssist;
       try { localStorage.setItem(LS_ASSIST, sonarAssist ? "1" : "0"); } catch (e) {}
     }
     // C9: F is a tap — fires immediately in the last movement direction.
-    if (k === "f" && level.decoy && !e.repeat && !paused) { fireDecoy(); }
+    // Uses decoyKeyboardAngle() (not currentAimAngle()) so a stale mouse
+    // position never hijacks a keyboard-only throw.
+    if (k === "f" && level.decoy && !e.repeat && !paused) {
+      const a = decoyKeyboardAngle();
+      fireDecoy(player.x + Math.cos(a) * DECOY_REACH, player.y + Math.sin(a) * DECOY_REACH);
+      aiming = false; // also fixes FIX 7 below — cancels any pending shift-hold release
+    }
     // Decoy aim (hidden alias): hold Shift + a direction / mouse, release fires.
     if (k === "shift" && level.decoy && !paused) { aiming = true; }
   }
 
   // C10: mute toggle — any state, persisted.
-  if (k === "m") {
+  if (k === "m" && !e.repeat) {
     muted = !muted;
     try { localStorage.setItem(LS_MUTED, muted ? "1" : "0"); } catch (e) {}
     if (masterGain) masterGain.gain.setTargetAtTime(muted ? 0 : 0.9, now(), 0.05);
@@ -1662,6 +1671,18 @@ function currentAimAngle() {
   if (dx !== 0 || dy !== 0) return Math.atan2(dy, dx);
   if (hasMouse) return Math.atan2(mouseY - player.y, mouseX - player.x);
   return lastMoveAng; // C9: fall back to the way you were last walking
+}
+
+// C9 fix: tap-F must resolve purely from movement — never fall through to a
+// stale mouse position the way currentAimAngle() does for the hold-aim flow.
+function decoyKeyboardAngle() {
+  let dx = 0, dy = 0;
+  if (keys["arrowleft"] || keys["a"]) dx -= 1;
+  if (keys["arrowright"] || keys["d"]) dx += 1;
+  if (keys["arrowup"] || keys["w"]) dy -= 1;
+  if (keys["arrowdown"] || keys["s"]) dy += 1;
+  if (dx !== 0 || dy !== 0) return Math.atan2(dy, dx);
+  return lastMoveAng;
 }
 
 // ----------------------------------------------------------------------------
@@ -2086,7 +2107,7 @@ function updatePings(dt) {
     revealAlongFront(p);
     // C1: any wavefront (player, decoy, or heartbeat) crossing the exit
     // discovers it — generosity aids findability.
-    if (!exitFound && level) {
+    if (!p.predHB && !exitFound && level) {
       const de = Math.hypot(level.exit.x - p.x, level.exit.y - p.y);
       if (Math.abs(de - p.radius) < PING_BAND + level.exit.r) {
         exitFound = true;
@@ -2275,7 +2296,10 @@ function updatePredator(dt) {
     predator.tx = player.x; predator.ty = player.y;
     predator.path = planPath(predator.x, predator.y, player.x, player.y);
     predator.pathStep = 0;
-    markLabelUsed("freeze"); // LVL-04: breaking a stalk by freezing IS the lesson
+    // Only credit the FREEZE lesson when the player actually stopped moving —
+    // outrunning the sense radius while still holding a movement key should
+    // not permanently consume the teaching label.
+    if (!playerMoving) markLabelUsed("freeze");
   }
 
   // --- HUNT MODE: pathfind toward last-heard ping origin ---
@@ -2317,7 +2341,7 @@ function updatePredator(dt) {
     predator.idleTimer -= dt;
     if (predator.idleTimer <= 0) {
       predator.idleTimer = 0.9;
-      const a = Math.random() * TAU, r = 30 + Math.random() * 60;
+      const a = Math.random() * TAU, r = (30 + Math.random() * 60) * SCALE;
       predator.tx = predator.lastHeardX + Math.cos(a) * r;
       predator.ty = predator.lastHeardY + Math.sin(a) * r;
     }
