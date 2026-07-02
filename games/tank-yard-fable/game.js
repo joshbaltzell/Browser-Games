@@ -667,6 +667,154 @@ function drawShells() {
   }
 }
 
+// ----------------------------------------------------------------------------
+// Line-of-sight — same segment-intersection technique used elsewhere in this
+// hub's games (e.g. Echo Cartographer's lineClear/segsIntersect) for a
+// simple, fast "is this straight line blocked by any obstacle" check.
+// `obstacles` is [{x,z,halfW,halfD}] (AABBs in the x/z plane) — an empty
+// array (the default until Task 8 populates it) always returns true.
+// ----------------------------------------------------------------------------
+function segsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const d1 = cross(cx, cy, dx, dy, ax, ay);
+  const d2 = cross(cx, cy, dx, dy, bx, by);
+  const d3 = cross(ax, ay, bx, by, cx, cy);
+  const d4 = cross(ax, ay, bx, by, dx, dy);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+  return false;
+}
+function cross(ax, ay, bx, by, px, py) {
+  return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+}
+
+function hasLineOfSight(x1, z1, x2, z2, obstacles) {
+  for (const o of obstacles) {
+    const left = o.x - o.halfW, right = o.x + o.halfW;
+    const top = o.z - o.halfD, bottom = o.z + o.halfD;
+    const edges = [
+      [left, top, right, top], [right, top, right, bottom],
+      [right, bottom, left, bottom], [left, bottom, left, top],
+    ];
+    for (const e of edges) {
+      if (segsIntersect(x1, z1, x2, z2, e[0], e[1], e[2], e[3])) return false;
+    }
+    if (x1 > left && x1 < right && z1 > top && z1 < bottom) return false;
+    if (x2 > left && x2 < right && z2 > top && z2 < bottom) return false;
+  }
+  return true;
+}
+
+// ----------------------------------------------------------------------------
+// Enemy AI (spec S8) — deliberately simple, no pathfinding: Seek a random
+// point, or Engage (stop + aim + fire) once in range with line-of-sight.
+// Split into small pure functions so each decision is independently
+// testable: WHICH state (decideEnemyAIState), HOW to steer toward a point
+// (seekInput), and the difficulty ramp (currentSpawnInterval) are all pure.
+// Only the actual random point-picking (pickEnemySpawn, and the wiring
+// layer's "pick a new seek point" call) touches Math.random().
+// ----------------------------------------------------------------------------
+const ENEMY_SPEED = 4.5;
+const ENEMY_TURN_RATE = 1.0;
+const ENEMY_ENGAGE_RANGE = 25;
+const ENEMY_FIRE_COOLDOWN = 1.5;
+const ENEMY_COLOR = [0.85, 0.26, 0.24];
+
+function decideEnemyAIState(distToPlayer, hasLos) {
+  return (distToPlayer < ENEMY_ENGAGE_RANGE && hasLos) ? "engage" : "seek";
+}
+
+// Steers toward (targetX,targetZ): turns to face it first, only drives
+// forward once roughly aligned (avoids an unrealistic wide circling arc).
+// Same yaw convention as turretAimYaw (yaw 0 faces +Z).
+function seekInput(x, z, hullYaw, targetX, targetZ) {
+  const dx = targetX - x, dz = targetZ - z;
+  if (Math.hypot(dx, dz) < 0.5) return { forward: 0, turn: 0 };
+  const desiredYaw = Math.atan2(-dx, dz);
+  let diff = desiredYaw - hullYaw;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  const turn = Math.abs(diff) < 0.05 ? 0 : (diff > 0 ? 1 : -1);
+  const forward = Math.abs(diff) < Math.PI / 3 ? 1 : 0;
+  return { forward, turn };
+}
+
+const ENEMY_SPAWN_START_INTERVAL = 6;
+const ENEMY_SPAWN_END_INTERVAL = 3.5;
+const ENEMY_SPAWN_RAMP_DURATION = 120; // 2 minutes (spec S8)
+
+function currentSpawnInterval(elapsedSeconds) {
+  const t2 = Math.min(1, elapsedSeconds / ENEMY_SPAWN_RAMP_DURATION);
+  return ENEMY_SPAWN_START_INTERVAL + (ENEMY_SPAWN_END_INTERVAL - ENEMY_SPAWN_START_INTERVAL) * t2;
+}
+
+// Impure (Math.random) — picks a point just inside the arena edge, facing
+// inward, and returns a fresh enemy state object.
+function pickEnemySpawn() {
+  const lim = ARENA_HALF_SIZE - 2;
+  const edge = Math.floor(Math.random() * 4);
+  let x, z, hullYaw;
+  if (edge === 0) { x = -lim; z = (Math.random() * 2 - 1) * lim; hullYaw = Math.PI / 2; }
+  else if (edge === 1) { x = lim; z = (Math.random() * 2 - 1) * lim; hullYaw = -Math.PI / 2; }
+  else if (edge === 2) { x = (Math.random() * 2 - 1) * lim; z = -lim; hullYaw = 0; }
+  else { x = (Math.random() * 2 - 1) * lim; z = lim; hullYaw = Math.PI; }
+  return { x, z, hullYaw, turretYaw: 0, aiState: "seek", seekX: x, seekZ: z, fireCooldown: 0 };
+}
+
+function pickSeekPoint() {
+  const lim = ARENA_HALF_SIZE - 5;
+  return { seekX: (Math.random() * 2 - 1) * lim, seekZ: (Math.random() * 2 - 1) * lim };
+}
+
+// ----------------------------------------------------------------------------
+// Enemies (spec S8). `obstacles` starts empty — Task 8 populates it; every
+// function above that reads it already handles the empty-array case.
+// ----------------------------------------------------------------------------
+let obstacles = [];
+let enemies = [];
+let survivalTime = 0;
+let enemySpawnTimer = ENEMY_SPAWN_START_INTERVAL;
+
+function updateEnemies(dt) {
+  survivalTime += dt;
+  enemySpawnTimer -= dt;
+  if (enemySpawnTimer <= 0) {
+    enemies.push(pickEnemySpawn());
+    enemySpawnTimer = currentSpawnInterval(survivalTime);
+  }
+
+  for (const e of enemies) {
+    const distToPlayer = Math.hypot(player.x - e.x, player.z - e.z);
+    const los = hasLineOfSight(e.x, e.z, player.x, player.z, obstacles);
+    e.aiState = decideEnemyAIState(distToPlayer, los);
+    e.fireCooldown = Math.max(0, e.fireCooldown - dt);
+
+    if (e.aiState === "engage") {
+      e.turretYaw = turretAimYaw(e.x, e.z, e.hullYaw, player.x, player.z);
+      if (e.fireCooldown <= 0) {
+        shells.push(spawnShell(e, false));
+        e.fireCooldown = ENEMY_FIRE_COOLDOWN;
+      }
+    } else {
+      const distToSeek = Math.hypot(e.seekX - e.x, e.seekZ - e.z);
+      if (distToSeek < 3) Object.assign(e, pickSeekPoint());
+      const input = seekInput(e.x, e.z, e.hullYaw, e.seekX, e.seekZ);
+      const moved = updateTankMovement(e, input, ENEMY_SPEED, ENEMY_TURN_RATE, dt);
+      const [cx, cz] = clampToArena(moved.x, moved.z, TANK_COLLISION_RADIUS);
+      e.x = cx; e.z = cz; e.hullYaw = moved.hullYaw;
+      e.turretYaw = 0;
+    }
+  }
+}
+
+function drawEnemies() {
+  for (const e of enemies) {
+    const parts = tankTransforms(e);
+    drawMesh(hullMesh, parts.hullMatrix, ENEMY_COLOR);
+    drawMesh(turretMesh, parts.turretMatrix, ENEMY_COLOR);
+    drawMesh(barrelMesh, parts.barrelMatrix, [0.15, 0.15, 0.15]);
+  }
+}
+
 let last = 0;
 function frame(nowMs) {
   const dt = last ? Math.min(0.25, (nowMs - last) / 1000) : 0;
@@ -674,6 +822,7 @@ function frame(nowMs) {
 
   updateProjection();
   updatePlayer(dt);
+  updateEnemies(dt);
 
   const cam = updateChaseCam(camPos, camLook, player.x, player.z, player.hullYaw, dt);
   camPos = cam.pos; camLook = cam.look;
@@ -682,6 +831,7 @@ function frame(nowMs) {
   render();
   drawGround(groundMesh, mat4Translate(mat4Identity(), 0, -0.1, 0));
   drawPlayer();
+  drawEnemies();
   drawShells();
 
   requestAnimationFrame(frame);

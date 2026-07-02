@@ -29,6 +29,10 @@ const SHIM = `
   updateTankMovement, circleCircleCollide, circleAABBCollide, clampToArena,
   computeTurretAimFromMouse, spawnShell, updateShell,
   ARENA_HALF_SIZE, TANK_COLLISION_RADIUS, SHELL_SPEED, SHELL_MAX_LIFE,
+  decideEnemyAIState, seekInput, hasLineOfSight, currentSpawnInterval,
+  pickEnemySpawn, pickSeekPoint, ENEMY_ENGAGE_RANGE,
+  ENEMY_SPAWN_START_INTERVAL, ENEMY_SPAWN_END_INTERVAL,
+  get obstacles() { return obstacles; },
   get gl() { return gl; },
 };`;
 
@@ -406,6 +410,52 @@ test("spawnShell travels in the turret's absolute facing direction and despawns 
   shell = t.updateShell(shell, 1);
   assert(shell.z > startZ, "shell should move forward (+Z, matching yaw=0) after 1 second");
   close(shell.life, t.SHELL_MAX_LIFE - 1, 1e-9);
+});
+
+console.log("enemy AI: state, steering, line-of-sight, spawn ramp");
+
+test("decideEnemyAIState engages only when in range AND has line of sight", () => {
+  assert(t.decideEnemyAIState(10, true) === "engage");
+  assert(t.decideEnemyAIState(10, false) === "seek", "in range but blocked -> keep seeking");
+  assert(t.decideEnemyAIState(100, true) === "seek", "visible but too far -> keep seeking");
+});
+
+test("seekInput turns to face a target directly to the side before driving forward", () => {
+  const input = t.seekInput(0, 0, 0, 10, 0); // target directly on +X, hull faces +Z
+  assert(input.forward === 0, "not yet facing the target -> don't drive forward yet");
+  assert(input.turn !== 0, "should be turning to face it");
+});
+
+test("seekInput drives forward once already facing the target", () => {
+  const input = t.seekInput(0, 0, 0, 0, 10); // target straight ahead (+Z, matching yaw=0)
+  assert(input.forward === 1, "already facing the target -> drive forward");
+  assert(input.turn === 0, "no correction needed");
+});
+
+test("seekInput stops once very close to the target", () => {
+  const input = t.seekInput(0, 0, 0, 0.1, 0.1);
+  assert(input.forward === 0 && input.turn === 0, "close enough -> stop");
+});
+
+test("hasLineOfSight is true with no obstacles, false when one blocks the segment", () => {
+  assert(t.hasLineOfSight(-10, 0, 10, 0, []) === true, "no obstacles -> always visible");
+  assert(t.hasLineOfSight(-10, 0, 10, 0, [{ x: 0, z: 0, halfW: 2, halfD: 2 }]) === false, "obstacle centered on the line -> blocked");
+  assert(t.hasLineOfSight(-10, 0, 10, 0, [{ x: 0, z: 20, halfW: 2, halfD: 2 }]) === true, "obstacle far off the line -> not blocked");
+});
+
+test("currentSpawnInterval ramps linearly from 6s to 3.5s over 2 minutes, then holds", () => {
+  close(t.currentSpawnInterval(0), t.ENEMY_SPAWN_START_INTERVAL, 1e-9);
+  close(t.currentSpawnInterval(60), 4.75, 1e-9, "halfway through the 120s ramp");
+  close(t.currentSpawnInterval(120), t.ENEMY_SPAWN_END_INTERVAL, 1e-9);
+  close(t.currentSpawnInterval(999), t.ENEMY_SPAWN_END_INTERVAL, 1e-9, "holds flat past the ramp duration");
+});
+
+test("pickEnemySpawn places the enemy just inside one of the four arena edges", () => {
+  const e = t.pickEnemySpawn();
+  const lim = t.ARENA_HALF_SIZE - 2;
+  const onAnEdge = Math.abs(Math.abs(e.x) - lim) < 1e-9 || Math.abs(Math.abs(e.z) - lim) < 1e-9;
+  assert(onAnEdge, "spawn point should sit exactly on one of the four edge lines");
+  assert(Math.abs(e.x) <= lim + 1e-9 && Math.abs(e.z) <= lim + 1e-9, "spawn point should stay within arena bounds");
 });
 
 console.log(`\n${count - failures}/${count} passed`);
