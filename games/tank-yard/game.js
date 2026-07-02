@@ -52,9 +52,9 @@ function mat4RotateY(m, rad) {
   return mat4Multiply(m, r);
 }
 
-// Positive angle rotates +Y toward +Z. Unused by v1 gameplay (cannon stays
-// level, spec S4) but kept per the spec's math-module contract for a likely
-// future barrel-elevation feature.
+// Positive angle rotates +Y toward +Z. Used by tankTransforms to lay the
+// barrel mesh (Y-axis-aligned by construction, see makeCylinder) onto its
+// side along the turret's forward (Z) axis -- not for barrel elevation.
 function mat4RotateX(m, rad) {
   const c = Math.cos(rad), s = Math.sin(rad);
   const r = new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]);
@@ -86,7 +86,7 @@ function mat4LookAt(eye, target, up) {
 }
 
 // General 4x4 inverse (cofactor expansion). Returns null if singular — every
-// caller in this game (camera unproject, TBD Task 5) must check for null.
+// caller in this game (camera unproject in computeTurretAimFromMouse) must check for null.
 function mat4Invert(m) {
   const a00 = m[0], a01 = m[1], a02 = m[2], a03 = m[3];
   const a10 = m[4], a11 = m[5], a12 = m[6], a13 = m[7];
@@ -481,7 +481,6 @@ function turretAimYaw(hullX, hullZ, hullYaw, targetX, targetZ) {
 // nothing itself.
 // ----------------------------------------------------------------------------
 const HULL_SIZE = [2, 0.8, 3];       // width, height, depth
-const TURRET_SIZE = [0.4, 1.3, 0.4]; // radiusBottom-ish, height, radiusTop-ish (see Task 7's makeCylinder call)
 const TURRET_HEIGHT_OFFSET = 0.9;    // where the turret pivot sits above the hull's own origin
 const BARREL_FORWARD_OFFSET = 1.6;   // how far forward of the turret pivot the barrel sits
 
@@ -800,7 +799,7 @@ canvas.addEventListener("pointermove", (e) => {
 });
 
 let firePressed = false;
-canvas.addEventListener("pointerdown", () => { firePressed = true; });
+canvas.addEventListener("pointerdown", (e) => { if (e.button === 0) firePressed = true; });
 
 const player = { x: 0, z: 0, hullYaw: 0, turretYaw: 0, health: PLAYER_MAX_HEALTH, invulnTimer: 0 };
 let playerFireCooldown = 0;
@@ -938,14 +937,16 @@ function drawParticles() {
 
 let last = 0;
 function frame(nowMs) {
-  const dt = last ? Math.min(0.25, (nowMs - last) / 1000) : 0;
+  const dt = last ? Math.max(0, Math.min(0.25, (nowMs - last) / 1000)) : 0;
   last = nowMs;
 
   updateProjection();
-  if (!gameOver && !paused) {
-    updatePlayer(dt);
-    updateEnemies(dt);
-    resolveShellCollisions();
+  if (!paused) {
+    if (!gameOver) {
+      updatePlayer(dt);
+      updateEnemies(dt);
+      resolveShellCollisions();
+    }
     updateParticles(dt);
   }
 
