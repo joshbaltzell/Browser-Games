@@ -13,19 +13,74 @@ const vm = require("vm");
 const GAME_PATH = path.join(__dirname, "..", "game.js");
 const GAME = fs.readFileSync(GAME_PATH, "utf8");
 
-// Shim appended to the game source so this harness can reach its top-level
-// functions/state — const/let/function at vm-script top level are NOT
-// context globals, so the shim must be concatenated into the same script.
+// SHIM: appended to the game source so this harness can reach its top-level
+// functions/state. Extend this object as later tasks add more to game.js.
 const SHIM = `
 ;globalThis.__t = {
   mat4Identity, mat4Multiply, mat4Translate, mat4Scale, mat4RotateX, mat4RotateY,
   mat4Perspective, mat4LookAt, mat4Invert, mat4TransformPoint,
   vec3Add, vec3Sub, vec3Scale, vec3Dot, vec3Cross, vec3Length, vec3Normalize,
   makeBox, makeCylinder,
+  compileShader, createProgram, makeMesh,
+  get gl() { return gl; },
 };`;
 
-function load() {
-  const sandbox = { console };
+// A minimal WebGL context stub: constants resolve to distinct numbers,
+// create* calls return unique dummy handles, get*Parameter calls report
+// success so compile/link error-checking code never takes its throw path,
+// and every other method (bindBuffer, bufferData, useProgram, drawElements,
+// etc.) is a silent no-op — mirrors the same Proxy trick this repo's other
+// dev/smoke.js harnesses use for a mocked 2D canvas context.
+function makeMockGL() {
+  let handleCounter = 1;
+  const constants = {
+    VERTEX_SHADER: 1, FRAGMENT_SHADER: 2, COMPILE_STATUS: 3, LINK_STATUS: 4,
+    ARRAY_BUFFER: 5, ELEMENT_ARRAY_BUFFER: 6, STATIC_DRAW: 7,
+    TRIANGLES: 8, POINTS: 9, UNSIGNED_SHORT: 10, FLOAT: 11,
+    DEPTH_TEST: 12, LEQUAL: 13, CULL_FACE: 14, BACK: 15,
+    COLOR_BUFFER_BIT: 16, DEPTH_BUFFER_BIT: 17, BLEND: 18, SRC_ALPHA: 19,
+    ONE_MINUS_SRC_ALPHA: 20,
+  };
+  const base = Object.assign({}, constants, {
+    createShader: () => ({ id: handleCounter++ }),
+    createProgram: () => ({ id: handleCounter++ }),
+    createBuffer: () => ({ id: handleCounter++ }),
+    getShaderParameter: () => true,
+    getProgramParameter: () => true,
+    getShaderInfoLog: () => "",
+    getProgramInfoLog: () => "",
+    getAttribLocation: () => 0,
+    getUniformLocation: () => ({ id: handleCounter++ }),
+  });
+  return new Proxy(base, {
+    get(t, prop) {
+      if (prop in t) return t[prop];
+      if (typeof prop === "string") { t[prop] = () => {}; return t[prop]; }
+      return undefined;
+    },
+  });
+}
+
+function makeMockCanvas() {
+  return {
+    width: 0, height: 0, style: {},
+    getContext: (type) => (type === "webgl" ? makeMockGL() : null),
+    addEventListener() {},
+  };
+}
+
+function boot() {
+  const gameCanvas = makeMockCanvas();
+  const noWebglDiv = { style: {} };
+  const hudDiv = { style: {}, classList: { add() {}, remove() {} } };
+  const elementsById = { game: gameCanvas, noWebgl: noWebglDiv, hud: hudDiv };
+  const sandbox = {
+    console,
+    window: { innerWidth: 1280, innerHeight: 800, addEventListener() {} },
+    document: { getElementById: (id) => elementsById[id] || null, addEventListener() {} },
+    performance: { now: () => 0 },
+    requestAnimationFrame() {},
+  };
   vm.createContext(sandbox);
   vm.runInContext(GAME + SHIM, sandbox, { filename: "game.js" });
   return sandbox.__t;
@@ -48,7 +103,7 @@ function closeArr(a, b, tol, msg) {
 }
 
 console.log("math module");
-const t = load();
+const t = boot();
 
 test("mat4Identity transforms a point to itself", () => {
   closeArr(t.mat4TransformPoint(t.mat4Identity(), [3, -2, 5]), [3, -2, 5], 1e-9);
@@ -180,6 +235,27 @@ test("all triangles wind CCW viewed from outside (geometric normal agrees with s
       assert(t.vec3Dot(geom, stored) > 0, `triangle at index ${i} winds CW against its stored outward normal`);
     }
   }
+});
+
+console.log("WebGL scaffold");
+
+test("gl is non-null under the mock environment (WebGL context created successfully)", () => {
+  const t = boot();
+  assert(t.gl !== null && t.gl !== undefined, "mock getContext('webgl') should yield a truthy context");
+});
+
+test("createProgram compiles+links without throwing under the mock GL", () => {
+  const t = boot();
+  const program = t.createProgram(t.gl, "attribute vec3 p; void main(){gl_Position=vec4(p,1.0);}", "void main(){gl_FragColor=vec4(1.0);}");
+  assert(program !== null && program !== undefined, "createProgram should return a program handle");
+});
+
+test("makeMesh uploads a box mesh without throwing and reports the right index count", () => {
+  const t = boot();
+  const box = t.makeBox(1, 1, 1);
+  const mesh = t.makeMesh(t.gl, box);
+  assert(mesh.count === box.indices.length, "mesh.count should equal the source mesh's index count");
+  assert(mesh.posBuf && mesh.normBuf && mesh.idxBuf, "all three buffer handles should be truthy");
 });
 
 console.log(`\n${count - failures}/${count} passed`);

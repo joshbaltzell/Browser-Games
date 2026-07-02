@@ -236,3 +236,70 @@ function makeCylinder(radialSegments, height, radiusTop, radiusBottom) {
     indices: new Uint16Array(indices),
   };
 }
+
+// ----------------------------------------------------------------------------
+// WebGL setup — context creation, resize, shader/program/mesh helpers.
+// gl stays null if unsupported (file://-safe: never throw on script load,
+// matching this hub's convention of never crashing on unsupported browsers).
+// ----------------------------------------------------------------------------
+const canvas = document.getElementById("game");
+const gl = canvas.getContext("webgl");
+if (!gl) {
+  const warn = document.getElementById("noWebgl");
+  if (warn) warn.style.display = "flex";
+}
+
+let W = 0, H = 0;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+  if (gl) gl.viewport(0, 0, W, H);
+}
+window.addEventListener("resize", resize);
+
+function compileShader(glCtx, type, source) {
+  const shader = glCtx.createShader(type);
+  glCtx.shaderSource(shader, source);
+  glCtx.compileShader(shader);
+  if (!glCtx.getShaderParameter(shader, glCtx.COMPILE_STATUS)) {
+    const info = glCtx.getShaderInfoLog(shader);
+    glCtx.deleteShader(shader);
+    throw new Error("Shader compile error: " + info);
+  }
+  return shader;
+}
+
+function createProgram(glCtx, vsSource, fsSource) {
+  const vs = compileShader(glCtx, glCtx.VERTEX_SHADER, vsSource);
+  const fs = compileShader(glCtx, glCtx.FRAGMENT_SHADER, fsSource);
+  const program = glCtx.createProgram();
+  glCtx.attachShader(program, vs);
+  glCtx.attachShader(program, fs);
+  glCtx.linkProgram(program);
+  if (!glCtx.getProgramParameter(program, glCtx.LINK_STATUS)) {
+    throw new Error("Program link error: " + glCtx.getProgramInfoLog(program));
+  }
+  return program;
+}
+
+// Uploads a {positions, normals, indices} mesh (from makeBox/makeCylinder)
+// into 3 WebGL buffers. `count` is what gl.drawElements needs later.
+function makeMesh(glCtx, meshData) {
+  const posBuf = glCtx.createBuffer();
+  glCtx.bindBuffer(glCtx.ARRAY_BUFFER, posBuf);
+  glCtx.bufferData(glCtx.ARRAY_BUFFER, meshData.positions, glCtx.STATIC_DRAW);
+
+  const normBuf = glCtx.createBuffer();
+  glCtx.bindBuffer(glCtx.ARRAY_BUFFER, normBuf);
+  glCtx.bufferData(glCtx.ARRAY_BUFFER, meshData.normals, glCtx.STATIC_DRAW);
+
+  const idxBuf = glCtx.createBuffer();
+  glCtx.bindBuffer(glCtx.ELEMENT_ARRAY_BUFFER, idxBuf);
+  glCtx.bufferData(glCtx.ELEMENT_ARRAY_BUFFER, meshData.indices, glCtx.STATIC_DRAW);
+
+  return { posBuf, normBuf, idxBuf, count: meshData.indices.length };
+}
+
+resize();
