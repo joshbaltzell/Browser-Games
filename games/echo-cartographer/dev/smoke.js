@@ -45,6 +45,10 @@ const SHIM = `
   get sonarAssist() { return sonarAssist; },
   // test-only decoy-position helper (Task 5 gives fireDecoy a real target arg)
   fireDecoyAt(x, y) { pings.push({ x, y, radius: 0, decoy: true }); lurePredatorTo(x, y); },
+  // Phase B accessors
+  noise: (typeof noise === "function" ? noise : null),
+  get burstVignette() { return burstVignette; },
+  get bumpTimer() { return bumpTimer; },
 };`;
 
 function makeCtx2d() {
@@ -301,6 +305,59 @@ test("a decoy landing next to an ambusher flushes it (distant pings do not)", ()
 test("no clamp() left in canvas font strings", () => {
   const src = fs.readFileSync(GAME_PATH, "utf8");
   assert(!/ctx\.font\s*=\s*["'`][^"'`]*clamp\(/.test(src), "clamp() in ctx.font is unsupported");
+});
+
+// ---------------------------------------------------------------------------
+// Phase B — sound as a system
+// ---------------------------------------------------------------------------
+console.log("phase B — sound as a system");
+
+test("noise() out of earshot is ignored; in earshot pulls a hunt", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(2);
+  g.t.predator.mode = "idle";
+  g.t.noise(g.t.predator.x + 500, g.t.predator.y, 200);
+  assert(g.t.predator.mode === "idle", "500px away with 200px loudness: unheard");
+  g.t.noise(g.t.predator.x + 150, g.t.predator.y, 200);
+  assert(g.t.predator.mode === "hunt", "150px away with 200px loudness: investigated");
+});
+
+test("walking into an unrevealed wall thuds once and is heard nearby", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(2); // L3, live predator
+  const wall = g.t.level.walls[3]; // outer box left wall
+  g.t.player.x = wall.x1 + g.t.player.r + 2; g.t.player.y = (wall.y1 + wall.y2) / 2;
+  g.t.predator.mode = "idle";
+  g.t.predator.x = g.t.player.x + 400; g.t.predator.y = g.t.player.y; // out of earshot
+  g.key("a"); g.step(8); g.keyUp("a");
+  assert(g.t.bumpTimer > 0, "bump registered");
+  assert(g.t.predator.mode === "idle", "400px away: thud unheard");
+  g.step(2); // idle frame so wallContact resets (edge-triggered thud)
+  g.t.predator.x = g.t.player.x + 150; g.t.predator.y = g.t.player.y;
+  g.key("a"); g.step(30); g.keyUp("a"); // fresh contact after cooldown
+  assert(g.t.predator.mode === "hunt" || g.t.predator.stalking, "150px away: thud heard");
+});
+
+test("dormant levels never react to noise", () => {
+  const g = boot();
+  g.key("enter"); // L1
+  g.t.noise(g.t.predator.x + 10, g.t.predator.y, Infinity);
+  assert(g.t.predator.mode === "idle", "dormant predator ignores all noise");
+});
+
+test("hunt bursts are authored on L7 and L9 and fire with feedback", () => {
+  const g = boot();
+  g.key("enter");
+  for (const idx of [6, 8]) {
+    g.t.startLevel(idx);
+    assert(g.t.level.huntTrigger, `level ${idx + 1} has a hunt trigger`);
+    g.t.player.x = g.t.level.huntTrigger.x; g.t.player.y = g.t.level.huntTrigger.y;
+    g.step(3);
+    assert(g.t.predator.huntBurstActive === true, `level ${idx + 1} burst fires`);
+    assert(g.t.burstVignette > 0, `level ${idx + 1} burst shows the vignette`);
+  }
 });
 
 console.log(`\n${count - failures}/${count} passed`);

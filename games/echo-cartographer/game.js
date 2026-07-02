@@ -136,6 +136,11 @@ const GRAIN_MIN_DOTS = 15;    // dot count at GRAIN_FAR_DIST
 const GRAIN_MAX_DOTS = 150;   // dot count at/within GRAIN_NEAR_DIST
 const DRONE_DUCK = 0.5;         // drone gain multiplier during the listening pause
 
+// C6 (fun-redesign): hearing radius of a wall bump — walking into an
+// (often unrevealed) wall is a sound the dark can hear, which makes wall
+// knowledge = safety and closes the "walls are harmless" hole.
+const WALL_BUMP_HEAR_DIST = 200;
+
 // ----------------------------------------------------------------------------
 // Canvas + global state
 // ----------------------------------------------------------------------------
@@ -307,6 +312,12 @@ let footstepTimer = 0;     // dt countdown to the next footstep click while movi
 let stillTimer = 0;        // dt-accumulated stillness duration (AUDIO-03 listening pause)
 let playerMoving = false;  // movement-key INPUT intent, set by updatePlayer, read by updateFootstepAudio
 let dripTimer = 3 + Math.random() * 5; // dt countdown to the next cave drip (AUDIO-06)
+// C6: wall-bump state — one thud per DISCRETE contact (wallContact edge) with
+// a short cooldown backstop, so grinding along a wall doesn't machine-gun it.
+let bumpTimer = 0;
+let wallContact = false;
+// C7: red edge-vignette pulse (0..1) fired alongside the hunt-burst roar.
+let burstVignette = 0;
 
 function unlockAudio() {
   if (audioReady) return;
@@ -529,6 +540,46 @@ function exitTick() {
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
   o.connect(g); g.connect(panner);
   o.start(t); o.stop(t + 0.12);
+}
+
+// C6: wall-bump knock — short, low, woody. Distinct from footstepClick
+// (high-passed tick) and noiseBurst (long 1200Hz capture thud).
+function wallThud() {
+  if (!audioCtx) return;
+  const t = now();
+  const dur = 0.05;
+  const frames = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+  const buf = audioCtx.createBuffer(1, frames, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const f = audioCtx.createBiquadFilter();
+  f.type = "lowpass"; f.frequency.value = 300;
+  const g = audioCtx.createGain();
+  g.gain.value = 0.15;
+  src.connect(f); f.connect(g); g.connect(masterGain);
+  src.start(t);
+}
+
+// C7: hunt-burst roar — capture-growl family, shorter and quieter, no noise
+// burst; an unmistakable "it just got faster" tell (the old tell was only a
+// halved heartbeat interval, which nobody consciously reads).
+function sndHuntBurst() {
+  if (!audioCtx) return;
+  const t = now();
+  const o = audioCtx.createOscillator();
+  o.type = "sawtooth";
+  o.frequency.setValueAtTime(160, t);
+  o.frequency.exponentialRampToValueAtTime(50, t + 0.6);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.22, t + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+  const f = audioCtx.createBiquadFilter();
+  f.type = "lowpass"; f.frequency.value = 600;
+  o.connect(f); f.connect(g); g.connect(masterGain);
+  o.start(t); o.stop(t + 0.75);
 }
 
 function noiseBurst(dur, vol) {
@@ -1156,6 +1207,9 @@ const RAW_LEVELS = [
     patrolN: [
       { x: 0.20, y: 0.50 }, { x: 0.80, y: 0.50 },
     ],
+    // C7: burst as the player commits to crossing the patrolled road — the
+    // corridor midpoint, which every route must pass through.
+    huntTriggerN: { x: 0.50, y: 0.50, radius: 0.08 },
   },
 
   // L8 — CROSSROADS: predator circuits the hub. Decoy one arm, cross the cleared path.
@@ -1212,6 +1266,9 @@ const RAW_LEVELS = [
       { x: 0.78, y: 0.70 }, { x: 0.50, y: 0.80 },
       { x: 0.22, y: 0.70 }, { x: 0.22, y: 0.30 },
     ],
+    // C7: burst at the second S-gap crossing — the point where the player has
+    // committed to the right half and can't retreat cheaply.
+    huntTriggerN: { x: 0.60, y: 0.50, radius: 0.07 },
   },
 
   // L10 — INTO THE DEEP: the finale. Twin throats, fastest hunter, tight exit.
@@ -1574,16 +1631,22 @@ function fireDecoy() {
   spawnParticles(player.x, player.y, 8, COLORS.decoy, { speed: 70, life: 0.4, angle: aimAng, spread: 0.7 });
 }
 
-// Send the predator hunting toward (x,y) by planning a wall-respecting path.
-function lurePredatorTo(x, y) {
+// C6 (fun-redesign): the single funnel for everything the predator can hear.
+// loudness = hearing radius in px; pings/decoys pass Infinity (a shout).
+// One rule players can plan around: it goes to the last loud thing it heard.
+// Footsteps are deliberately NOT routed here — close-range footstep homing is
+// stalk mode's job (C3), which reacts faster than a path-hunt would.
+function noise(x, y, loudness) {
   if (level && level.dormant) return; // teaching levels: the dark is empty
+  const dn = Math.hypot(x - predator.x, y - predator.y);
   if (predator.mode === "ambush") {
     // C4: a loud sound right beside a blind hunter flushes it; anything
     // farther is ignored (keeps WR-01's actual bug fixed — no cross-map
     // ping ever cancels the hold — while restoring the decoy counterplay
     // at the chamber mouth).
-    const dn = Math.hypot(x - predator.x, y - predator.y);
     if (dn > AMBUSH_BREAK_RADIUS) return;
+  } else if (dn > loudness) {
+    return; // out of earshot
   }
   predator.searchTimer = 0; // C3: a real sound overrides the lingering search
   predator.mode = "hunt";
@@ -1591,6 +1654,9 @@ function lurePredatorTo(x, y) {
   predator.path = planPath(predator.x, predator.y, x, y);
   predator.pathStep = 0;
 }
+
+// Send the predator hunting toward (x,y) — pings/decoys are heard everywhere.
+function lurePredatorTo(x, y) { noise(x, y, Infinity); }
 
 // ----------------------------------------------------------------------------
 // Init / reset
@@ -1657,6 +1723,9 @@ function startLevel(idx) {
   exitTickTimer = 4;
   predVisFlash = 0;
   predHBFlash = 0;
+  // C6/C7: per-attempt sound-system state.
+  bumpTimer = 0; wallContact = false;
+  burstVignette = 0;
   pingCount = 0;
   clearTime = 0;
   introT = 4.5;       // show the level intro banner, then fade it
@@ -1734,6 +1803,8 @@ function update(dt) {
   // TENS-03: decay the one-shot ping-ready completion pulse every frame
   // (always-run, like shake/flash) so it fades even across state changes.
   pingReadyPulse = Math.max(0, pingReadyPulse - dt * PING_PULSE_DECAY);
+  // C7: decay the hunt-burst vignette (always-run, ~0.4s).
+  burstVignette = Math.max(0, burstVignette - dt / 0.4);
 
   if (state !== STATE.PLAYING) { setProximity(0); return; }
 
@@ -1771,6 +1842,11 @@ function update(dt) {
       predator.huntTriggered = true;
       predator.huntBurstActive = true;
       predator.huntBurstTimer = HUNT_BURST_DURATION;
+      // C7: make the burst a MOMENT — roar + red edge vignette + a nudge of
+      // shake, instead of a stat change the player never consciously reads.
+      burstVignette = 1;
+      shake = Math.max(shake, 3);
+      sndHuntBurst();
     }
   }
 
@@ -1800,13 +1876,32 @@ function updatePlayer(dt) {
   // into a wall still counts as "moving" and must not trigger the listening
   // pause reward.
   playerMoving = !(dx === 0 && dy === 0);
-  if (dx === 0 && dy === 0) return;
+  bumpTimer = Math.max(0, bumpTimer - dt);
+  if (dx === 0 && dy === 0) { wallContact = false; return; }
   const len = Math.hypot(dx, dy) || 1;
   dx /= len; dy /= len;
   const step = PLAYER_SPEED * dt;
-  moveAndCollide(dx * step, 0);
-  moveAndCollide(0, dy * step);
-  // NOTE: moving silently does NOT touch the predator (TWIST-04).
+  const blockedX = !tryPlayerMove(dx * step, 0);
+  const blockedY = !tryPlayerMove(0, dy * step);
+  const blocked = blockedX || blockedY;
+  // C6: a FRESH bump against an (often unrevealed) wall is a sound the dark
+  // can hear. Edge-triggered on wallContact (held grinding is one thud, not
+  // a stream) with bumpTimer as a re-trigger backstop.
+  if (blocked && !wallContact && bumpTimer <= 0) {
+    bumpTimer = 0.3;
+    wallThud();
+    noise(player.x, player.y, WALL_BUMP_HEAR_DIST);
+  }
+  wallContact = blocked;
+  // NOTE: quiet walking in the open still does NOT touch the predator beyond
+  // stalk-mode earshot (TWIST-04's spirit survives — silence is a choice).
+}
+
+// Returns true if the axis move succeeded (replaces the old void moveAndCollide).
+function tryPlayerMove(mx, my) {
+  const nx = player.x + mx, ny = player.y + my;
+  if (!collidesAt(nx, ny, player.r)) { player.x = nx; player.y = ny; return true; }
+  return false;
 }
 
 // AUDIO-03/AUDIO-04: rhythmic centered footstep clicks while a movement key is
@@ -1852,11 +1947,6 @@ function updateAmbience(dt) {
       exitTickTimer = 3 + Math.random() * 3;
     }
   }
-}
-
-function moveAndCollide(mx, my) {
-  const nx = player.x + mx, ny = player.y + my;
-  if (!collidesAt(nx, ny, player.r)) { player.x = nx; player.y = ny; }
 }
 
 function collidesAt(x, y, r) {
@@ -2226,6 +2316,18 @@ function render() {
     ctx.save();
     ctx.globalAlpha = Math.min(0.5, flash * 0.5);
     ctx.fillStyle = flashColor;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // C7: brief red edge-vignette pulse when a hunt burst fires.
+  if (burstVignette > 0.001) {
+    ctx.save();
+    const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
+    g.addColorStop(0, "rgba(122,0,16,0)");
+    g.addColorStop(1, "rgba(122,0,16,0.28)");
+    ctx.globalAlpha = burstVignette;
+    ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
