@@ -303,3 +303,120 @@ function makeMesh(glCtx, meshData) {
 }
 
 resize();
+
+// ----------------------------------------------------------------------------
+// Toon shader — one vertex + one fragment program used for EVERY object in
+// the game (tanks, obstacles, ground, shells, particles). 3-band quantized
+// lighting is what makes this read as cartoonish rather than a flat default
+// Lambert look (spec S5) — the whole "look" of this game lives in the
+// fragment shader's if/else chain below.
+// ----------------------------------------------------------------------------
+const VERTEX_SHADER_SRC = `
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+varying vec3 vNormal;
+void main() {
+  vNormal = mat3(uModel) * aNormal;
+  gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
+}
+`;
+
+const FRAGMENT_SHADER_SRC = `
+precision mediump float;
+varying vec3 vNormal;
+uniform vec3 uColor;
+uniform vec3 uLightDir;
+void main() {
+  vec3 n = normalize(vNormal);
+  float ndotl = max(dot(n, normalize(uLightDir)), 0.0);
+  float band;
+  if (ndotl > 0.6) { band = 1.0; }
+  else if (ndotl > 0.2) { band = 0.65; }
+  else { band = 0.35; }
+  gl_FragColor = vec4(uColor * band, 1.0);
+}
+`;
+
+let program = null;
+let locs = null;
+function initShaders() {
+  if (!gl) return;
+  program = createProgram(gl, VERTEX_SHADER_SRC, FRAGMENT_SHADER_SRC);
+  locs = {
+    aPosition: gl.getAttribLocation(program, "aPosition"),
+    aNormal: gl.getAttribLocation(program, "aNormal"),
+    uModel: gl.getUniformLocation(program, "uModel"),
+    uView: gl.getUniformLocation(program, "uView"),
+    uProjection: gl.getUniformLocation(program, "uProjection"),
+    uColor: gl.getUniformLocation(program, "uColor"),
+    uLightDir: gl.getUniformLocation(program, "uLightDir"),
+  };
+}
+
+let viewMatrix = mat4Identity();
+let projMatrix = mat4Identity();
+const LIGHT_DIR = [0.5, 1.0, 0.3]; // one fixed directional "sun", never moves
+
+function updateProjection() {
+  projMatrix = mat4Perspective(Math.PI / 3, W / Math.max(1, H), 0.1, 500);
+}
+
+function drawMesh(mesh, modelMatrix, color) {
+  if (!gl) return;
+  gl.useProgram(program);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.posBuf);
+  gl.enableVertexAttribArray(locs.aPosition);
+  gl.vertexAttribPointer(locs.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.normBuf);
+  gl.enableVertexAttribArray(locs.aNormal);
+  gl.vertexAttribPointer(locs.aNormal, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.idxBuf);
+
+  gl.uniformMatrix4fv(locs.uModel, false, modelMatrix);
+  gl.uniformMatrix4fv(locs.uView, false, viewMatrix);
+  gl.uniformMatrix4fv(locs.uProjection, false, projMatrix);
+  gl.uniform3fv(locs.uColor, color);
+  gl.uniform3fv(locs.uLightDir, LIGHT_DIR);
+
+  gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+}
+
+function render() {
+  if (!gl) return;
+  gl.viewport(0, 0, W, H);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+  gl.clearColor(0.55, 0.75, 0.95, 1); // flat sky color, no gradient/skybox needed
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+}
+
+// --- Task-4-only test scene: proves the whole pipeline renders a shape.
+// Task 5 replaces this with the real player/enemy/obstacle scene. ---
+let __testBoxMesh = null;
+function __initTestScene() {
+  if (!gl) return;
+  __testBoxMesh = makeMesh(gl, makeBox(2, 2, 2));
+  viewMatrix = mat4LookAt([4, 4, 8], [0, 0, 0], [0, 1, 0]);
+}
+function __renderTestScene() {
+  render();
+  if (__testBoxMesh) drawMesh(__testBoxMesh, mat4Identity(), [0.24, 0.86, 0.42]);
+}
+
+function frame() {
+  updateProjection();
+  __renderTestScene();
+  requestAnimationFrame(frame);
+}
+
+initShaders();
+__initTestScene();
+requestAnimationFrame(frame);

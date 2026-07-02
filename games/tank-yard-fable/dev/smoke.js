@@ -22,6 +22,7 @@ const SHIM = `
   vec3Add, vec3Sub, vec3Scale, vec3Dot, vec3Cross, vec3Length, vec3Normalize,
   makeBox, makeCylinder,
   compileShader, createProgram, makeMesh,
+  initShaders, render, drawMesh,
   get gl() { return gl; },
 };`;
 
@@ -256,6 +257,27 @@ test("makeMesh uploads a box mesh without throwing and reports the right index c
   const mesh = t.makeMesh(t.gl, box);
   assert(mesh.count === box.indices.length, "mesh.count should equal the source mesh's index count");
   assert(mesh.posBuf && mesh.normBuf && mesh.idxBuf, "all three buffer handles should be truthy");
+});
+
+console.log("toon shader + first render");
+
+test("initShaders compiles+links the toon shader program without throwing", () => {
+  const t = boot();
+  t.initShaders();
+});
+
+test("render() clears the screen without throwing (no shape drawn yet in this call)", () => {
+  const t = boot();
+  t.initShaders();
+  t.render();
+});
+
+test("drawMesh issues a full draw call without throwing", () => {
+  const t = boot();
+  t.initShaders();
+  const mesh = t.makeMesh(t.gl, t.makeBox(1, 1, 1));
+  t.render();
+  t.drawMesh(mesh, t.mat4Identity(), [1, 0, 0]);
 });
 
 console.log(`\n${count - failures}/${count} passed`);
