@@ -37,7 +37,9 @@ const SHIM = `
   get decoyCooldown() { return decoyCooldown; }, set decoyCooldown(v) { decoyCooldown = v; },
   get pingCount() { return pingCount; },
   get keys() { return keys; },
-  startLevel, tryPing, fireDecoy, collidesAt, lineClear,
+  get aiming() { return aiming; },
+  get labelState() { return labelState; },
+  startLevel, tryPing, fireDecoy, collidesAt, lineClear, getBest,
   // Phase A accessors
   get exitFound() { return exitFound; },
   get predVisFlash() { return predVisFlash; },
@@ -566,6 +568,55 @@ test("hunt-trigger radius scales with SCALE like every other gameplay distance",
   g1920.t.startLevel(6);
   const r1920 = g1920.t.level.huntTrigger.radius;
   close(r1920, r1024 * g1920.t.SCALE, 1e-6, "trigger radius scales by SCALE, not raw content width");
+});
+
+// ---------------------------------------------------------------------------
+// Overnight fix round 2 — resize-fix regressions, win-screen stragglers,
+// storage value validation
+// ---------------------------------------------------------------------------
+console.log("overnight fixes round 2");
+
+test("releasing Shift resets the aiming flag even after winning (no stuck decoy-aim state)", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(4); // decoy-unlocked level
+  g.key("shift");
+  assert(g.t.aiming === true, "aiming started");
+  g.t.player.x = g.t.level.exit.x; g.t.player.y = g.t.level.exit.y;
+  g.step(2);
+  assert(g.t.state === g.t.STATE.WON, "won while aiming");
+  g.keyUp("shift");
+  assert(g.t.aiming === false, "aiming flag cleared even though state is no longer PLAYING");
+});
+
+test("resizing during the CAUGHT death sequence does not move the frozen predator", () => {
+  const g = boot({ w: 1024, h: 768 });
+  g.key("enter");
+  g.t.startLevel(2); // L3 — live predator
+  g.t.predator.x = g.t.player.x + 5; g.t.predator.y = g.t.player.y;
+  g.step(3);
+  assert(g.t.state === g.t.STATE.CAUGHT, "caught");
+  const px = g.t.predator.x, py = g.t.predator.y;
+  g.resize(1920, 1080);
+  assert(g.t.predator.x === px && g.t.predator.y === py, "frozen predator position untouched by a resize during CAUGHT");
+});
+
+test("resizing mid-level keeps in-world mechanic labels anchored to their level position", () => {
+  const g = boot({ w: 1024, h: 768 });
+  g.key("enter"); // L1 authors a "ping" label, active on fresh storage
+  const preLabel = g.t.labelState.find((l) => l.mechanic === "ping");
+  assert(preLabel, "ping label active pre-resize");
+  g.resize(1920, 1080);
+  const levelLabel = g.t.level.labels.find((l) => l.mechanic === "ping");
+  const postLabel = g.t.labelState.find((l) => l.mechanic === "ping");
+  close(postLabel.x, levelLabel.x, 1e-6, "label render x re-synced to the freshly laid-out level position");
+  close(postLabel.y, levelLabel.y, 1e-6, "label render y re-synced to the freshly laid-out level position");
+});
+
+test("a corrupted per-level best-score entry is treated as no record, not propagated as NaN/null", () => {
+  const storage = new Map([["echoCartographer.best", JSON.stringify({ "0": { pings: "not-a-number", time: null } })]]);
+  const g = boot({ storage });
+  assert(g.t.getBest(0) === null, "malformed per-level entry treated as no record");
 });
 
 console.log(`\n${count - failures}/${count} passed`);

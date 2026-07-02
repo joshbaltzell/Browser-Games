@@ -366,9 +366,15 @@ window.addEventListener("resize", () => {
   const oldW = W, oldH = H;
   const hadLevel = !!level;
   resize();
-  if (hadLevel) {
+  // Skip remap/relayout while CAUGHT — drawPredatorGhost() relies on
+  // predator.x/y staying frozen for the whole death sequence (freezeFrames +
+  // captureStage), and moving the "corpse" mid-animation would visibly
+  // contradict that documented invariant. The next startLevel() (retry)
+  // always relayouts fresh, so nothing stays stale beyond this one screen.
+  if (hadLevel && state !== STATE.CAUGHT) {
     remapEntityPositions(oldW, oldH, W, H);
     layoutLevel();
+    remapLabelPositions();
   }
 });
 
@@ -1495,6 +1501,18 @@ function remapEntityPositions(oldW, oldH, newW, newH) {
   predator.pathStep = 0;
 }
 
+// Resize-remap fix (part 2): labelState (the per-attempt RENDER copy of
+// in-world mechanic labels) isn't touched by remapEntityPositions/layoutLevel
+// — layoutLevel() rebuilds level.labels fresh with correct positions, so
+// this just re-syncs labelState's x/y to match, by mechanic name, without
+// disturbing each entry's life/used/text.
+function remapLabelPositions() {
+  for (const ls of labelState) {
+    const src = (level.labels || []).find((l) => l.mechanic === ls.mechanic);
+    if (src) { ls.x = src.x; ls.y = src.y; }
+  }
+}
+
 // Live (pixel-space) geometry, recomputed on layout.
 function layoutLevel() {
   applyScale(); // C8: refresh all scaled gameplay values for this viewport
@@ -1686,8 +1704,8 @@ window.addEventListener("keydown", (e) => {
 
 window.addEventListener("keyup", (e) => {
   const k = e.key.toLowerCase();
-  if (state === STATE.PLAYING && k === "shift" && aiming) {
-    if (!paused) fireDecoy();
+  if (k === "shift" && aiming) {
+    if (state === STATE.PLAYING && !paused) fireDecoy();
     aiming = false;
   }
   keys[k] = false;
@@ -1702,8 +1720,28 @@ function clearHeldInput() {
   for (const k in keys) keys[k] = false;
   aiming = false;
 }
-window.addEventListener("blur", clearHeldInput);
-document.addEventListener("visibilitychange", () => { if (document.hidden) clearHeldInput(); });
+
+// Backgrounding duck: the rAF game loop throttles/pauses on a hidden tab,
+// but Web Audio's oscillators keep running in real time regardless — without
+// this, ambient horror-game audio (drone/hum/tension) keeps blaring from a
+// backgrounded tab. Mirrors the existing masterGain ramp pattern used for
+// act-break silence. Respects `muted` (nothing to duck if already silent)
+// and `actBreakPending` (must not fight an intentional silence-in-progress
+// by restoring volume mid-transition).
+function duckAudioForBackground() {
+  if (!masterGain || muted) return;
+  masterGain.gain.setTargetAtTime(0, now(), 0.15);
+}
+function restoreAudioFromBackground() {
+  if (!masterGain || muted || actBreakPending) return;
+  masterGain.gain.setTargetAtTime(0.9, now(), 0.15);
+}
+window.addEventListener("blur", () => { clearHeldInput(); duckAudioForBackground(); });
+window.addEventListener("focus", restoreAudioFromBackground);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { clearHeldInput(); duckAudioForBackground(); }
+  else { restoreAudioFromBackground(); }
+});
 
 canvas.addEventListener("pointermove", (e) => {
   mouseX = e.clientX; mouseY = e.clientY; hasMouse = true;
@@ -2014,7 +2052,7 @@ function update(dt) {
   // C7: decay the hunt-burst vignette (always-run, ~0.4s).
   burstVignette = Math.max(0, burstVignette - dt / 0.4);
 
-  if (state !== STATE.PLAYING) { setProximity(0); return; }
+  if (state !== STATE.PLAYING) { setProximity(0); setTensionTone(0); return; }
 
   clearTime += dt;
   introT = Math.max(0, introT - dt);
@@ -2484,8 +2522,12 @@ function updateProximityAudio() {
 function getBest(idx) {
   const v = bestMap[String(idx)];
   if (v == null) return null;
-  if (typeof v === "number") return { pings: v, time: null };
-  if (typeof v === "object" && !Array.isArray(v)) return v;
+  if (typeof v === "number") return Number.isFinite(v) ? { pings: v, time: null } : null;
+  if (typeof v === "object" && !Array.isArray(v)) {
+    if (!Number.isFinite(v.pings)) return null;
+    if (v.time != null && !Number.isFinite(v.time)) return null;
+    return { pings: v.pings, time: v.time == null ? null : v.time };
+  }
   return null; // malformed per-level entry — treat as no record rather than propagating garbage
 }
 
