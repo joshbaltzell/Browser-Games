@@ -164,5 +164,23 @@ test("makeCylinder side-wall normals are unit length", () => {
   }
 });
 
+test("all triangles wind CCW viewed from outside (geometric normal agrees with stored normal)", () => {
+  // Culling contract: Task 4 enables gl.cullFace(gl.BACK) with the default
+  // frontFace(CCW), so every triangle in every builder must wind CCW when
+  // viewed from outside. Cross the triangle's edges and check the result
+  // points the same way as the stored (outward) vertex normal.
+  const meshes = [t.makeBox(2, 1, 3), t.makeCylinder(8, 2, 1, 1)];
+  for (const mesh of meshes) {
+    for (let i = 0; i < mesh.indices.length; i += 3) {
+      const p = (k) => [mesh.positions[k * 3], mesh.positions[k * 3 + 1], mesh.positions[k * 3 + 2]];
+      const i0 = mesh.indices[i], i1 = mesh.indices[i + 1], i2 = mesh.indices[i + 2];
+      const v0 = p(i0);
+      const geom = t.vec3Cross(t.vec3Sub(p(i1), v0), t.vec3Sub(p(i2), v0));
+      const stored = [mesh.normals[i0 * 3], mesh.normals[i0 * 3 + 1], mesh.normals[i0 * 3 + 2]];
+      assert(t.vec3Dot(geom, stored) > 0, `triangle at index ${i} winds CW against its stored outward normal`);
+    }
+  }
+});
+
 console.log(`\n${count - failures}/${count} passed`);
 process.exitCode = failures ? 1 : 0;

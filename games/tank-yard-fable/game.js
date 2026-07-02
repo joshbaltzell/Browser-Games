@@ -200,7 +200,7 @@ function makeCylinder(radialSegments, height, radiusTop, radiusBottom) {
       [radiusTop * Math.cos(a0), hh, radiusTop * Math.sin(a0)],
     ];
     quad.forEach((v) => { positions.push(v[0], v[1], v[2]); normals.push(nx, 0, nz); });
-    indices.push(idx, idx + 1, idx + 2, idx, idx + 2, idx + 3);
+    indices.push(idx, idx + 2, idx + 1, idx, idx + 3, idx + 2);
     idx += 4;
   }
 
@@ -213,7 +213,7 @@ function makeCylinder(radialSegments, height, radiusTop, radiusBottom) {
       normals.push(0, 1, 0);
       idx++;
     }
-    for (let i = 0; i < radialSegments; i++) indices.push(centerIdx, centerIdx + 1 + i, centerIdx + 2 + i);
+    for (let i = 0; i < radialSegments; i++) indices.push(centerIdx, centerIdx + 2 + i, centerIdx + 1 + i);
   }
 
   if (radiusBottom > 0) {
@@ -225,8 +225,9 @@ function makeCylinder(radialSegments, height, radiusTop, radiusBottom) {
       normals.push(0, -1, 0);
       idx++;
     }
-    // Reversed winding vs. the top cap so it still faces outward (downward).
-    for (let i = 0; i < radialSegments; i++) indices.push(centerIdx, centerIdx + 2 + i, centerIdx + 1 + i);
+    // Opposite fan order vs. the top cap so it faces outward (downward) under
+    // the same CCW-viewed-from-outside convention makeBox uses.
+    for (let i = 0; i < radialSegments; i++) indices.push(centerIdx, centerIdx + 1 + i, centerIdx + 2 + i);
   }
 
   return {
