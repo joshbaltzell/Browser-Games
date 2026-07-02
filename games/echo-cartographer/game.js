@@ -248,6 +248,11 @@ let labelState = [];
 let transition = 0;         // level-enter wipe transition (1 -> 0)
 let aiming = false;         // holding the aim for a decoy
 let aimAng = 0;             // aim direction for the decoy
+let lastMoveAng = 0;        // C9: last movement direction — keyboard decoy aim
+// C10: pause + persisted mute.
+let paused = false;
+const LS_MUTED = "echoCartographer.muted";
+let muted = (() => { try { return localStorage.getItem(LS_MUTED) === "1"; } catch (e) { return false; } })();
 let showDebug = false;
 let shake = 0;              // screen-shake magnitude
 let flash = 0;              // full-screen flash (capture/win)
@@ -383,7 +388,7 @@ function unlockAudio() {
     if (!AC) { audioReady = true; return; }
     audioCtx = new AC();
     masterGain = audioCtx.createGain();
-    masterGain.gain.value = 0.9;
+    masterGain.gain.value = muted ? 0 : 0.9; // C10: honor persisted mute
     masterGain.connect(audioCtx.destination);
     startDrone();
     startProximityHum();
@@ -910,7 +915,7 @@ const RAW_LEVELS = [
   // viewport-scaled level (per 63-CONTEXT.md:16).
   {
     name: "FIRST LIGHT",
-    blurb: "Press SPACE to ping. Walls light along the wavefront, then fade. Walk to the gold exit.",
+    blurb: "Press SPACE to ping. Walls light along the wavefront, then fade. Find the way out.",
     decoy: false, predSpeed: 0, // predator effectively dormant
     playerN: { x: 0.18, y: 0.82 },
     exitN: { x: 0.84, y: 0.20 },
@@ -1014,6 +1019,12 @@ const RAW_LEVELS = [
     // player must pass through en route to the exit. Real per-level hunt
     // trigger authoring is deferred to Phase 63.
     huntTriggerN: { x: 0.50, y: 0.78, radius: 0.10 },
+    // C11 (LVL-04): teach the stillness verb where the hunter first gets
+    // close. markLabelUsed("freeze") fires when a stalk is broken by
+    // stopping, so the label persists away only once the lesson landed.
+    labelsN: [
+      { x: 0.42, y: 0.78, mechanic: "freeze", text: "FREEZE — stand still and it loses you" },
+    ],
   },
 
   // L4 — SPIRAL: tighter inward spiral, hunter is faster. Plan your pings.
@@ -1166,7 +1177,7 @@ const RAW_LEVELS = [
   // just walking through one of the two doors) is still a real choice.
   {
     name: "TWO DOORS",
-    blurb: "Two ways through. Watch the red pulse — it patrols between the doors. Time your crossing.",
+    blurb: "Two ways through. Listen — it patrols between the doors. Time your crossing.",
     decoy: true, predSpeed: 158,
     playerN: { x: 0.14, y: 0.50 },
     exitN: { x: 0.87, y: 0.87 },
@@ -1300,7 +1311,7 @@ const RAW_LEVELS = [
   //   You must cross its path twice to reach the exit. Timing is everything.
   {
     name: "THE SENTINEL",
-    blurb: "No maze to hide in — an open cave with one fast guard on a figure-8 loop. Time your crossing.",
+    blurb: "No maze to hide in — an open cave, one fast guard on a figure-8 loop. Listen for your moment.",
     decoy: true, predSpeed: 188,
     playerN: { x: 0.12, y: 0.50 },
     exitN: { x: 0.88, y: 0.50 },
@@ -1478,6 +1489,13 @@ function layoutLevel() {
       x: toX(l.x), y: toY(l.y), mechanic: l.mechanic, text: l.text,
     })),
   };
+  // C9: bounding box of all walls — clamps decoy targets into the level.
+  let bMinX = Infinity, bMinY = Infinity, bMaxX = -Infinity, bMaxY = -Infinity;
+  for (const w of level.walls) {
+    bMinX = Math.min(bMinX, w.x1, w.x2); bMaxX = Math.max(bMaxX, w.x1, w.x2);
+    bMinY = Math.min(bMinY, w.y1, w.y2); bMaxY = Math.max(bMaxY, w.y1, w.y2);
+  }
+  level.bounds = { minX: bMinX, minY: bMinY, maxX: bMaxX, maxY: bMaxY };
   buildNavGraph();
 }
 
@@ -1577,7 +1595,10 @@ window.addEventListener("keydown", (e) => {
   }
 
   if (state === STATE.PLAYING) {
-    if (k === " " && !e.repeat) { tryPing(); }
+    // C10: pause gate — game actions are swallowed while paused; meta keys
+    // (pause, mute, sonar assist, restart) stay live.
+    if (k === "p" || k === "escape") { paused = !paused; }
+    if (k === " " && !e.repeat && !paused) { tryPing(); }
     if (k === "r") { startLevel(levelIndex); return; }
     if (k === "`" || k === "~") { showDebug = !showDebug; }
     // C2: sonar-assist toggle (accessibility/difficulty valve) — restores the
@@ -1586,8 +1607,17 @@ window.addEventListener("keydown", (e) => {
       sonarAssist = !sonarAssist;
       try { localStorage.setItem(LS_ASSIST, sonarAssist ? "1" : "0"); } catch (e) {}
     }
-    // Decoy aim: hold Shift (or F) then press a direction / use mouse, release to fire.
-    if ((k === "shift" || k === "f") && level.decoy) { aiming = true; }
+    // C9: F is a tap — fires immediately in the last movement direction.
+    if (k === "f" && level.decoy && !e.repeat && !paused) { fireDecoy(); }
+    // Decoy aim (hidden alias): hold Shift + a direction / mouse, release fires.
+    if (k === "shift" && level.decoy && !paused) { aiming = true; }
+  }
+
+  // C10: mute toggle — any state, persisted.
+  if (k === "m") {
+    muted = !muted;
+    try { localStorage.setItem(LS_MUTED, muted ? "1" : "0"); } catch (e) {}
+    if (masterGain) masterGain.gain.setTargetAtTime(muted ? 0 : 0.9, now(), 0.05);
   }
 
   keys[k] = true;
@@ -1595,8 +1625,8 @@ window.addEventListener("keydown", (e) => {
 
 window.addEventListener("keyup", (e) => {
   const k = e.key.toLowerCase();
-  if (state === STATE.PLAYING && (k === "shift" || k === "f") && aiming) {
-    fireDecoy();
+  if (state === STATE.PLAYING && k === "shift" && aiming) {
+    if (!paused) fireDecoy();
     aiming = false;
   }
   keys[k] = false;
@@ -1614,8 +1644,9 @@ canvas.addEventListener("pointerdown", (e) => {
   if (state === STATE.WON) { advanceLevel(); return; }
   if (state === STATE.CLEARED) { state = STATE.TITLE; return; }
   if (state === STATE.PLAYING) {
-    // Right-click (or with decoy unlocked, hold) fires a decoy toward cursor.
-    if (e.button === 2 && level.decoy) { aimAng = Math.atan2(mouseY - player.y, mouseX - player.x); fireDecoy(); }
+    if (paused) return; // C10: clicks don't play while paused
+    // C9: right-click throws the decoy AT the cursor (capped at reach).
+    if (e.button === 2 && level.decoy) { fireDecoy(mouseX, mouseY); }
     else { tryPing(); }
   }
 });
@@ -1630,7 +1661,7 @@ function currentAimAngle() {
   if (keys["arrowdown"] || keys["s"]) dy += 1;
   if (dx !== 0 || dy !== 0) return Math.atan2(dy, dx);
   if (hasMouse) return Math.atan2(mouseY - player.y, mouseX - player.x);
-  return aimAng;
+  return lastMoveAng; // C9: fall back to the way you were last walking
 }
 
 // ----------------------------------------------------------------------------
@@ -1667,15 +1698,30 @@ function tryPing() {
   spawnParticles(player.x, player.y, 18, COLORS.wallGlow, { speed: 130, life: 0.55, size: 2.4 });
 }
 
-// Fire a decoy ping offset from the player along the aim direction (TWIST-01).
-function fireDecoy() {
+// Fire a decoy ping (TWIST-01). C9: with a target point (mouse), the decoy is
+// thrown AT that point, capped at DECOY_REACH — aiming at a spot is how
+// humans think about throwing. Without one (keyboard tap / shift-release),
+// it flies at fixed reach along the current aim direction.
+function fireDecoy(tx, ty) {
   if (!level.decoy || decoyCooldown > 0) return;
-  aimAng = currentAimAngle();
-  // place the origin a fixed reach away, clamped to a clear-ish spot in bounds
-  let ox = player.x + Math.cos(aimAng) * DECOY_REACH;
-  let oy = player.y + Math.sin(aimAng) * DECOY_REACH;
-  ox = Math.max(30, Math.min(W - 30, ox));
-  oy = Math.max(30, Math.min(H - 30, oy));
+  let ox, oy;
+  if (tx != null) {
+    const ddx = tx - player.x, ddy = ty - player.y;
+    const d = Math.hypot(ddx, ddy) || 1;
+    const r = Math.min(d, DECOY_REACH);
+    aimAng = Math.atan2(ddy, ddx);
+    ox = player.x + (ddx / d) * r;
+    oy = player.y + (ddy / d) * r;
+  } else {
+    aimAng = currentAimAngle();
+    ox = player.x + Math.cos(aimAng) * DECOY_REACH;
+    oy = player.y + Math.sin(aimAng) * DECOY_REACH;
+  }
+  // C9: clamp into the level and nudge out of walls so the chalk X never
+  // renders inside a wall or in the outer void (where the predator would
+  // grind at the wall trying to reach it).
+  const pt = clearDecoyPoint(ox, oy);
+  ox = pt.x; oy = pt.y;
   pings.push({ x: ox, y: oy, radius: 0, decoy: true });
   // TENS-05: leave a lingering chalk-X at the decoy's exact (clamped) origin
   // so the player can see exactly where the false signal landed.
@@ -1688,6 +1734,22 @@ function fireDecoy() {
   sndPing(true);
   spawnParticles(ox, oy, 22, COLORS.decoyGlow, { speed: 150, life: 0.6, size: 2.6 });
   spawnParticles(player.x, player.y, 8, COLORS.decoy, { speed: 70, life: 0.4, angle: aimAng, spread: 0.7 });
+}
+
+// C9: clamp a decoy landing point into the level's wall bounding box, then
+// walk it back toward the player in small steps until it's wall-clear.
+// Falls back to the player's own position if no clear spot is found.
+function clearDecoyPoint(x, y) {
+  const inset = 12 * SCALE;
+  const b = level.bounds;
+  x = Math.max(b.minX + inset, Math.min(b.maxX - inset, x));
+  y = Math.max(b.minY + inset, Math.min(b.maxY - inset, y));
+  const dx = player.x - x, dy = player.y - y;
+  const d = Math.hypot(dx, dy) || 1;
+  const step = 8 * SCALE;
+  for (let i = 0; i < 40 && collidesAt(x, y, 8 * SCALE); i++) { x += (dx / d) * step; y += (dy / d) * step; }
+  if (collidesAt(x, y, 8 * SCALE)) { x = player.x; y = player.y; }
+  return { x, y };
 }
 
 // C6 (fun-redesign): the single funnel for everything the predator can hear.
@@ -1798,6 +1860,8 @@ function startLevel(idx) {
     .map((l) => ({ mechanic: l.mechanic, text: l.text, x: l.x, y: l.y, life: 4, used: false }));
   transition = 1;     // play the enter-wipe
   aiming = false;
+  paused = false;     // C10: a fresh attempt never starts paused
+  predator.stallTime = 0; // C9 stall guard
   shake = 0; flash = 0;
   // TENS-02: reset the capture sequence so a freeze/blackout engaged on a
   // prior capture never bleeds into the new attempt.
@@ -1828,7 +1892,7 @@ function advanceLevel() {
       const next = levelIndex + 1;
       setTimeout(() => {
         startLevel(next);
-        if (masterGain) masterGain.gain.setTargetAtTime(0.9, now(), 0.4);
+        if (masterGain) masterGain.gain.setTargetAtTime(muted ? 0 : 0.9, now(), 0.4); // C10
         actBreakPending = false;
       }, 1500);
     } else {
@@ -1939,6 +2003,7 @@ function updatePlayer(dt) {
   if (dx === 0 && dy === 0) { wallContact = false; return; }
   const len = Math.hypot(dx, dy) || 1;
   dx /= len; dy /= len;
+  lastMoveAng = Math.atan2(dy, dx); // C9: keyboard decoys throw where you last walked
   const step = PLAYER_SPEED * dt;
   const blockedX = !tryPlayerMove(dx * step, 0);
   const blockedY = !tryPlayerMove(0, dy * step);
@@ -2227,7 +2292,20 @@ function updatePredator(dt) {
           predator.mode = "idle"; predator.idleTimer = 0; pickIdleTarget();
         }
       } else {
+        // C9 stall guard: an unreachable target (e.g. a sound near a wall's
+        // far side) must not wedge it grinding forever — after ~1.5s with no
+        // progress it loses interest and wanders off.
+        const px0 = predator.x, py0 = predator.y;
         stepToward(dx / dist, dy / dist, level.huntSpeed * burst * dt);
+        if (Math.hypot(predator.x - px0, predator.y - py0) < 0.01) {
+          predator.stallTime = (predator.stallTime || 0) + dt;
+          if (predator.stallTime > 1.5) {
+            predator.stallTime = 0;
+            predator.mode = "idle"; predator.idleTimer = 0; pickIdleTarget();
+          }
+        } else {
+          predator.stallTime = 0;
+        }
       }
     }
     return;
@@ -2416,6 +2494,28 @@ function render() {
     ctx.strokeStyle = COLORS.wallGlow;
     ctx.lineWidth = 1.5;
     line(0, veil, W, veil);
+    ctx.restore();
+  }
+
+  // C10: pause overlay — doubles as the mid-game controls reference.
+  if (paused && state === STATE.PLAYING) {
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.wallFront;
+    ctx.font = "700 28px system-ui, sans-serif";
+    ctx.fillText("PAUSED", W / 2, H / 2 - 40);
+    ctx.fillStyle = COLORS.hudBright;
+    ctx.font = "14px system-ui, sans-serif";
+    const lines = [
+      "SPACE — ping (lights walls, calls the hunter)",
+      "WASD / arrows — move · stand still to go silent",
+      "right-click or F — decoy (throws your voice)",
+      "V — sonar assist · M — mute · R — restart level",
+      "P / Esc — resume",
+    ];
+    lines.forEach((s, i) => ctx.fillText(s, W / 2, H / 2 + i * 22));
     ctx.restore();
   }
 
@@ -2826,7 +2926,7 @@ function renderHUD() {
   if (level.decoy) {
     const dReady = decoyCooldown <= 0;
     ctx.fillStyle = dReady ? COLORS.decoy : COLORS.hud;
-    ctx.fillText(dReady ? "DECOY READY (hold Shift+aim, or right-click)" : "decoy charging…", 16, 88);
+    ctx.fillText(dReady ? "DECOY READY (right-click, or F)" : "decoy charging…", 16, 88);
     const dby = 108;
     ctx.globalAlpha = 0.3; ctx.fillStyle = COLORS.hud; ctx.fillRect(bx, dby, bw, 4);
     ctx.globalAlpha = 0.95; ctx.fillStyle = dReady ? COLORS.decoyGlow : COLORS.hudBright;
@@ -2838,8 +2938,8 @@ function renderHUD() {
   ctx.fillStyle = COLORS.hud;
   ctx.textBaseline = "bottom";
   const hint = level.decoy
-    ? "SPACE ping · WASD/arrows move · SHIFT(hold)+aim or right-click = DECOY · R reset · V sonar assist"
-    : "SPACE ping · WASD/arrows move · R reset · V sonar assist";
+    ? "SPACE ping · WASD/arrows move · right-click or F = DECOY · R reset · P pause · V sonar assist"
+    : "SPACE ping · WASD/arrows move · R reset · P pause · V sonar assist";
   ctx.fillText(hint, 16, H - 14);
 
   if (showDebug) {
@@ -2898,11 +2998,26 @@ function renderTitle() {
   ctx.save();
   ctx.textAlign = "center";
 
+  // C12: attract-mode ping — a slow breathing ring from center every 4s; the
+  // title brightens briefly as the front passes its baseline. The game's
+  // identity IS the reveal, so the first impression is the mechanic itself.
+  // Ambience, not gameplay: faint, unlabeled, pointer-transparent.
+  const attractPh = (performance.now() % 4000) / 4000; // 0..1
+  const attractR = attractPh * Math.max(W, H) * 0.6;
+  ctx.strokeStyle = COLORS.wallGlow;
+  ctx.globalAlpha = 0.12 * (1 - attractPh);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(W / 2, H / 2, attractR, 0, TAU); ctx.stroke();
+  ctx.globalAlpha = 1;
+  const titleBoost = Math.max(0, 1 - Math.abs(attractR - 110) / 60) * 0.3;
+
   ctx.fillStyle = COLORS.wallFront;
   // clamp()/calc() are not valid inside canvas font strings (browsers keep
   // the previous font on a bad assignment) — compute the size in JS instead.
   ctx.font = `700 ${Math.round(Math.max(28, Math.min(54, W * 0.06)))}px system-ui, sans-serif`;
+  ctx.globalAlpha = Math.min(1, 0.82 + titleBoost); // C12: lifts as the ring passes
   ctx.fillText("ECHO CARTOGRAPHER", W / 2, H / 2 - 110);
+  ctx.globalAlpha = 1;
 
   ctx.fillStyle = COLORS.ghost; ctx.globalAlpha = 0.8;
   ctx.font = "16px system-ui, sans-serif";
@@ -2918,7 +3033,7 @@ function renderTitle() {
   ctx.globalAlpha = 1;
 
   ctx.fillStyle = COLORS.exit; ctx.globalAlpha = 0.85; ctx.font = "14px system-ui, sans-serif";
-  ctx.fillText("Reach the gold exit. Don't let the red hunter touch you.", W / 2, H / 2 + 42);
+  ctx.fillText("Find the exit. Stand still to vanish — it hunts sound, not sight.", W / 2, H / 2 + 42);
   ctx.globalAlpha = 1;
 
   if (progress > 0) {
@@ -3012,6 +3127,10 @@ function frame(now2) {
   if (freezeFrames > 0) {
     acc = 0;
     freezeFrames--;
+  } else if (paused && state === STATE.PLAYING) {
+    // C10: hold the simulation while paused — render (with the pause overlay)
+    // continues; acc is drained so resume never burst-replays the pause.
+    acc = 0;
   } else {
     let guard = 0;
     // CR-01: stop draining the backlog the instant a frame's update() call

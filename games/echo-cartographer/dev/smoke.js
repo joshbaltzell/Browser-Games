@@ -51,6 +51,10 @@ const SHIM = `
   get bumpTimer() { return bumpTimer; },
   // Phase C accessors
   get SCALE() { return (typeof SCALE === "number" ? SCALE : null); },
+  // Phase D accessors
+  get paused() { return paused; },
+  get muted() { return muted; },
+  get clearTimeVal() { return clearTime; },
 };`;
 
 function makeCtx2d() {
@@ -394,6 +398,72 @@ test("gameplay invariants hold at three viewports", () => {
     g.step(2);
     assert(g.t.state === g.t.STATE.WON, `exit reachable at ${w}x${h}`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Phase D — controls & QoL
+// ---------------------------------------------------------------------------
+console.log("phase D — controls & QoL");
+
+test("right-click throws the decoy AT the cursor, capped and wall-clear", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(4); // L5 — decoy unlocked
+  g.t.decoyCooldown = 0;
+  const tx = g.t.player.x + 90, ty = g.t.player.y - 40; // well inside reach
+  g.click(tx, ty, 2);
+  const d = g.t.pings.find((p) => p.decoy);
+  assert(d, "decoy fired");
+  close(d.x, tx, 2, "lands at cursor x"); close(d.y, ty, 2, "lands at cursor y");
+  assert(!g.t.collidesAt(d.x, d.y, 8), "decoy origin is wall-clear");
+});
+
+test("decoy target beyond reach is capped along the ray", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(4);
+  g.t.decoyCooldown = 0;
+  g.click(g.t.player.x + 2000, g.t.player.y, 2);
+  const d = g.t.pings.find((p) => p.decoy);
+  const dist = Math.hypot(d.x - g.t.player.x, d.y - g.t.player.y);
+  assert(dist <= g.t.DECOY_REACH + 1, "capped at DECOY_REACH");
+});
+
+test("F fires a decoy immediately in the last movement direction", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(4);
+  g.key("d"); g.step(5); g.keyUp("d"); // establish lastMoveAng = +x
+  g.t.decoyCooldown = 0;
+  const before = g.t.pings.filter((p) => p.decoy).length;
+  g.key("f"); g.keyUp("f");
+  const after = g.t.pings.filter((p) => p.decoy).length;
+  assert(after === before + 1, "tap-F fires without hold/release aiming");
+});
+
+test("P pauses the simulation; M mutes persistently", () => {
+  const g = boot();
+  g.key("enter");
+  g.stepSeconds(0.2);
+  g.key("p");
+  assert(g.t.paused === true, "paused");
+  const t0 = g.t.clearTimeVal;
+  g.stepSeconds(1);
+  close(g.t.clearTimeVal, t0, 1e-9, "clock frozen while paused");
+  g.key(" "); // ping input while paused must be swallowed
+  assert(g.t.pings.length === 0, "no ping while paused");
+  g.key("p");
+  g.stepSeconds(0.2);
+  assert(g.t.clearTimeVal > t0, "clock resumes");
+  g.key("m");
+  assert(g.t.muted === true && g.storage.get("echoCartographer.muted") === "1", "mute persisted");
+});
+
+test("copy no longer promises a visible exit", () => {
+  const src = fs.readFileSync(GAME_PATH, "utf8");
+  assert(!/Walk to the gold exit/.test(src), "L1 blurb updated");
+  assert(!/Watch the red pulse/.test(src), "L6 blurb updated");
+  assert(/FREEZE/.test(src), "freeze label authored");
 });
 
 console.log(`\n${count - failures}/${count} passed`);
