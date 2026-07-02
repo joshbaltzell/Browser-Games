@@ -238,6 +238,24 @@ const GAMES = [
     art: `
       <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg"><rect width="120" height="80" fill="#0a0b06"/><rect x="14" y="16" width="40" height="50" rx="3" fill="#c9bd97"/><rect x="14" y="16" width="40" height="8" rx="3" fill="#a89c78"/><rect x="19" y="30" width="30" height="3" fill="#8a7f5e"/><rect x="19" y="38" width="24" height="3" fill="#8a7f5e"/><rect x="19" y="46" width="28" height="3" fill="#8a7f5e"/><rect x="66" y="20" width="40" height="14" rx="3" fill="#6f8f4a"/><text x="86" y="30" font-family="monospace" font-size="7" fill="#101207" text-anchor="middle" font-weight="bold">APPR</text><rect x="66" y="40" width="40" height="14" rx="3" fill="#9a4a3a"/><text x="86" y="50" font-family="monospace" font-size="7" fill="#fff" text-anchor="middle" font-weight="bold">DENY</text><rect x="80" y="58" width="6" height="14" rx="2" fill="#7c6628"/><ellipse cx="83" cy="72" rx="11" ry="4" fill="#b89a4e"/><ellipse cx="24" cy="70" rx="9" ry="6" fill="#1a1a16"/><ellipse cx="34" cy="71" rx="7" ry="5" fill="#1a1a16"/></svg>`,
   },
+  {
+    title: "Tank Yard Sonnet",
+    description:
+      "Drive a slow, sturdy tank through a toon-shaded arena, blast an endless stream of enemy tanks, and rack up your survival score.",
+    path: "games/tank-yard/index.html",
+    tags: ["Action", "Survival", "3D"],
+    accent: "#3ddc6a",
+    // Inline SVG art so the hub needs no image assets.
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="0" y="0" width="120" height="80" fill="#242424" />
+        <rect x="30" y="45" width="60" height="20" rx="4" fill="#3ddc6a" />
+        <circle cx="60" cy="42" r="12" fill="#3ddc6a" />
+        <rect x="60" y="38" width="30" height="6" rx="2" fill="#1a1a1a" />
+        <circle cx="25" cy="65" r="6" fill="#1a1a1a" />
+        <circle cx="95" cy="65" r="6" fill="#1a1a1a" />
+      </svg>`,
+  },
 ];
 
 function buildCard(game) {
