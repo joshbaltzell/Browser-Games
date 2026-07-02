@@ -23,6 +23,9 @@ const SHIM = `
   makeBox, makeCylinder,
   compileShader, createProgram, makeMesh,
   initShaders, render, drawMesh,
+  mat4TransformVec4, unprojectPoint, screenRayGroundIntersection, turretAimYaw,
+  tankTransforms, updateChaseCam, drawGround,
+  HULL_SIZE, TURRET_HEIGHT_OFFSET, BARREL_FORWARD_OFFSET,
   get gl() { return gl; },
 };`;
 
@@ -278,6 +281,74 @@ test("drawMesh issues a full draw call without throwing", () => {
   const mesh = t.makeMesh(t.gl, t.makeBox(1, 1, 1));
   t.render();
   t.drawMesh(mesh, t.mat4Identity(), [1, 0, 0]);
+});
+
+console.log("camera, tank composition, turret aim");
+
+test("screenRayGroundIntersection hits directly below the camera (straight-down view, screen center)", () => {
+  const proj = t.mat4Perspective(Math.PI / 3, 1, 0.1, 100);
+  const view = t.mat4LookAt([0, 10, 0], [0, 0, 0], [0, 0, -1]);
+  const invVP = t.mat4Invert(t.mat4Multiply(proj, view));
+  const hit = t.screenRayGroundIntersection(invVP, 0, 0);
+  assert(hit !== null, "a straight-down view must hit the ground plane");
+  closeArr(hit, [0, 0, 0], 1e-3, "screen-center ray should hit directly below the camera");
+});
+
+test("screenRayGroundIntersection returns null for a perfectly horizontal view (looking at the horizon)", () => {
+  const proj = t.mat4Perspective(Math.PI / 3, 1, 0.1, 100);
+  const view = t.mat4LookAt([0, 5, 0], [0, 5, -10], [0, 1, 0]);
+  const invVP = t.mat4Invert(t.mat4Multiply(proj, view));
+  const hit = t.screenRayGroundIntersection(invVP, 0, 0);
+  assert(hit === null, "a screen-center ray with a horizontal view direction must not report a ground hit");
+});
+
+test("turretAimYaw's resulting absolute yaw faces the target (self-consistent with mat4RotateY)", () => {
+  const hullX = 0, hullZ = 0, hullYaw = 0.4;
+  const targetX = 12, targetZ = -7;
+  const relYaw = t.turretAimYaw(hullX, hullZ, hullYaw, targetX, targetZ);
+  const absoluteYaw = hullYaw + relYaw;
+  const facing = t.mat4TransformPoint(t.mat4RotateY(t.mat4Identity(), absoluteYaw), [0, 0, 1]);
+  const toTarget = t.vec3Normalize([targetX - hullX, 0, targetZ - hullZ]);
+  closeArr(facing, toTarget, 1e-6, "the resulting absolute yaw should face the target");
+});
+
+test("tankTransforms: unrotated tank at the origin places hull/turret/barrel on a straight vertical+forward line", () => {
+  const parts = t.tankTransforms({ x: 0, z: 0, hullYaw: 0, turretYaw: 0 });
+  const hullPos = t.mat4TransformPoint(parts.hullMatrix, [0, 0, 0]);
+  const turretPos = t.mat4TransformPoint(parts.turretMatrix, [0, 0, 0]);
+  const barrelPos = t.mat4TransformPoint(parts.barrelMatrix, [0, 0, 0]);
+  // Tolerance 1e-6, not 1e-9: model matrices are Float32Array, so offsets
+  // like 0.4 carry float32 rounding (~6e-9) that a 1e-9 tolerance rejects.
+  closeArr(hullPos, [0, t.HULL_SIZE[1] / 2, 0], 1e-6);
+  closeArr(turretPos, [0, t.HULL_SIZE[1] / 2 + t.TURRET_HEIGHT_OFFSET, 0], 1e-6);
+  closeArr(barrelPos, [0, t.HULL_SIZE[1] / 2 + t.TURRET_HEIGHT_OFFSET, t.BARREL_FORWARD_OFFSET], 1e-6);
+});
+
+test("tankTransforms: the turret rides along with the hull's yaw, plus its own relative yaw on top", () => {
+  const parts = t.tankTransforms({ x: 0, z: 0, hullYaw: Math.PI / 2, turretYaw: 0 });
+  // hullYaw alone (turretYaw=0) should already rotate the barrel's direction
+  // the same way turretAimYaw's test proved a bare yaw rotates local +Z.
+  const barrelPos = t.mat4TransformPoint(parts.barrelMatrix, [0, 0, 0]);
+  const turretPos = t.mat4TransformPoint(parts.turretMatrix, [0, 0, 0]);
+  const barrelDir = t.vec3Normalize(t.vec3Sub(barrelPos, turretPos));
+  const expectedDir = t.mat4TransformPoint(t.mat4RotateY(t.mat4Identity(), Math.PI / 2), [0, 0, 1]);
+  closeArr(barrelDir, expectedDir, 1e-6, "barrel direction should follow hullYaw when turretYaw is 0");
+});
+
+test("updateChaseCam converges to the desired offset/look over repeated steps", () => {
+  let camPos = [0, 0, 0], camLook = [0, 0, 0];
+  for (let i = 0; i < 300; i++) {
+    const next = t.updateChaseCam(camPos, camLook, 5, 5, 0, 1 / 60);
+    camPos = next.pos; camLook = next.look;
+  }
+  closeArr(camPos, [5, 6, 5 - 10], 1e-2, "camera should converge behind (-Z, at hullYaw=0) and above the hull");
+  closeArr(camLook, [5, 2, 5], 1e-2, "look target should converge to just above the hull");
+});
+
+test("updateChaseCam moves partway toward the target on one small step, not instantly", () => {
+  const next = t.updateChaseCam([0, 0, 0], [0, 0, 0], 5, 5, 0, 1 / 60);
+  const dist = t.vec3Length(next.pos);
+  assert(dist > 0 && dist < t.vec3Length([5, 6, -5]), "one small step should move partway, matching spec S4's lerp requirement");
 });
 
 console.log(`\n${count - failures}/${count} passed`);

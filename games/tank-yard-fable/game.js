@@ -318,17 +318,22 @@ uniform mat4 uModel;
 uniform mat4 uView;
 uniform mat4 uProjection;
 varying vec3 vNormal;
+varying vec3 vWorldPos;
 void main() {
   vNormal = mat3(uModel) * aNormal;
-  gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
+  vec4 worldPos = uModel * vec4(aPosition, 1.0);
+  vWorldPos = worldPos.xyz;
+  gl_Position = uProjection * uView * worldPos;
 }
 `;
 
 const FRAGMENT_SHADER_SRC = `
 precision mediump float;
 varying vec3 vNormal;
+varying vec3 vWorldPos;
 uniform vec3 uColor;
 uniform vec3 uLightDir;
+uniform float uIsGround;
 void main() {
   vec3 n = normalize(vNormal);
   float ndotl = max(dot(n, normalize(uLightDir)), 0.0);
@@ -336,7 +341,14 @@ void main() {
   if (ndotl > 0.6) { band = 1.0; }
   else if (ndotl > 0.2) { band = 0.65; }
   else { band = 0.35; }
-  gl_FragColor = vec4(uColor * band, 1.0);
+
+  vec3 baseColor = uColor;
+  if (uIsGround > 0.5) {
+    float checker = mod(floor(vWorldPos.x / 4.0) + floor(vWorldPos.z / 4.0), 2.0);
+    baseColor = mix(vec3(0.30, 0.62, 0.30), vec3(0.26, 0.56, 0.26), checker);
+  }
+
+  gl_FragColor = vec4(baseColor * band, 1.0);
 }
 `;
 
@@ -353,6 +365,7 @@ function initShaders() {
     uProjection: gl.getUniformLocation(program, "uProjection"),
     uColor: gl.getUniformLocation(program, "uColor"),
     uLightDir: gl.getUniformLocation(program, "uLightDir"),
+    uIsGround: gl.getUniformLocation(program, "uIsGround"),
   };
 }
 
@@ -364,7 +377,7 @@ function updateProjection() {
   projMatrix = mat4Perspective(Math.PI / 3, W / Math.max(1, H), 0.1, 500);
 }
 
-function drawMesh(mesh, modelMatrix, color) {
+function drawMeshRaw(mesh, modelMatrix, color, isGround) {
   if (!gl) return;
   gl.useProgram(program);
 
@@ -383,9 +396,14 @@ function drawMesh(mesh, modelMatrix, color) {
   gl.uniformMatrix4fv(locs.uProjection, false, projMatrix);
   gl.uniform3fv(locs.uColor, color);
   gl.uniform3fv(locs.uLightDir, LIGHT_DIR);
+  gl.uniform1f(locs.uIsGround, isGround ? 1 : 0);
 
   gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
 }
+function drawMesh(mesh, modelMatrix, color) { drawMeshRaw(mesh, modelMatrix, color, false); }
+// Color is ignored for the ground (the shader computes its own checkerboard)
+// but a value is still passed for uniform-upload consistency.
+function drawGround(mesh, modelMatrix) { drawMeshRaw(mesh, modelMatrix, [1, 1, 1], true); }
 
 function render() {
   if (!gl) return;
@@ -398,25 +416,146 @@ function render() {
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 }
 
-// --- Task-4-only test scene: proves the whole pipeline renders a shape.
-// Task 5 replaces this with the real player/enemy/obstacle scene. ---
-let __testBoxMesh = null;
-function __initTestScene() {
-  if (!gl) return;
-  __testBoxMesh = makeMesh(gl, makeBox(2, 2, 2));
-  viewMatrix = mat4LookAt([4, 4, 8], [0, 0, 0], [0, 1, 0]);
-}
-function __renderTestScene() {
-  render();
-  if (__testBoxMesh) drawMesh(__testBoxMesh, mat4Identity(), [0.24, 0.86, 0.42]);
+// ----------------------------------------------------------------------------
+// Turret aim — the one genuinely nontrivial piece of math in this game (spec
+// S14). Mouse screen position -> NDC -> world-space ray -> ground-plane
+// intersection -> yaw angle. Every function here is pure.
+// ----------------------------------------------------------------------------
+function mat4TransformVec4(m, x, y, z, w) {
+  return [
+    m[0] * x + m[4] * y + m[8] * z + m[12] * w,
+    m[1] * x + m[5] * y + m[9] * z + m[13] * w,
+    m[2] * x + m[6] * y + m[10] * z + m[14] * w,
+    m[3] * x + m[7] * y + m[11] * z + m[15] * w,
+  ];
 }
 
-function frame() {
+// Unprojects an NDC point (each axis in [-1,1]) back to world space through
+// the given INVERSE view-projection matrix, including the perspective divide
+// mat4TransformPoint deliberately skips (that function assumes an affine,
+// w-preserving transform, which a projection matrix is not).
+function unprojectPoint(invVP, ndcX, ndcY, ndcZ) {
+  const r = mat4TransformVec4(invVP, ndcX, ndcY, ndcZ, 1);
+  return [r[0] / r[3], r[1] / r[3], r[2] / r[3]];
+}
+
+// Casts a ray from the camera through an NDC screen point and returns where
+// it crosses the y=0 ground plane, or null if the ray is parallel to (or
+// pointing away from) the ground.
+function screenRayGroundIntersection(invVP, ndcX, ndcY) {
+  const near = unprojectPoint(invVP, ndcX, ndcY, -1);
+  const far = unprojectPoint(invVP, ndcX, ndcY, 1);
+  const dir = vec3Sub(far, near);
+  if (Math.abs(dir[1]) < 1e-8) return null;
+  const tHit = -near[1] / dir[1];
+  if (tHit < 0) return null;
+  return vec3Add(near, vec3Scale(dir, tHit));
+}
+
+// Returns the turret yaw RELATIVE to hullYaw needed to aim at (targetX,
+// targetZ) — add this to hullYaw to get the turret's absolute world yaw
+// (spec S7's composition rule). Convention: yaw 0 faces local +Z, and
+// mat4RotateY(theta) maps local +Z's rotated frame such that the facing
+// direction is (-sin(theta), 0, cos(theta)) — this formula is the inverse of
+// that mapping.
+function turretAimYaw(hullX, hullZ, hullYaw, targetX, targetZ) {
+  const dx = targetX - hullX, dz = targetZ - hullZ;
+  const absoluteYaw = Math.atan2(-dx, dz);
+  return absoluteYaw - hullYaw;
+}
+
+// ----------------------------------------------------------------------------
+// Tank composition (spec S7): hull -> turret -> barrel, chained transforms.
+// `tank` is {x, z, hullYaw, turretYaw} (turretYaw relative to hullYaw, same
+// convention turretAimYaw returns). Pure — returns model matrices, draws
+// nothing itself.
+// ----------------------------------------------------------------------------
+const HULL_SIZE = [2, 0.8, 3];       // width, height, depth
+const TURRET_SIZE = [0.4, 1.3, 0.4]; // radiusBottom-ish, height, radiusTop-ish (see Task 7's makeCylinder call)
+const TURRET_HEIGHT_OFFSET = 0.9;    // where the turret pivot sits above the hull's own origin
+const BARREL_FORWARD_OFFSET = 1.6;   // how far forward of the turret pivot the barrel sits
+
+function tankTransforms(tank) {
+  let hullMatrix = mat4Translate(mat4Identity(), tank.x, HULL_SIZE[1] / 2, tank.z);
+  hullMatrix = mat4RotateY(hullMatrix, tank.hullYaw);
+
+  let turretMatrix = mat4Translate(hullMatrix, 0, TURRET_HEIGHT_OFFSET, 0);
+  turretMatrix = mat4RotateY(turretMatrix, tank.turretYaw);
+
+  const barrelMatrix = mat4Translate(turretMatrix, 0, 0, BARREL_FORWARD_OFFSET);
+
+  return { hullMatrix, turretMatrix, barrelMatrix };
+}
+
+// ----------------------------------------------------------------------------
+// Chase camera (spec S4): fixed offset behind+above the hull, lerped toward
+// its target each frame rather than snapping, so turns carry some weight.
+// Pure — caller stores {pos, look} in its own state and feeds it back in
+// next frame.
+// ----------------------------------------------------------------------------
+const CAM_BACK_OFFSET = 10;
+const CAM_UP_OFFSET = 6;
+const CAM_LOOK_HEIGHT = 2;
+const CAM_LERP_SPEED = 3; // higher = snappier; framerate-independent via exp decay
+
+function updateChaseCam(camPos, camLook, hullX, hullZ, hullYaw, dt) {
+  const backDir = mat4TransformPoint(mat4RotateY(mat4Identity(), hullYaw), [0, 0, -1]);
+  const desiredPos = [
+    hullX + backDir[0] * CAM_BACK_OFFSET,
+    CAM_UP_OFFSET,
+    hullZ + backDir[2] * CAM_BACK_OFFSET,
+  ];
+  const desiredLook = [hullX, CAM_LOOK_HEIGHT, hullZ];
+
+  const lerpAmt = 1 - Math.exp(-CAM_LERP_SPEED * dt);
+  return {
+    pos: vec3Add(camPos, vec3Scale(vec3Sub(desiredPos, camPos), lerpAmt)),
+    look: vec3Add(camLook, vec3Scale(vec3Sub(desiredLook, camLook), lerpAmt)),
+  };
+}
+
+// ----------------------------------------------------------------------------
+// Scene assembly — meshes shared across every instance of a shape (spec S5:
+// only ~4 distinct buffer sets in the whole game).
+// ----------------------------------------------------------------------------
+let groundMesh = null, hullMesh = null, turretMesh = null, barrelMesh = null;
+function initMeshes() {
+  if (!gl) return;
+  groundMesh = makeMesh(gl, makeBox(80, 0.2, 80));
+  hullMesh = makeMesh(gl, makeBox(HULL_SIZE[0], HULL_SIZE[1], HULL_SIZE[2]));
+  turretMesh = makeMesh(gl, makeCylinder(10, 0.7, 0.9, 1.0));
+  barrelMesh = makeMesh(gl, makeCylinder(8, 1.6, 0.12, 0.12));
+}
+
+const PLAYER_COLOR = [0.24, 0.86, 0.42];
+
+// Static for now — no input wired up until Task 6. Proves the ground,
+// camera, and tank composition render together correctly.
+const player = { x: 0, z: 0, hullYaw: 0, turretYaw: 0 };
+let camPos = [0, CAM_UP_OFFSET, -CAM_BACK_OFFSET];
+let camLook = [0, CAM_LOOK_HEIGHT, 0];
+
+function drawPlayer() {
+  const parts = tankTransforms(player);
+  drawMesh(hullMesh, parts.hullMatrix, PLAYER_COLOR);
+  drawMesh(turretMesh, parts.turretMatrix, PLAYER_COLOR);
+  drawMesh(barrelMesh, parts.barrelMatrix, [0.15, 0.15, 0.15]);
+}
+
+function frame(nowMs) {
   updateProjection();
-  __renderTestScene();
+
+  const cam = updateChaseCam(camPos, camLook, player.x, player.z, player.hullYaw, 1 / 60);
+  camPos = cam.pos; camLook = cam.look;
+  viewMatrix = mat4LookAt(camPos, camLook, [0, 1, 0]);
+
+  render();
+  drawGround(groundMesh, mat4Translate(mat4Identity(), 0, -0.1, 0));
+  drawPlayer();
+
   requestAnimationFrame(frame);
 }
 
 initShaders();
-__initTestScene();
+initMeshes();
 requestAnimationFrame(frame);
