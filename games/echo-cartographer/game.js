@@ -65,7 +65,7 @@ let PROX_NEAR = BASE.PROX_NEAR;
 let TENSION_NEAR = BASE.TENSION_NEAR;
 
 function applyScale() {
-  SCALE = Math.min((W - 88) / 936, (H - 88) / 680);
+  SCALE = Math.max(0.05, Math.min((W - 88) / 936, (H - 88) / 680));
   PING_SPEED = BASE.PING_SPEED * SCALE;
   PING_MAX_RADIUS = BASE.PING_MAX_RADIUS * SCALE;
   PING_BAND = BASE.PING_BAND * SCALE;
@@ -90,6 +90,12 @@ function applyScale() {
   // window resize doesn't leave stale collision sizes.
   if (typeof player !== "undefined") { player.r = PLAYER_R; predator.r = PRED_R; }
 }
+
+// C8 shared: the fixed content-box margin every level-authored coordinate is
+// stretched around (see layoutLevel()'s toX/toY and the resize-remap fix).
+// A single named constant so layoutLevel() and remapEntityPositions() can
+// never drift out of sync with each other.
+const LEVEL_MARGIN = 44;
 
 const COLORS = {
   void: "#02040a",        // not pure black — a deep abyssal blue-black
@@ -223,6 +229,7 @@ let predator = {
   huntBurstTimer: 0,      // PRED-03: seconds remaining in the current burst
   lastHeardX: 0, lastHeardY: 0, // C3: where it last heard footsteps
   searchTimer: 0,               // C3: >0 while lingering around lastHeard
+  stallTime: 0, // C9: seconds an unreachable hunt target has failed to make progress (stall-guard)
 };
 let pings = [];             // active ringwaves {x,y,radius,decoy}
 let ghosts = [];            // revealed fragments {x1,y1,x2,y2,life,decoy}
@@ -308,8 +315,10 @@ let bestMap = loadBestMap();
 let progress = loadProgress();
 
 function loadBestMap() {
-  try { return JSON.parse(localStorage.getItem(LS_BEST)) || {}; }
-  catch (e) { return {}; }
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_BEST));
+    return (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+  } catch (e) { return {}; }
 }
 function saveBestMap() {
   try { localStorage.setItem(LS_BEST, JSON.stringify(bestMap)); } catch (e) {}
@@ -331,8 +340,10 @@ const LS_LABELS = "echoCartographer.seenLabels"; // JSON map mechanic->true
 let seenLabels = loadSeenLabels();
 
 function loadSeenLabels() {
-  try { return JSON.parse(localStorage.getItem(LS_LABELS)) || {}; }
-  catch (e) { return {}; }
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_LABELS));
+    return (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+  } catch (e) { return {}; }
 }
 function saveSeenLabels() {
   try { localStorage.setItem(LS_LABELS, JSON.stringify(seenLabels)); } catch (e) {}
@@ -352,8 +363,13 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 window.addEventListener("resize", () => {
+  const oldW = W, oldH = H;
+  const hadLevel = !!level;
   resize();
-  if (level) layoutLevel();
+  if (hadLevel) {
+    remapEntityPositions(oldW, oldH, W, H);
+    layoutLevel();
+  }
 });
 
 // ----------------------------------------------------------------------------
@@ -1446,11 +1462,44 @@ const RAW_LEVELS = [
   },
 ];
 
+// Resize-remap fix: an entity's absolute pixel position is losslessly
+// remapped across a window resize by round-tripping through the SAME
+// normalized-coordinate formula layoutLevel()'s toX/toY use (LEVEL_MARGIN +
+// n * contentBoxSize) — this keeps every entity's position relative to the
+// (also-remapped) walls/exit/ambush geometry EXACTLY consistent, not just
+// approximately, since RAW_LEVELS authors every point in the same [0,1]
+// space. Guards against a degenerate old/new content box (near-zero or
+// negative) by skipping the remap entirely rather than dividing by ~0.
+function remapEntityPositions(oldW, oldH, newW, newH) {
+  const oldBW = oldW - LEVEL_MARGIN * 2, oldBH = oldH - LEVEL_MARGIN * 2;
+  const newBW = newW - LEVEL_MARGIN * 2, newBH = newH - LEVEL_MARGIN * 2;
+  if (oldBW <= 1 || oldBH <= 1 || newBW <= 1 || newBH <= 1) return;
+  const remapX = (x) => LEVEL_MARGIN + ((x - LEVEL_MARGIN) / oldBW) * newBW;
+  const remapY = (y) => LEVEL_MARGIN + ((y - LEVEL_MARGIN) / oldBH) * newBH;
+
+  player.x = remapX(player.x); player.y = remapY(player.y);
+  predator.x = remapX(predator.x); predator.y = remapY(predator.y);
+  predator.tx = remapX(predator.tx); predator.ty = remapY(predator.ty);
+  predator.lastHeardX = remapX(predator.lastHeardX); predator.lastHeardY = remapY(predator.lastHeardY);
+  for (const p of pings) { p.x = remapX(p.x); p.y = remapY(p.y); }
+  for (const g of ghosts) {
+    g.x1 = remapX(g.x1); g.y1 = remapY(g.y1);
+    g.x2 = remapX(g.x2); g.y2 = remapY(g.y2);
+  }
+  for (const m of decoyMarks) { m.x = remapX(m.x); m.y = remapY(m.y); }
+  // predator.path[] holds transient pathfinding waypoints in absolute pixels
+  // from the OLD layout — cheaper and safer to drop them than remap; the
+  // predator's normal mode logic (hunt/idle/search) replans within a frame
+  // or two rather than tunneling through newly-repositioned walls.
+  predator.path = [];
+  predator.pathStep = 0;
+}
+
 // Live (pixel-space) geometry, recomputed on layout.
 function layoutLevel() {
   applyScale(); // C8: refresh all scaled gameplay values for this viewport
   const raw = RAW_LEVELS[levelIndex];
-  const M = 44;
+  const M = LEVEL_MARGIN;
   const ax = M, ay = M, bw = W - M * 2, bh = H - M * 2;
   const toX = (n) => ax + n * bw;
   const toY = (n) => ay + n * bh;
@@ -1475,12 +1524,15 @@ function layoutLevel() {
     // as patrolN/playerN/exitN — null when the level has no ambush configured.
     ambush: raw.ambushN ? { x: toX(raw.ambushN.x), y: toY(raw.ambushN.y) } : null,
     // PRED-03: optional mid-level hunt-burst trigger zone, same normalized
-    // N-suffix convention as ambushN, plus a radius. The radius is scaled by
-    // `bw` (the content-box width) rather than a separate axis so a normalized
-    // radius reads as a fraction of the play area's horizontal extent — null
-    // when the level has no hunt trigger configured.
+    // N-suffix convention as ambushN, plus a radius. C8: the radius scales via
+    // SCALE (min-axis), like every other gameplay distance in this file,
+    // using the reference content-width (936) as its base — this preserves
+    // the exact same radius at the 1024x768 reference viewport (bw === 936,
+    // SCALE === 1) while staying consistent at every other aspect ratio,
+    // instead of ballooning with raw content width — null when the level has
+    // no hunt trigger configured.
     huntTrigger: raw.huntTriggerN
-      ? { x: toX(raw.huntTriggerN.x), y: toY(raw.huntTriggerN.y), radius: raw.huntTriggerN.radius * bw }
+      ? { x: toX(raw.huntTriggerN.x), y: toY(raw.huntTriggerN.y), radius: raw.huntTriggerN.radius * 936 * SCALE }
       : null,
     // LVL-04: optional in-world mechanic labels, same normalized N-suffix
     // convention as patrolN/ambushN. Levels without labelsN get an empty
@@ -1640,6 +1692,18 @@ window.addEventListener("keyup", (e) => {
   }
   keys[k] = false;
 });
+
+// C-overnight: clear all held keys (and cancel an in-progress decoy aim) when
+// the window loses focus or the tab is backgrounded — otherwise a key held
+// during an alt-tab never receives its matching keyup and stays "pressed"
+// forever on refocus. Does NOT depend on any one key name, so it can't miss
+// a future keybinding.
+function clearHeldInput() {
+  for (const k in keys) keys[k] = false;
+  aiming = false;
+}
+window.addEventListener("blur", clearHeldInput);
+document.addEventListener("visibilitychange", () => { if (document.hidden) clearHeldInput(); });
 
 canvas.addEventListener("pointermove", (e) => {
   mouseX = e.clientX; mouseY = e.clientY; hasMouse = true;
@@ -2105,8 +2169,12 @@ function updatePings(dt) {
   for (const p of pings) {
     p.radius += PING_SPEED * dt;
     revealAlongFront(p);
-    // C1: any wavefront (player, decoy, or heartbeat) crossing the exit
-    // discovers it — generosity aids findability.
+    // C1: a player or decoy wavefront crossing the exit discovers it —
+    // generosity aids findability. The predator's own heartbeat (p.predHB)
+    // is explicitly EXCLUDED here: an earlier version let heartbeats count
+    // too, which silently auto-revealed the exit within seconds on any level
+    // whose predator starts near its own exit (L6/L8/L9/L10) — defeating the
+    // entire hidden-exit mechanic on those levels. Do not remove !p.predHB.
     if (!p.predHB && !exitFound && level) {
       const de = Math.hypot(level.exit.x - p.x, level.exit.y - p.y);
       if (Math.abs(de - p.radius) < PING_BAND + level.exit.r) {
@@ -2124,10 +2192,12 @@ function updatePings(dt) {
   pings = pings.filter((p) => p.radius <= (p.predHB ? PRED_HB_RADIUS : PING_MAX_RADIUS));
 }
 
-// AUDIO-01: collapses the 4 code-level predator behaviors into the 3 audio
-// states, branching only on existing fields (predator.stalking,
-// predator.mode, level.patrol) — no new predator behavior fields invented.
-// Precedence: stalking > hunt > patrol > idle-wander.
+// AUDIO-01: collapses the code-level predator behaviors into the 3 audio
+// states, branching on predator.huntBurstActive, predator.stalking,
+// predator.searchTimer, predator.mode, and level.patrol, checked top-to-bottom
+// in that order. Precedence: huntBurstActive > stalking > searchTimer (C3,
+// "listening" while lingering at a last-heard spot) > hunt > patrol >
+// idle-wander (grumble).
 // PRED-02: "ambush" mode deliberately has NO dedicated branch here — it falls
 // through to the patrol/grumble mapping below (whichever the level has) and
 // stays quiet via the existing distance/occlusion-attenuated proximity and
@@ -2415,7 +2485,8 @@ function getBest(idx) {
   const v = bestMap[String(idx)];
   if (v == null) return null;
   if (typeof v === "number") return { pings: v, time: null };
-  return v;
+  if (typeof v === "object" && !Array.isArray(v)) return v;
+  return null; // malformed per-level entry — treat as no record rather than propagating garbage
 }
 
 function onWin() {

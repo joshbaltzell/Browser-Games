@@ -91,7 +91,7 @@ function boot(opts = {}) {
   const sandbox = {
     console,
     window: { innerWidth: w, innerHeight: h, devicePixelRatio: 1, addEventListener: on("window") },
-    document: { getElementById: () => canvas },
+    document: { getElementById: () => canvas, addEventListener: on("document") },
     localStorage: {
       getItem: (k) => (storage.has(k) ? storage.get(k) : null),
       setItem: (k, v) => storage.set(k, String(v)),
@@ -124,6 +124,12 @@ function boot(opts = {}) {
       }
     },
     stepSeconds(s) { api.step(Math.ceil(s * 60)); },
+    resize(newW, newH) {
+      sandbox.window.innerWidth = newW;
+      sandbox.window.innerHeight = newH;
+      fire("window", "resize", {});
+    },
+    blur() { fire("window", "blur", {}); },
   };
   return api;
 }
@@ -493,6 +499,73 @@ test("copy no longer promises a visible exit", () => {
   assert(!/Walk to the gold exit/.test(src), "L1 blurb updated");
   assert(!/Watch the red pulse/.test(src), "L6 blurb updated");
   assert(/FREEZE/.test(src), "freeze label authored");
+});
+
+// ---------------------------------------------------------------------------
+// Overnight fix round — resize remap, storage hardening, misc robustness
+// ---------------------------------------------------------------------------
+console.log("overnight fixes — robustness");
+
+test("resizing mid-level remaps entities so nothing ends up inside a wall", () => {
+  const g = boot({ w: 1024, h: 768 });
+  g.key("enter");
+  g.t.startLevel(5); // L6 — has extensively hand-tuned ambush geometry
+  g.resize(1920, 1080);
+  assert(!g.t.collidesAt(g.t.player.x, g.t.player.y, g.t.player.r), "player not embedded in a wall after resize");
+  assert(!g.t.collidesAt(g.t.predator.x, g.t.predator.y, g.t.predator.r), "predator not embedded in a wall after resize");
+});
+
+test("resize preserves each entity's relative (normalized) position within the level", () => {
+  const g = boot({ w: 1024, h: 768 });
+  g.key("enter");
+  const M = 44;
+  const relXBefore = (g.t.player.x - M) / (1024 - M * 2);
+  const relYBefore = (g.t.player.y - M) / (768 - M * 2);
+  g.resize(1280, 800);
+  const relXAfter = (g.t.player.x - M) / (1280 - M * 2);
+  const relYAfter = (g.t.player.y - M) / (800 - M * 2);
+  close(relXAfter, relXBefore, 1e-6, "relative x position preserved across resize");
+  close(relYAfter, relYBefore, 1e-6, "relative y position preserved across resize");
+});
+
+test("corrupted bestMap/seenLabels localStorage values don't crash the game", () => {
+  const storage = new Map([["echoCartographer.best", "true"], ["echoCartographer.seenLabels", "1"]]);
+  const g = boot({ storage });
+  g.key("enter");
+  g.t.startLevel(2); // L3 — has the FREEZE label, exercises markLabelUsed
+  g.t.predator.mode = "idle";
+  g.t.predator.x = g.t.player.x + 100; g.t.predator.y = g.t.player.y;
+  g.key("a"); g.step(10); g.keyUp("a"); // approach, trigger stalk
+  g.step(10); // stop moving — stalk breaks via freeze, calls markLabelUsed("freeze")
+  g.t.player.x = g.t.level.exit.x; g.t.player.y = g.t.level.exit.y; // win, exercises bestMap write
+  g.step(2);
+  assert(g.t.state === g.t.STATE.WON, "game did not crash — reached WON despite corrupted storage");
+});
+
+test("window blur clears held movement keys (no stuck-key drift on alt-tab)", () => {
+  const g = boot();
+  g.key("enter");
+  g.key("d"); // hold right, never release
+  g.step(5);
+  g.blur();
+  assert(!g.t.keys["d"], "held key cleared on blur");
+});
+
+test("SCALE never goes negative or zero even at a degenerate viewport", () => {
+  const g = boot({ w: 10, h: 10 });
+  assert(g.t.SCALE > 0, "SCALE stays positive at a tiny viewport");
+});
+
+test("hunt-trigger radius scales with SCALE like every other gameplay distance", () => {
+  const g1024 = boot({ w: 1024, h: 768 });
+  g1024.key("enter");
+  g1024.t.startLevel(6); // L7 — has a huntTrigger
+  const r1024 = g1024.t.level.huntTrigger.radius;
+  const g1920 = boot({ w: 1920, h: 1080 });
+  g1920.key("enter");
+  g1920.t.startLevel(6);
+  const r1920 = g1920.t.level.huntTrigger.radius;
+  close(r1920, r1024 * g1920.t.SCALE, 1e-6, "trigger radius scales by SCALE, not raw content width");
 });
 
 console.log(`\n${count - failures}/${count} passed`);
