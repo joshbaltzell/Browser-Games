@@ -31,6 +31,8 @@ const SHIM = `
   ARENA_HALF_SIZE, TANK_COLLISION_RADIUS, SHELL_SPEED, SHELL_MAX_LIFE,
   decideEnemyAIState, seekInput, hasLineOfSight, currentSpawnInterval, pickEnemySpawn, pickSeekPoint,
   ENEMY_ENGAGE_RANGE, ENEMY_SPAWN_START_INTERVAL, ENEMY_SPAWN_END_INTERVAL,
+  applyDamage, tickInvuln, moveWithObstacleCollision, updateParticle,
+  PLAYER_MAX_HEALTH, ENEMY_MAX_HEALTH, HIT_INVULN_DURATION,
   get obstacles() { return obstacles; },
   get gl() { return gl; },
 };`;
@@ -486,6 +488,47 @@ test("pickEnemySpawn places the enemy just inside one of the four arena edges", 
   const onAnEdge = Math.abs(Math.abs(e.x) - lim) < 1e-9 || Math.abs(Math.abs(e.z) - lim) < 1e-9;
   assert(onAnEdge, "spawn point should sit exactly on one of the four edge lines");
   assert(Math.abs(e.x) <= lim + 1e-9 && Math.abs(e.z) <= lim + 1e-9, "spawn point should stay within arena bounds");
+});
+
+console.log("damage, invulnerability, obstacle sliding");
+
+test("applyDamage reduces health by 1 and starts the invulnerability window", () => {
+  const hit = t.applyDamage({ health: 4, invulnTimer: 0 });
+  assert(hit.health === 3);
+  close(hit.invulnTimer, t.HIT_INVULN_DURATION, 1e-9);
+});
+
+test("applyDamage is a no-op while still invulnerable from a prior hit", () => {
+  const hit = t.applyDamage({ health: 4, invulnTimer: 0.5 });
+  assert(hit.health === 4, "should not take a second hit mid-invulnerability");
+});
+
+test("tickInvuln counts down and floors at 0, letting a fresh hit land afterward", () => {
+  let entity = { health: 4, invulnTimer: 1 };
+  entity = t.tickInvuln(entity, 1.5);
+  close(entity.invulnTimer, 0, 1e-9, "should floor at 0, not go negative");
+  entity = t.applyDamage(entity);
+  assert(entity.health === 3, "a fresh hit should land once invulnerability has expired");
+});
+
+test("moveWithObstacleCollision slides along one axis when the other is blocked", () => {
+  const obs = [{ x: 0, z: 5, halfW: 2, halfD: 2 }]; // occupies x in [-2,2], z in [3,7]
+  const [rx, rz] = t.moveWithObstacleCollision(5, 2, 0, 6, obs, 0.5);
+  close(rx, 0, 1e-9, "X movement should succeed (old z=2 misses the obstacle)");
+  close(rz, 2, 1e-9, "Z movement should be blocked (new x=0 + new z=6 both hit the obstacle)");
+});
+
+test("moveWithObstacleCollision allows free movement with no nearby obstacles", () => {
+  const [rx, rz] = t.moveWithObstacleCollision(0, 0, 10, 10, [{ x: -50, z: -50, halfW: 1, halfD: 1 }], 0.5);
+  close(rx, 10, 1e-9);
+  close(rz, 10, 1e-9);
+});
+
+test("updateParticle moves by velocity and counts life down", () => {
+  const p = t.updateParticle({ x: 0, z: 0, vx: 2, vz: -1, life: 0.5 }, 0.2);
+  close(p.x, 0.4, 1e-9);
+  close(p.z, -0.2, 1e-9);
+  close(p.life, 0.3, 1e-9);
 });
 
 console.log(`\n${count - failures}/${count} passed`);
