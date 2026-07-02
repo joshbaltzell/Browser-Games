@@ -49,6 +49,8 @@ const SHIM = `
   noise: (typeof noise === "function" ? noise : null),
   get burstVignette() { return burstVignette; },
   get bumpTimer() { return bumpTimer; },
+  // Phase C accessors
+  get SCALE() { return (typeof SCALE === "number" ? SCALE : null); },
 };`;
 
 function makeCtx2d() {
@@ -357,6 +359,40 @@ test("hunt bursts are authored on L7 and L9 and fire with feedback", () => {
     g.step(3);
     assert(g.t.predator.huntBurstActive === true, `level ${idx + 1} burst fires`);
     assert(g.t.burstVignette > 0, `level ${idx + 1} burst shows the vignette`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Phase C — scale normalization
+// ---------------------------------------------------------------------------
+console.log("phase C — scale normalization");
+
+test("1024x768 is the exact reference scale (S=1, all values unchanged)", () => {
+  const g = boot({ w: 1024, h: 768 });
+  close(g.t.SCALE, 1, 1e-9, "SCALE at reference viewport");
+  close(g.t.PING_MAX_RADIUS, 220, 1e-9, "ping radius unchanged at 1024x768");
+  close(g.t.PLAYER_SPEED, 190, 1e-9, "player speed unchanged at 1024x768");
+});
+
+test("larger viewports scale distances by min-axis growth", () => {
+  const g = boot({ w: 1920, h: 1080 });
+  const expected = Math.min((1920 - 88) / 936, (1080 - 88) / 680);
+  close(g.t.SCALE, expected, 1e-9, "SCALE formula");
+  close(g.t.PING_MAX_RADIUS, 220 * expected, 1e-6, "ping radius scales");
+  close(g.t.AMBUSH_BREAK_RADIUS, 120 * expected, 1e-6, "break radius scales");
+  close(g.t.player.r, 9 * expected, 1e-6, "player radius scales");
+});
+
+test("gameplay invariants hold at three viewports", () => {
+  for (const [w, h] of [[1024, 768], [1280, 800], [1920, 1080]]) {
+    const g = boot({ w, h });
+    g.key("enter");
+    g.t.startLevel(5); // L6 ambush level
+    assert(!g.t.collidesAt(g.t.predator.x, g.t.predator.y, g.t.predator.r),
+      `ambusher clear of walls at ${w}x${h}`);
+    g.t.player.x = g.t.level.exit.x; g.t.player.y = g.t.level.exit.y;
+    g.step(2);
+    assert(g.t.state === g.t.STATE.WON, `exit reachable at ${w}x${h}`);
   }
 });
 

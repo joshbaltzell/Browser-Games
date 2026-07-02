@@ -34,6 +34,63 @@
 // ----------------------------------------------------------------------------
 const TAU = Math.PI * 2;
 
+// C8 (fun-redesign): all gameplay distances and speeds are authored at the
+// 1024x768 reference viewport (content box 936x680 after the 44px frame
+// margins) and rescaled by SCALE on every layout (applyScale, called from
+// layoutLevel). SCALE uses the SMALLER axis growth (min) deliberately:
+// levels stretch anisotropically (x by content width, y by content height),
+// and min-axis scaling guarantees the margins proven at 1024x768 — ambush
+// break radius, predator wall clearance, single-ping reveals — never shrink
+// at any larger viewport. This retires the fixed-pixel-constant vs
+// viewport-scaled-level bug class (Phase 63's CR-01/02/03 churn and the
+// WR-06 residual). Time constants (cooldowns, GHOST_LIFE, ambush arm
+// countdown, burst duration) intentionally do NOT scale.
+// The `let` mirrors below keep their original names so every read site in
+// the file is unchanged; only the declarations moved into BASE.
+const BASE = {
+  PING_SPEED: 620, PING_MAX_RADIUS: 220, PING_BAND: 14,
+  DECOY_REACH: 230, PRED_HB_RADIUS: 160,
+  PLAYER_R: 9, PLAYER_SPEED: 190,
+  PRED_R: 13, PRED_HUNT_SPEED: 130, PRED_IDLE_SPEED: 70,
+  PRED_CATCH: 18, PRED_ARRIVE: 24, PRED_SENSE_RADIUS: 150,
+  AMBUSH_BREAK_RADIUS: 120, PRED_VIS_NEAR: 60,
+  GRAIN_FAR_DIST: 240, GRAIN_NEAR_DIST: 60,
+  WALL_BUMP_HEAR_DIST: 200,
+  PROX_NEAR: 320,    // proximity-hum onset distance (was a literal in updateProximityAudio)
+  TENSION_NEAR: 80,  // close-range tension-tone onset (was a literal)
+  EXIT_R: 24,
+};
+let SCALE = 1;
+let PROX_NEAR = BASE.PROX_NEAR;
+let TENSION_NEAR = BASE.TENSION_NEAR;
+
+function applyScale() {
+  SCALE = Math.min((W - 88) / 936, (H - 88) / 680);
+  PING_SPEED = BASE.PING_SPEED * SCALE;
+  PING_MAX_RADIUS = BASE.PING_MAX_RADIUS * SCALE;
+  PING_BAND = BASE.PING_BAND * SCALE;
+  DECOY_REACH = BASE.DECOY_REACH * SCALE;
+  PRED_HB_RADIUS = BASE.PRED_HB_RADIUS * SCALE;
+  PLAYER_R = BASE.PLAYER_R * SCALE;
+  PLAYER_SPEED = BASE.PLAYER_SPEED * SCALE;
+  PRED_R = BASE.PRED_R * SCALE;
+  PRED_HUNT_SPEED = BASE.PRED_HUNT_SPEED * SCALE;
+  PRED_IDLE_SPEED = BASE.PRED_IDLE_SPEED * SCALE;
+  PRED_CATCH = BASE.PRED_CATCH * SCALE;
+  PRED_ARRIVE = BASE.PRED_ARRIVE * SCALE;
+  PRED_SENSE_RADIUS = BASE.PRED_SENSE_RADIUS * SCALE;
+  AMBUSH_BREAK_RADIUS = BASE.AMBUSH_BREAK_RADIUS * SCALE;
+  PRED_VIS_NEAR = BASE.PRED_VIS_NEAR * SCALE;
+  GRAIN_FAR_DIST = BASE.GRAIN_FAR_DIST * SCALE;
+  GRAIN_NEAR_DIST = BASE.GRAIN_NEAR_DIST * SCALE;
+  WALL_BUMP_HEAR_DIST = BASE.WALL_BUMP_HEAR_DIST * SCALE;
+  PROX_NEAR = BASE.PROX_NEAR * SCALE;
+  TENSION_NEAR = BASE.TENSION_NEAR * SCALE;
+  // The entity radii live on the entities; refresh them so a mid-level
+  // window resize doesn't leave stale collision sizes.
+  if (typeof player !== "undefined") { player.r = PLAYER_R; predator.r = PRED_R; }
+}
+
 const COLORS = {
   void: "#02040a",        // not pure black — a deep abyssal blue-black
   voidEdge: "#000003",    // vignette toward the corners
@@ -54,18 +111,18 @@ const COLORS = {
 };
 
 // Ping behaviour.
-const PING_SPEED = 620;        // px/sec the front expands
-const PING_MAX_RADIUS = 220;   // front dies past this — keeps reveal LOCAL (not full-level)
-const PING_BAND = 14;          // half-thickness of the "live front" reveal band
+let PING_SPEED = BASE.PING_SPEED;        // px/sec the front expands
+let PING_MAX_RADIUS = BASE.PING_MAX_RADIUS;   // front dies past this — keeps reveal LOCAL (not full-level)
+let PING_BAND = BASE.PING_BAND;          // half-thickness of the "live front" reveal band
 const PING_COOLDOWN = 1.3;     // seconds between pings (rationed reveals)
 
 // False ping (decoy).
-const DECOY_REACH = 230;       // how far the decoy origin is thrown from player
+let DECOY_REACH = BASE.DECOY_REACH;       // how far the decoy origin is thrown from player
 const DECOY_COOLDOWN = 2.2;    // decoys are pricier than real pings
 
 // Predator heartbeat pings (red, smaller radius — reveal walls near the predator).
 const PRED_HB_INTERVAL = 2.6;  // seconds between heartbeats
-const PRED_HB_RADIUS = 160;    // dies sooner than player pings
+let PRED_HB_RADIUS = BASE.PRED_HB_RADIUS;    // dies sooner than player pings
 
 // Ghost-outline afterimage (TENS-04). Revealed segments no longer fade out and
 // vanish — they age continuously over a long lifespan and floor at a small
@@ -77,25 +134,25 @@ const GHOST_LIFE = 24;         // seconds for a revealed segment to age from bri
 const GHOST_FLOOR_ALPHA = 0.07; // minimum alpha a fully-aged segment ever settles to (never 0)
 
 // Player.
-const PLAYER_R = 9;
-const PLAYER_SPEED = 190;      // px/sec
+let PLAYER_R = BASE.PLAYER_R;
+let PLAYER_SPEED = BASE.PLAYER_SPEED;      // px/sec
 
 // Wall occlusion (AUDIO-05): predator-channel audio is attenuated, never
 // fully muted, when no clear sightline exists between predator and player.
 const OCCLUSION_ATTEN = 0.35;
 
 // Predator.
-const PRED_R = 13;
-const PRED_HUNT_SPEED = 130;   // px/sec while homing on a ping origin
-const PRED_IDLE_SPEED = 70;    // px/sec slow wander when no recent ping
-const PRED_CATCH = 18;         // contact distance that ends the attempt
-const PRED_ARRIVE = 24;        // distance at which it "reaches" a target node
+let PRED_R = BASE.PRED_R;
+let PRED_HUNT_SPEED = BASE.PRED_HUNT_SPEED;   // px/sec while homing on a ping origin
+let PRED_IDLE_SPEED = BASE.PRED_IDLE_SPEED;    // px/sec slow wander when no recent ping
+let PRED_CATCH = BASE.PRED_CATCH;         // contact distance that ends the attempt
+let PRED_ARRIVE = BASE.PRED_ARRIVE;        // distance at which it "reaches" a target node
 const PRED_IDLE_RETARGET = 1.8;// seconds between picking a new idle wander point
-const PRED_SENSE_RADIUS = 150; // within this distance it hears footsteps and homes in directly
+let PRED_SENSE_RADIUS = BASE.PRED_SENSE_RADIUS; // within this distance it hears footsteps and homes in directly
 // PRED-02: player-proximity distance that breaks an ambush hold — distinct
 // from PRED_SENSE_RADIUS (stalk detection), always smaller/tighter since an
 // ambushing predator only reacts once the player is nearly on top of it.
-const AMBUSH_BREAK_RADIUS = 120;
+let AMBUSH_BREAK_RADIUS = BASE.AMBUSH_BREAK_RADIUS;
 // PRED-03: mid-level hunt burst — a one-shot-per-attempt LAYERED escalation
 // fired when the player crosses a level-authored trigger zone. It stacks on
 // top of whatever mode is already active (does not force a mode change or a
@@ -130,8 +187,8 @@ const LISTEN_PAUSE_DELAY = 0.4; // seconds of stillness before the drone ducks
 // occlusion-free by design — present even behind a wall, since it represents
 // rising panic, not literal sightline. Dot count interpolates linearly between
 // these distance/count endpoints and is zero at/beyond GRAIN_FAR_DIST.
-const GRAIN_FAR_DIST = 240;   // distance at/beyond which grain is fully gone
-const GRAIN_NEAR_DIST = 60;   // distance at/within which grain hits max density
+let GRAIN_FAR_DIST = BASE.GRAIN_FAR_DIST;   // distance at/beyond which grain is fully gone
+let GRAIN_NEAR_DIST = BASE.GRAIN_NEAR_DIST;   // distance at/within which grain hits max density
 const GRAIN_MIN_DOTS = 15;    // dot count at GRAIN_FAR_DIST
 const GRAIN_MAX_DOTS = 150;   // dot count at/within GRAIN_NEAR_DIST
 const DRONE_DUCK = 0.5;         // drone gain multiplier during the listening pause
@@ -139,7 +196,7 @@ const DRONE_DUCK = 0.5;         // drone gain multiplier during the listening pa
 // C6 (fun-redesign): hearing radius of a wall bump — walking into an
 // (often unrevealed) wall is a sound the dark can hear, which makes wall
 // knowledge = safety and closes the "walls are harmless" hole.
-const WALL_BUMP_HEAR_DIST = 200;
+let WALL_BUMP_HEAR_DIST = BASE.WALL_BUMP_HEAR_DIST;
 
 // ----------------------------------------------------------------------------
 // Canvas + global state
@@ -232,7 +289,7 @@ let exitTickTimer = 4; // countdown to the next pre-discovery audio breadcrumb
 // old always-visible rendering as an accessibility/difficulty valve.
 let predVisFlash = 0;
 let predHBFlash = 0;
-const PRED_VIS_NEAR = 60;
+let PRED_VIS_NEAR = BASE.PRED_VIS_NEAR;
 const LS_ASSIST = "echoCartographer.sonarAssist";
 let sonarAssist = (() => { try { return localStorage.getItem(LS_ASSIST) === "1"; } catch (e) { return false; } })();
 
@@ -819,17 +876,17 @@ function box(x0, y0, x1, y1) {
 //   5    decoy unlocked & taught in a forgiving room
 //   6–10 silent-route + decoy puzzles of rising tension
 //
-// MIN_VIEWPORT (Phase 63 review, WR-05): 1024x768 is the minimum supported
-// viewport for this file's geometry-dependent claims (chamber margins,
-// ambush break radii, ping-reveal coverage, nav-graph reachability).
-// resize() (see below) has no minimum-width guard, so smaller viewports are
-// reachable in-game, not hypothetical. Any level-geometry fix that verifies
-// a distance/margin/reveal claim MUST re-check it at 1024x768 specifically,
-// not just at a larger reference viewport — CR-01's chamber-widening fix
-// verified only at 1280x800 and had to be re-fixed one review cycle later
-// (CR-02) once re-checked here. Prefer verifying at 1024x768, 1280x800, and
-// 1920x1080 together so a fix doesn't regress at a different size than the
-// one it was checked against.
+// MIN_VIEWPORT (Phase 63 review, WR-05 — superseded in part by C8): 1024x768
+// is the REFERENCE viewport for this file's geometry-dependent claims
+// (chamber margins, ambush break radii, ping-reveal coverage, nav-graph
+// reachability). Since C8 (fun-redesign), every gameplay distance/speed
+// scales with the viewport via applyScale()'s min-axis SCALE, so a margin
+// proven at 1024x768 holds at every LARGER viewport by construction — the
+// old CR-01/CR-02 re-verify-at-every-size churn no longer applies above the
+// reference size. resize() still has no minimum-size guard, so windows
+// SMALLER than 1024x768 shrink everything proportionally (playable, but the
+// authored claims are only guaranteed at >= reference). Level-geometry fixes
+// should still be verified at 1024x768; larger sizes then follow.
 const RAW_LEVELS = [
   // ---- ACT I: LEARN TO SEE (geometry only, predator harmless) --------------
 
@@ -1380,6 +1437,7 @@ const RAW_LEVELS = [
 
 // Live (pixel-space) geometry, recomputed on layout.
 function layoutLevel() {
+  applyScale(); // C8: refresh all scaled gameplay values for this viewport
   const raw = RAW_LEVELS[levelIndex];
   const M = 44;
   const ax = M, ay = M, bw = W - M * 2, bh = H - M * 2;
@@ -1391,12 +1449,13 @@ function layoutLevel() {
     blurb: raw.blurb || "",
     decoy: !!raw.decoy,
     // predSpeed: 0 means the hunter is dormant (early teaching levels).
-    huntSpeed: (raw.predSpeed != null) ? raw.predSpeed : PRED_HUNT_SPEED,
+    // C8: authored speeds are reference-viewport values — scale like the rest.
+    huntSpeed: (raw.predSpeed != null) ? raw.predSpeed * SCALE : PRED_HUNT_SPEED,
     dormant: raw.predSpeed === 0,
     walls: raw.wallsN.map(([x1, y1, x2, y2]) => ({
       x1: toX(x1), y1: toY(y1), x2: toX(x2), y2: toY(y2),
     })),
-    exit: { x: toX(raw.exitN.x), y: toY(raw.exitN.y), r: 24 },
+    exit: { x: toX(raw.exitN.x), y: toY(raw.exitN.y), r: BASE.EXIT_R * SCALE },
     playerStart: { x: toX(raw.playerN.x), y: toY(raw.playerN.y) },
     predStart: { x: toX(raw.predN.x), y: toY(raw.predN.y) },
     nodes: (raw.nodesN || []).map((n) => ({ x: toX(n.x), y: toY(n.y) })),
@@ -2213,9 +2272,9 @@ function pickIdleTarget() {
     if (lineClear(predator.x, predator.y, n.x, n.y)) { predator.tx = n.x; predator.ty = n.y; return; }
   }
   const ang = Math.random() * TAU;
-  const reach = 80 + Math.random() * 140;
-  predator.tx = Math.max(40, Math.min(W - 40, predator.x + Math.cos(ang) * reach));
-  predator.ty = Math.max(40, Math.min(H - 40, predator.y + Math.sin(ang) * reach));
+  const reach = (80 + Math.random() * 140) * SCALE;
+  predator.tx = Math.max(40 * SCALE, Math.min(W - 40 * SCALE, predator.x + Math.cos(ang) * reach));
+  predator.ty = Math.max(40 * SCALE, Math.min(H - 40 * SCALE, predator.y + Math.sin(ang) * reach));
 }
 
 // Move predator, wall-resolved per-axis (PRED-04 already enforced by path, this
@@ -2238,15 +2297,14 @@ function updateProximityAudio() {
   // rather than tracking a harmless prop in the corner.
   if (level.dormant) { predOcclusion = 1; setProximity(0); setTensionTone(0); return; }
   const d = Math.hypot(player.x - predator.x, player.y - predator.y);
-  const near = 320; // start humming within this distance
-  const closeness = Math.max(0, Math.min(1, 1 - d / near));
+  const closeness = Math.max(0, Math.min(1, 1 - d / PROX_NEAR));
   const occluded = !lineClear(predator.x, predator.y, player.x, player.y);
   const occ = occluded ? OCCLUSION_ATTEN : 1;
   predOcclusion = occ;
   setProximity(closeness, occ);
   // TENS-01: NEW close-range tension tone, stacked on the hum above — reuses
   // the same `d` and `occ` already computed here (no second distance calc).
-  const closeness80 = Math.max(0, Math.min(1, 1 - d / 80));
+  const closeness80 = Math.max(0, Math.min(1, 1 - d / TENSION_NEAR));
   setTensionTone(closeness80, occ);
 }
 
