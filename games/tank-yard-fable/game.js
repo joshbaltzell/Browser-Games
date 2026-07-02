@@ -46,9 +46,8 @@ function mat4RotateY(m, rad) {
   return mat4Multiply(m, r);
 }
 
-// Positive angle rotates +Y toward -Z. Unused by v1 gameplay (cannon stays
-// level, spec S4) but kept per the spec's math-module contract for a likely
-// future barrel-elevation feature.
+// Positive angle rotates +Y toward -Z. Used by tankTransforms to lay the
+// barrel cylinder (long axis local Y) flat along the turret's facing axis.
 function mat4RotateX(m, rad) {
   const c = Math.cos(rad), s = Math.sin(rad);
   const r = new Float32Array([1, 0, 0, 0, 0, c, -s, 0, 0, s, c, 0, 0, 0, 0, 1]);
@@ -471,7 +470,6 @@ function turretAimYaw(hullX, hullZ, hullYaw, targetX, targetZ) {
 // nothing itself.
 // ----------------------------------------------------------------------------
 const HULL_SIZE = [2, 0.8, 3];       // width, height, depth
-const TURRET_SIZE = [0.4, 1.3, 0.4]; // radiusBottom-ish, height, radiusTop-ish (see Task 7's makeCylinder call)
 const TURRET_HEIGHT_OFFSET = 0.9;    // where the turret pivot sits above the hull's own origin
 const BARREL_FORWARD_OFFSET = 1.6;   // how far forward of the turret pivot the barrel sits
 
@@ -482,7 +480,9 @@ function tankTransforms(tank) {
   let turretMatrix = mat4Translate(hullMatrix, 0, TURRET_HEIGHT_OFFSET, 0);
   turretMatrix = mat4RotateY(turretMatrix, tank.turretYaw);
 
-  const barrelMatrix = mat4Translate(turretMatrix, 0, 0, BARREL_FORWARD_OFFSET);
+  // The barrel cylinder's long axis is local Y (makeCylinder convention), so
+  // rotate it 90° about X to lay it flat along the turret's facing (+Z) axis.
+  const barrelMatrix = mat4RotateX(mat4Translate(turretMatrix, 0, 0, BARREL_FORWARD_OFFSET), Math.PI / 2);
 
   return { hullMatrix, turretMatrix, barrelMatrix };
 }
@@ -647,6 +647,9 @@ function updateParticle(p, dt) {
 const keys = Object.create(null);
 window.addEventListener("keydown", (e) => { keys[e.key.toLowerCase()] = true; });
 window.addEventListener("keyup", (e) => { keys[e.key.toLowerCase()] = false; });
+// Losing focus swallows keyup events — release everything so the tank doesn't
+// keep driving on a stuck key when the player tabs away.
+window.addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
 
 let mouseNdcX = 0, mouseNdcY = 0;
 canvas.addEventListener("pointermove", (e) => {
@@ -693,7 +696,7 @@ function updatePlayer(dt) {
   }
   firePressed = false;
 
-  shells = shells.map((s) => updateShell(s, dt)).filter((s) => s.life > 0);
+  shells = shells.map((s) => updateShell(s, dt)).filter((s) => s.life > 0 && Math.abs(s.x) < ARENA_HALF_SIZE && Math.abs(s.z) < ARENA_HALF_SIZE);
 }
 
 function drawPlayer() {
@@ -797,8 +800,8 @@ function pickEnemySpawn() {
   const lim = ARENA_HALF_SIZE - 2;
   const edge = Math.floor(Math.random() * 4);
   let x, z, hullYaw;
-  if (edge === 0) { x = -lim; z = (Math.random() * 2 - 1) * lim; hullYaw = Math.PI / 2; }
-  else if (edge === 1) { x = lim; z = (Math.random() * 2 - 1) * lim; hullYaw = -Math.PI / 2; }
+  if (edge === 0) { x = -lim; z = (Math.random() * 2 - 1) * lim; hullYaw = -Math.PI / 2; }
+  else if (edge === 1) { x = lim; z = (Math.random() * 2 - 1) * lim; hullYaw = Math.PI / 2; }
   else if (edge === 2) { x = (Math.random() * 2 - 1) * lim; z = -lim; hullYaw = 0; }
   else { x = (Math.random() * 2 - 1) * lim; z = lim; hullYaw = Math.PI; }
   return { x, z, hullYaw, turretYaw: 0, aiState: "seek", seekX: x, seekZ: z, fireCooldown: 0, health: ENEMY_MAX_HEALTH, invulnTimer: 0 };
@@ -865,7 +868,7 @@ function drawEnemies() {
 // ----------------------------------------------------------------------------
 // Obstacles (spec S6/S8) — a small hand-authored layout, same pattern as
 // Echo Cartographer's RAW_LEVELS. "rock" and "rubble" share one AABB
-// collision shape; only their rendering differs (drawObstacles, Step 6).
+// collision shape; only their rendering differs (see drawObstacles).
 // ----------------------------------------------------------------------------
 const OBSTACLE_LAYOUT = [
   { x: -15, z: -10, halfW: 2, halfD: 2, type: "rubble" },
@@ -899,6 +902,9 @@ function updateParticles(dt) {
 // ----------------------------------------------------------------------------
 let score = 0;
 let gameOver = false;
+// Declared here (not down by its HUD keydown handler) because restartGame —
+// called once at startup below — resets it; a later `let` would be a TDZ trap.
+let paused = false;
 
 function resolveShellCollisions() {
   const surviving = [];
@@ -950,6 +956,7 @@ function restartGame() {
   obstacles = OBSTACLE_LAYOUT.slice();
   survivalTime = 0; enemySpawnTimer = ENEMY_SPAWN_START_INTERVAL;
   score = 0; gameOver = false;
+  paused = false; firePressed = false; playerFireCooldown = 0;
 }
 restartGame(); // populate obstacles + reset state once at startup
 
@@ -989,10 +996,9 @@ function fmtTime(totalSeconds) {
   return m + ":" + String(s).padStart(2, "0");
 }
 
-let paused = false;
 window.addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
-  if (k === "p" || k === "escape") paused = !paused;
+  if ((k === "p" || k === "escape") && !gameOver) paused = !paused;
   if (k === "r" && gameOver) restartGame();
 });
 

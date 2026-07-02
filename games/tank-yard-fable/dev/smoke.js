@@ -352,6 +352,22 @@ test("tankTransforms: the turret rides along with the hull's yaw, plus its own r
   closeArr(barrelDir, expectedDir, 1e-6, "barrel direction should follow hullYaw when turretYaw is 0");
 });
 
+test("tankTransforms: barrel lies horizontal with its long axis along the facing direction (spec S7)", () => {
+  // The barrel mesh is makeCylinder(..., 1.6, ...) with its long axis along
+  // local Y — barrelMatrix must rotate it flat so it points where the turret
+  // faces instead of standing up as a vertical rod.
+  const parts = t.tankTransforms({ x: 0, z: 0, hullYaw: 0, turretYaw: 0 });
+  const origin = t.mat4TransformPoint(parts.barrelMatrix, [0, 0, 0]);
+  const endA = t.mat4TransformPoint(parts.barrelMatrix, [0, 0.8, 0]);
+  const endB = t.mat4TransformPoint(parts.barrelMatrix, [0, -0.8, 0]);
+  // Tolerance 1e-6, not 1e-9: model matrices are Float32Array (same float32
+  // rounding rationale as the tankTransforms placement test above).
+  close(endA[1], origin[1], 1e-6, "barrel end A should sit at the barrel origin's height (horizontal)");
+  close(endB[1], origin[1], 1e-6, "barrel end B should sit at the barrel origin's height (horizontal)");
+  const axis = t.vec3Sub(endA, endB);
+  close(Math.abs(t.vec3Dot(axis, [0, 0, 1])), 1.6, 1e-6, "barrel long axis should be parallel to the facing direction (+Z at yaw 0)");
+});
+
 test("updateChaseCam converges to the desired offset/look over repeated steps", () => {
   let camPos = [0, 0, 0], camLook = [0, 0, 0];
   for (let i = 0; i < 300; i++) {
@@ -466,6 +482,18 @@ test("pickEnemySpawn places the enemy just inside one of the four arena edges", 
   const onAnEdge = Math.abs(Math.abs(e.x) - lim) < 1e-9 || Math.abs(Math.abs(e.z) - lim) < 1e-9;
   assert(onAnEdge, "spawn point should sit exactly on one of the four edge lines");
   assert(Math.abs(e.x) <= lim + 1e-9 && Math.abs(e.z) <= lim + 1e-9, "spawn point should stay within arena bounds");
+});
+
+test("pickEnemySpawn hulls face inward toward the arena on every edge", () => {
+  // pickEnemySpawn is random, so sample enough spawns to cover all four edges
+  // with overwhelming probability and check each hull faces inward-ish.
+  for (let i = 0; i < 50; i++) {
+    const e = t.pickEnemySpawn();
+    const forward = t.mat4TransformPoint(t.mat4RotateY(t.mat4Identity(), e.hullYaw), [0, 0, 1]);
+    const toOrigin = t.vec3Normalize([-e.x, 0, -e.z]);
+    assert(t.vec3Dot(forward, toOrigin) > 0,
+      `spawn at (${e.x.toFixed(1)}, ${e.z.toFixed(1)}) with hullYaw ${e.hullYaw.toFixed(2)} faces away from the arena`);
+  }
 });
 
 console.log("damage, invulnerability, obstacle sliding");
