@@ -842,6 +842,7 @@ function updatePlayer(dt) {
 }
 
 function drawPlayer() {
+  if (player.invulnTimer > 0 && Math.floor(player.invulnTimer * 10) % 2 === 0) return; // flicker while invulnerable
   const parts = tankTransforms(player);
   drawMesh(hullMesh, parts.hullMatrix, PLAYER_COLOR);
   drawMesh(turretMesh, parts.turretMatrix, PLAYER_COLOR);
@@ -900,6 +901,7 @@ function updateEnemies(dt) {
 
 function drawEnemies() {
   for (const e of enemies) {
+    if (e.invulnTimer > 0 && Math.floor(e.invulnTimer * 10) % 2 === 0) continue; // flicker while invulnerable
     const parts = tankTransforms(e);
     drawMesh(hullMesh, parts.hullMatrix, ENEMY_COLOR);
     drawMesh(turretMesh, parts.turretMatrix, ENEMY_COLOR);
@@ -940,14 +942,14 @@ function frame(nowMs) {
   last = nowMs;
 
   updateProjection();
-  if (!gameOver) {
+  if (!gameOver && !paused) {
     updatePlayer(dt);
     updateEnemies(dt);
     resolveShellCollisions();
     updateParticles(dt);
   }
 
-  const cam = updateChaseCam(camPos, camLook, player.x, player.z, player.hullYaw, dt);
+  const cam = updateChaseCam(camPos, camLook, player.x, player.z, player.hullYaw, (paused || gameOver) ? 0 : dt);
   camPos = cam.pos; camLook = cam.look;
   viewMatrix = mat4LookAt(camPos, camLook, [0, 1, 0]);
 
@@ -958,6 +960,8 @@ function frame(nowMs) {
   drawEnemies();
   drawShells();
   drawParticles();
+
+  updateHud();
 
   requestAnimationFrame(frame);
 }
@@ -1026,3 +1030,43 @@ restartGame(); // populate obstacles + reset state once at startup
 initShaders();
 initMeshes();
 requestAnimationFrame(frame);
+
+// ----------------------------------------------------------------------------
+// HUD — an HTML/CSS overlay (spec S10), never drawn into the WebGL scene.
+// ----------------------------------------------------------------------------
+function fmtTime(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+let paused = false;
+window.addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+  // Guarded by !gameOver so a stray pause toggle on the DESTROYED screen
+  // can't (a) stack the PAUSED overlay on top of DESTROYED, or (b) leave
+  // paused=true carried into the next life after R restarts the game --
+  // restartGame() resets score/health/enemies/etc. but has no reason to
+  // know about `paused`, a Task 9 concept it predates.
+  if ((k === "p" || k === "escape") && !gameOver) paused = !paused;
+  if (k === "r" && gameOver) restartGame();
+});
+
+const healthFillEl = document.getElementById("healthFill");
+const timerEl = document.getElementById("timer");
+const scoreTextEl = document.getElementById("scoreText");
+const pauseOverlayEl = document.getElementById("pauseOverlay");
+const destroyedOverlayEl = document.getElementById("destroyedOverlay");
+const finalScoreTextEl = document.getElementById("finalScoreText");
+if (destroyedOverlayEl) {
+  destroyedOverlayEl.addEventListener("click", () => { if (gameOver) restartGame(); });
+}
+
+function updateHud() {
+  if (healthFillEl) healthFillEl.style.width = Math.max(0, player.health / PLAYER_MAX_HEALTH) * 100 + "%";
+  if (timerEl) timerEl.textContent = fmtTime(survivalTime);
+  if (scoreTextEl) scoreTextEl.textContent = "Score: " + score;
+  if (pauseOverlayEl) pauseOverlayEl.classList.toggle("hidden", !paused);
+  if (destroyedOverlayEl) destroyedOverlayEl.classList.toggle("hidden", !gameOver);
+  if (gameOver && finalScoreTextEl) finalScoreTextEl.textContent = "Final score: " + score;
+}

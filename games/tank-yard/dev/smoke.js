@@ -33,6 +33,7 @@ const SHIM = `
   ENEMY_ENGAGE_RANGE, ENEMY_SPAWN_START_INTERVAL, ENEMY_SPAWN_END_INTERVAL,
   applyDamage, tickInvuln, moveWithObstacleCollision, updateParticle,
   PLAYER_MAX_HEALTH, ENEMY_MAX_HEALTH, HIT_INVULN_DURATION,
+  fmtTime,
   get obstacles() { return obstacles; },
   get gl() { return gl; },
 };`;
@@ -85,7 +86,12 @@ function boot() {
   const gameCanvas = makeMockCanvas();
   const noWebglDiv = { style: {} };
   const hudDiv = { style: {}, classList: { add() {}, remove() {} } };
-  const elementsById = { game: gameCanvas, noWebgl: noWebglDiv, hud: hudDiv };
+  const mockHudElement = () => ({ style: {}, classList: { toggle() {}, add() {}, remove() {} }, textContent: "", addEventListener() {} });
+  const elementsById = {
+    game: gameCanvas, noWebgl: noWebglDiv, hud: hudDiv,
+    healthFill: mockHudElement(), timer: mockHudElement(), scoreText: mockHudElement(),
+    pauseOverlay: mockHudElement(), destroyedOverlay: mockHudElement(), finalScoreText: mockHudElement(),
+  };
   const sandbox = {
     console,
     window: { innerWidth: 1280, innerHeight: 800, addEventListener() {} },
@@ -529,6 +535,14 @@ test("updateParticle moves by velocity and counts life down", () => {
   close(p.x, 0.4, 1e-9);
   close(p.z, -0.2, 1e-9);
   close(p.life, 0.3, 1e-9);
+});
+
+console.log("HUD");
+
+test("fmtTime formats seconds as m:ss", () => {
+  assert(t.fmtTime(5) === "0:05");
+  assert(t.fmtTime(65) === "1:05");
+  assert(t.fmtTime(600) === "10:00");
 });
 
 console.log(`\n${count - failures}/${count} passed`);
