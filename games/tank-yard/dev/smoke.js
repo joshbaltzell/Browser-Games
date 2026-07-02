@@ -60,20 +60,24 @@ test("mat4Scale scales a point about the origin", () => {
   closeArr(t.mat4TransformPoint(m, [1, 1, 1]), [2, 3, 4], 1e-9);
 });
 
-test("mat4RotateY(PI/2) maps +X to +Z", () => {
+test("mat4RotateY(PI/2) maps +X to -Z", () => {
   const m = t.mat4RotateY(t.mat4Identity(), Math.PI / 2);
-  closeArr(t.mat4TransformPoint(m, [1, 0, 0]), [0, 0, 1], 1e-6);
+  closeArr(t.mat4TransformPoint(m, [1, 0, 0]), [0, 0, -1], 1e-6);
 });
 
-test("mat4RotateX(PI/2) maps +Y to -Z", () => {
+test("mat4RotateX(PI/2) maps +Y to +Z", () => {
   const m = t.mat4RotateX(t.mat4Identity(), Math.PI / 2);
-  closeArr(t.mat4TransformPoint(m, [0, 1, 0]), [0, 0, -1], 1e-6);
+  closeArr(t.mat4TransformPoint(m, [0, 1, 0]), [0, 0, 1], 1e-6);
 });
 
-test("mat4Multiply composes transforms left-to-right (translate then scale)", () => {
-  // scale(translate(I,1,0,0), 2,2,2) applied to origin: translate first -> (1,0,0), then scale -> (2,0,0)
+test("mat4Multiply composes so the last-called op applies first (scale then translate)", () => {
+  // mat4Scale(mat4Translate(I,1,0,0), 2,2,2) builds T*S (append convention: the
+  // new op is multiplied onto the right of the accumulated matrix). Applied to
+  // a point v, that's T*(S*v) -- scale (the last call) is nearest the vector
+  // and applies first, then translate: [1,0,0] -> scale x2 -> [2,0,0] ->
+  // translate (1,0,0) -> [3,0,0].
   const m = t.mat4Scale(t.mat4Translate(t.mat4Identity(), 1, 0, 0), 2, 2, 2);
-  closeArr(t.mat4TransformPoint(m, [0, 0, 0]), [2, 0, 0], 1e-9);
+  closeArr(t.mat4TransformPoint(m, [1, 0, 0]), [3, 0, 0], 1e-9);
 });
 
 test("mat4Invert(m) composed with m is the identity", () => {

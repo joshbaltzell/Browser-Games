@@ -29,36 +29,36 @@ function mat4Multiply(a, b) {
   return out;
 }
 
-// All four builder functions below compose with mat4Multiply(newOp, m) — i.e.
-// they PREPEND, so calls apply to a point in the SAME order they're written:
-// mat4Scale(mat4Translate(I,1,0,0), 2,2,2) translates first, then scales
-// (see the composition test in dev/smoke.js). This also gives the classic
-// model-matrix order "for free": call Scale, then RotateY, then Translate,
-// and the result is T*R*S applied as translate(rotate(scale(v))).
+// All four builder functions below compose with mat4Multiply(m, newOp) — i.e.
+// they APPEND the new operation onto the existing matrix m. This is what
+// makes hierarchical parent-child transforms work: e.g. a turret matrix
+// built as mat4Translate(hullMatrix, ...) places the translation in the
+// hull's local frame and then carries it along with the hull's own
+// rotation/translation, exactly like a turret riding on a turning hull.
 function mat4Translate(m, x, y, z) {
   const t = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1]);
-  return mat4Multiply(t, m);
+  return mat4Multiply(m, t);
 }
 
 function mat4Scale(m, x, y, z) {
   const s = new Float32Array([x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0, 0, 0, 0, 1]);
-  return mat4Multiply(s, m);
+  return mat4Multiply(m, s);
 }
 
-// Positive angle rotates +X toward +Z (i.e. rotateY(PI/2) maps (1,0,0)->(0,0,1)).
+// Positive angle rotates +X toward -Z (i.e. rotateY(PI/2) maps (1,0,0)->(0,0,-1)).
 function mat4RotateY(m, rad) {
   const c = Math.cos(rad), s = Math.sin(rad);
-  const r = new Float32Array([c, 0, s, 0, 0, 1, 0, 0, -s, 0, c, 0, 0, 0, 0, 1]);
-  return mat4Multiply(r, m);
+  const r = new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]);
+  return mat4Multiply(m, r);
 }
 
-// Positive angle rotates +Y toward -Z. Unused by v1 gameplay (cannon stays
+// Positive angle rotates +Y toward +Z. Unused by v1 gameplay (cannon stays
 // level, spec S4) but kept per the spec's math-module contract for a likely
 // future barrel-elevation feature.
 function mat4RotateX(m, rad) {
   const c = Math.cos(rad), s = Math.sin(rad);
-  const r = new Float32Array([1, 0, 0, 0, 0, c, -s, 0, 0, s, c, 0, 0, 0, 0, 1]);
-  return mat4Multiply(r, m);
+  const r = new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]);
+  return mat4Multiply(m, r);
 }
 
 function mat4Perspective(fovy, aspect, near, far) {
