@@ -518,7 +518,7 @@ function updateChaseCam(camPos, camLook, hullX, hullZ, hullYaw, dt) {
 // Scene assembly — meshes shared across every instance of a shape (spec S5:
 // only ~4 distinct buffer sets in the whole game).
 // ----------------------------------------------------------------------------
-let groundMesh = null, hullMesh = null, turretMesh = null, barrelMesh = null, shellMesh = null;
+let groundMesh = null, hullMesh = null, turretMesh = null, barrelMesh = null, shellMesh = null, rockMesh = null, rubbleBoxMesh = null, particleMesh = null;
 function initMeshes() {
   if (!gl) return;
   groundMesh = makeMesh(gl, makeBox(80, 0.2, 80));
@@ -526,6 +526,9 @@ function initMeshes() {
   turretMesh = makeMesh(gl, makeCylinder(10, 0.7, 0.9, 1.0));
   barrelMesh = makeMesh(gl, makeCylinder(8, 1.6, 0.12, 0.12));
   shellMesh = makeMesh(gl, makeCylinder(6, 1, 1, 1)); // a low-poly stand-in sphere per spec S9
+  rockMesh = makeMesh(gl, makeCylinder(10, 1.2, 1.4, 1.6));
+  rubbleBoxMesh = makeMesh(gl, makeBox(1, 0.8, 1));
+  particleMesh = makeMesh(gl, makeBox(0.3, 0.3, 0.3));
 }
 
 const PLAYER_COLOR = [0.24, 0.86, 0.42];
@@ -602,6 +605,43 @@ function updateShell(shell, dt) {
 }
 
 // ----------------------------------------------------------------------------
+// Damage, invulnerability, obstacle-sliding collision — all pure. Spec S7's
+// "brief invulnerability window with a visual flash" pattern (mirrors Echo
+// Cartographer's capture choreography: damage must be readable and fair).
+// ----------------------------------------------------------------------------
+const PLAYER_MAX_HEALTH = 4; // spec S7
+// Not pinned by the spec's own numbers (S8 only fixes fire-rate/speed
+// asymmetry) -- 2 hits keeps a lone enemy clearly weaker than the 4-hit
+// player while avoiding a too-trivial one-shot kill. A S14-style tuning
+// candidate like every other number in this file.
+const ENEMY_MAX_HEALTH = 2;
+const HIT_INVULN_DURATION = 1; // spec S7
+
+function applyDamage(entity) {
+  if (entity.invulnTimer > 0) return entity; // no-op while still invulnerable from a prior hit
+  return Object.assign({}, entity, { health: entity.health - 1, invulnTimer: HIT_INVULN_DURATION });
+}
+
+function tickInvuln(entity, dt) {
+  return Object.assign({}, entity, { invulnTimer: Math.max(0, entity.invulnTimer - dt) });
+}
+
+// Resolves movement one axis at a time so a tank SLIDES along an obstacle's
+// edge instead of stopping dead on any contact — tries the new X (at the old
+// Z) first, then the new Z (at whatever X just got resolved).
+function moveWithObstacleCollision(x, z, newX, newZ, obstacleList, radius) {
+  const blocked = (px, pz) => obstacleList.some((o) => circleAABBCollide(px, pz, radius, o.x, o.z, o.halfW, o.halfD));
+  const rx = blocked(newX, z) ? x : newX;
+  const rz = blocked(rx, newZ) ? z : newZ;
+  return [rx, rz];
+}
+
+const PARTICLE_LIFE = 0.5;
+function updateParticle(p, dt) {
+  return { x: p.x + p.vx * dt, z: p.z + p.vz * dt, vx: p.vx, vz: p.vz, life: p.life - dt };
+}
+
+// ----------------------------------------------------------------------------
 // Input — keyboard drive/turn, mouse-driven turret aim, click to fire.
 // ----------------------------------------------------------------------------
 const keys = Object.create(null);
@@ -617,7 +657,7 @@ canvas.addEventListener("pointermove", (e) => {
 let firePressed = false;
 canvas.addEventListener("pointerdown", () => { firePressed = true; });
 
-const player = { x: 0, z: 0, hullYaw: 0, turretYaw: 0 };
+const player = { x: 0, z: 0, hullYaw: 0, turretYaw: 0, health: PLAYER_MAX_HEALTH, invulnTimer: 0 };
 let playerFireCooldown = 0;
 let camPos = [0, CAM_UP_OFFSET, -CAM_BACK_OFFSET];
 let camLook = [0, CAM_LOOK_HEIGHT, 0];
@@ -634,8 +674,11 @@ function readPlayerDriveInput() {
 
 function updatePlayer(dt) {
   const moved = updateTankMovement(player, readPlayerDriveInput(), 6, 1.2, dt);
-  const [cx, cz] = clampToArena(moved.x, moved.z, TANK_COLLISION_RADIUS);
-  player.x = cx; player.z = cz; player.hullYaw = moved.hullYaw;
+  const [ax, az] = clampToArena(moved.x, moved.z, TANK_COLLISION_RADIUS);
+  const [ox, oz] = moveWithObstacleCollision(player.x, player.z, ax, az, obstacles, TANK_COLLISION_RADIUS);
+  player.x = ox; player.z = oz; player.hullYaw = moved.hullYaw;
+  const invuln = tickInvuln(player, dt);
+  player.invulnTimer = invuln.invulnTimer;
 
   const invVP = mat4Invert(mat4Multiply(projMatrix, viewMatrix));
   if (invVP) {
@@ -757,7 +800,7 @@ function pickEnemySpawn() {
   else if (edge === 1) { x = lim; z = (Math.random() * 2 - 1) * lim; hullYaw = -Math.PI / 2; }
   else if (edge === 2) { x = (Math.random() * 2 - 1) * lim; z = -lim; hullYaw = 0; }
   else { x = (Math.random() * 2 - 1) * lim; z = lim; hullYaw = Math.PI; }
-  return { x, z, hullYaw, turretYaw: 0, aiState: "seek", seekX: x, seekZ: z, fireCooldown: 0 };
+  return { x, z, hullYaw, turretYaw: 0, aiState: "seek", seekX: x, seekZ: z, fireCooldown: 0, health: ENEMY_MAX_HEALTH, invulnTimer: 0 };
 }
 
 function pickSeekPoint() {
@@ -787,6 +830,7 @@ function updateEnemies(dt) {
     const los = hasLineOfSight(e.x, e.z, player.x, player.z, obstacles);
     e.aiState = decideEnemyAIState(distToPlayer, los);
     e.fireCooldown = Math.max(0, e.fireCooldown - dt);
+    const ei = tickInvuln(e, dt); e.invulnTimer = ei.invulnTimer;
 
     if (e.aiState === "engage") {
       e.turretYaw = turretAimYaw(e.x, e.z, e.hullYaw, player.x, player.z);
@@ -799,8 +843,9 @@ function updateEnemies(dt) {
       if (distToSeek < 3) Object.assign(e, pickSeekPoint());
       const input = seekInput(e.x, e.z, e.hullYaw, e.seekX, e.seekZ);
       const moved = updateTankMovement(e, input, ENEMY_SPEED, ENEMY_TURN_RATE, dt);
-      const [cx, cz] = clampToArena(moved.x, moved.z, TANK_COLLISION_RADIUS);
-      e.x = cx; e.z = cz; e.hullYaw = moved.hullYaw;
+      const [ax, az] = clampToArena(moved.x, moved.z, TANK_COLLISION_RADIUS);
+      const [ox, oz] = moveWithObstacleCollision(e.x, e.z, ax, az, obstacles, TANK_COLLISION_RADIUS);
+      e.x = ox; e.z = oz; e.hullYaw = moved.hullYaw;
       e.turretYaw = 0;
     }
   }
@@ -815,14 +860,136 @@ function drawEnemies() {
   }
 }
 
+// ----------------------------------------------------------------------------
+// Obstacles (spec S6/S8) — a small hand-authored layout, same pattern as
+// Echo Cartographer's RAW_LEVELS. "rock" and "rubble" share one AABB
+// collision shape; only their rendering differs (drawObstacles, Step 6).
+// ----------------------------------------------------------------------------
+const OBSTACLE_LAYOUT = [
+  { x: -15, z: -10, halfW: 2, halfD: 2, type: "rubble" },
+  { x: 12, z: -18, halfW: 1.5, halfD: 1.5, type: "rock" },
+  { x: -22, z: 8, halfW: 1.5, halfD: 1.5, type: "rock" },
+  { x: 18, z: 15, halfW: 2, halfD: 2, type: "rubble" },
+  { x: 0, z: -25, halfW: 1.5, halfD: 1.5, type: "rock" },
+  { x: -8, z: 22, halfW: 2, halfD: 2, type: "rubble" },
+  { x: 25, z: -5, halfW: 1.5, halfD: 1.5, type: "rock" },
+  { x: -28, z: -22, halfW: 2, halfD: 2, type: "rubble" },
+  { x: 8, z: 4, halfW: 1.5, halfD: 1.5, type: "rock" },
+  { x: -5, z: -30, halfW: 2, halfD: 2, type: "rubble" },
+];
+
+let particles = [];
+function spawnExplosionInto(x, z, count) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const speed = 3 + Math.random() * 4;
+    particles.push({ x, z, vx: Math.cos(ang) * speed, vz: Math.sin(ang) * speed, life: PARTICLE_LIFE });
+  }
+}
+function updateParticles(dt) {
+  particles = particles.map((p) => updateParticle(p, dt)).filter((p) => p.life > 0);
+}
+
+// ----------------------------------------------------------------------------
+// Shell collisions -> damage/destruction/score. Obstacles block everyone's
+// shells equally; only enemy shells hurt the player; only the player's
+// shells hurt enemies (spec S8/S9).
+// ----------------------------------------------------------------------------
+let score = 0;
+let gameOver = false;
+
+function resolveShellCollisions() {
+  const surviving = [];
+  for (const s of shells) {
+    let hitSomething = false;
+
+    for (const o of obstacles) {
+      if (circleAABBCollide(s.x, s.z, 0.25, o.x, o.z, o.halfW, o.halfD)) { hitSomething = true; break; }
+    }
+
+    if (!hitSomething && !s.ownerIsPlayer && circleCircleCollide(s.x, s.z, 0.25, player.x, player.z, TANK_COLLISION_RADIUS)) {
+      const dmg = applyDamage(player);
+      if (dmg !== player) { player.health = dmg.health; player.invulnTimer = dmg.invulnTimer; spawnExplosionInto(s.x, s.z, 12); }
+      hitSomething = true;
+    }
+
+    if (!hitSomething && s.ownerIsPlayer) {
+      for (const e of enemies) {
+        if (circleCircleCollide(s.x, s.z, 0.25, e.x, e.z, TANK_COLLISION_RADIUS)) {
+          const dmg = applyDamage(e);
+          if (dmg !== e) { e.health = dmg.health; e.invulnTimer = dmg.invulnTimer; spawnExplosionInto(s.x, s.z, 12); }
+          hitSomething = true;
+          break;
+        }
+      }
+    }
+
+    if (!hitSomething) surviving.push(s);
+  }
+  shells = surviving;
+
+  const stillAlive = [];
+  for (const e of enemies) {
+    if (e.health <= 0) { spawnExplosionInto(e.x, e.z, 26); score += 1; }
+    else stillAlive.push(e);
+  }
+  enemies = stillAlive;
+
+  if (player.health <= 0 && !gameOver) {
+    spawnExplosionInto(player.x, player.z, 40);
+    gameOver = true;
+  }
+}
+
+function restartGame() {
+  player.x = 0; player.z = 0; player.hullYaw = 0; player.turretYaw = 0;
+  player.health = PLAYER_MAX_HEALTH; player.invulnTimer = 0;
+  enemies = []; shells = []; particles = [];
+  obstacles = OBSTACLE_LAYOUT.slice();
+  survivalTime = 0; enemySpawnTimer = ENEMY_SPAWN_START_INTERVAL;
+  score = 0; gameOver = false;
+}
+restartGame(); // populate obstacles + reset state once at startup
+
+function drawObstacles() {
+  const rubbleOffsets = [
+    { dx: -0.6, dz: -0.3, rot: 0.3, s: 1.0 },
+    { dx: 0.5, dz: 0.4, rot: -0.5, s: 0.8 },
+    { dx: 0.1, dz: -0.6, rot: 1.1, s: 0.7 },
+  ];
+  for (const o of obstacles) {
+    if (o.type === "rock") {
+      drawMesh(rockMesh, mat4Translate(mat4Identity(), o.x, 0.6, o.z), [0.55, 0.5, 0.45]);
+    } else {
+      for (const off of rubbleOffsets) {
+        let m = mat4Translate(mat4Identity(), o.x + off.dx, 0.4 * off.s, o.z + off.dz);
+        m = mat4RotateY(m, off.rot);
+        m = mat4Scale(m, off.s, off.s, off.s);
+        drawMesh(rubbleBoxMesh, m, [0.5, 0.42, 0.35]);
+      }
+    }
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const s = Math.max(0.05, p.life / PARTICLE_LIFE) * 0.3;
+    drawMesh(particleMesh, mat4Scale(mat4Translate(mat4Identity(), p.x, 0.5, p.z), s, s, s), [1, 0.6, 0.15]);
+  }
+}
+
 let last = 0;
 function frame(nowMs) {
   const dt = last ? Math.min(0.25, (nowMs - last) / 1000) : 0;
   last = nowMs;
 
   updateProjection();
-  updatePlayer(dt);
-  updateEnemies(dt);
+  if (!gameOver) {
+    updatePlayer(dt);
+    updateEnemies(dt);
+    resolveShellCollisions();
+    updateParticles(dt);
+  }
 
   const cam = updateChaseCam(camPos, camLook, player.x, player.z, player.hullYaw, dt);
   camPos = cam.pos; camLook = cam.look;
@@ -830,9 +997,11 @@ function frame(nowMs) {
 
   render();
   drawGround(groundMesh, mat4Translate(mat4Identity(), 0, -0.1, 0));
+  drawObstacles();
   drawPlayer();
   drawEnemies();
   drawShells();
+  drawParticles();
 
   requestAnimationFrame(frame);
 }
