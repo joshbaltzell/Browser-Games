@@ -697,6 +697,7 @@ function updatePlayer(dt) {
 }
 
 function drawPlayer() {
+  if (player.invulnTimer > 0 && Math.floor(player.invulnTimer * 10) % 2 === 0) return; // flicker while invulnerable
   const parts = tankTransforms(player);
   drawMesh(hullMesh, parts.hullMatrix, PLAYER_COLOR);
   drawMesh(turretMesh, parts.turretMatrix, PLAYER_COLOR);
@@ -853,6 +854,7 @@ function updateEnemies(dt) {
 
 function drawEnemies() {
   for (const e of enemies) {
+    if (e.invulnTimer > 0 && Math.floor(e.invulnTimer * 10) % 2 === 0) continue; // flicker while invulnerable
     const parts = tankTransforms(e);
     drawMesh(hullMesh, parts.hullMatrix, ENEMY_COLOR);
     drawMesh(turretMesh, parts.turretMatrix, ENEMY_COLOR);
@@ -978,20 +980,55 @@ function drawParticles() {
   }
 }
 
+// ----------------------------------------------------------------------------
+// HUD — an HTML/CSS overlay (spec S10), never drawn into the WebGL scene.
+// ----------------------------------------------------------------------------
+function fmtTime(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+let paused = false;
+window.addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+  if (k === "p" || k === "escape") paused = !paused;
+  if (k === "r" && gameOver) restartGame();
+});
+
+const healthFillEl = document.getElementById("healthFill");
+const timerEl = document.getElementById("timer");
+const scoreTextEl = document.getElementById("scoreText");
+const pauseOverlayEl = document.getElementById("pauseOverlay");
+const destroyedOverlayEl = document.getElementById("destroyedOverlay");
+const finalScoreTextEl = document.getElementById("finalScoreText");
+if (destroyedOverlayEl) {
+  destroyedOverlayEl.addEventListener("click", () => { if (gameOver) restartGame(); });
+}
+
+function updateHud() {
+  if (healthFillEl) healthFillEl.style.width = Math.max(0, player.health / PLAYER_MAX_HEALTH) * 100 + "%";
+  if (timerEl) timerEl.textContent = fmtTime(survivalTime);
+  if (scoreTextEl) scoreTextEl.textContent = "Score: " + score;
+  if (pauseOverlayEl) pauseOverlayEl.classList.toggle("hidden", !paused);
+  if (destroyedOverlayEl) destroyedOverlayEl.classList.toggle("hidden", !gameOver);
+  if (gameOver && finalScoreTextEl) finalScoreTextEl.textContent = "Final score: " + score;
+}
+
 let last = 0;
 function frame(nowMs) {
   const dt = last ? Math.min(0.25, (nowMs - last) / 1000) : 0;
   last = nowMs;
 
   updateProjection();
-  if (!gameOver) {
+  if (!gameOver && !paused) {
     updatePlayer(dt);
     updateEnemies(dt);
     resolveShellCollisions();
     updateParticles(dt);
   }
 
-  const cam = updateChaseCam(camPos, camLook, player.x, player.z, player.hullYaw, dt);
+  const cam = updateChaseCam(camPos, camLook, player.x, player.z, player.hullYaw, (paused || gameOver) ? 0 : dt);
   camPos = cam.pos; camLook = cam.look;
   viewMatrix = mat4LookAt(camPos, camLook, [0, 1, 0]);
 
@@ -1002,6 +1039,8 @@ function frame(nowMs) {
   drawEnemies();
   drawShells();
   drawParticles();
+
+  updateHud();
 
   requestAnimationFrame(frame);
 }

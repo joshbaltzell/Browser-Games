@@ -6,3 +6,13 @@ html, body { margin: 0; padding: 0; overflow: hidden; background: #1a1a1a; }
   font: 16px system-ui, sans-serif; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px;
 }
 #hud { position: absolute; inset: 0; pointer-events: none; font: 14px system-ui, sans-serif; color: #fff; }
+#healthBar { position: absolute; top: 16px; left: 16px; width: 160px; height: 14px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.6); border-radius: 3px; overflow: hidden; }
+#healthFill { height: 100%; width: 100%; background: #3ddc6a; transition: width 0.15s ease-out; }
+#scoreboard { position: absolute; top: 16px; right: 16px; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+.overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); text-align: center; pointer-events: auto; cursor: pointer;
+}
+.overlay.hidden { display: none; }
+.overlayTitle { font-size: 40px; font-weight: 700; margin-bottom: 12px; }
+.overlayText { font-size: 15px; opacity: 0.85; margin-top: 4px; }
