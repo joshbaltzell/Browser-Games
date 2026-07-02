@@ -38,6 +38,13 @@ const SHIM = `
   get pingCount() { return pingCount; },
   get keys() { return keys; },
   startLevel, tryPing, fireDecoy, collidesAt, lineClear,
+  // Phase A accessors
+  get exitFound() { return exitFound; },
+  get predVisFlash() { return predVisFlash; },
+  get predHBFlash() { return predHBFlash; },
+  get sonarAssist() { return sonarAssist; },
+  // test-only decoy-position helper (Task 5 gives fireDecoy a real target arg)
+  fireDecoyAt(x, y) { pings.push({ x, y, radius: 0, decoy: true }); lurePredatorTo(x, y); },
 };`;
 
 function makeCtx2d() {
@@ -169,6 +176,131 @@ test("predator contact on a live level is CAUGHT", () => {
   g.step(3);
   assert(g.t.state === g.t.STATE.CAUGHT, "should be CAUGHT");
   g.step(30); // capture choreography ticks without throwing
+});
+
+// ---------------------------------------------------------------------------
+// Phase A — restore the dark
+// ---------------------------------------------------------------------------
+console.log("phase A — restore the dark");
+
+test("exit starts hidden; a ping front passing over it reveals it", () => {
+  const g = boot();
+  g.key("enter");
+  assert(g.t.exitFound === false, "exit hidden at start");
+  // ping from far away: front dies before reaching the exit
+  g.t.player.x = g.t.level.exit.x - 600; g.t.player.y = g.t.level.exit.y;
+  g.t.cooldown = 0; g.t.tryPing();
+  g.stepSeconds(1);
+  assert(g.t.exitFound === false, "distant ping must not reveal exit");
+  // ping from within range: front crosses the exit
+  g.t.player.x = g.t.level.exit.x - 100; g.t.player.y = g.t.level.exit.y;
+  g.t.cooldown = 0; g.t.tryPing();
+  g.stepSeconds(1);
+  assert(g.t.exitFound === true, "near ping reveals exit");
+});
+
+test("winning by touch still works with the exit undiscovered", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.player.x = g.t.level.exit.x; g.t.player.y = g.t.level.exit.y;
+  g.step(2);
+  assert(g.t.state === g.t.STATE.WON, "undiscovered exit still wins");
+  assert(g.t.exitFound === true, "onWin marks the exit found");
+});
+
+test("predator is invisible by default and flashes when pinged over", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(2); // L3
+  assert(g.t.predVisFlash === 0, "no flash at level start");
+  g.t.player.x = g.t.predator.x - 120; g.t.player.y = g.t.predator.y;
+  g.t.cooldown = 0; g.t.tryPing();
+  g.stepSeconds(0.4);
+  assert(g.t.predVisFlash > 0, "ping front crossing predator sets the flash");
+});
+
+test("V toggles sonar assist and persists", () => {
+  const g = boot();
+  g.key("enter");
+  assert(g.t.sonarAssist === false, "off by default");
+  g.key("v");
+  assert(g.t.sonarAssist === true, "toggled on");
+  assert(g.storage.get("echoCartographer.sonarAssist") === "1", "persisted");
+  const g2 = boot({ storage: g.storage });
+  assert(g2.t.sonarAssist === true, "restored from storage");
+});
+
+test("stalk requires the player to be MOVING (stillness is safe)", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(2);
+  g.t.predator.mode = "idle";
+  g.t.predator.x = g.t.player.x + 100; g.t.predator.y = g.t.player.y; // inside sense radius
+  g.step(30); // no movement keys held
+  assert(g.t.predator.stalking === false, "still player is never stalked");
+  g.key("a");
+  g.step(10);
+  assert(g.t.predator.stalking === true, "moving player inside earshot is stalked");
+  g.keyUp("a");
+});
+
+test("freezing breaks a stalk into a last-heard search", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(2);
+  g.t.predator.mode = "idle";
+  g.t.predator.x = g.t.player.x + 100; g.t.predator.y = g.t.player.y;
+  g.key("a"); g.step(10); g.keyUp("a");
+  g.step(5);
+  assert(g.t.predator.stalking === false, "stalk dropped on freeze");
+  assert(g.t.predator.searchTimer > 0, "search timer armed");
+  assert(g.t.predator.mode === "hunt", "moves to last-heard point");
+});
+
+test("ambush no longer expires before it is ever approached", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(5); // L6 TWO DOORS
+  assert(g.t.predator.mode === "ambush", "L6 spawns ambushing");
+  assert(g.t.predator.ambushTimer === Infinity, "unarmed at load");
+  g.stepSeconds(25); // player idles at spawn for 25s — old code broke at 15s
+  assert(g.t.predator.mode === "ambush", "ambush holds until approached");
+});
+
+test("approaching arms the ambush countdown; proximity+LOS breaks it", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(5);
+  const p = g.t.predator;
+  // stand just outside 2x break radius: still unarmed
+  g.t.player.x = p.x - g.t.AMBUSH_BREAK_RADIUS * 2 - 40; g.t.player.y = p.y;
+  g.step(5);
+  assert(p.ambushTimer === Infinity, "outside approach radius stays unarmed");
+  // step inside the approach radius: arms
+  g.t.player.x = p.x - g.t.AMBUSH_BREAK_RADIUS * 1.5;
+  g.step(5);
+  assert(isFinite(p.ambushTimer), "armed on approach");
+  assert(p.mode === "ambush", "armed but still holding");
+});
+
+test("a decoy landing next to an ambusher flushes it (distant pings do not)", () => {
+  const g = boot();
+  g.key("enter");
+  g.t.startLevel(5);
+  const p = g.t.predator;
+  g.t.cooldown = 0; g.t.tryPing(); // player is far away at spawn
+  g.step(2);
+  assert(p.mode === "ambush", "far ping does not break the hold (WR-01 stays fixed)");
+  g.t.player.x = p.x - 300; g.t.player.y = p.y; // keep player clear
+  g.t.decoyCooldown = 0;
+  g.t.fireDecoyAt(p.x - 60, p.y);
+  g.step(2);
+  assert(p.mode === "hunt", "nearby decoy flushes the ambush");
+});
+
+test("no clamp() left in canvas font strings", () => {
+  const src = fs.readFileSync(GAME_PATH, "utf8");
+  assert(!/ctx\.font\s*=\s*["'`][^"'`]*clamp\(/.test(src), "clamp() in ctx.font is unsupported");
 });
 
 console.log(`\n${count - failures}/${count} passed`);

@@ -130,7 +130,7 @@ const LISTEN_PAUSE_DELAY = 0.4; // seconds of stillness before the drone ducks
 // occlusion-free by design — present even behind a wall, since it represents
 // rising panic, not literal sightline. Dot count interpolates linearly between
 // these distance/count endpoints and is zero at/beyond GRAIN_FAR_DIST.
-const GRAIN_FAR_DIST = 200;   // distance at/beyond which grain is fully gone
+const GRAIN_FAR_DIST = 240;   // distance at/beyond which grain is fully gone
 const GRAIN_NEAR_DIST = 60;   // distance at/within which grain hits max density
 const GRAIN_MIN_DOTS = 15;    // dot count at GRAIN_FAR_DIST
 const GRAIN_MAX_DOTS = 150;   // dot count at/within GRAIN_NEAR_DIST
@@ -159,6 +159,8 @@ let predator = {
   huntTriggered: false,  // PRED-03: one-shot latch, set true on first entry into level.huntTrigger.radius
   huntBurstActive: false, // PRED-03: true for HUNT_BURST_DURATION seconds after the trigger fires
   huntBurstTimer: 0,      // PRED-03: seconds remaining in the current burst
+  lastHeardX: 0, lastHeardY: 0, // C3: where it last heard footsteps
+  searchTimer: 0,               // C3: >0 while lingering around lastHeard
 };
 let pings = [];             // active ringwaves {x,y,radius,decoy}
 let ghosts = [];            // revealed fragments {x1,y1,x2,y2,life,decoy}
@@ -211,6 +213,23 @@ let captureStage = 0;
 let pingReadyPulse = 0;
 const PING_PULSE_DECAY = 1 / 0.3; // ~0.3s to fade back to 0
 let prevCooldown = 0;
+
+// C1 (fun-redesign): the exit renders only after a ping wavefront has swept
+// it this attempt. Reset per attempt like ghosts — your map, not a quest flag.
+let exitFound = false;
+let exitTickTimer = 4; // countdown to the next pre-discovery audio breadcrumb
+
+// C2 (fun-redesign): the predator renders only via sonar. predVisFlash is a
+// 0..1 chalk-flash set when a player/decoy wavefront crosses it (~1s fade);
+// predHBFlash is a dimmer 0..1 set by its own heartbeat (~0.5s fade). Within
+// PRED_VIS_NEAR px it also fades in directly (fairness valve, and prevents
+// cheap-feeling contact deaths). sonarAssist (V key, persisted) restores the
+// old always-visible rendering as an accessibility/difficulty valve.
+let predVisFlash = 0;
+let predHBFlash = 0;
+const PRED_VIS_NEAR = 60;
+const LS_ASSIST = "echoCartographer.sonarAssist";
+let sonarAssist = (() => { try { return localStorage.getItem(LS_ASSIST) === "1"; } catch (e) { return false; } })();
 
 // Mouse aim (optional)
 let mouseX = 0, mouseY = 0, hasMouse = false;
@@ -473,6 +492,43 @@ function sndWin() {
     o.connect(g); g.connect(masterGain);
     o.start(st); o.stop(st + 0.95);
   });
+}
+
+// C1: exit-discovery chime — two soft bells from sndWin's family, quieter.
+function sndExitFound() {
+  if (!audioCtx) return;
+  const t = now();
+  [659.25, 987.77].forEach((freq, i) => {
+    const o = audioCtx.createOscillator();
+    o.type = "sine"; o.frequency.value = freq;
+    const g = audioCtx.createGain();
+    const st = t + i * 0.07;
+    g.gain.setValueAtTime(0.0001, st);
+    g.gain.exponentialRampToValueAtTime(0.12, st + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, st + 0.6);
+    o.connect(g); g.connect(masterGain);
+    o.start(st); o.stop(st + 0.65);
+  });
+}
+
+// C1: pre-discovery breadcrumb — a quiet crystalline tick, panned toward the
+// exit, audible only when the player is within 1.5 ping radii of it (driven
+// from updateAmbience). Deepens listen-to-navigate without a visual marker.
+function exitTick() {
+  if (!audioCtx) return;
+  const t = now();
+  const panner = makePanner(panForX(level.exit.x));
+  if (!panner) return;
+  const o = audioCtx.createOscillator();
+  o.type = "sine";
+  o.frequency.setValueAtTime(1400, t);
+  o.frequency.exponentialRampToValueAtTime(1150, t + 0.09);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.045, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+  o.connect(g); g.connect(panner);
+  o.start(t); o.stop(t + 0.12);
 }
 
 function noiseBurst(dur, vol) {
@@ -832,7 +888,7 @@ const RAW_LEVELS = [
   {
     name: "IT HEARS YOU",
     blurb: "Now something stirs. Every ping draws the red hunter to where you pinged. Ping less.",
-    decoy: false, predSpeed: 140,
+    decoy: false, predSpeed: 126,
     playerN: { x: 0.15, y: 0.50 },
     exitN: { x: 0.85, y: 0.50 },
     predN: { x: 0.50, y: 0.18 },
@@ -862,7 +918,7 @@ const RAW_LEVELS = [
   {
     name: "THE SPIRAL",
     blurb: "Wind inward to the exit. The hunter is quicker now — a wrong ping is a wrong room.",
-    decoy: false, predSpeed: 165,
+    decoy: false, predSpeed: 150,
     playerN: { x: 0.40, y: 0.50 },
     exitN: { x: 0.12, y: 0.12 },
     predN: { x: 0.88, y: 0.88 },
@@ -899,7 +955,7 @@ const RAW_LEVELS = [
   {
     name: "THE LIE",
     blurb: "New power: hold SHIFT + aim (or right-click) to throw a DECOY. The blind hunter chases the lie.",
-    decoy: true, predSpeed: 158,
+    decoy: true, predSpeed: 142,
     playerN: { x: 0.14, y: 0.50 },
     exitN: { x: 0.88, y: 0.50 },
     predN: { x: 0.52, y: 0.50 },
@@ -1003,7 +1059,7 @@ const RAW_LEVELS = [
   {
     name: "TWO DOORS",
     blurb: "Two ways through. Watch the red pulse — it patrols between the doors. Time your crossing.",
-    decoy: true, predSpeed: 172,
+    decoy: true, predSpeed: 158,
     playerN: { x: 0.14, y: 0.50 },
     exitN: { x: 0.87, y: 0.87 },
     predN: { x: 0.50, y: 0.22 },
@@ -1408,6 +1464,12 @@ window.addEventListener("keydown", (e) => {
     if (k === " " && !e.repeat) { tryPing(); }
     if (k === "r") { startLevel(levelIndex); return; }
     if (k === "`" || k === "~") { showDebug = !showDebug; }
+    // C2: sonar-assist toggle (accessibility/difficulty valve) — restores the
+    // old always-visible predator rendering. Persisted.
+    if (k === "v") {
+      sonarAssist = !sonarAssist;
+      try { localStorage.setItem(LS_ASSIST, sonarAssist ? "1" : "0"); } catch (e) {}
+    }
     // Decoy aim: hold Shift (or F) then press a direction / use mouse, release to fire.
     if ((k === "shift" || k === "f") && level.decoy) { aiming = true; }
   }
@@ -1515,7 +1577,15 @@ function fireDecoy() {
 // Send the predator hunting toward (x,y) by planning a wall-respecting path.
 function lurePredatorTo(x, y) {
   if (level && level.dormant) return; // teaching levels: the dark is empty
-  if (predator.mode === "ambush") return; // ambush breaks only on proximity/timeout, not on lures
+  if (predator.mode === "ambush") {
+    // C4: a loud sound right beside a blind hunter flushes it; anything
+    // farther is ignored (keeps WR-01's actual bug fixed — no cross-map
+    // ping ever cancels the hold — while restoring the decoy counterplay
+    // at the chamber mouth).
+    const dn = Math.hypot(x - predator.x, y - predator.y);
+    if (dn > AMBUSH_BREAK_RADIUS) return;
+  }
+  predator.searchTimer = 0; // C3: a real sound overrides the lingering search
   predator.mode = "hunt";
   predator.tx = x; predator.ty = y;
   predator.path = planPath(predator.x, predator.y, x, y);
@@ -1539,8 +1609,14 @@ function startLevel(idx) {
   predator.idleTimer = 0; predator.path = []; predator.pathStep = 0;
   predator.hbTimer = 1.4; predator.stalking = false; predator.patrolStep = 0;
   predator.heading = 0;
-  // PRED-02: level-load-anchored 15s ambush countdown, reset every attempt.
-  predator.ambushTimer = 15;
+  predator.searchTimer = 0; // C3
+  // C4 (fun-redesign): the ambush is UNARMED (Infinity) until the standoff
+  // actually starts — the player approaching within 2x break radius — then a
+  // 20s countdown prevents a soft-lock wait-out at the chamber mouth. This
+  // replaces the old 15s load-anchored timer, which expired before any real
+  // player ever reached the L6/L10 exit chambers (the mechanic was never
+  // witnessed despite three review cycles of geometry work guarding it).
+  predator.ambushTimer = Infinity;
   // If this level configures an ambush chokepoint, spawn the predator DIRECTLY
   // there in "ambush" mode instead of the default idle spawn/wander — the
   // ambush point IS the effective spawn position, not a path target.
@@ -1548,6 +1624,14 @@ function startLevel(idx) {
     predator.x = level.ambush.x;
     predator.y = level.ambush.y;
     predator.mode = "ambush";
+    // BUG FIX: ambush points are hand-tuned purely for break-radius/wall-
+    // clearance math (see ambushN comments above) and sometimes land right
+    // next to a wall in the +x direction the hardcoded default heading (0)
+    // faces — on L10 that put the predator nose-to-wall ~30-55px away for
+    // the whole ambush hold. Facing the exit instead reads as "watching the
+    // way out" and reliably clears the nearby wall (verified against every
+    // ambush level's geometry, not just L10).
+    predator.heading = Math.atan2(level.exit.y - predator.y, level.exit.x - predator.x);
   }
   // PRED-03: reset the hunt-burst latch/state every attempt so the one-shot
   // trigger fires fresh and a mid-burst capture/retry never carries the burst
@@ -1567,6 +1651,12 @@ function startLevel(idx) {
   // not STATE.PLAYING.
   if (droneNodes) droneNodes.g.gain.setTargetAtTime(0.05, now(), 0.1);
   dripTimer = 3 + Math.random() * 5;
+  // C1/C2: per-attempt sonar state — the exit is unknown again, the predator
+  // fades back into the dark.
+  exitFound = false;
+  exitTickTimer = 4;
+  predVisFlash = 0;
+  predHBFlash = 0;
   pingCount = 0;
   clearTime = 0;
   introT = 4.5;       // show the level intro banner, then fade it
@@ -1655,6 +1745,9 @@ function update(dt) {
   if (prevCooldown > 0 && cooldown <= 0) pingReadyPulse = 1;
   prevCooldown = cooldown;
   decoyCooldown = Math.max(0, decoyCooldown - dt);
+  // C2: decay the two sonar-visibility flashes (ping ~1s, heartbeat ~0.5s).
+  predVisFlash = Math.max(0, predVisFlash - dt);
+  predHBFlash = Math.max(0, predHBFlash - dt * 2);
   if (aiming) aimAng = currentAimAngle();
   // LVL-04: advance each active label's fade timer. drawMechanicLabels()
   // simply stops drawing once life<=0 (or used); entries are not deleted
@@ -1749,6 +1842,16 @@ function updateAmbience(dt) {
     caveDrip(pan);
     dripTimer = 3 + Math.random() * 5;
   }
+  // C1: exit breadcrumb, pre-discovery only, within 1.5 ping radii — an
+  // occasional quiet crystalline tick panned toward the exit.
+  if (!exitFound) {
+    exitTickTimer -= dt;
+    if (exitTickTimer <= 0) {
+      const de = Math.hypot(player.x - level.exit.x, player.y - level.exit.y);
+      if (de < PING_MAX_RADIUS * 1.5) exitTick();
+      exitTickTimer = 3 + Math.random() * 3;
+    }
+  }
 }
 
 function moveAndCollide(mx, my) {
@@ -1764,7 +1867,25 @@ function collidesAt(x, y, r) {
 }
 
 function updatePings(dt) {
-  for (const p of pings) { p.radius += PING_SPEED * dt; revealAlongFront(p); }
+  for (const p of pings) {
+    p.radius += PING_SPEED * dt;
+    revealAlongFront(p);
+    // C1: any wavefront (player, decoy, or heartbeat) crossing the exit
+    // discovers it — generosity aids findability.
+    if (!exitFound && level) {
+      const de = Math.hypot(level.exit.x - p.x, level.exit.y - p.y);
+      if (Math.abs(de - p.radius) < PING_BAND + level.exit.r) {
+        exitFound = true;
+        spawnParticles(level.exit.x, level.exit.y, 26, COLORS.exitGlow, { speed: 120, life: 0.9, size: 2.6 });
+        sndExitFound();
+      }
+    }
+    // C2: your sonar shows you the monster — at the price of having called it.
+    if (!p.predHB && !level.dormant) {
+      const dp = Math.hypot(predator.x - p.x, predator.y - p.y);
+      if (Math.abs(dp - p.radius) < PING_BAND + predator.r * 2) predVisFlash = 1;
+    }
+  }
   pings = pings.filter((p) => p.radius <= (p.predHB ? PRED_HB_RADIUS : PING_MAX_RADIUS));
 }
 
@@ -1783,6 +1904,8 @@ function predatorAudioState() {
   // so this is checked first, before every other branch.
   if (predator.huntBurstActive) return "breath";
   if (predator.stalking) return "breath";
+  // C3: while it searches a last-heard spot, you hear it LISTENING for you.
+  if (predator.searchTimer > 0) return "breath";
   if (predator.mode === "hunt") return "hunt";
   if (level.patrol && level.patrol.length > 0) return "pulse";
   return "grumble";
@@ -1798,6 +1921,7 @@ function updatePredatorHeartbeat(dt) {
     // stalking burst, 1.3s during an idle burst) rather than overriding it.
     if (predator.huntBurstActive) predator.hbTimer *= HUNT_HB_MULT;
     pings.push({ x: predator.x, y: predator.y, radius: 0, predHB: true });
+    predHBFlash = 1; // C2: its own heartbeat briefly betrays its silhouette
     predatorVoice(predatorAudioState(), panForX(predator.x), predOcclusion);
   }
 }
@@ -1886,20 +2010,39 @@ function updatePredator(dt) {
   // intercepts predator behavior while ambushing; once broken, the very next
   // frame's stalk/hunt/idle logic takes over normally.
   if (predator.mode === "ambush") {
-    predator.ambushTimer -= dt;
     const toPlAmbush = Math.hypot(player.x - predator.x, player.y - predator.y);
+    // C4: arm the countdown only when the standoff starts (player within 2x
+    // break radius); until then the hold is indefinite.
+    if (!isFinite(predator.ambushTimer)) {
+      if (toPlAmbush < AMBUSH_BREAK_RADIUS * 2) predator.ambushTimer = 20;
+    } else {
+      predator.ambushTimer -= dt;
+    }
     const ambushSeesPlayer = toPlAmbush < AMBUSH_BREAK_RADIUS && lineClear(player.x, player.y, predator.x, predator.y);
     if (ambushSeesPlayer || predator.ambushTimer <= 0) {
-      predator.mode = "idle";
-      predator.idleTimer = 0;
-      pickIdleTarget();
+      if (ambushSeesPlayer) {
+        predator.mode = "idle";
+        predator.idleTimer = 0;
+        pickIdleTarget();
+      } else {
+        // C4: timeout-break leaves the chamber purposefully (patrol point or
+        // its authored spawn), not a random wander inside the exit room.
+        const out = (level.patrol && level.patrol.length) ? level.patrol[0] : level.predStart;
+        predator.mode = "hunt";
+        predator.tx = out.x; predator.ty = out.y;
+        predator.path = planPath(predator.x, predator.y, out.x, out.y);
+        predator.pathStep = 0;
+      }
     }
     return;
   }
 
-  // --- STALK MODE: within sense radius it hears footsteps and homes in directly ---
+  // --- STALK MODE (C3): it hears FOOTSTEPS — a still player is silent. The
+  // old check was pure distance, which contradicted the blind-hunter fiction
+  // and deleted the freeze-while-it-prowls-past verb. playerMoving is input
+  // intent (updatePlayer), so pushing into a wall still counts as audible.
   const toPl = Math.hypot(player.x - predator.x, player.y - predator.y);
-  if (toPl < PRED_SENSE_RADIUS) {
+  if (toPl < PRED_SENSE_RADIUS && playerMoving) {
     if (!predator.stalking) {
       predator.stalking = true;
       predator.hbTimer = 0; // pulse immediately on detection
@@ -1908,10 +2051,17 @@ function updatePredator(dt) {
     return;
   }
   if (predator.stalking) {
+    // C3: contact lost — go to the last-heard spot and linger there instead
+    // of instantly wandering off. Reads as searching; gives a frozen player
+    // an agonizing, fair beat.
     predator.stalking = false;
-    predator.mode = "idle";
-    predator.idleTimer = 0;
-    pickIdleTarget();
+    predator.lastHeardX = player.x; predator.lastHeardY = player.y;
+    predator.searchTimer = 3.0;
+    predator.mode = "hunt";
+    predator.tx = player.x; predator.ty = player.y;
+    predator.path = planPath(predator.x, predator.y, player.x, player.y);
+    predator.pathStep = 0;
+    markLabelUsed("freeze"); // LVL-04: breaking a stalk by freezing IS the lesson
   }
 
   // --- HUNT MODE: pathfind toward last-heard ping origin ---
@@ -1931,6 +2081,22 @@ function updatePredator(dt) {
         stepToward(dx / dist, dy / dist, level.huntSpeed * burst * dt);
       }
     }
+    return;
+  }
+
+  // --- IDLE: C3 last-heard search first, then patrol loop, then wander ---
+  if (predator.searchTimer > 0) {
+    predator.searchTimer -= dt;
+    predator.idleTimer -= dt;
+    if (predator.idleTimer <= 0) {
+      predator.idleTimer = 0.9;
+      const a = Math.random() * TAU, r = 30 + Math.random() * 60;
+      predator.tx = predator.lastHeardX + Math.cos(a) * r;
+      predator.ty = predator.lastHeardY + Math.sin(a) * r;
+    }
+    const sdx = predator.tx - predator.x, sdy = predator.ty - predator.y;
+    const sdist = Math.hypot(sdx, sdy);
+    if (sdist > 4) stepToward(sdx / sdist, sdy / sdist, PRED_IDLE_SPEED * burst * dt);
     return;
   }
 
@@ -1978,6 +2144,9 @@ function stepToward(ux, uy, amt) {
 }
 
 function updateProximityAudio() {
+  // C2: dormant (Act I) levels have no threat — keep the hum/tension silent
+  // rather than tracking a harmless prop in the corner.
+  if (level.dormant) { predOcclusion = 1; setProximity(0); setTensionTone(0); return; }
   const d = Math.hypot(player.x - predator.x, player.y - predator.y);
   const near = 320; // start humming within this distance
   const closeness = Math.max(0, Math.min(1, 1 - d / near));
@@ -2001,6 +2170,7 @@ function getBest(idx) {
 
 function onWin() {
   state = STATE.WON;
+  exitFound = true; // C1: grace wins (undiscovered touch) still render the exit
   // Best = fewest pings, and separately fastest time.
   const key = String(levelIndex);
   const prev = getBest(levelIndex);
@@ -2260,6 +2430,7 @@ function drawFrontSeg(w, t0, t1, fade, glow, core) {
 // check) — a raw danger-pressure overlay, not a sightline effect. Drawn as
 // the last world-layer step before renderHUD() so HUD text stays legible.
 function drawGrain() {
+  if (level.dormant) return; // C2: no danger-pressure from a harmless prop
   const d = Math.hypot(player.x - predator.x, player.y - predator.y);
   if (d >= GRAIN_FAR_DIST) return;
   const dc = Math.max(GRAIN_NEAR_DIST, Math.min(GRAIN_FAR_DIST, d));
@@ -2291,6 +2462,7 @@ function drawParticles() {
 }
 
 function drawExit() {
+  if (!exitFound) return; // C1: undiscovered exits are part of the dark
   const e = level.exit;
   const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 500);
   ctx.save();
@@ -2309,6 +2481,15 @@ function drawExit() {
 }
 
 function drawPredator() {
+  if (level.dormant) return; // C2: Act I — the dark really is empty
+  // C2: the predator is a creature of sound. It renders only while sonar
+  // shows it: a ping-front flash (chalk-white, ~1s), its own heartbeat blip
+  // (dim red, ~0.5s), close range (fades in from the void), or sonar assist.
+  const dPl = Math.hypot(player.x - predator.x, player.y - predator.y);
+  const closeVis = Math.max(0, 1 - dPl / PRED_VIS_NEAR);
+  const vis = sonarAssist ? 1 : Math.max(predVisFlash, predHBFlash * 0.35, closeVis);
+  if (vis <= 0.02) return;
+
   ctx.save();
   ctx.translate(predator.x, predator.y);
   ctx.rotate(predator.heading);
@@ -2323,7 +2504,7 @@ function drawPredator() {
   for (let i = 0; i < 3; i++) {
     const ph = (predator.rippleT * 1.1 + i / 3) % 1;
     const rr = predator.r * (0.5 + ph * 2.2);
-    ctx.globalAlpha = (1 - ph) * (predator.mode === "hunt" ? 0.5 : 0.3) * stalkAmt;
+    ctx.globalAlpha = (1 - ph) * (predator.mode === "hunt" ? 0.5 : 0.3) * stalkAmt * vis;
     ctx.strokeStyle = COLORS.predator;
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.stroke();
@@ -2336,18 +2517,33 @@ function drawPredator() {
     ctx.lineTo(PRED_SHAPE[i].x * predator.r, PRED_SHAPE[i].y * predator.r);
   }
   ctx.closePath();
-  ctx.globalAlpha = 0.25 + pulse * 0.18 * stalkAmt;
+  ctx.globalAlpha = (0.25 + pulse * 0.18 * stalkAmt) * vis;
   ctx.fillStyle = COLORS.predatorDeep;
   ctx.fill();
-  ctx.globalAlpha = 0.85 + pulse * 0.15 * stalkAmt;
+  ctx.globalAlpha = (0.85 + pulse * 0.15 * stalkAmt) * vis;
   ctx.strokeStyle = COLORS.predator;
   ctx.lineWidth = 2;
   ctx.stroke();
 
   // Small filled core for body presence, pulsing only when stalking.
-  ctx.globalAlpha = 0.7 + pulse * 0.3 * stalkAmt;
+  ctx.globalAlpha = (0.7 + pulse * 0.3 * stalkAmt) * vis;
   ctx.fillStyle = COLORS.predator;
   ctx.beginPath(); ctx.arc(0, 0, predator.r * 0.32, 0, TAU); ctx.fill();
+
+  // C2: chalk-white sonar flash overlay while a wavefront reveal is fresh —
+  // your echo painting the monster, same chalk as the walls it lives among.
+  if (predVisFlash > 0.02 && !sonarAssist) {
+    ctx.beginPath();
+    ctx.moveTo(PRED_SHAPE[0].x * predator.r, PRED_SHAPE[0].y * predator.r);
+    for (let i = 1; i < PRED_SHAPE.length; i++) {
+      ctx.lineTo(PRED_SHAPE[i].x * predator.r, PRED_SHAPE[i].y * predator.r);
+    }
+    ctx.closePath();
+    ctx.globalAlpha = predVisFlash * 0.9;
+    ctx.strokeStyle = COLORS.wallFront;
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+  }
 
   ctx.restore();
 }
@@ -2482,8 +2678,8 @@ function renderHUD() {
   ctx.fillStyle = COLORS.hud;
   ctx.textBaseline = "bottom";
   const hint = level.decoy
-    ? "SPACE ping · WASD/arrows move · SHIFT(hold)+aim or right-click = DECOY · R reset"
-    : "SPACE ping · WASD/arrows move · R reset";
+    ? "SPACE ping · WASD/arrows move · SHIFT(hold)+aim or right-click = DECOY · R reset · V sonar assist"
+    : "SPACE ping · WASD/arrows move · R reset · V sonar assist";
   ctx.fillText(hint, 16, H - 14);
 
   if (showDebug) {
@@ -2543,7 +2739,9 @@ function renderTitle() {
   ctx.textAlign = "center";
 
   ctx.fillStyle = COLORS.wallFront;
-  ctx.font = "700 clamp(28px, 6vw, 54px) system-ui, sans-serif";
+  // clamp()/calc() are not valid inside canvas font strings (browsers keep
+  // the previous font on a bad assignment) — compute the size in JS instead.
+  ctx.font = `700 ${Math.round(Math.max(28, Math.min(54, W * 0.06)))}px system-ui, sans-serif`;
   ctx.fillText("ECHO CARTOGRAPHER", W / 2, H / 2 - 110);
 
   ctx.fillStyle = COLORS.ghost; ctx.globalAlpha = 0.8;
@@ -2600,7 +2798,7 @@ function renderEnd(title, color, sub) {
   }
   ctx.textAlign = "center";
   ctx.fillStyle = color;
-  ctx.font = "700 clamp(32px, 7vw, 60px) system-ui, sans-serif";
+  ctx.font = `700 ${Math.round(Math.max(32, Math.min(60, W * 0.07)))}px system-ui, sans-serif`;
   ctx.fillText(title, W / 2, H / 2 - 30);
   ctx.fillStyle = COLORS.hudBright; ctx.font = "16px system-ui, sans-serif";
   ctx.fillText(sub, W / 2, H / 2 + 14);
@@ -2624,7 +2822,7 @@ function renderCleared() {
   }
   drawParticles();
   ctx.fillStyle = COLORS.exit;
-  ctx.font = "700 clamp(30px, 6.5vw, 56px) system-ui, sans-serif";
+  ctx.font = `700 ${Math.round(Math.max(30, Math.min(56, W * 0.065)))}px system-ui, sans-serif`;
   ctx.fillText("YOU MAPPED THE DARK", W / 2, H / 2 - 30);
   ctx.fillStyle = COLORS.hudBright; ctx.font = "16px system-ui, sans-serif";
   ctx.fillText("Every corridor learned. Every lie believed. Every echo silenced.", W / 2, H / 2 + 12);
