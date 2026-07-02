@@ -168,5 +168,33 @@ test("makeCylinder side-wall normals are unit length", () => {
   }
 });
 
+test("makeCylinder triangle winding matches each face's assigned normal direction", () => {
+  function faceNormalMatches(positions, normals, i0, i1, i2) {
+    const p = (i) => [positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]];
+    const v0 = p(i0), v1 = p(i1), v2 = p(i2);
+    const e1 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
+    const e2 = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
+    const cx = e1[1] * e2[2] - e1[2] * e2[1];
+    const cy = e1[2] * e2[0] - e1[0] * e2[2];
+    const cz = e1[0] * e2[1] - e1[1] * e2[0];
+    const len = Math.hypot(cx, cy, cz);
+    const geo = [cx / len, cy / len, cz / len];
+    const n = [normals[i0 * 3], normals[i0 * 3 + 1], normals[i0 * 3 + 2]];
+    const dot = geo[0] * n[0] + geo[1] * n[1] + geo[2] * n[2];
+    return dot > 0.99;
+  }
+  const seg = 8;
+  const cyl = t.makeCylinder(seg, 2, 1, 1);
+  // Side wall: triangle 0 is indices [0,1,2] of the first quad (idx 0..5 in the index buffer).
+  assert(faceNormalMatches(cyl.positions, cyl.normals, cyl.indices[0], cyl.indices[1], cyl.indices[2]), "side wall triangle 1 winding should match its assigned normal");
+  assert(faceNormalMatches(cyl.positions, cyl.normals, cyl.indices[3], cyl.indices[4], cyl.indices[5]), "side wall triangle 2 winding should match its assigned normal");
+  // Top cap: first triangle after the side wall's seg*6 indices.
+  const topCapStart = seg * 6;
+  assert(faceNormalMatches(cyl.positions, cyl.normals, cyl.indices[topCapStart], cyl.indices[topCapStart + 1], cyl.indices[topCapStart + 2]), "top cap triangle winding should match its assigned normal");
+  // Bottom cap: first triangle after side wall + top cap.
+  const botCapStart = seg * 6 + seg * 3;
+  assert(faceNormalMatches(cyl.positions, cyl.normals, cyl.indices[botCapStart], cyl.indices[botCapStart + 1], cyl.indices[botCapStart + 2]), "bottom cap triangle winding should match its assigned normal");
+});
+
 console.log(`\n${count - failures}/${count} passed`);
 process.exitCode = failures ? 1 : 0;
