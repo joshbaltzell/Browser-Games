@@ -96,14 +96,14 @@ The WebGL draw calls themselves (buffer setup, shader compilation, per-frame `gl
 
 Matches every other game in this repo exactly:
 ```
-games/tank-yard/
+games/tank-yard-fable/
   index.html   # <canvas> + HUD overlay divs + <script src="game.js">, no modules
   style.css    # HUD overlay styling
   game.js      # everything: math module, geometry builders, shaders (as template-literal strings), game state, WebGL setup, game loop
   dev/
     smoke.js   # Node-only test harness for the pure-logic functions (§11)
 ```
-Registered in the hub via a new entry in `hub.js`'s `GAMES` array (title, description, `path: "games/tank-yard/index.html"`, tags, accent color, inline-SVG card art) — identical mechanism to every existing game.
+Registered in the hub via a new entry in `hub.js`'s `GAMES` array (title, description, `path: "games/tank-yard-fable/index.html"`, tags, accent color, inline-SVG card art) — identical mechanism to every existing game.
 
 ## 13. Art direction (for the placeholder pass)
 
