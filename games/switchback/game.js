@@ -46,6 +46,18 @@ const BANK_GAIN = 1.18;       // tangential energy a clean curved bank adds
 const PLAYER_X = VW * 0.30;
 const RADIUS = 13;
 
+// Soda-can collectibles / hazards (SODA-01). A black Coke Zero can is GOOD
+// (bonus + boost); a silver Diet Coke can is BAD (point loss + knockback).
+const CAN_W = 22;              // can width (logical px)
+const CAN_H = 34;              // can height (logical px)
+const CAN_GOOD_POINTS = 50;    // metres gained collecting a Coke Zero (black)
+const CAN_BAD_POINTS = 50;     // metres lost bumping a Diet Coke (silver)
+const CAN_BAD_CHANCE = 0.42;   // fraction of spawned cans that are the bad type
+const CAN_MIN_GAP = 340;       // min world-x spacing between cans
+const CAN_MAX_GAP = 660;       // max world-x spacing between cans
+const BOOST_DUR = 3.0;         // seconds of 2x score after a good can
+const BOOST_MULT = 2;          // score multiplier while a boost is active
+
 // localStorage key for best distance.
 const LS_BEST = "switchback_best_v1";
 
@@ -89,6 +101,11 @@ const COLORS = {
   crystalShard: "#cffcff",  // shatter shard
   collapse: "#0a0408",      // void where wall has shattered away
   beat: "#ffd089",          // beat pulse accent
+  // Soda-can collectibles.
+  cokeBlack: "#141418",     // Coke Zero body (near-black)
+  cokeRed: "#e5142a",       // Coke red band (good can accent)
+  dietSilver: "#d7dce2",    // Diet Coke body (silver)
+  dietRed: "#c8102e",       // Diet Coke red band (bad can accent)
 };
 
 // ----------------------------------------------------------------------------
@@ -138,6 +155,15 @@ let bestFlashT = 0;                // glow timer when a new best is set
 let lastRunDist = 0;              // distance of the run that just ended
 let newBest = false;             // did the last run beat the stored best?
 
+// Soda cans (SODA-01) — world-anchored so they scroll like crystals.
+// Each: {x (world), y, bad, taken, phase}. Coke Zero = good, Diet Coke = bad.
+let cans = [];
+let nextCanX = 0;        // world x where the next can will be placed
+let cansCollected = 0;   // Coke Zero cans grabbed this run (HUD tally)
+let boostT = 0;          // seconds of 2x-score boost remaining
+let hitFlashT = 0;       // red screen-flash timer from a Diet Coke bump
+let pops = [];           // floating +N / -N score popups (screen-space)
+
 // Player droplet.
 const player = {
   y: BOTTOM_Y - RADIUS,
@@ -145,6 +171,7 @@ const player = {
   gravitySign: 1,   // +1 = pulled down (rest on floor), -1 = pulled up (ceiling)
   onSurface: true,
   squash: 0,        // contact squash amount (cosmetic, 0..1)
+  sunk: 0,          // side whose collapsed gap the droplet has dropped into (+1 floor, -1 ceiling, 0 none)
 };
 
 // Trail samples (world-space-ish; stored as screen points that scroll).
@@ -157,11 +184,11 @@ let particles = [];
 // Twist state — the rhythmic collapse.
 // ----------------------------------------------------------------------------
 // Musical clock. BPM picked to feel like a slow cave pulse. The beat is the
-// single source of timing for the collapse: crystals shatter SHATTER_BEATS
-// after being triggered, always landing exactly on a beat.
+// single source of timing for the collapse: crystals shatter at most
+// SHATTER_BEATS after being triggered, always landing exactly on a beat.
 const BPM = 132;
 const BEAT_DUR = 60 / BPM;        // seconds per beat
-const SHATTER_BEATS = 4;          // beats from trigger -> shatter
+const SHATTER_BEATS = 4;          // max beats from trigger -> shatter
 let beatTime = 0;                 // seconds accumulated within the run
 let beatCount = 0;                // integer beats elapsed
 let beatPulse = 0;                // 0..1 visual pulse, decays each frame
@@ -702,6 +729,7 @@ function startRun() {
   player.vy = 0;
   player.onSurface = true;
   player.squash = 0;
+  player.sunk = 0;
   // Rebuild the stitched corridor plan fresh for this run.
   resetCorridor();
   // Snap onto the floor at the start.
@@ -723,6 +751,14 @@ function startRun() {
   lastMilestone = 0;
   newBestCelebrated = false;
   cascadeShake = 0;
+  // Soda-can collectibles reset. Start past the flat opener so cans don't
+  // clutter the tutorial before the player's first flip.
+  cans = [];
+  nextCanX = 1500;
+  cansCollected = 0;
+  boostT = 0;
+  hitFlashT = 0;
+  pops = [];
 }
 
 function resetToTitle() {
@@ -829,6 +865,78 @@ function spawnCrystalsAhead() {
   }
 }
 
+// ----------------------------------------------------------------------------
+// Soda cans — collectibles (Coke Zero) and hazards (Diet Coke).
+// ----------------------------------------------------------------------------
+
+// Place cans ahead of the camera, floating in the open corridor interior (not
+// on the walls, so they read as pickups distinct from the surfaces/crystals).
+function spawnCansAhead() {
+  const horizon = worldX + VW + 400;
+  while (nextCanX < horizon) {
+    const cy = ceilingY(nextCanX);
+    const fy = floorY(nextCanX);
+    const pad = CAN_H * 0.75 + 10;         // keep the whole can inside the walls
+    const lo = cy + pad, hi = fy - pad;
+    const y = hi > lo ? lo + Math.random() * (hi - lo) : (cy + fy) / 2;
+    cans.push({
+      x: nextCanX,
+      y,
+      bad: Math.random() < CAN_BAD_CHANCE, // silver Diet Coke vs black Coke Zero
+      taken: false,
+      phase: Math.random() * TAU,          // per-can bob phase
+    });
+    nextCanX += CAN_MIN_GAP + Math.random() * (CAN_MAX_GAP - CAN_MIN_GAP);
+  }
+}
+
+// Check the droplet against every live can. Good = bonus + boost; bad = point
+// loss + a non-fatal knockback off the current surface. Culls behind the camera.
+function updateCans(dt, scroll) {
+  const pwx = dropletWorldX();
+  for (const c of cans) {
+    if (c.taken) continue;
+    if (Math.abs(c.x - pwx) < RADIUS + CAN_W * 0.55 &&
+        Math.abs(c.y - player.y) < RADIUS + CAN_H * 0.55) {
+      c.taken = true;
+      if (c.bad) {
+        // Diet Coke (silver): lose points and get bumped. The run continues.
+        distance = Math.max(0, distance - CAN_BAD_POINTS);
+        player.onSurface = false;
+        player.vy = -player.gravitySign * 780; // knock away from the near wall
+        player.squash = 1;
+        hitFlashT = 0.22;
+        addPop("-" + CAN_BAD_POINTS, COLORS.danger);
+        spawnBurst(PLAYER_X, player.y, 14, COLORS.dietSilver, 260);
+        playTick(true);
+      } else {
+        // Coke Zero (black): bonus points + a short 2x-score boost.
+        distance += CAN_GOOD_POINTS;
+        cansCollected += 1;
+        boostT = BOOST_DUR;
+        addPop("+" + CAN_GOOD_POINTS, COLORS.agateRimTeal);
+        spawnBurst(PLAYER_X, player.y, 16, COLORS.dropletGlow, 300);
+        playDrip(1);
+      }
+    }
+  }
+  cans = cans.filter((c) => !c.taken && c.x > worldX - 120);
+  if (hitFlashT > 0) hitFlashT = Math.max(0, hitFlashT - dt);
+}
+
+// Floating score popup that rises from the droplet and fades (scrolls with world).
+function addPop(text, color) {
+  pops.push({ x: PLAYER_X, y: player.y - RADIUS - 8, vy: -70, age: 0, life: 0.8, text, color });
+}
+function updatePops(dt, scroll) {
+  for (const p of pops) {
+    p.age += dt;
+    p.y += p.vy * dt;
+    p.x -= scroll * dt;
+  }
+  pops = pops.filter((p) => p.age < p.life && p.x > -60);
+}
+
 // Advance the musical clock; fire ticks and resolve scheduled shatters.
 function updateBeat(dt) {
   beatTime += dt;
@@ -840,7 +948,7 @@ function updateBeat(dt) {
     playTick(beatCount % 4 === 0);
     // Resolve any crystals due to shatter on THIS beat.
     for (const c of crystals) {
-      if (c.state === "humming" && beatCount >= c.triggerBeat + SHATTER_BEATS) {
+      if (c.state === "humming" && beatCount >= c.shatterBeat) {
         shatterCrystal(c);
       }
     }
@@ -861,23 +969,30 @@ function shatterCrystal(c) {
   spawnBurst(sx, sy, 18, COLORS.crystalShard, 320);
 }
 
-// Trigger crystals the droplet passes near. Triggering schedules the shatter
-// SHATTER_BEATS later, snapping the countdown to the musical grid.
-function updateCrystalTriggers() {
+// Trigger crystals as they scroll on-screen, and schedule each shatter for the
+// last beat before the droplet reaches it (capped at SHATTER_BEATS), so the gap
+// opens in the droplet's path rather than behind it. The world only scrolls
+// forward, so a gap behind the droplet could never catch it.
+function updateCrystalTriggers(scroll) {
   const wx = dropletWorldX();
   for (const c of crystals) {
     if (c.state !== "idle") {
       if (c.state === "humming") {
         // hum swells toward shatter
         const beatsIn = (beatCount - c.triggerBeat) + (beatTime / BEAT_DUR);
-        c.hum = Math.min(1, beatsIn / SHATTER_BEATS);
+        c.hum = Math.min(1, beatsIn / (c.shatterBeat - c.triggerBeat));
       }
       continue;
     }
-    // Trigger when the droplet has scrolled to within ~one screen-third behind.
-    if (wx > c.x - 240 && wx < c.x + 60) {
+    if (worldToScreen(c.x) < VW) {
+      // Seconds until the droplet reaches the gap's leading edge, then count
+      // the beat boundaries that fall inside that window.
+      const arrive = (c.x - c.w - wx) / Math.max(1, scroll);
+      const toNext = BEAT_DUR - beatTime;
+      const beats = arrive >= toNext ? 1 + Math.floor((arrive - toNext) / BEAT_DUR) : 0;
       c.state = "humming";
-      c.triggerBeat = beatCount; // shatters at triggerBeat + SHATTER_BEATS
+      c.triggerBeat = beatCount;
+      c.shatterBeat = beatCount + Math.max(1, Math.min(SHATTER_BEATS, beats));
       c.hum = 0;
       playHum();
     }
@@ -922,6 +1037,16 @@ function collideAndResolve(prevY) {
     return true;
   }
 
+  // Back inside the corridor: no longer down in a collapsed gap.
+  if (player.y > cy && player.y < fy) player.sunk = 0;
+  // Dropped into a collapsed gap: the void stays open only while the droplet is
+  // still over it. Scrolling into the gap's far edge means it's caught.
+  if (player.sunk) {
+    if (!gapAt(wx, player.sunk)) return true;
+    player.onSurface = false;
+    return player.y > VH + RADIUS * 2 || player.y < -RADIUS * 2;
+  }
+
   // If the landing surface has shattered away (a gap), the droplet falls
   // straight through into the void: no land, and once it clears the corridor
   // it's a fatal fall.
@@ -933,6 +1058,7 @@ function collideAndResolve(prevY) {
     if (landGap && player.y >= fy) {
       // Floor is gone here — keep falling; die once past the bottom edge.
       player.onSurface = false;
+      if (player.y > fy + RADIUS * 0.5) player.sunk = landSide;
       if (player.y > VH + RADIUS * 2) return true;
     } else if (player.y >= fy) {
       // Reached / passed the floor surface.
@@ -947,6 +1073,7 @@ function collideAndResolve(prevY) {
     if (landGap && player.y <= cy) {
       // Ceiling is gone here — keep rising; die once past the top edge.
       player.onSurface = false;
+      if (player.y < cy - RADIUS * 0.5) player.sunk = landSide;
       if (player.y < -RADIUS * 2) return true;
     } else if (player.y <= cy) {
       landOrBank(ceilingY, wx, cy, -1);
@@ -1040,7 +1167,9 @@ function update(dt) {
   }
   const curSpeed = (boost ? speed * 2.6 : speed) * easeMul;
   worldX += curSpeed * dt;
-  distance += (curSpeed * dt) / 10; // metres-ish
+  if (boostT > 0) boostT = Math.max(0, boostT - dt);
+  // Distance accrues at 2x while a Coke Zero boost is active (SODA-01).
+  distance += (curSpeed * dt) / 10 * (boostT > 0 ? BOOST_MULT : 1); // metres-ish
 
   // Keep the stitched corridor plan built out ahead of the camera (LEVEL-01).
   ensureCorridor(worldX + VW + 800);
@@ -1063,7 +1192,8 @@ function update(dt) {
   // Advance the twist systems: musical clock, crystal spawn/trigger, collapse.
   updateBeat(dt);
   spawnCrystalsAhead();
-  updateCrystalTriggers();
+  spawnCansAhead();
+  updateCrystalTriggers(curSpeed);
   updateGaps(dt);
 
   // Swept / sub-stepped vertical integration to defeat tunneling. Sub-step
@@ -1103,6 +1233,10 @@ function update(dt) {
 
   // Ease squash back to round.
   player.squash = Math.max(0, player.squash - dt * 4);
+
+  // Soda cans: collect / bump, then advance the score popups.
+  updateCans(dt, curSpeed);
+  updatePops(dt, curSpeed);
 
   // Trail sampling.
   trail.push({ x: PLAYER_X, y: player.y, age: 0 });
@@ -1327,6 +1461,80 @@ function drawCrystals() {
   }
 }
 
+// Trace a rounded-rectangle can body path (no fill/stroke).
+function canBodyPath(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// Draw one aluminium soda can centred at (sx, y). bad => silver Diet Coke,
+// good => near-black Coke Zero. A colored glow telegraphs good (teal) / bad (red).
+function drawCan(sx, y, bad) {
+  const w = CAN_W, h = CAN_H;
+  ctx.save();
+  ctx.translate(sx, y);
+  // Telegraphing halo so intent reads at a glance.
+  const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, w * 1.7);
+  glow.addColorStop(0, bad ? "rgba(255,111,111,0.45)" : "rgba(125,240,230,0.55)");
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, w * 1.7, 0, TAU);
+  ctx.fill();
+  // Body.
+  canBodyPath(-w / 2, -h / 2, w, h, 4);
+  ctx.fillStyle = bad ? COLORS.dietSilver : COLORS.cokeBlack;
+  ctx.fill();
+  // Cylinder shading — a vertical specular band down the middle.
+  const shade = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+  shade.addColorStop(0, "rgba(0,0,0,0.38)");
+  shade.addColorStop(0.4, "rgba(255,255,255,0.22)");
+  shade.addColorStop(0.52, "rgba(255,255,255,0.32)");
+  shade.addColorStop(0.7, "rgba(255,255,255,0.08)");
+  shade.addColorStop(1, "rgba(0,0,0,0.42)");
+  canBodyPath(-w / 2, -h / 2, w, h, 4);
+  ctx.fillStyle = shade;
+  ctx.fill();
+  // Brand band.
+  ctx.fillStyle = bad ? COLORS.dietRed : COLORS.cokeRed;
+  ctx.fillRect(-w / 2, -5, w, 9);
+  // Aluminium rims top + bottom.
+  ctx.strokeStyle = "rgba(255,255,255,0.55)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.ellipse(0, -h / 2, w / 2, 3, 0, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0, h / 2, w / 2, 3, 0, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+
+function drawCans() {
+  for (const c of cans) {
+    const sx = worldToScreen(c.x);
+    if (sx < -40 || sx > VW + 40) continue;
+    const bob = Math.sin(worldX * 0.02 + c.phase) * 3; // gentle float
+    drawCan(sx, c.y + bob, c.bad);
+  }
+}
+
+function drawPops() {
+  ctx.textAlign = "center";
+  ctx.font = "800 20px system-ui, sans-serif";
+  for (const p of pops) {
+    ctx.globalAlpha = Math.max(0, 1 - p.age / p.life);
+    ctx.fillStyle = p.color;
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawParticles() {
   for (const p of particles) {
     const a = Math.max(0, 1 - p.age / p.life);
@@ -1448,6 +1656,18 @@ function drawHUD() {
     ctx.fillText("MUTED (M)", 24, 82);
   }
 
+  // Coke Zero tally + active boost (SODA-01), to the right of the score.
+  ctx.textAlign = "left";
+  ctx.font = "700 15px system-ui, sans-serif";
+  ctx.fillStyle = COLORS.cokeRed;
+  ctx.fillText("CANS " + cansCollected, 132, 44);
+  if (boostT > 0) {
+    const p = 0.6 + 0.4 * Math.sin(titleHintT * 10);
+    ctx.font = "800 15px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(125,240,230," + p.toFixed(2) + ")";
+    ctx.fillText("2× BOOST", 132, 64);
+  }
+
   if (debug) {
     ctx.textAlign = "right";
     ctx.fillStyle = COLORS.debug;
@@ -1481,7 +1701,8 @@ function drawTitle() {
   const lines = [
     { text: "SWITCHBACK", font: "800 64px system-ui, sans-serif", color: COLORS.amberSoft, gap: 48 },
     { text: "ONE button flips gravity. Read the arc, bank the curves.", font: "500 19px system-ui, sans-serif", color: COLORS.muted, gap: 28 },
-    { text: "Crystals shatter on the beat — outflip the collapse.", font: "500 17px system-ui, sans-serif", color: COLORS.agateRimTeal, gap: 60 },
+    { text: "Crystals shatter on the beat — outflip the collapse.", font: "500 17px system-ui, sans-serif", color: COLORS.agateRimTeal, gap: 28 },
+    { text: "Grab BLACK Coke Zero cans (+boost) · dodge SILVER Diet Coke.", font: "500 16px system-ui, sans-serif", color: COLORS.amberSoft, gap: 60 },
     { text: "PRESS SPACE  /  CLICK  /  TAP", font: "800 28px system-ui, sans-serif", color: startCol, gap: 32 },
     { text: "to flip — press now to start", font: "600 16px system-ui, sans-serif", color: COLORS.muted, gap: 52 },
   ];
@@ -1653,10 +1874,12 @@ function render() {
   }
 
   drawCorridor();
+  drawCans();
   drawParticles();
   drawTrail();
   drawDebugTrajectory();
   drawDroplet();
+  drawPops();
   drawOnboardingHint();
   drawHUD();
   drawBeatBar();
@@ -1673,6 +1896,11 @@ function render() {
     const a = isDeath ? (flashT / 0.45) * 0.45 : (flashT / 0.12) * 0.18;
     const col = isDeath ? "255,111,111" : "255,208,137";
     ctx.fillStyle = "rgba(" + col + "," + a.toFixed(3) + ")";
+    ctx.fillRect(-20, -20, VW + 40, VH + 40);
+  }
+  // Silver-can bump: a brief red flash that is NOT a death (run continues).
+  if (hitFlashT > 0 && state === PLAYING) {
+    ctx.fillStyle = "rgba(255,111,111," + ((hitFlashT / 0.22) * 0.28).toFixed(3) + ")";
     ctx.fillRect(-20, -20, VW + 40, VH + 40);
   }
   // New-best glow ring around the frame while celebrating.
