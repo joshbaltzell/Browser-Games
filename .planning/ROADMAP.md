@@ -7,7 +7,8 @@
 - ✅ **v4.0 LexiGrid** — Phases 32–38 (shipped 2026-06-10)
 - ✅ **v5.0 Neon Gauntlet** — Phases 39–46 (shipped 2026-06-22)
 - ⏸ **v6.0 Neon Gauntlet: Zelda Feel (Slice 1)** — Phases 47–49 (PAUSED at Phase 48, 33%)
-- 🚧 **v7.0 Ten Game Drafts** — Phases 50–59 (in progress)
+- ✅ **v7.0 Ten Game Drafts** — Phases 50–59 (shipped 2026-06-28)
+- ✅ **v8.0 Echo Cartographer — Deep Polish** — Phases 60–63 (shipped 2026-07-01)
 
 ---
 
@@ -32,6 +33,21 @@ Cross-cutting: **HUB-01** (each draft registered on the hub), **INFRA-01** (file
 
 ---
 
+## v8.0 Echo Cartographer — Deep Polish (Phases 60–63) — SHIPPED 2026-07-01
+
+Transform Echo Cartographer from a compelling prototype into a polished stealth experience. Four phases target the four weakest areas identified in the parallel brainstorm: audio depth, tension feedback, predator behavior, and level design. All changes are to `games/echo-cartographer/game.js` and its embedded level data — single file, no build step.
+
+### Phases
+
+- [x] **Phase 60: Audio Depth** - Give the predator a three-state audio vocabulary and layer spatial panning, wall occlusion, footstep blips, cave ambience, decoy sound identity, and act-break silence into the soundscape (completed 2026-06-30)
+- [x] **Phase 61: Tension Feedback** - Make danger and capture feel visceral through a rising proximity tone, a freeze-flash-blackout capture sequence, a cooldown arc ring, aging wall opacity, decoy ghost marks, and proximity grain noise (completed 2026-06-30)
+- [x] **Phase 62: Predator Evolution** - Replace the predator's plain circle with a chalk-wireframe silhouette, add an ambush stance, and add a configurable mid-level hunt burst that spikes speed and heartbeat tempo (completed 2026-07-01)
+- [x] **Phase 63: Level Design & Onboarding** - Audit and fix all 10 levels for ping-readability, redesign Level 1 as a composed geometry tutorial, author one known-unknown room per act, and add fading in-world mechanic labels (completed 2026-07-01)
+
+All 4 phases are code-complete and structurally verified (21/21 requirements). Human playtest confirmation deferred to a bulk end-of-milestone pass — see `.planning/phases/NS-6{0,1,2,3}-*/*-UAT.md` and `v8.0-MILESTONE-AUDIT.md`.
+
+---
+
 ## Phases
 
 <details>
@@ -40,7 +56,7 @@ Cross-cutting: **HUB-01** (each draft registered on the hub), **INFRA-01** (file
 - [x] Phase 1: Web Audio — synthesized sounds for all game events (completed 2026-06-05)
 - [x] Phase 2: Enemy Shape Vocabulary — distinct geometric silhouette per enemy type (completed 2026-06-05)
 - [x] Phase 3: Sentinel Telegraph — targeting reticle 0.8s before Sentinel fires (completed 2026-06-05)
-- [x] Phase 4: Power-up Timer Display — countdown timer + bar for Freeze and Overdrive (completed 2026-06-05)
+- [x] Phase 4: Power-up Timer Display — countdown timer + bar for Freeze and Overdrive (completed 2026-06-06)
 - [x] Phase 5: Wave Surge Announcements — 3s pre-warning before enemy bursts (completed 2026-06-06)
 - [x] Phase 6: Run Modifier Cards — pre-game modifier selection (completed 2026-06-08)
 - [x] Phase 7: Chain Lightning Upgrade — bullets arc to second enemy on hit (completed 2026-06-05)
@@ -187,6 +203,125 @@ Plans:
 
 ---
 
+## v8.0 Echo Cartographer — Deep Polish (Phases 60–63)
+
+## Phase Details
+
+### Phase 60: Audio Depth
+
+**Goal:** The soundscape conveys predator location and intent without any visual information — the player can navigate and track the predator entirely by ear.
+**Depends on:** Phase 53 (echo-cartographer draft: existing ping/predator/player audio hooks in game.js)
+**Requirements:** AUDIO-01, AUDIO-02, AUDIO-03, AUDIO-04, AUDIO-05, AUDIO-06, AUDIO-07, AUDIO-08
+**Success Criteria** (what must be TRUE):
+
+  1. The predator's audio clearly shifts character when its state changes — a player with eyes closed can distinguish idle grumble from patrol pulse from stalk breath by tone alone.
+  2. A player can identify which side of the screen the predator is on using only the stereo pan and volume of the heartbeat ping, without pinging or looking.
+  3. When the player holds still for ~0.4s, footstep blips stop and ambient noise audibly ducks — the soundscape changes as a reward for patience.
+  4. Walking produces rhythmic click blips that get faster at higher movement speeds; standing produces silence in the footstep channel.
+  5. A decoy ping sounds recognizably different from the real ping (higher pitch, same family) and cave drip clicks fire randomly without being confused for player footsteps.
+
+**Plans:** 3/3 plans complete
+**Wave 1**
+
+- [x] 60-01-PLAN.md — Spatial audio foundation: pan curve + panner helper, wall occlusion on proximity hum, AUDIO-07 confirmed shipped (AUDIO-02, AUDIO-05, AUDIO-07)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 60-02-PLAN.md — Three-state predator voice (grumble/pulse/breath) panned + occluded on the heartbeat cadence (AUDIO-01, AUDIO-02)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 60-03-PLAN.md — Footstep clicks + listening pause, cave-drip ambience, act-break silence (AUDIO-03, AUDIO-04, AUDIO-06, AUDIO-08)
+
+**UI hint**: yes
+
+### Phase 61: Tension Feedback
+
+**Goal:** Getting close to capture or being caught delivers a visceral physical shock — players feel danger escalate and death land, not merely observe them.
+**Depends on:** Phase 60 (proximity tone uses the audio infrastructure established there), Phase 53 (canvas render loop, player/predator state)
+**Requirements:** TENS-01, TENS-02, TENS-03, TENS-04, TENS-05, TENS-06
+**Success Criteria** (what must be TRUE):
+
+  1. As the predator closes within ~80px a rising tone climbs in pitch and volume; at the capture moment the tone cuts to dead silence before the capture sting — the silence reads as the hit landing.
+  2. Capture plays a visible three-beat sequence: canvas freeze for 3 frames, a white bleach flash over 80ms, snap to black; the restart screen shows a fading chalk outline at the predator's last known position.
+  3. The cooldown arc ring around the player dot visibly sweeps to full and pulses bright when the ping becomes ready — a player always knows at a glance whether they can ping.
+  4. Wall segments dim over time from bright chalk toward near-invisible rather than switching binary ghost; a freshly-revealed wall is noticeably brighter than one revealed two pings ago.
+  5. After firing a decoy, a faint chalk X lingers at the decoy's origin for ~3s, so the player can see exactly where the false signal landed.
+
+**Plans:** 3/3 plans complete
+**Wave 1**
+
+- [x] 61-01-PLAN.md — Wall-aging overhaul (TENS-04) + proximity grain noise (TENS-06)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 61-02-PLAN.md — Proximity tension tone + capture silence cut (TENS-01) + freeze-flash-blackout capture choreography & chalk-outline predator (TENS-02)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 61-03-PLAN.md — Cooldown arc ring (TENS-03) + decoy chalk-X mark (TENS-05)
+
+**UI hint**: yes
+
+### Phase 62: Predator Evolution
+
+**Goal:** The predator feels like a creature with intent and personality, not a radius that follows the player.
+**Depends on:** Phase 61 (stalk-mode audio used by hunt burst), Phase 53 (predator state machine, per-level config object)
+**Requirements:** PRED-01, PRED-02, PRED-03
+**Success Criteria** (what must be TRUE):
+
+  1. The predator renders as a distinctive angular chalk-wireframe shape (not a circle) that rotates to face its heading and pulses visibly when in stalk mode — a player can read the predator's facing and state at a glance.
+  2. On levels where ambush is configured, the predator stops at a chokepoint and holds position; it only breaks ambush when the player steps within 120px or 15s elapse — it does not simply chase on spawn.
+  3. When the per-level hunt trigger fires, the predator visibly accelerates (30% speed spike) and heartbeat intervals audibly halve for 8 seconds before reverting; the player can perceive both the speed and audio change without checking source code.
+
+**Plans:** 3/3 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 62-01-PLAN.md — Angular chalk-wireframe predator silhouette + heading rotation + stalk-mode pulse (PRED-01)
+
+**Wave 2** *(blocked on Wave 1 — shares drawPredator/stepToward/startLevel region in game.js)*
+
+- [x] 62-02-PLAN.md — Ambush stance: ambushN config + level.ambush mapping + "ambush" 4th mode + 120px/15s break conditions (PRED-02)
+
+**Wave 3** *(blocked on Wave 2 — shares updatePredator/layoutLevel/startLevel/predatorAudioState region in game.js)*
+
+- [x] 62-03-PLAN.md — Hunt burst: huntTriggerN config + one-shot 8s burst, x1.3 speed + x0.5 heartbeat multipliers + forced-breath audio ordering (PRED-03)
+
+### Phase 63: Level Design & Onboarding
+
+**Goal:** Every level teaches through its geometry — a new player understands the core mechanic from Level 1 without reading instructions, and each level's key obstacle is clear from a single well-placed ping.
+**Depends on:** Phase 62 (predator behavior affects where its starting position matters for known-unknown rooms), Phase 53 (level data structure in game.js)
+**Requirements:** LVL-01, LVL-02, LVL-03, LVL-04
+**Success Criteria** (what must be TRUE):
+
+  1. A first-time player who has never read documentation opens Level 1, fires one ping at the starting position, and can see from the revealed geometry where to go next — no text prompt needed.
+  2. On each existing level, a single ping near the player's starting position reveals the primary obstacle (the dangerous chokepoint, the predator corridor, or the exit branch) without requiring subsequent pings to understand the level's structure.
+  3. In each of the three acts (levels 2, 6, 10), one room reveals full geometry AND the predator starting position in a single entry ping — the player has complete information but still faces a non-trivial routing decision.
+  4. In-world chalk labels appear at the position where each new mechanic first matters (ping on L1, decoy on L5), are visible for 4s or until used, and never reappear on subsequent visits — a returning player sees a clean level.
+
+**Plans:** 3/3 plans complete
+**Wave 1**
+
+- [x] 63-01-PLAN.md — L1 corridor-to-T-junction redesign (LVL-02) + L4 spiral / L5 readability nudges (LVL-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 63-02-PLAN.md — Full-reveal exit rooms on act-ending levels L2/L6/L10 (LVL-03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 63-03-PLAN.md — In-world chalk mechanic-label system + localStorage persistence (L1 ping, L5 decoy) (LVL-04)
+
+**Cross-cutting constraints:**
+
+- game.js still parses (node --check exits 0) and runs from file:// unchanged.
+
+**UI hint**: yes
+
+---
+
 ## Progress
 
 | Phase | Milestone | Plans | Status | Completed |
@@ -250,3 +385,7 @@ Plans:
 | 57. switchback-draft | v7.0 | 1/1 | Built | 2026-06-28 |
 | 58. vanishing-point-draft | v7.0 | 1/1 | Built | 2026-06-28 |
 | 59. notary-of-the-damned-draft | v7.0 | 1/1 | Built | 2026-06-28 |
+| 60. audio-depth | v8.0 | 3/3 | Complete   | 2026-06-30 |
+| 61. tension-feedback | v8.0 | 3/3 | Complete   | 2026-06-30 |
+| 62. predator-evolution | v8.0 | 3/3 | Complete   | 2026-07-01 |
+| 63. level-design-onboarding | v8.0 | 3/3 | Complete   | 2026-07-01 |
