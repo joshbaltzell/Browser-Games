@@ -6,7 +6,10 @@ for the Tank Yard games). Open the landing page and play.
 
 ## Play
 
-Run it from a static server (recommended):
+**Play online:** https://joshbaltzell.github.io/Browser-Games/ (desktop or
+phone, nothing to install).
+
+To run it locally, use a static server (recommended):
 
 ```bash
 # from the repo root
