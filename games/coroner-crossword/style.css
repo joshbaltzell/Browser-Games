@@ -1,0 +1,46 @@
+:root {
+  --paper: #d9cfb8;
+  --ink: #2a2622;
+  --bg: #14110d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  /* The lamp-pool on a 2 a.m. desk: warm glow at center, dark room at the edges. */
+  background:
+    radial-gradient(70% 55% at 50% 38%, #2a2114 0%, #1a150e 45%, #0a0805 100%);
+  font-family: "Courier New", "Courier", monospace;
+  color: var(--paper);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+#game {
+  display: block;
+  /* JS sets the pixel width/height to keep the aspect ratio. */
+  border-radius: 4px;
+  background: #0c0a07;
+  /* Felt desk pad under the case file, lamp throwing a soft pool of light. */
+  box-shadow:
+    0 0 0 1px rgba(217, 207, 184, 0.10),
+    0 0 120px -10px rgba(255, 196, 120, 0.10),
+    0 30px 90px -28px rgba(0, 0, 0, 0.95);
+  touch-action: none;
+  cursor: default;
+}

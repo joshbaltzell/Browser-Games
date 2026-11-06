@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tic-Tac-Toe: Infinity & Beyond</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Back button to arcade hub -->
+  <a class="back-link" href="../../index.html">&larr; Back to games</a>
+
+  <div id="app-wrap">
+    <!-- ==================== LOBBY SCREEN ==================== -->
+    <main id="lobby-screen">
+      <header class="lobby-header">
+        <h1 class="logo-main">TIC<span>TAC</span><span>TOE</span> <span class="alt">INFINITY</span></h1>
+        <p class="lobby-tagline">Experience the classic game across expanded grids and dimensions with cosmic effects.</p>
+      </header>
+
+      <!-- Game Mode Selection Grid -->
+      <section class="mode-grid" aria-label="Select Game Mode">
+        <div class="mode-card selected" data-mode="mega" id="mode-mega-card">
+          <div class="mode-icon">
+            <!-- Grid Icon -->
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <line x1="9" y1="3" x2="9" y2="21" />
+              <line x1="15" y1="3" x2="15" y2="21" />
+              <line x1="3" y1="9" x2="21" y2="9" />
+              <line x1="3" y1="15" x2="21" y2="15" />
+            </svg>
+          </div>
+          <h2 class="mode-title">Mega Grid</h2>
+          <p class="mode-desc">Play on custom grids from 3&times;3 up to 30&times;30. Adjust the consecutive symbols needed to win.</p>
+        </div>
+
+        <div class="mode-card" data-mode="infinite" id="mode-infinite-card">
+          <div class="mode-icon">
+            <!-- Infinite Infinity Icon -->
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 1 0 0-8c-2 0-4 1.33-6 4Z" />
+            </svg>
+          </div>
+          <h2 class="mode-title">Infinite Void</h2>
+          <p class="mode-desc">An endless, borderless board. Drag to scroll, pinch to zoom. Get 5-in-a-row to win in the cosmic expanse.</p>
+        </div>
+
+        <div class="mode-card" data-mode="ultimate" id="mode-ultimate-card">
+          <div class="mode-icon">
+            <!-- Nested / Ultimate Icon -->
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="20" rx="2" />
+              <rect x="6" y="6" width="12" height="12" rx="1" />
+              <line x1="10" y1="6" x2="10" y2="18" />
+              <line x1="14" y1="6" x2="14" y2="18" />
+              <line x1="6" y1="10" x2="18" y2="10" />
+              <line x1="6" y1="14" x2="18" y2="14" />
+            </svg>
+          </div>
+          <h2 class="mode-title">Ultimate Grid</h2>
+          <h2 class="mode-title" style="font-size: 0.8rem; opacity: 0.8; margin-top: -6px;">Nested Sub-grids</h2>
+          <p class="mode-desc">A 3&times;3 board of 3&times;3 mini-grids. Your move dictates the grid your opponent must play in next.</p>
+        </div>
+
+        <div class="mode-card" data-mode="gravity" id="mode-gravity-card">
+          <div class="mode-icon">
+            <!-- Gravity Down Arrow Icon -->
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <polyline points="19 12 12 19 5 12" />
+              <line x1="5" y1="19" x2="19" y2="19" />
+            </svg>
+          </div>
+          <h2 class="mode-title">Gravity Drop</h2>
+          <p class="mode-desc">Custom sized grids where placed symbols drop to the lowest unoccupied slot. Connect your line to win.</p>
+        </div>
+      </section>
+
+      <!-- Dynamic Settings Panels -->
+      <section class="lobby-settings-box" aria-label="Game Settings">
+        <div class="settings-row">
+          <!-- Opponent Selector -->
+          <div class="settings-col">
+            <label for="opponent-toggle">Opponent</label>
+            <div class="toggle-group" id="opponent-toggle" role="radiogroup">
+              <button class="toggle-btn active" data-val="ai">Versus AI</button>
+              <button class="toggle-btn" data-val="player">Local PvP</button>
+            </div>
+          </div>
+
+          <!-- Difficulty (Visible only when AI is active) -->
+          <div class="settings-col" id="difficulty-setting-col">
+            <label for="difficulty-select">AI CPU Difficulty</label>
+            <select class="custom-select" id="difficulty-select">
+              <option value="easy">Easy CPU</option>
+              <option value="medium" selected>Medium CPU</option>
+              <option value="hard">Hard CPU (Intelligent)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-row" id="grid-dimensions-row">
+          <!-- Board Size Slider -->
+          <div class="settings-col" id="board-size-setting-col">
+            <label for="board-size-slider">Grid Size (<span id="board-size-text">10</span> &times; <span id="board-size-text-2">10</span>)</label>
+            <div class="slider-container">
+              <input type="range" id="board-size-slider" min="3" max="30" value="10">
+              <span class="slider-val" id="board-size-val">10</span>
+            </div>
+          </div>
+
+          <!-- Win Length Selector -->
+          <div class="settings-col" id="win-length-setting-col">
+            <label for="win-length-slider">Win Sequence (<span id="win-length-text">5</span> in a row)</label>
+            <div class="slider-container">
+              <input type="range" id="win-length-slider" min="3" max="6" value="5">
+              <span class="slider-val" id="win-length-val">5</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <button class="btn-launch" id="btn-start">Initiate Grid</button>
+    </main>
+
+    <!-- ==================== IN-GAME GAMEPLAY SCREEN ==================== -->
+    <section id="game-screen">
+      <!-- Left side: Interactive Canvas -->
+      <div id="board-wrapper">
+        <canvas id="game-canvas"></canvas>
+
+        <!-- Navigation Tips Tooltip -->
+        <div class="canvas-tooltip" id="canvas-nav-tooltip" style="display: none;">
+          <span><span class="key-indicator">Drag</span> Pan Camera</span>
+          <span><span class="key-indicator">Scroll / Pinch</span> Zoom</span>
+        </div>
+
+        <!-- Over-Canvas Dialog Overlay (Game Over) -->
+        <div class="game-over-overlay" id="game-over-overlay">
+          <div class="game-over-card">
+            <h2 class="win-title" id="win-title">X WINS!</h2>
+            <p class="win-desc" id="win-desc">The grid has been conquered in 23 moves.</p>
+            <div class="win-actions">
+              <button class="hud-btn hud-btn-primary" id="btn-rematch">Rematch</button>
+              <button class="hud-btn" id="btn-lobby">Main Menu</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right side: Control HUD Sidebar -->
+      <aside id="hud-sidebar">
+        <!-- Turn Status Info -->
+        <div class="hud-panel" aria-label="Turn Info">
+          <div class="turn-status-container">
+            <div class="player-avatar-box">
+              <div class="avatar-indicator x-turn" id="turn-avatar">X</div>
+              <div>
+                <div class="turn-text" id="turn-text">Player X's Turn</div>
+                <div class="turn-subtext" id="turn-subtext">Local PvP Mode</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="hud-stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Win Length</div>
+              <div class="stat-value" id="hud-win-length">5</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Total Moves</div>
+              <div class="stat-value" id="hud-moves">0</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Mind Simulator Panel -->
+        <div class="hud-panel ai-analyzer-panel" id="ai-analyzer-panel">
+          <div class="ai-header">
+            <div class="ai-pulse-dot" id="ai-pulse-dot"></div>
+            <span>AI CPU Subroutines</span>
+          </div>
+          <div class="ai-console" id="ai-console">Ready to analyze. Waiting for user move...</div>
+        </div>
+
+        <!-- Gameplay Control Actions -->
+        <div class="hud-panel hud-actions">
+          <button class="hud-btn" id="btn-undo">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 7v6h6" />
+              <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+            </svg>
+            Undo Move
+          </button>
+          <button class="hud-btn hud-btn-primary" id="btn-restart">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+            </svg>
+            Restart
+          </button>
+          <button class="hud-btn hud-btn-exit" id="btn-exit">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            Main Menu
+          </button>
+        </div>
+      </aside>
+    </section>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

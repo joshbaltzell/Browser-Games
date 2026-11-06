@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Don't Ask Again</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script>
+  // Apply the saved theme before first paint so there's no flash of the wrong one.
+  try { document.documentElement.dataset.theme = (JSON.parse(localStorage.getItem('dontAskAgain.v1')) || {}).theme || 'light'; }
+  catch (e) { document.documentElement.dataset.theme = 'light'; }
+</script>
+</head>
+<body>
+<header class="top">
+  <a class="back" id="backLink" href="../../index.html">← Back to games</a>
+  <div class="brand">
+    <h1 class="no-i18n">Don't Ask <em>Again</em></h1>
+    <p>an idle game: burn tokens, read nothing</p>
+  </div>
+  <div class="ticker" aria-live="off"><span id="ticker"></span></div>
+  <button class="help-toggle" id="helpBtn" title="What is this and how do I play? (?)">How to play</button>
+  <button class="stats-toggle" id="statsBtn" aria-expanded="false" aria-controls="statsDrawer" title="Stats, achievements and settings (S)">
+    Stats <span class="stats-badge" id="achBadge">0/0</span>
+  </button>
+</header>
+
+<main class="layout">
+  <section class="main">
+    <div class="meter">
+      <div>
+        <div class="label">Tokens per minute</div>
+        <div class="tpm"><span id="tpm">0</span><small>tok/min</small></div>
+        <div class="meter-sub" id="tpmSub">≈ $0.00/hr in API spend</div>
+      </div>
+      <div class="balance">
+        <div class="label">Token balance</div>
+        <b id="bank">0</b>
+      </div>
+    </div>
+
+    <div class="term" id="term">
+      <div class="term-bar">
+        <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="term-title" id="termTitle">claudia-multiplexer</span>
+        <span class="term-auto" id="autoRate"></span>
+      </div>
+      <div class="mux">
+        <nav class="tabs" aria-label="Claudia sessions">
+          <div class="tabs-head">
+            <span class="label">Sessions</span>
+            <span class="tabs-summary" id="tabsSummary"></span>
+          </div>
+          <button class="new-session" id="newSession">+ New session</button>
+          <button class="view-toggle" id="viewBtn">⊞ Grid view</button>
+          <div class="tab-list" id="tabList"></div>
+          <div class="tabs-keys"><kbd>J</kbd> next · <kbd>[</kbd><kbd>]</kbd> switch · <kbd>G</kbd> grid</div>
+        </nav>
+        <div class="pane">
+          <div class="pane-head"><span class="pane-title" id="paneTitle"></span><span class="pane-branch" id="paneBranch"></span><span class="pane-todos" id="paneTodos"></span></div>
+          <div class="body-wrap" id="bodyWrap">
+            <div class="term-body" id="termBody"></div>
+            <div class="cmd-result" id="cmdResult" role="status" aria-live="polite" hidden></div>
+            <div class="prompt" id="prompt"></div>
+          </div>
+          <form class="inputline" id="inputForm" autocomplete="off">
+            <span class="input-caret" aria-hidden="true">&gt;</span>
+            <input id="cmdInput" type="text" maxlength="140" spellcheck="false" placeholder='Try "fix the bug" or /help' aria-label="Message Claudia">
+          </form>
+          <div class="modeline" id="modeLine">? for shortcuts · / for commands</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="console">
+      <div class="gauge gauge-vibe">
+        <div class="gauge-head">
+          <span class="label">Vibe streak</span>
+          <span class="gauge-status" id="vibeLabel">reading carefully</span>
+          <b id="vibeMult">×1.00</b>
+        </div>
+        <div class="bar vibe-bar"><i id="vibeFill"></i></div>
+        <div class="gauge-cap" id="vibeCap">agree within 0.9s of the last one to build it</div>
+      </div>
+      <div class="key-wrap" id="keyWrap">
+        <button class="yes-key" id="yesKey" aria-label="Yes — agree with Claudia"><span class="cap" aria-hidden="true">⏎</span>YES</button>
+        <p class="key-hint" id="keyHint"><kbd>Enter</kbd> <kbd>1</kbd> <kbd>Y</kbd> agree · <kbd>Esc</kbd> disagree (pointless)</p>
+        <button class="drive-btn" id="driveBtn" hidden>🤖 Claudia is driving · grab the wheel</button>
+      </div>
+      <div class="gauge gauge-debt">
+        <div class="gauge-head">
+          <span class="label">Tech debt</span>
+          <span class="gauge-status" id="debtLabel">pristine</span>
+          <b id="debtVal">0%</b>
+        </div>
+        <div class="bar debt-bar"><i id="debtFill"></i></div>
+        <div class="gauge-cap gauge-cap-row">
+          <span class="gauge-cap-text" id="debtCap">no incident risk</span>
+          <button class="refactor" id="refactorBtn" title="Pay down 10 tech debt. Costs 45 seconds of automated output.">Refactor</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel store">
+    <div class="store-head">
+      <h2>Automate agreeing</h2>
+      <div class="qty" role="radiogroup" aria-label="Buy quantity">
+        <button role="radio" data-qty="1">×1</button>
+        <button role="radio" data-qty="10">×10</button>
+        <button role="radio" data-qty="max">Max</button>
+      </div>
+    </div>
+    <button class="career" id="career" title="Click to see what the next tier unlocks">
+      <span class="career-now" id="careerNow">Tier 0 · Vibe Coder</span>
+      <span class="career-next" id="careerNext"></span>
+    </button>
+    <h3>Decision</h3>
+    <div class="upgrades" id="decision"></div>
+    <h3>Skills <span class="h3-note" id="upgradesHead"></span></h3>
+    <div class="upgrades" id="upgrades"></div>
+    <h3>Automations</h3>
+    <div class="gens" id="gens"></div>
+    <div class="rewrite" id="rewrite" hidden></div>
+  </aside>
+
+</main>
+
+<div class="drawer-scrim" id="drawerScrim" hidden></div>
+<aside class="panel drawer" id="statsDrawer" aria-label="Stats, achievements and settings" hidden>
+    <div class="drawer-head">
+      <h2>Stats &amp; achievements</h2>
+      <button class="drawer-close" id="statsClose" aria-label="Close stats">✕</button>
+    </div>
+    <div class="kv">
+      <div><span class="label">Agreements/s</span><b id="aps">0</b></div>
+      <div><span class="label">Tokens/agree</span><b id="tpa">10</b></div>
+      <div><span class="label">Your click</span><b id="clickVal">10</b></div>
+      <div><span class="label">Bonus</span><b id="bonus">+0%</b></div>
+    </div>
+    <h3>Engineering metrics</h3>
+    <dl class="stats" id="stats"></dl>
+    <h3>Achievements <span id="achCount"></span></h3>
+    <div class="ach-grid" id="achGrid"></div>
+    <p class="ach-note">Each achievement: +2% to everything. Claudia is very proud of you.</p>
+    <h3>Language</h3>
+    <div id="langSlot"></div>
+    <div class="settings">
+      <button id="soundBtn">Sound: on</button>
+      <button id="themeBtn" title="Light, dark, or follow your system">Theme: light</button>
+      <button id="helpBtn2">How to play</button>
+      <button id="wipeBtn">Wipe save</button>
+    </div>
+</aside>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="modal" id="modal" hidden></div>
+
+<script src="i18n.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

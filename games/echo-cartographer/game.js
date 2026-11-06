@@ -1,0 +1,3301 @@
+/*
+ * ECHO CARTOGRAPHER — Phases 1–3.
+ *
+ * Phase 1 (core): the world is total black void. Press SPACE to emit a ringwave
+ * that lights wall segments chalk-white ONLY along its live front, revealing the
+ * room in expanding slices. Revealed fragments linger as fading ghost-outlines
+ * (~1s) so you can navigate by memory between flashes. Every ping draws a blind
+ * predator toward the ping origin — it hunts the sound, not you.
+ *
+ * Phase 2 (style & identity): the signature look — chalk wireframe on pure void,
+ * scanning ring sweep, decaying ghost afterimages with a faint bloom, an
+ * ever-present red ripple telegraph for the predator, predator wall-routing, and
+ * a full Web Audio identity (low cave drone ambience, ping sweep, rising
+ * proximity hum, capture/win stings) plus a particle system on ping/capture/win.
+ *
+ * Phase 3 (the twist): FALSE-PINGING. Hold the aim and fire a decoy ping offset
+ * from you. It reveals real geometry at a remote spot AND the blind predator
+ * pathfinds to the decoy's origin as if it were you — so you lure it off your
+ * route, then slip through memorized corridors in total silence (moving without
+ * pinging never attracts it). Gated: the decoy unlocks only from level 2 on,
+ * where the layout cannot be solved by naive pinging alone.
+ *
+ * Pure vanilla JS + Canvas 2D. No modules, no assets, no fetch — runs from
+ * file://. Audio is synthesized lazily and resumed on first user gesture.
+ *
+ * Sections: Constants -> Canvas/state -> Audio -> Particles -> Geometry ->
+ * Levels -> Pathfinding -> Input -> Init/reset -> Update -> Render -> Loop.
+ */
+
+"use strict";
+
+// ----------------------------------------------------------------------------
+// Constants / tunables
+// ----------------------------------------------------------------------------
+const TAU = Math.PI * 2;
+
+// C8 (fun-redesign): all gameplay distances and speeds are authored at the
+// 1024x768 reference viewport (content box 936x680 after the 44px frame
+// margins) and rescaled by SCALE on every layout (applyScale, called from
+// layoutLevel). SCALE uses the SMALLER axis growth (min) deliberately:
+// levels stretch anisotropically (x by content width, y by content height),
+// and min-axis scaling guarantees the margins proven at 1024x768 — ambush
+// break radius, predator wall clearance, single-ping reveals — never shrink
+// at any larger viewport. This retires the fixed-pixel-constant vs
+// viewport-scaled-level bug class (Phase 63's CR-01/02/03 churn and the
+// WR-06 residual). Time constants (cooldowns, GHOST_LIFE, ambush arm
+// countdown, burst duration) intentionally do NOT scale.
+// The `let` mirrors below keep their original names so every read site in
+// the file is unchanged; only the declarations moved into BASE.
+const BASE = {
+  PING_SPEED: 620, PING_MAX_RADIUS: 220, PING_BAND: 14,
+  DECOY_REACH: 230, PRED_HB_RADIUS: 160,
+  PLAYER_R: 9, PLAYER_SPEED: 190,
+  PRED_R: 13, PRED_HUNT_SPEED: 130, PRED_IDLE_SPEED: 70,
+  PRED_CATCH: 18, PRED_ARRIVE: 24, PRED_SENSE_RADIUS: 150,
+  AMBUSH_BREAK_RADIUS: 120, PRED_VIS_NEAR: 60,
+  GRAIN_FAR_DIST: 240, GRAIN_NEAR_DIST: 60,
+  WALL_BUMP_HEAR_DIST: 200,
+  PROX_NEAR: 320,    // proximity-hum onset distance (was a literal in updateProximityAudio)
+  TENSION_NEAR: 80,  // close-range tension-tone onset (was a literal)
+  EXIT_R: 24,
+};
+let SCALE = 1;
+let PROX_NEAR = BASE.PROX_NEAR;
+let TENSION_NEAR = BASE.TENSION_NEAR;
+
+function applyScale() {
+  SCALE = Math.max(0.05, Math.min((W - 88) / 936, (H - 88) / 680));
+  PING_SPEED = BASE.PING_SPEED * SCALE;
+  PING_MAX_RADIUS = BASE.PING_MAX_RADIUS * SCALE;
+  PING_BAND = BASE.PING_BAND * SCALE;
+  DECOY_REACH = BASE.DECOY_REACH * SCALE;
+  PRED_HB_RADIUS = BASE.PRED_HB_RADIUS * SCALE;
+  PLAYER_R = BASE.PLAYER_R * SCALE;
+  PLAYER_SPEED = BASE.PLAYER_SPEED * SCALE;
+  PRED_R = BASE.PRED_R * SCALE;
+  PRED_HUNT_SPEED = BASE.PRED_HUNT_SPEED * SCALE;
+  PRED_IDLE_SPEED = BASE.PRED_IDLE_SPEED * SCALE;
+  PRED_CATCH = BASE.PRED_CATCH * SCALE;
+  PRED_ARRIVE = BASE.PRED_ARRIVE * SCALE;
+  PRED_SENSE_RADIUS = BASE.PRED_SENSE_RADIUS * SCALE;
+  AMBUSH_BREAK_RADIUS = BASE.AMBUSH_BREAK_RADIUS * SCALE;
+  PRED_VIS_NEAR = BASE.PRED_VIS_NEAR * SCALE;
+  GRAIN_FAR_DIST = BASE.GRAIN_FAR_DIST * SCALE;
+  GRAIN_NEAR_DIST = BASE.GRAIN_NEAR_DIST * SCALE;
+  WALL_BUMP_HEAR_DIST = BASE.WALL_BUMP_HEAR_DIST * SCALE;
+  PROX_NEAR = BASE.PROX_NEAR * SCALE;
+  TENSION_NEAR = BASE.TENSION_NEAR * SCALE;
+  // The entity radii live on the entities; refresh them so a mid-level
+  // window resize doesn't leave stale collision sizes.
+  if (typeof player !== "undefined") { player.r = PLAYER_R; predator.r = PRED_R; }
+}
+
+// C8 shared: the fixed content-box margin every level-authored coordinate is
+// stretched around (see layoutLevel()'s toX/toY and the resize-remap fix).
+// A single named constant so layoutLevel() and remapEntityPositions() can
+// never drift out of sync with each other.
+const LEVEL_MARGIN = 44;
+
+const COLORS = {
+  void: "#02040a",        // not pure black — a deep abyssal blue-black
+  voidEdge: "#000003",    // vignette toward the corners
+  wallFront: "#f4fbff",   // chalk-white live front intersection
+  wallGlow: "#7fb6ff",    // cool bloom behind the live front
+  ghost: "#a9d8ff",       // fading ghost-outline tint (cool chalk)
+  ghostWarm: "#cfe8ff",
+  player: "#7dffce",      // cartographer marker (phosphor green)
+  playerGlow: "#1effa8",
+  predator: "#ff4d5e",    // blind hunter telegraph
+  predatorDeep: "#7a0010",
+  exit: "#ffd27a",        // goal marker
+  exitGlow: "#ff9d3c",
+  decoy: "#ff8ad6",       // false-ping accent (magenta)
+  decoyGlow: "#ff3ea5",
+  hud: "#5d7280",         // muted HUD text
+  hudBright: "#bcd6e6",
+};
+
+// Ping behaviour.
+let PING_SPEED = BASE.PING_SPEED;        // px/sec the front expands
+let PING_MAX_RADIUS = BASE.PING_MAX_RADIUS;   // front dies past this — keeps reveal LOCAL (not full-level)
+let PING_BAND = BASE.PING_BAND;          // half-thickness of the "live front" reveal band
+const PING_COOLDOWN = 1.3;     // seconds between pings (rationed reveals)
+
+// False ping (decoy).
+let DECOY_REACH = BASE.DECOY_REACH;       // how far the decoy origin is thrown from player
+const DECOY_COOLDOWN = 2.2;    // decoys are pricier than real pings
+
+// Predator heartbeat pings (red, smaller radius — reveal walls near the predator).
+const PRED_HB_INTERVAL = 2.6;  // seconds between heartbeats
+let PRED_HB_RADIUS = BASE.PRED_HB_RADIUS;    // dies sooner than player pings
+
+// Ghost-outline afterimage (TENS-04). Revealed segments no longer fade out and
+// vanish — they age continuously over a long lifespan and floor at a small
+// non-zero alpha, so a learned wall stays faintly visible forever (navigate
+// by memory). 24s comfortably spans several PING_COOLDOWN (1.3s) and
+// PRED_HB_INTERVAL (2.6s) cycles, so "revealed two pings ago" reads visibly
+// dimmer than "just revealed".
+const GHOST_LIFE = 24;         // seconds for a revealed segment to age from bright to its floor
+const GHOST_FLOOR_ALPHA = 0.07; // minimum alpha a fully-aged segment ever settles to (never 0)
+
+// Player.
+let PLAYER_R = BASE.PLAYER_R;
+let PLAYER_SPEED = BASE.PLAYER_SPEED;      // px/sec
+
+// Wall occlusion (AUDIO-05): predator-channel audio is attenuated, never
+// fully muted, when no clear sightline exists between predator and player.
+const OCCLUSION_ATTEN = 0.35;
+
+// Predator.
+let PRED_R = BASE.PRED_R;
+let PRED_HUNT_SPEED = BASE.PRED_HUNT_SPEED;   // px/sec while homing on a ping origin
+let PRED_IDLE_SPEED = BASE.PRED_IDLE_SPEED;    // px/sec slow wander when no recent ping
+let PRED_CATCH = BASE.PRED_CATCH;         // contact distance that ends the attempt
+let PRED_ARRIVE = BASE.PRED_ARRIVE;        // distance at which it "reaches" a target node
+const PRED_IDLE_RETARGET = 1.8;// seconds between picking a new idle wander point
+let PRED_SENSE_RADIUS = BASE.PRED_SENSE_RADIUS; // within this distance it hears footsteps and homes in directly
+// PRED-02: player-proximity distance that breaks an ambush hold — distinct
+// from PRED_SENSE_RADIUS (stalk detection), always smaller/tighter since an
+// ambushing predator only reacts once the player is nearly on top of it.
+let AMBUSH_BREAK_RADIUS = BASE.AMBUSH_BREAK_RADIUS;
+// PRED-03: mid-level hunt burst — a one-shot-per-attempt LAYERED escalation
+// fired when the player crosses a level-authored trigger zone. It stacks on
+// top of whatever mode is already active (does not force a mode change or a
+// beeline): speed spikes, heartbeat interval halves, and the stalk-mode
+// "breath" voice is forced for the burst duration.
+const HUNT_BURST_DURATION = 8;   // seconds the burst lasts before reverting
+const HUNT_SPEED_MULT = 1.3;     // 30% speed spike per PRED-03
+const HUNT_HB_MULT = 0.5;        // heartbeat interval halved per PRED-03
+
+// PRED-01: asymmetric/jagged creature silhouette (NOT a regular polygon),
+// offsets relative to predator center in multiples of predator.r. Drawn via
+// moveTo/lineTo each frame in local (rotated) space so it reads as an organic
+// hunting shape rather than a radius marker.
+const PRED_SHAPE = [
+  { x: 1.5, y: 0 },       // forward snout point, furthest out
+  { x: 0.5, y: 0.55 },
+  { x: 0.15, y: 1.35 },   // jagged side spike (rear-right)
+  { x: -0.9, y: 0.7 },
+  { x: -1.2, y: 0 },      // blunt rear point
+  { x: -0.9, y: -0.7 },
+  { x: 0.15, y: -1.35 },  // jagged side spike (rear-left)
+  { x: 0.5, y: -0.55 }
+];
+
+// Footsteps / listening pause (AUDIO-03/AUDIO-04). PLAYER_SPEED is constant
+// (no sprint), so footstep cadence is one fixed rhythm rather than scaling
+// with speed.
+const FOOTSTEP_INTERVAL = 0.32; // seconds between footstep clicks while moving
+const LISTEN_PAUSE_DELAY = 0.4; // seconds of stillness before the drone ducks
+
+// Proximity grain noise (TENS-06): a raw on-screen danger-pressure overlay,
+// occlusion-free by design — present even behind a wall, since it represents
+// rising panic, not literal sightline. Dot count interpolates linearly between
+// these distance/count endpoints and is zero at/beyond GRAIN_FAR_DIST.
+let GRAIN_FAR_DIST = BASE.GRAIN_FAR_DIST;   // distance at/beyond which grain is fully gone
+let GRAIN_NEAR_DIST = BASE.GRAIN_NEAR_DIST;   // distance at/within which grain hits max density
+const GRAIN_MIN_DOTS = 15;    // dot count at GRAIN_FAR_DIST
+const GRAIN_MAX_DOTS = 150;   // dot count at/within GRAIN_NEAR_DIST
+const DRONE_DUCK = 0.5;         // drone gain multiplier during the listening pause
+
+// C6 (fun-redesign): hearing radius of a wall bump — walking into an
+// (often unrevealed) wall is a sound the dark can hear, which makes wall
+// knowledge = safety and closes the "walls are harmless" hole.
+let WALL_BUMP_HEAR_DIST = BASE.WALL_BUMP_HEAR_DIST;
+
+// ----------------------------------------------------------------------------
+// Canvas + global state
+// ----------------------------------------------------------------------------
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let W = 0, H = 0;            // CSS pixel size of the canvas
+let dpr = 1;
+
+const STATE = { TITLE: "title", PLAYING: "playing", CAUGHT: "caught", WON: "won", CLEARED: "cleared" };
+let state = STATE.TITLE;
+
+let levelIndex = 0;         // current level (0-based)
+let level = null;           // current level data (geometry)
+let player = { x: 0, y: 0, r: PLAYER_R };
+let predator = {
+  x: 0, y: 0, r: PRED_R, mode: "idle", tx: 0, ty: 0, idleTimer: 0,
+  path: [], pathStep: 0, rippleT: 0, hbTimer: 1.4, stalking: false, patrolStep: 0,
+  heading: 0, // PRED-01: radians, 0 = facing +x; holds last value while stationary
+  ambushTimer: 0, // PRED-02: seconds remaining in an ambush hold; authoritative value set in startLevel()
+  huntTriggered: false,  // PRED-03: one-shot latch, set true on first entry into level.huntTrigger.radius
+  huntBurstActive: false, // PRED-03: true for HUNT_BURST_DURATION seconds after the trigger fires
+  huntBurstTimer: 0,      // PRED-03: seconds remaining in the current burst
+  lastHeardX: 0, lastHeardY: 0, // C3: where it last heard footsteps
+  searchTimer: 0,               // C3: >0 while lingering around lastHeard
+  stallTime: 0, // C9: seconds an unreachable hunt target has failed to make progress (stall-guard)
+};
+let pings = [];             // active ringwaves {x,y,radius,decoy}
+let ghosts = [];            // revealed fragments {x1,y1,x2,y2,life,decoy}
+// TENS-05: faint chalk-X marks left at each decoy's origin, separate from
+// ghosts — a 3s TRANSIENT that DELETES on expiry (unlike ghosts, which now
+// floor per TENS-04). {x, y, life}.
+let decoyMarks = [];
+const DECOY_MARK_LIFE = 3;  // seconds the chalk-X lingers before fading out
+const DECOY_MARK_SIZE = 7;  // half-size of each crossed stroke (~14px X)
+let cooldown = 0;           // real ping cooldown timer
+let decoyCooldown = 0;      // decoy cooldown timer
+let pingCount = 0;          // pings used this attempt
+let clearTime = 0;          // seconds elapsed this attempt (for best-time score)
+let introT = 0;             // per-level intro banner fade timer
+// LVL-04: per-attempt render set for in-world mechanic labels. Rebuilt in
+// startLevel() from level.labels, filtered against the PERSISTENT seenLabels
+// map so a label whose mechanic has already been seen never enters this array
+// (never rendered again on later visits). Each entry: {mechanic, text, x, y,
+// life, used}. `life` counts DOWN from 4s (fades out at 0); `used` is set
+// true the instant the matching mechanic fires for real (markLabelUsed), which
+// stops the render immediately regardless of remaining life.
+let labelState = [];
+let transition = 0;         // level-enter wipe transition (1 -> 0)
+let aiming = false;         // holding the aim for a decoy
+let aimAng = 0;             // aim direction for the decoy
+let lastMoveAng = 0;        // C9: last movement direction — keyboard decoy aim
+// C10: pause + persisted mute.
+let paused = false;
+const LS_MUTED = "echoCartographer.muted";
+let muted = (() => { try { return localStorage.getItem(LS_MUTED) === "1"; } catch (e) { return false; } })();
+let showDebug = false;
+let shake = 0;              // screen-shake magnitude
+let flash = 0;              // full-screen flash (capture/win)
+let flashColor = "#fff";
+
+// TENS-02: capture choreography state. freezeFrames is a per-rAF counter
+// (NOT dt-driven) decremented once per rendered frame in frame() to hold the
+// image for exactly 3 render frames before any update() runs again.
+// captureStage is a SINGLE elapsed-time-up timer (counts UP from 0, dt-driven,
+// in update()'s always-run preamble) representing how long the CAUGHT death
+// screen has been visible: render() maps captureStage < CAPTURE_WHITE_DUR to
+// an opaque white flash and everything after to opaque black, and
+// drawPredatorGhost() also reads captureStage as its fade-over-time source —
+// one field serves both the 2-stage overlay split and the chalk-outline fade.
+let freezeFrames = 0;
+const CAPTURE_WHITE_DUR = 0.08;  // ~80ms opaque white window at the start of captureStage
+let captureStage = 0;
+
+// TENS-03: in-world ping-cooldown ring around the player dot, additional to
+// the top-left HUD bar. pingReadyPulse is a ONE-SHOT decaying timer that
+// spikes the instant `cooldown` crosses from >0 to <=0 (never a continuous
+// idle pulse); prevCooldown is the previous-frame cooldown value used to
+// detect that exact edge. Both are dt-driven and decay/reset like
+// shake/flash/captureStage above.
+let pingReadyPulse = 0;
+const PING_PULSE_DECAY = 1 / 0.3; // ~0.3s to fade back to 0
+let prevCooldown = 0;
+
+// C1 (fun-redesign): the exit renders only after a ping wavefront has swept
+// it this attempt. Reset per attempt like ghosts — your map, not a quest flag.
+let exitFound = false;
+let exitTickTimer = 4; // countdown to the next pre-discovery audio breadcrumb
+
+// C2 (fun-redesign): the predator renders only via sonar. predVisFlash is a
+// 0..1 chalk-flash set when a player/decoy wavefront crosses it (~1s fade);
+// predHBFlash is a dimmer 0..1 set by its own heartbeat (~0.5s fade). Within
+// PRED_VIS_NEAR px it also fades in directly (fairness valve, and prevents
+// cheap-feeling contact deaths). sonarAssist (V key, persisted) restores the
+// old always-visible rendering as an accessibility/difficulty valve.
+let predVisFlash = 0;
+let predHBFlash = 0;
+let PRED_VIS_NEAR = BASE.PRED_VIS_NEAR;
+const LS_ASSIST = "echoCartographer.sonarAssist";
+let sonarAssist = (() => { try { return localStorage.getItem(LS_ASSIST) === "1"; } catch (e) { return false; } })();
+
+// Mouse aim (optional)
+let mouseX = 0, mouseY = 0, hasMouse = false;
+
+// localStorage: best per level + highest level cleared.
+const LS_BEST = "echoCartographer.best";   // JSON map levelIndex->bestPings
+const LS_PROG = "echoCartographer.progress"; // highest level unlocked
+let bestMap = loadBestMap();
+let progress = loadProgress();
+
+function loadBestMap() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_BEST));
+    return (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+  } catch (e) { return {}; }
+}
+function saveBestMap() {
+  try { localStorage.setItem(LS_BEST, JSON.stringify(bestMap)); } catch (e) {}
+}
+function loadProgress() {
+  try { const v = parseInt(localStorage.getItem(LS_PROG), 10); return Number.isFinite(v) ? v : 0; }
+  catch (e) { return 0; }
+}
+function saveProgress() {
+  try { localStorage.setItem(LS_PROG, String(progress)); } catch (e) {}
+}
+
+// LVL-04: in-world mechanic labels (chalk text teaching a new verb the moment
+// it first matters). seenLabels is a persistent map keyed by mechanic name
+// ("ping", "decoy") — once a mechanic's label has been shown+used (or expired)
+// once, it is recorded here forever so returning players never see it again,
+// distinct from the per-attempt labelState render set (see startLevel()).
+const LS_LABELS = "echoCartographer.seenLabels"; // JSON map mechanic->true
+let seenLabels = loadSeenLabels();
+
+function loadSeenLabels() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_LABELS));
+    return (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+  } catch (e) { return {}; }
+}
+function saveSeenLabels() {
+  try { localStorage.setItem(LS_LABELS, JSON.stringify(seenLabels)); } catch (e) {}
+}
+
+// ----------------------------------------------------------------------------
+// Canvas sizing (resize-to-window, DPR-aware)
+// ----------------------------------------------------------------------------
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  canvas.style.width = W + "px";
+  canvas.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener("resize", () => {
+  const oldW = W, oldH = H;
+  const hadLevel = !!level;
+  resize();
+  // Skip remap/relayout while CAUGHT — drawPredatorGhost() relies on
+  // predator.x/y staying frozen for the whole death sequence (freezeFrames +
+  // captureStage), and moving the "corpse" mid-animation would visibly
+  // contradict that documented invariant. The next startLevel() (retry)
+  // always relayouts fresh, so nothing stays stale beyond this one screen.
+  if (hadLevel && state !== STATE.CAUGHT) {
+    remapEntityPositions(oldW, oldH, W, H);
+    layoutLevel();
+    remapLabelPositions();
+  }
+});
+
+// ----------------------------------------------------------------------------
+// Audio — Web Audio synthesis, unlocked on first user gesture.
+// ----------------------------------------------------------------------------
+let audioCtx = null;
+let masterGain = null;
+let droneNodes = null;     // persistent cave ambience
+let proxOsc = null, proxGain = null, proxFilter = null; // predator proximity hum
+// TENS-01: close-range (~80px) rising tension tone — STACKS on top of the
+// 320px proxOsc hum above (does not replace it). Mirrors the proxOsc/proxGain/
+// proxFilter trio so updateProximityAudio() can drive both with the same
+// setTargetAtTime ramp pattern.
+let tensionOsc = null, tensionGain = null, tensionFilter = null;
+let audioReady = false;
+let predOcclusion = 1;     // per-frame wall-occlusion factor (OCCLUSION_ATTEN when blocked, else 1); read by Plan 02's predator voice
+let footstepTimer = 0;     // dt countdown to the next footstep click while moving
+let stillTimer = 0;        // dt-accumulated stillness duration (AUDIO-03 listening pause)
+let playerMoving = false;  // movement-key INPUT intent, set by updatePlayer, read by updateFootstepAudio
+let dripTimer = 3 + Math.random() * 5; // dt countdown to the next cave drip (AUDIO-06)
+// C6: wall-bump state — one thud per DISCRETE contact (wallContact edge) with
+// a short cooldown backstop, so grinding along a wall doesn't machine-gun it.
+let bumpTimer = 0;
+let wallContact = false;
+// C7: red edge-vignette pulse (0..1) fired alongside the hunt-burst roar.
+let burstVignette = 0;
+
+function unlockAudio() {
+  if (audioReady) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) { audioReady = true; return; }
+    audioCtx = new AC();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = muted ? 0 : 0.9; // C10: honor persisted mute
+    masterGain.connect(audioCtx.destination);
+    startDrone();
+    startProximityHum();
+    startTensionTone();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  } catch (e) { /* file:// safe — never throw */ }
+  audioReady = true;
+}
+
+function now() { return audioCtx ? audioCtx.currentTime : 0; }
+
+// Low, breathing cave drone — two detuned sines through a slow LFO on gain.
+function startDrone() {
+  if (!audioCtx) return;
+  const g = audioCtx.createGain();
+  g.gain.value = 0.0;
+  g.connect(masterGain);
+
+  const o1 = audioCtx.createOscillator();
+  o1.type = "sine"; o1.frequency.value = 46;
+  const o2 = audioCtx.createOscillator();
+  o2.type = "sine"; o2.frequency.value = 57.3; // gentle beat against o1
+  o1.connect(g); o2.connect(g);
+
+  // slow swelling LFO so the dark feels alive
+  const lfo = audioCtx.createOscillator();
+  lfo.type = "sine"; lfo.frequency.value = 0.08;
+  const lfoGain = audioCtx.createGain();
+  lfoGain.gain.value = 0.018;
+  lfo.connect(lfoGain); lfoGain.connect(g.gain);
+
+  o1.start(); o2.start(); lfo.start();
+  g.gain.setValueAtTime(0, now());
+  g.gain.linearRampToValueAtTime(0.05, now() + 4);
+  droneNodes = { g, o1, o2, lfo };
+}
+
+// Persistent proximity hum; volume/pitch driven each frame from predator dist.
+function startProximityHum() {
+  if (!audioCtx) return;
+  proxOsc = audioCtx.createOscillator();
+  proxOsc.type = "sawtooth";
+  proxOsc.frequency.value = 60;
+  proxFilter = audioCtx.createBiquadFilter();
+  proxFilter.type = "lowpass";
+  proxFilter.frequency.value = 220;
+  proxGain = audioCtx.createGain();
+  proxGain.gain.value = 0.0;
+  proxOsc.connect(proxFilter); proxFilter.connect(proxGain); proxGain.connect(masterGain);
+  proxOsc.start();
+}
+
+// Update the proximity hum from a 0..1 closeness value (1 = right on top).
+// `occ` is the wall-occlusion multiplier (AUDIO-05): defaults to 1 (no
+// occlusion) so existing callers are unaffected.
+function setProximity(closeness, occ = 1) {
+  if (!proxGain || !proxOsc || !proxFilter) return;
+  const t = now();
+  const target = (closeness <= 0 ? 0 : 0.02 + closeness * closeness * 0.16) * occ;
+  proxGain.gain.setTargetAtTime(target, t, 0.08);
+  proxOsc.frequency.setTargetAtTime(54 + closeness * 110, t, 0.1);
+  proxFilter.frequency.setTargetAtTime(200 + closeness * 900, t, 0.1);
+}
+
+// TENS-01: build the close-range tension-tone chain. A second, distinct-timbre
+// oscillator (triangle, to read as a tightening tone above the proxOsc
+// sawtooth hum) through a bandpass filter, gain starts silent. Routed to
+// masterGain ONLY (never audioCtx.destination), same as every other voice.
+function startTensionTone() {
+  if (!audioCtx) return;
+  tensionOsc = audioCtx.createOscillator();
+  tensionOsc.type = "triangle";
+  tensionOsc.frequency.value = 200;
+  tensionFilter = audioCtx.createBiquadFilter();
+  tensionFilter.type = "bandpass";
+  tensionFilter.Q.value = 4;
+  tensionFilter.frequency.value = 500;
+  tensionGain = audioCtx.createGain();
+  tensionGain.gain.value = 0.0;
+  tensionOsc.connect(tensionFilter); tensionFilter.connect(tensionGain); tensionGain.connect(masterGain);
+  tensionOsc.start();
+}
+
+// TENS-01: drive the tension tone from an 80px closeness value (1 = on top of
+// the predator). Same setTargetAtTime ramp style and occlusion-aware via the
+// same `occ`/predOcclusion factor passed in from updateProximityAudio() — no
+// second distance calc or raycast.
+function setTensionTone(closeness80, occ = 1) {
+  if (!tensionGain || !tensionOsc || !tensionFilter) return;
+  const t = now();
+  const target = (closeness80 <= 0 ? 0 : closeness80 * 0.2) * occ;
+  tensionGain.gain.setTargetAtTime(target, t, 0.08);
+  tensionOsc.frequency.setTargetAtTime(200 + closeness80 * 300, t, 0.1);
+}
+
+// TENS-01: capture-silence cut. Zeroes BOTH the tension tone and the 320px
+// proximity hum INSTANTLY (cancel + setValueAtTime, not a setTargetAtTime
+// fade) so the silence reads as an abrupt cut right before sndCapture() — the
+// cave drone (droneNodes) is deliberately untouched.
+function cutTensionAudio() {
+  const t = now();
+  if (tensionGain) {
+    tensionGain.gain.cancelScheduledValues(t);
+    tensionGain.gain.setValueAtTime(0, t);
+  }
+  if (proxGain) {
+    proxGain.gain.cancelScheduledValues(t);
+    proxGain.gain.setValueAtTime(0, t);
+  }
+}
+
+// A ping "sweep": a falling-then-rising filtered chirp. Decoy variant is pitched
+// up and more metallic so the lie sounds different from the truth.
+function sndPing(decoy) {
+  if (!audioCtx) return;
+  const t = now();
+  const o = audioCtx.createOscillator();
+  o.type = decoy ? "square" : "triangle";
+  const f = audioCtx.createBiquadFilter();
+  f.type = "bandpass";
+  f.Q.value = 6;
+  const g = audioCtx.createGain();
+  o.connect(f); f.connect(g); g.connect(masterGain);
+
+  // AUDIO-07: this square@920Hz-vs-triangle@540Hz split (plus the 0.18/0.26
+  // gain difference below) already gives the decoy a distinct, shipped,
+  // playtested "same family, recognizably different" identity. Do NOT
+  // regress this to a literal same-waveform pitch-ratio multiplier — that
+  // would chase a spec number written before this sound existed and undo
+  // a decision that's already satisfied AUDIO-07.
+  const base = decoy ? 920 : 540;
+  o.frequency.setValueAtTime(base, t);
+  o.frequency.exponentialRampToValueAtTime(base * 0.45, t + 0.5);
+  f.frequency.setValueAtTime(base * 1.4, t);
+  f.frequency.exponentialRampToValueAtTime(base * 3.2, t + 0.5);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(decoy ? 0.18 : 0.26, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+  o.start(t); o.stop(t + 0.6);
+}
+
+// Capture sting — harsh descending growl + noise burst.
+function sndCapture() {
+  if (!audioCtx) return;
+  const t = now();
+  const o = audioCtx.createOscillator();
+  o.type = "sawtooth";
+  o.frequency.setValueAtTime(220, t);
+  o.frequency.exponentialRampToValueAtTime(38, t + 0.7);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+  const f = audioCtx.createBiquadFilter();
+  f.type = "lowpass"; f.frequency.value = 700;
+  o.connect(f); f.connect(g); g.connect(masterGain);
+  o.start(t); o.stop(t + 0.95);
+  // noise burst
+  noiseBurst(0.4, 0.35);
+}
+
+// Win sting — clean ascending bell triad.
+function sndWin() {
+  if (!audioCtx) return;
+  const t = now();
+  [523.25, 659.25, 783.99].forEach((freq, i) => {
+    const o = audioCtx.createOscillator();
+    o.type = "sine"; o.frequency.value = freq;
+    const g = audioCtx.createGain();
+    const st = t + i * 0.09;
+    g.gain.setValueAtTime(0.0001, st);
+    g.gain.exponentialRampToValueAtTime(0.2, st + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, st + 0.9);
+    o.connect(g); g.connect(masterGain);
+    o.start(st); o.stop(st + 0.95);
+  });
+}
+
+// C1: exit-discovery chime — two soft bells from sndWin's family, quieter.
+function sndExitFound() {
+  if (!audioCtx) return;
+  const t = now();
+  [659.25, 987.77].forEach((freq, i) => {
+    const o = audioCtx.createOscillator();
+    o.type = "sine"; o.frequency.value = freq;
+    const g = audioCtx.createGain();
+    const st = t + i * 0.07;
+    g.gain.setValueAtTime(0.0001, st);
+    g.gain.exponentialRampToValueAtTime(0.12, st + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, st + 0.6);
+    o.connect(g); g.connect(masterGain);
+    o.start(st); o.stop(st + 0.65);
+  });
+}
+
+// C1: pre-discovery breadcrumb — a quiet crystalline tick, panned toward the
+// exit, audible only when the player is within 1.5 ping radii of it (driven
+// from updateAmbience). Deepens listen-to-navigate without a visual marker.
+function exitTick() {
+  if (!audioCtx) return;
+  const t = now();
+  const panner = makePanner(panForX(level.exit.x));
+  if (!panner) return;
+  const o = audioCtx.createOscillator();
+  o.type = "sine";
+  o.frequency.setValueAtTime(1400, t);
+  o.frequency.exponentialRampToValueAtTime(1150, t + 0.09);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.045, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+  o.connect(g); g.connect(panner);
+  o.start(t); o.stop(t + 0.12);
+}
+
+// C6: wall-bump knock — short, low, woody. Distinct from footstepClick
+// (high-passed tick) and noiseBurst (long 1200Hz capture thud).
+function wallThud() {
+  if (!audioCtx) return;
+  const t = now();
+  const dur = 0.05;
+  const frames = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+  const buf = audioCtx.createBuffer(1, frames, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const f = audioCtx.createBiquadFilter();
+  f.type = "lowpass"; f.frequency.value = 300;
+  const g = audioCtx.createGain();
+  g.gain.value = 0.15;
+  src.connect(f); f.connect(g); g.connect(masterGain);
+  src.start(t);
+}
+
+// C7: hunt-burst roar — capture-growl family, shorter and quieter, no noise
+// burst; an unmistakable "it just got faster" tell (the old tell was only a
+// halved heartbeat interval, which nobody consciously reads).
+function sndHuntBurst() {
+  if (!audioCtx) return;
+  const t = now();
+  const o = audioCtx.createOscillator();
+  o.type = "sawtooth";
+  o.frequency.setValueAtTime(160, t);
+  o.frequency.exponentialRampToValueAtTime(50, t + 0.6);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.22, t + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+  const f = audioCtx.createBiquadFilter();
+  f.type = "lowpass"; f.frequency.value = 600;
+  o.connect(f); f.connect(g); g.connect(masterGain);
+  o.start(t); o.stop(t + 0.75);
+}
+
+function noiseBurst(dur, vol) {
+  if (!audioCtx) return;
+  const t = now();
+  const frames = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, frames, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const g = audioCtx.createGain();
+  g.gain.value = vol;
+  const f = audioCtx.createBiquadFilter();
+  f.type = "lowpass"; f.frequency.value = 1200;
+  src.connect(f); f.connect(g); g.connect(masterGain);
+  src.start(t);
+}
+
+// AUDIO-04: footstep "click" — a short, dry, high-passed noise tick. Deliberately
+// NOT a reuse of noiseBurst (that's a 1200Hz-lowpass, longer capture thud); this
+// is ~10ms and high-passed for a dry tick character. Stays centered (no panner)
+// since player-originated sounds are not spatially panned.
+function footstepClick() {
+  if (!audioCtx) return;
+  const t = now();
+  const dur = 0.01;
+  const frames = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+  const buf = audioCtx.createBuffer(1, frames, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const f = audioCtx.createBiquadFilter();
+  f.type = "highpass"; f.frequency.value = 1800;
+  const g = audioCtx.createGain();
+  g.gain.value = 0.05;
+  src.connect(f); f.connect(g); g.connect(masterGain);
+  src.start(t);
+}
+
+// AUDIO-06: cave drip — a short watery, pitched, panned transient. Distinct from
+// the dry centered footstepClick: tonal/pitched, downward glide, and randomly
+// panned via makePanner (Plan 01) rather than centered.
+function caveDrip(pan) {
+  if (!audioCtx) return;
+  const t = now();
+  const dur = 0.18;
+  const panner = makePanner(pan);
+  if (!panner) return;
+  const o = audioCtx.createOscillator();
+  o.type = "sine";
+  o.frequency.setValueAtTime(900, t);
+  o.frequency.exponentialRampToValueAtTime(500, t + 0.08);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.06, t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(panner);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+
+// AUDIO-02: linear stereo-pan curve keyed to world X relative to the player.
+// Full left/right pan is reached at a half-screen-width offset. Pure function
+// (no audio nodes) so it can also be sampled by callers deciding pan values.
+function panForX(x) {
+  if (!W) return 0;
+  return Math.max(-1, Math.min(1, (x - player.x) / (W / 2)));
+}
+
+// Per-call panner factory: creates one StereoPannerNode wired to masterGain.
+// Callers connect their own gain/source chain into the returned node instead
+// of connecting straight to masterGain, e.g. `g.connect(makePanner(pan))`.
+// Predator-voice and drip synths (Plans 02/03) route through this.
+function makePanner(pan) {
+  if (!audioCtx) return null;
+  const p = audioCtx.createStereoPanner();
+  p.pan.value = Math.max(-1, Math.min(1, pan));
+  p.connect(masterGain);
+  return p;
+}
+
+// AUDIO-01/AUDIO-02: the predator's three-state voice. `audioState` is one of
+// "grumble" (idle-wander), "hunt" (intensity variant of grumble, NOT a 4th
+// timbre), "pulse" (patrol), or "breath" (stalking). `pan` comes from
+// panForX(predator.x); `occ` is the wall-occlusion multiplier from
+// updateProximityAudio's predOcclusion (1 = open line of sight). Every branch
+// scales its peak gain by occ and routes through makePanner into masterGain —
+// never audioCtx.destination — matching the per-call node style of
+// sndPing/sndCapture/noiseBurst.
+function predatorVoice(audioState, pan, occ) {
+  if (!audioCtx) return;
+  const t = now();
+  const panner = makePanner(pan);
+  if (!panner) return;
+
+  if (audioState === "grumble" || audioState === "hunt") {
+    // Low detuned-sine rumble, same construction family as startDrone's
+    // o1/o2 but shaped as a short discrete blip rather than a continuous
+    // drone. Hunt is louder and slightly higher-pitched — an intensity
+    // lift on the SAME timbre, not a different waveform.
+    const hunting = audioState === "hunt";
+    const f1 = hunting ? 50 : 44;
+    const f2 = hunting ? 63 : 55;
+    const peak = hunting ? 0.16 : 0.10;
+    const dur = hunting ? 0.4 : 0.5;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * occ), t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    g.connect(panner);
+
+    const o1 = audioCtx.createOscillator();
+    o1.type = "sine"; o1.frequency.value = f1;
+    const o2 = audioCtx.createOscillator();
+    o2.type = "sine"; o2.frequency.value = f2;
+    o1.connect(g); o2.connect(g);
+    o1.start(t); o2.start(t);
+    o1.stop(t + dur + 0.05); o2.stop(t + dur + 0.05);
+  } else if (audioState === "pulse") {
+    // Rhythmic mid-low triangle blip through a bandpass, with two short
+    // staccato hits so it reads rhythmically distinct from the single-hit
+    // grumble.
+    const peak = 0.12;
+    const o = audioCtx.createOscillator();
+    o.type = "triangle"; o.frequency.value = 170;
+    const f = audioCtx.createBiquadFilter();
+    f.type = "bandpass"; f.Q.value = 4; f.frequency.value = 170;
+    const g = audioCtx.createGain();
+    o.connect(f); f.connect(g); g.connect(panner);
+
+    const hit = (st) => {
+      g.gain.setValueAtTime(0.0001, st);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * occ), st + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, st + 0.1);
+    };
+    hit(t);
+    hit(t + 0.12);
+    o.start(t); o.stop(t + 0.26);
+  } else if (audioState === "breath") {
+    // Filtered-noise whoosh — the only voice using noise, making it
+    // unmistakably airy versus the two pitched voices. Bandpassed (not the
+    // heavy 1200Hz lowpass noiseBurst uses) so it sits higher and "breathy."
+    const dur = 0.35;
+    const peak = 0.10;
+    const frames = Math.floor(audioCtx.sampleRate * dur);
+    const buf = audioCtx.createBuffer(1, frames, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const f = audioCtx.createBiquadFilter();
+    f.type = "bandpass"; f.Q.value = 0.9; f.frequency.value = 900;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * occ), t + dur * 0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(panner);
+    src.start(t);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Particles — small pooled accent system (ping ripples, capture, win).
+// ----------------------------------------------------------------------------
+let particles = [];
+function spawnParticles(x, y, n, color, opts) {
+  opts = opts || {};
+  const spd = opts.speed || 90;
+  const life = opts.life || 0.7;
+  const size = opts.size || 2.2;
+  for (let i = 0; i < n; i++) {
+    const a = (opts.angle != null) ? opts.angle + (Math.random() - 0.5) * (opts.spread || TAU)
+                                   : Math.random() * TAU;
+    const s = spd * (0.4 + Math.random() * 0.8);
+    particles.push({
+      x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: life * (0.6 + Math.random() * 0.6), maxLife: life,
+      color, size: size * (0.6 + Math.random() * 0.8),
+    });
+  }
+  if (particles.length > 600) particles.splice(0, particles.length - 600);
+}
+function updateParticles(dt) {
+  for (const p of particles) {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 0.94; p.vy *= 0.94;
+    p.life -= dt;
+  }
+  particles = particles.filter((p) => p.life > 0);
+}
+
+// ----------------------------------------------------------------------------
+// Geometry helpers
+// ----------------------------------------------------------------------------
+function pointSegDist(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len2 = dx * dx + dy * dy || 1e-9;
+  let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const cx = x1 + t * dx, cy = y1 + t * dy;
+  return { d: Math.hypot(px - cx, py - cy), t, cx, cy };
+}
+
+// Segment-vs-segment intersection test (used by pathfinder visibility).
+function segsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const d1 = cross(cx, cy, dx, dy, ax, ay);
+  const d2 = cross(cx, cy, dx, dy, bx, by);
+  const d3 = cross(ax, ay, bx, by, cx, cy);
+  const d4 = cross(ax, ay, bx, by, dx, dy);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+  return false;
+}
+function cross(ax, ay, bx, by, px, py) {
+  return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+}
+
+// ----------------------------------------------------------------------------
+// Levels — authored in normalized [0..1] coords; laid out to the viewport.
+// Each level: walls, player start, exit, predator start, decoyAllowed flag, and
+// optional waypoint graph nodes (normalized) the predator routes along.
+// ----------------------------------------------------------------------------
+// Helper: standard outer-box walls in normalized coords.
+function box(x0, y0, x1, y1) {
+  return [
+    [x0, y0, x1, y0],
+    [x1, y0, x1, y1],
+    [x1, y1, x0, y1],
+    [x0, y1, x0, y0],
+  ];
+}
+
+// Per-level difficulty hints (overrides applied at start). Curve summary:
+//   1–2  geometry-only, predator absent/trivial (learn ping->read->move)
+//   3–4  predator pressure introduced, no decoy
+//   5    decoy unlocked & taught in a forgiving room
+//   6–10 silent-route + decoy puzzles of rising tension
+//
+// MIN_VIEWPORT (Phase 63 review, WR-05 — superseded in part by C8): 1024x768
+// is the REFERENCE viewport for this file's geometry-dependent claims
+// (chamber margins, ambush break radii, ping-reveal coverage, nav-graph
+// reachability). Since C8 (fun-redesign), every gameplay distance/speed
+// scales with the viewport via applyScale()'s min-axis SCALE, so a margin
+// proven at 1024x768 holds at every LARGER viewport by construction — the
+// old CR-01/CR-02 re-verify-at-every-size churn no longer applies above the
+// reference size. resize() still has no minimum-size guard, so windows
+// SMALLER than 1024x768 shrink everything proportionally (playable, but the
+// authored claims are only guaranteed at >= reference). Level-geometry fixes
+// should still be verified at 1024x768; larger sizes then follow.
+const RAW_LEVELS = [
+  // ---- ACT I: LEARN TO SEE (geometry only, predator harmless) --------------
+
+  // L1 — FIRST LIGHT (LVL-02 redesign, Phase 63): a corridor-to-T-junction
+  // tutorial. Geometry — not the blurb text above — must teach "ping to see
+  // where to go" with zero reading required: a short straight corridor from
+  // spawn opens into a T-junction. CODE REVIEW FIX (WR-01, Phase 63 review):
+  // the corridor + junction + live-branch direction (the part of the design
+  // that actually carries the "which way do I go" signal) sits within one
+  // ping radius of spawn at realistic viewports (verified >=1024px wide, the
+  // review's cited minimum), but the dead-end nub's full depth is only
+  // guaranteed to read on that same first ping up to ~1024px-wide windows —
+  // shrunk from its original depth (back wall y=0.46) to y=0.52 to bring it
+  // within PING_MAX_RADIUS (220px) at 1024x768 (~217px) while keeping it
+  // visually legible as a closed pocket; wider windows (1280px+) still need
+  // a second ping to see the nub's back wall fully, same as before this fix.
+  // The core teaching claim — one ping at the junction reveals enough to
+  // choose the live branch over the dead end — holds at common viewport
+  // widths; only the nub's exact depth is viewport-sensitive, consistent
+  // with PING_MAX_RADIUS being a fixed-pixel constant against a
+  // viewport-scaled level (per 63-CONTEXT.md:16).
+  {
+    name: "FIRST LIGHT",
+    blurb: "Press SPACE to ping. Walls light along the wavefront, then fade. Find the way out.",
+    decoy: false, predSpeed: 0, // predator effectively dormant
+    playerN: { x: 0.18, y: 0.82 },
+    exitN: { x: 0.84, y: 0.20 },
+    predN: { x: 0.84, y: 0.84 },
+    wallsN: [
+      ...box(0.08, 0.10, 0.92, 0.90),
+      // Spawn corridor: straight shot up to the T-junction row (y=0.56).
+      [0.10, 0.90, 0.10, 0.56],
+      [0.24, 0.90, 0.24, 0.56],
+      // Dead-end branch: a short closed nub left of the junction — reads as
+      // "wrong way" once pinged from the junction. Back wall pulled in to
+      // y=0.52 (WR-01 fix, was 0.46) so it reads within one ping at
+      // realistic viewport widths (see head-comment).
+      [0.10, 0.56, 0.10, 0.52],
+      [0.10, 0.52, 0.16, 0.52],
+      [0.16, 0.52, 0.16, 0.56],
+      // Live branch: opens right from the junction, then curves up toward
+      // the exit's column. The near wall of this branch sits right at the
+      // junction (~7px), so its direction is unmistakable on the first ping.
+      [0.24, 0.56, 0.62, 0.56],
+      [0.16, 0.56, 0.62, 0.30],
+      [0.62, 0.30, 0.62, 0.10],
+    ],
+    nodesN: [
+      { x: 0.18, y: 0.82 },   // spawn corridor
+      { x: 0.18, y: 0.60 },   // approaching the junction
+      { x: 0.13, y: 0.54 },   // dead-end nub (shrunk per WR-01 fix)
+      { x: 0.40, y: 0.44 },   // live branch, past the curve
+      { x: 0.62, y: 0.20 },   // heading up the exit column
+      { x: 0.84, y: 0.20 },   // exit
+    ],
+    // LVL-04: in-world chalk label teaching "ping to see" right where the
+    // T-junction first demands it — a few steps up the spawn corridor from
+    // the junction itself, so it's read on the walk in, before the player
+    // needs to decide direction.
+    labelsN: [
+      { x: 0.18, y: 0.70, mechanic: "ping", text: "PING — press SPACE to see" },
+    ],
+  },
+
+  // L2 — SWITCHBACK: a longer zig-zag to trust your memory between pings.
+  // LVL-03 full-reveal exit room (Phase 63, act I finale): the bottom-right
+  // corner is now a bounded chamber (walls at x=0.82/y=0.72, doorway gap
+  // 0.83-0.91 in the top wall) sized so a single ping fired just inside the
+  // doorway (normalized 0.87,0.70) reveals every wall of the chamber,
+  // including the exit itself. predSpeed is 0 on this level (predator
+  // dormant/harmless, per its Act-I teaching role) so no patrol/ambush was
+  // added — a moving predator would contradict
+  // the "dark is still empty here" framing; the static predN position (far
+  // top-right) is simply not part of this reveal, which is fine since the
+  // predator poses no threat here. The routing decision that remains: the
+  // doorway gap is narrower than the chamber, so entering off-center still
+  // requires reading the revealed walls to line up with the gap and then the
+  // exit beyond it, rather than a straight walk from the corridor.
+  {
+    name: "SWITCHBACK",
+    blurb: "Reveals fade fast — move from memory between pings. The dark is still empty here.",
+    decoy: false, predSpeed: 0,
+    playerN: { x: 0.14, y: 0.14 },
+    exitN: { x: 0.87, y: 0.87 },
+    predN: { x: 0.86, y: 0.14 },
+    wallsN: [
+      ...box(0.08, 0.08, 0.92, 0.92),
+      [0.08, 0.32, 0.72, 0.32],
+      [0.28, 0.56, 0.92, 0.56],
+      [0.08, 0.74, 0.72, 0.74],
+      // Exit chamber (LVL-03): left wall + top wall with a doorway gap.
+      [0.82, 0.72, 0.83, 0.72],
+      [0.91, 0.72, 0.92, 0.72],
+      [0.82, 0.72, 0.82, 0.92],
+    ],
+    nodesN: [
+      { x: 0.20, y: 0.20 }, { x: 0.80, y: 0.20 },
+      { x: 0.80, y: 0.44 }, { x: 0.20, y: 0.44 },
+      { x: 0.20, y: 0.64 }, { x: 0.80, y: 0.64 },
+      { x: 0.87, y: 0.70 }, { x: 0.87, y: 0.87 }, { x: 0.20, y: 0.84 }, { x: 0.75, y: 0.84 },
+    ],
+  },
+
+  // ---- ACT II: THE HUNTER WAKES (predator pressure, no decoy) ---------------
+
+  // L3 — IT HEARS YOU: predator alive but slow. Every ping calls it closer.
+  {
+    name: "IT HEARS YOU",
+    blurb: "Now something stirs. Every ping draws the red hunter to where you pinged. Ping less.",
+    decoy: false, predSpeed: 126,
+    playerN: { x: 0.15, y: 0.50 },
+    exitN: { x: 0.85, y: 0.50 },
+    predN: { x: 0.50, y: 0.18 },
+    wallsN: [
+      ...box(0.08, 0.10, 0.92, 0.90),
+      [0.34, 0.10, 0.34, 0.66],
+      [0.66, 0.34, 0.66, 0.90],
+    ],
+    nodesN: [
+      { x: 0.20, y: 0.50 }, { x: 0.24, y: 0.78 },
+      { x: 0.50, y: 0.78 }, { x: 0.50, y: 0.22 },
+      { x: 0.78, y: 0.22 }, { x: 0.80, y: 0.50 },
+    ],
+    // PRED-03 smoke test: mid-corridor trigger near the lower waypoint the
+    // player must pass through en route to the exit. Real per-level hunt
+    // trigger authoring is deferred to Phase 63.
+    huntTriggerN: { x: 0.50, y: 0.78, radius: 0.10 },
+    // C11 (LVL-04): teach the stillness verb where the hunter first gets
+    // close. markLabelUsed("freeze") fires when a stalk is broken by
+    // stopping, so the label persists away only once the lesson landed.
+    labelsN: [
+      { x: 0.42, y: 0.78, mechanic: "freeze", text: "FREEZE — stand still and it loses you" },
+    ],
+  },
+
+  // L4 — SPIRAL: tighter inward spiral, hunter is faster. Plan your pings.
+  // LVL-01 audit nudge (Phase 63): spawn shifted from dead-center (0.50) to
+  // 0.40 on x, toward the innermost ring's gap. The 220px ping radius now
+  // also reaches the middle ring's near wall (~215px, was ~334px from dead
+  // center) so the first outward turn reads alongside the innermost ring on
+  // one ping — the spiral's core "wind in, then out" shape is legible from
+  // spawn without requiring the full route. Wall geometry untouched.
+  {
+    name: "THE SPIRAL",
+    blurb: "Wind inward to the exit. The hunter is quicker now — a wrong ping is a wrong room.",
+    decoy: false, predSpeed: 150,
+    playerN: { x: 0.40, y: 0.50 },
+    exitN: { x: 0.12, y: 0.12 },
+    predN: { x: 0.88, y: 0.88 },
+    wallsN: [
+      ...box(0.08, 0.08, 0.92, 0.92),
+      [0.22, 0.22, 0.78, 0.22],
+      [0.78, 0.22, 0.78, 0.78],
+      [0.78, 0.78, 0.22, 0.78],
+      [0.22, 0.78, 0.22, 0.36],
+      [0.36, 0.36, 0.64, 0.36],
+      [0.64, 0.36, 0.64, 0.64],
+      [0.64, 0.64, 0.36, 0.64],
+    ],
+    nodesN: [
+      { x: 0.50, y: 0.50 }, { x: 0.50, y: 0.50 - 0.0 },
+      { x: 0.15, y: 0.50 }, { x: 0.15, y: 0.15 },
+      { x: 0.85, y: 0.15 }, { x: 0.85, y: 0.85 },
+      { x: 0.15, y: 0.85 }, { x: 0.15, y: 0.30 },
+      { x: 0.70, y: 0.30 }, { x: 0.70, y: 0.70 }, { x: 0.30, y: 0.70 },
+    ],
+  },
+
+  // ---- ACT III: THE LIE (decoy unlocked) -----------------------------------
+
+  // L5 — THE LIE: forgiving room to learn the decoy. Lure it up, slip across.
+  // LVL-01 audit (Phase 63): ACCEPT-AS-IS. The near cross-walls read at
+  // ~95px (well within the 220px ping radius), so the room's near structure
+  // is legible on the first ping. The central vertical decoy wall (~434px
+  // from spawn) is deliberately a second-ping reveal — closing that gap
+  // would require compressing the room to roughly half its width, which
+  // trivializes the very thing this level teaches: the decoy is the
+  // mechanic here, not pure geometry-reading, so some challenge finding the
+  // central wall is intentional.
+  {
+    name: "THE LIE",
+    blurb: "New power: hold SHIFT + aim (or right-click) to throw a DECOY. The blind hunter chases the lie.",
+    decoy: true, predSpeed: 142,
+    playerN: { x: 0.14, y: 0.50 },
+    exitN: { x: 0.88, y: 0.50 },
+    predN: { x: 0.52, y: 0.50 },
+    wallsN: [
+      ...box(0.06, 0.10, 0.94, 0.90),
+      [0.50, 0.10, 0.50, 0.40],
+      [0.50, 0.60, 0.50, 0.90],
+      [0.28, 0.30, 0.72, 0.30],
+      [0.28, 0.70, 0.72, 0.70],
+    ],
+    nodesN: [
+      { x: 0.20, y: 0.50 }, { x: 0.40, y: 0.50 },
+      { x: 0.50, y: 0.50 }, { x: 0.60, y: 0.50 }, { x: 0.80, y: 0.50 },
+      { x: 0.40, y: 0.20 }, { x: 0.60, y: 0.20 },
+      { x: 0.40, y: 0.80 }, { x: 0.60, y: 0.80 },
+    ],
+    // LVL-04: in-world chalk label teaching the brand-new decoy verb, placed
+    // at the central corridor mouth — between spawn and the decoy wall gap —
+    // right where the predator's proximity first makes "throw a lie" useful.
+    labelsN: [
+      { x: 0.40, y: 0.50, mechanic: "decoy", text: "DECOY — SHIFT + aim throws a lie" },
+    ],
+  },
+
+  // L6 — TWO DOORS: predator camps center. Decoy one side, take the other.
+  // LVL-03 full-reveal exit room (Phase 63, act II finale): a bounded
+  // chamber in the bottom-right corner (walls x=0.70/y=0.76, doorway gap
+  // 0.81-0.89 in the top wall) sized so a single ping fired just inside the
+  // doorway (normalized 0.85,0.72) reveals every wall of the chamber,
+  // including the exit. A box(0.08,0.08,0.92,0.92)-vertically-centered exit
+  // could NOT satisfy this: the two far box corners (top-right/bottom-right)
+  // sit ~265px apart from any y=0.50 exit regardless of entry point (a hard
+  // geometric floor exceeding PING_MAX_RADIUS=220), so the exit was moved
+  // from (0.86,0.50) into this bottom-right corner pocket near the existing
+  // bottom-door wall, where only one box corner is nearby and coverable.
+  // Per LVL-03's "predator's starting position is revealed" clause: this is
+  // the FINAL authoring of the ambush (superseding Phase 62's PRED-02 smoke
+  // test at the top door) — ambushN is relocated from the top doorway to
+  // the chamber's far (bottom-left) corner. CODE REVIEW FIX (CR-01, Phase 63
+  // review): the chamber's original left wall (x=0.78) left no interior
+  // point >= AMBUSH_BREAK_RADIUS (120px) from every point on the
+  // doorway-to-exit route — a flood-fill confirmed the ambush was
+  // unconditionally broken before the player could ever approach, collapsing
+  // the "predator is lying in wait, slipping past is a real choice" design
+  // intent. The left wall was pulled out to x=0.74 to give the chamber depth,
+  // verified ~156px/~131px at a 1280x800 viewport — but CR-01's fix was only
+  // checked at that one viewport. CODE REVIEW FIX (CR-02, Phase 63 re-review):
+  // re-running the same flood-fill at 1024x768 — the minimum viewport this
+  // review cycle established as the floor (per 683deef's L1 fix) — showed the
+  // x=0.74 chamber's margins collapsed back to 94-146px against the 120px
+  // radius, breaking the ambush on nearly every natural approach at that
+  // size. The left wall is pulled out further, to x=0.70, and ambushN moves
+  // from (0.76,0.88) to (0.71,0.88) (still the chamber's far bottom-left
+  // corner) so the safe margin holds at BOTH 1024x768 (124-187px doorway,
+  // 150px exit) and 1280x800 (147-231px doorway, 191px exit), re-verified via
+  // the same flood-fill/BFS-safe-route methodology at 1024x768, 1280x800, and
+  // 1920x1080 (see REVIEW-FIX.md for the full per-viewport table). The
+  // chamber's outer-corner distance from the doorway entry ping point grows
+  // with it (195px/229px at 1024x768/1280x800, up from 171px/194px) — still
+  // in the same ballpark as before and not a new single-ping-coverage
+  // regression (the pre-CR-02 geometry already exceeded PING_MAX_RADIUS at
+  // 1920x1080, so exact single-ping coverage was never a guaranteed
+  // invariant at every viewport, only the reference one).
+  // CODE REVIEW FIX (CR-03/WR-06, Phase 63 iteration-3 re-review): CR-02's
+  // ambushN (0.71,0.88) sat only ~0.01 normalized units clear of the x=0.70
+  // wall — collidesAt(ambush, PRED_R=13) collided with that wall at
+  // 1024x768 (9.36px clearance) and 1280x800 (11.92px clearance), a
+  // regression CR-02's break-radius/reachability/nav-graph checks never
+  // exercised. Solved as a system (not a one-number nudge): held the chamber
+  // depth (left wall x=0.70) FIXED — a joint grid search over
+  // {leftX, ambushX, ambushY} proved x=0.70 is the unique feasible chamber
+  // depth that keeps AMBUSH_BREAK_RADIUS (120px) satisfied at 1024x768 at
+  // all (any shallower wall reopens CR-01/CR-02's break-radius violation;
+  // any deeper wall only pushes the ping-reveal corner distance further past
+  // budget with no compensating benefit) — then solved for the ambushN point
+  // maximizing the worse of the two margins (break-radius, wall-clearance)
+  // within that fixed chamber. Moved ambushN to (0.7204,0.892): both margins
+  // hold at all three viewports (break-radius 121.0/142.3/210.0px vs 120px
+  // floor; wall-clearance 19.0/19.9/27.8px vs the PRED_R+5px=18px floor,
+  // checked against every wall in the level, not just the adjacent chamber
+  // wall — the binding wall at 1024x768 is actually the outer box's bottom
+  // edge at y=0.92, 19.04px away, essentially tied with the chamber's own
+  // left wall at 19.09px). WR-06 residual (documented, not silently left):
+  // this is the mathematical ceiling for margin at 1024x768 — under 1px of
+  // slack on each constraint — because deepening the chamber further to buy
+  // more margin only makes the pre-existing ping-reveal miss worse (see
+  // wallsN comment below and WR-06 note there); the two constraints
+  // (break-radius vs. wall-clearance) leave essentially no more room to
+  // maneuver at this chamber depth. A future geometry pass that revisits
+  // this level should treat the chamber shape itself (not just the ambush
+  // point) as the variable if more margin is ever needed.
+  // patrolN keeps the original top/bottom door midpoints so the "two doors"
+  // patrol identity and decoy-timing puzzle for the FIRST door choice are
+  // unchanged; only the ambush (the predator's actual start-of-level
+  // position, per startLevel()'s level.ambush spawn-override) moved to
+  // guard the finale approach. The routing decision survives: the player
+  // sees the whole chamber and the waiting predator in one ping, but the
+  // doorway gap is narrower than the chamber and the predator sits off to the
+  // side, clear of the direct doorway-to-exit line, so slipping past it (not
+  // just walking through one of the two doors) is still a real choice.
+  {
+    name: "TWO DOORS",
+    blurb: "Two ways through. Listen — it patrols between the doors. Time your crossing.",
+    decoy: true, predSpeed: 158,
+    playerN: { x: 0.14, y: 0.50 },
+    exitN: { x: 0.87, y: 0.87 },
+    predN: { x: 0.50, y: 0.22 },
+    wallsN: [
+      ...box(0.08, 0.08, 0.92, 0.92),
+      [0.40, 0.08, 0.40, 0.34],
+      [0.40, 0.50, 0.40, 0.92],
+      [0.60, 0.08, 0.60, 0.50],
+      [0.60, 0.66, 0.60, 0.92],
+      // Exit chamber (LVL-03): top wall with a doorway gap + left wall.
+      // Left wall pulled out to x=0.70 (CR-02 fix; was x=0.74 under CR-01,
+      // which only held its margin at 1280x800 — see head comment) so the
+      // chamber has enough depth for an ambush point clear of the
+      // doorway-to-exit route at 1024x768 as well. CR-03/WR-06 (iteration-3
+      // re-review) proved this x=0.70 depth is a forced value, not a free
+      // choice: it is the unique wall position that keeps the ambush's
+      // break-radius margin (>=120px) AND its own wall-clearance margin
+      // (>=PRED_R+5px) satisfied at 1024x768 simultaneously — see the
+      // ambushN comment below for the full joint-solve writeup. A side
+      // effect of this forced depth: the chamber's farthest corner from the
+      // doorway ping point (0.85,0.72) is 228.6px at 1280x800, over
+      // PING_MAX_RADIUS (220px) — WR-06, a pre-existing-adjacent but
+      // newly-introduced-by-CR-02 miss at that one viewport (it held at
+      // 194px before CR-02's widening). This is now a known, documented gap:
+      // 1280x800 does not get the single-ping full-chamber reveal LVL-03's
+      // own comment below promises; 1024x768 (195.5px) still does. No
+      // further wall/ambush geometry change closes this gap without
+      // reopening CR-01/CR-02's break-radius violation (see the joint-solve
+      // proof in the head comment) — closing it for real requires either
+      // relaxing the single-ping guarantee to "at 1024x768 only" in the
+      // level's design comment, or a larger PING_MAX_RADIUS / different
+      // exit-room shape, both out of scope for a geometry-only fix pass.
+      [0.70, 0.76, 0.81, 0.76],
+      [0.89, 0.76, 0.92, 0.76],
+      [0.70, 0.76, 0.70, 0.92],
+    ],
+    nodesN: [
+      { x: 0.24, y: 0.50 }, { x: 0.32, y: 0.22 }, { x: 0.32, y: 0.78 },
+      { x: 0.50, y: 0.22 }, { x: 0.50, y: 0.78 },
+      { x: 0.68, y: 0.22 }, { x: 0.68, y: 0.78 }, { x: 0.74, y: 0.50 },
+      { x: 0.85, y: 0.72 }, { x: 0.87, y: 0.87 },
+    ],
+    patrolN: [
+      { x: 0.50, y: 0.22 }, { x: 0.50, y: 0.78 },
+    ],
+    // LVL-03 final authoring (supersedes Phase 62's PRED-02 top-door smoke
+    // test): the predator ambushes in the exit chamber's far (bottom-left)
+    // corner instead of the top doorway, so it is visible in the same ping
+    // that reveals the room — breaks on 120px proximity or 15s, same as
+    // before. CR-01 fix: relocated from (0.82,0.80) — which sat only ~67px
+    // from the doorway entry, guaranteeing an unavoidable break — to
+    // (0.76,0.88), ~156px from the doorway and ~131px from the exit at
+    // 1280x800, but CR-01 never re-checked 1024x768, where the same margin
+    // collapsed to 94-146px. CR-02 fix: relocated again to (0.71,0.88)
+    // (paired with the wall move above), verified 124-187px from the doorway
+    // and ~150px from the exit at 1024x768, and 147-231px/191px at 1280x800.
+    // CR-03 fix (iteration-3 re-review): (0.71,0.88) was only ~0.01
+    // normalized units clear of the x=0.70 wall, so collidesAt(ambush,
+    // PRED_R=13) collided with it at 1024x768 (9.36px actual clearance) and
+    // 1280x800 (11.92px) — the predator's own render silhouette clipped into
+    // the wall it was meant to be standing beside. Relocated to
+    // (0.7204,0.892), the joint-solve optimum for this fixed chamber depth
+    // (see wallsN comment above): break-radius margin 121.0/142.3/210.0px
+    // and wall-clearance (checked against every wall, not just the adjacent
+    // one) 19.0/19.9/27.8px at 1024x768/1280x800/1920x1080 respectively —
+    // both requirements hold at all three viewports, though with under 1px
+    // of slack at 1024x768, which is the mathematical ceiling for this
+    // chamber shape (see wallsN comment for the proof and the WR-06 residual
+    // ping-reveal gap this forced depth leaves at 1280x800).
+    ambushN: { x: 0.7204, y: 0.892 },
+  },
+
+  // L7 — THE GAUNTLET: predator patrols the central corridor. Bait it off the path, then run.
+  {
+    name: "THE GAUNTLET",
+    blurb: "The hunter patrols the only road. Decoy it off the path, then run it in silence.",
+    decoy: true, predSpeed: 179,
+    playerN: { x: 0.12, y: 0.85 },
+    exitN: { x: 0.88, y: 0.15 },
+    predN: { x: 0.50, y: 0.50 },
+    wallsN: [
+      ...box(0.08, 0.08, 0.92, 0.92),
+      [0.08, 0.40, 0.66, 0.40],
+      [0.34, 0.60, 0.92, 0.60],
+      [0.66, 0.08, 0.66, 0.40],
+      [0.34, 0.60, 0.34, 0.92],
+    ],
+    nodesN: [
+      { x: 0.20, y: 0.84 }, { x: 0.20, y: 0.50 },
+      { x: 0.50, y: 0.50 }, { x: 0.50, y: 0.74 }, { x: 0.80, y: 0.74 },
+      { x: 0.80, y: 0.50 }, { x: 0.50, y: 0.24 }, { x: 0.80, y: 0.24 },
+      { x: 0.20, y: 0.24 },
+    ],
+    patrolN: [
+      { x: 0.20, y: 0.50 }, { x: 0.80, y: 0.50 },
+    ],
+    // C7: burst as the player commits to crossing the patrolled road — the
+    // corridor midpoint, which every route must pass through.
+    huntTriggerN: { x: 0.50, y: 0.50, radius: 0.08 },
+  },
+
+  // L8 — CROSSROADS: predator circuits the hub. Decoy one arm, cross the cleared path.
+  {
+    name: "CROSSROADS",
+    blurb: "The hunter circles the heart. Send the lie down one arm — slip across while it commits.",
+    decoy: true, predSpeed: 184,
+    playerN: { x: 0.50, y: 0.86 },
+    exitN: { x: 0.50, y: 0.14 },
+    predN: { x: 0.50, y: 0.50 },
+    wallsN: [
+      ...box(0.08, 0.08, 0.92, 0.92),
+      [0.08, 0.40, 0.40, 0.40], [0.40, 0.40, 0.40, 0.08],
+      [0.60, 0.08, 0.60, 0.40], [0.60, 0.40, 0.92, 0.40],
+      [0.92, 0.60, 0.60, 0.60], [0.60, 0.60, 0.60, 0.92],
+      [0.40, 0.92, 0.40, 0.60], [0.40, 0.60, 0.08, 0.60],
+    ],
+    nodesN: [
+      { x: 0.50, y: 0.50 }, { x: 0.50, y: 0.20 }, { x: 0.50, y: 0.80 },
+      { x: 0.20, y: 0.50 }, { x: 0.80, y: 0.50 },
+      { x: 0.24, y: 0.24 }, { x: 0.76, y: 0.24 },
+      { x: 0.24, y: 0.76 }, { x: 0.76, y: 0.76 },
+    ],
+    patrolN: [
+      { x: 0.50, y: 0.20 }, { x: 0.80, y: 0.50 },
+      { x: 0.50, y: 0.80 }, { x: 0.20, y: 0.50 },
+    ],
+  },
+
+  // L9 — THE SENTINEL: open arena, fast predator on a tight figure-8 patrol.
+  //   You must cross its path twice to reach the exit. Timing is everything.
+  {
+    name: "THE SENTINEL",
+    blurb: "No maze to hide in — an open cave, one fast guard on a figure-8 loop. Listen for your moment.",
+    decoy: true, predSpeed: 188,
+    playerN: { x: 0.12, y: 0.50 },
+    exitN: { x: 0.88, y: 0.50 },
+    predN: { x: 0.50, y: 0.28 },
+    wallsN: [
+      ...box(0.08, 0.08, 0.92, 0.92),
+      [0.38, 0.08, 0.38, 0.44], [0.38, 0.56, 0.38, 0.92],
+      [0.62, 0.08, 0.62, 0.44], [0.62, 0.56, 0.62, 0.92],
+      [0.38, 0.44, 0.50, 0.44], [0.50, 0.56, 0.62, 0.56],
+    ],
+    nodesN: [
+      { x: 0.22, y: 0.30 }, { x: 0.22, y: 0.70 },
+      { x: 0.44, y: 0.50 },  // left S-gap connector: visible from both left nodes and center
+      { x: 0.50, y: 0.20 }, { x: 0.50, y: 0.50 }, { x: 0.50, y: 0.80 },
+      { x: 0.56, y: 0.50 },  // right S-gap connector: visible from both center and right nodes
+      { x: 0.78, y: 0.30 }, { x: 0.78, y: 0.70 },
+    ],
+    patrolN: [
+      { x: 0.50, y: 0.20 }, { x: 0.78, y: 0.30 },
+      { x: 0.78, y: 0.70 }, { x: 0.50, y: 0.80 },
+      { x: 0.22, y: 0.70 }, { x: 0.22, y: 0.30 },
+    ],
+    // C7: burst at the second S-gap crossing — the point where the player has
+    // committed to the right half and can't retreat cheaply.
+    huntTriggerN: { x: 0.60, y: 0.50, radius: 0.07 },
+  },
+
+  // L10 — INTO THE DEEP: the finale. Twin throats, fastest hunter, tight exit.
+  // LVL-03 full-reveal exit room (Phase 63, act III finale): the exit moved
+  // from the box's vertical center (0.88,0.50) into a bounded chamber in the
+  // top-right corner (walls: bottom wall at y=0.40, left wall at x=0.86 with
+  // a doorway gap 0.10-0.18) — a centered exit could NOT satisfy this here
+  // either, for the same reason as L6: this level's box(0.06,0.08,0.94,0.92)
+  // has far top-right/bottom-right corners ~265-275px from any y=0.50 exit
+  // regardless of entry point, exceeding PING_MAX_RADIUS=220. A single ping
+  // fired from the open area just outside the doorway (normalized ~0.81,
+  // 0.31) reveals the whole chamber, including the exit. Predator-visibility
+  // (LVL-03): as the finale, favors reliability over the static predN (which
+  // starts at dead-center, far from every exit-room candidate) — added an
+  // ambushN in the chamber's far corner so the predator is lying in wait and
+  // visible in the same ping, while sitting off to the side of the direct
+  // doorway-to-exit line so slipping past it is still a real routing
+  // decision. CODE REVIEW FIX (CR-01, Phase 63 review): the chamber's
+  // original bottom wall (y=0.28) left no interior point clear of
+  // AMBUSH_BREAK_RADIUS (120px) across the whole doorway-to-exit route — a
+  // flood-fill confirmed the ambush was unconditionally broken before the
+  // player could reach the chamber. The bottom wall was pushed out to y=0.34
+  // and ambushN moved to (0.925,0.315), verified ~137px/~135px from the
+  // doorway/exit respectively — but only at a 1280x800 viewport. CODE REVIEW
+  // FIX (CR-02, Phase 63 re-review): re-running the same flood-fill at
+  // 1024x768 — the minimum viewport this review cycle established as the
+  // floor (per 683deef's L1 fix) — showed the y=0.34 chamber's margins
+  // collapsed to 111-158px against the 120px radius, breaking the ambush on
+  // most natural approaches at that size. The bottom wall is pushed out
+  // further, to y=0.40, and ambushN moves to (0.925,0.36) (same far corner,
+  // deeper into the chamber) so the safe margin holds at BOTH 1024x768
+  // (137-193px doorway, 165px exit) and 1280x800 (150-207px doorway, 173px
+  // exit), re-verified via the same flood-fill/BFS-safe-route methodology at
+  // 1024x768, 1280x800, and 1920x1080 (see REVIEW-FIX.md for the full
+  // per-viewport table). The wall move is purely vertical (bottom wall only),
+  // so it does not affect the doorway entry point's ping-coverage distance to
+  // the chamber's outer corners — no ping-coverage regression from this fix.
+  // Twin-throat identity preserved: both throats still feed into the same
+  // open area approaching this corner chamber; the upper throat's approach is
+  // now shorter than the lower throat's, an intentional asymmetry rather than
+  // a simplification (both routes remain fully navigable, per the nav-graph
+  // check below).
+  {
+    name: "INTO THE DEEP",
+    blurb: "The deepest dark. Everything you've learned — the map, the silence, the lie. Map it all.",
+    decoy: true, predSpeed: 194,
+    playerN: { x: 0.12, y: 0.50 },
+    exitN: { x: 0.90, y: 0.13 },
+    predN: { x: 0.50, y: 0.50 },
+    wallsN: [
+      ...box(0.06, 0.08, 0.94, 0.92),
+      [0.30, 0.08, 0.30, 0.38], [0.30, 0.62, 0.30, 0.92],
+      [0.30, 0.38, 0.52, 0.38], [0.30, 0.62, 0.52, 0.62],
+      [0.52, 0.20, 0.52, 0.38], [0.52, 0.62, 0.52, 0.80],
+      [0.70, 0.08, 0.70, 0.38], [0.70, 0.62, 0.70, 0.92],
+      [0.52, 0.20, 0.70, 0.20], [0.52, 0.80, 0.70, 0.80],
+      // Exit chamber (LVL-03): bottom wall + left wall with a doorway gap.
+      // Bottom wall pushed out to y=0.40 (CR-02 fix; was y=0.34 under CR-01,
+      // which only held its margin at 1280x800 — see head comment) so the
+      // chamber has enough depth for an ambush point clear of the
+      // doorway-to-exit route at 1024x768 as well. CR-03 re-check
+      // (iteration-3 re-review): re-verified this same holistic
+      // break-radius/wall-clearance/ping-reveal constraint set for L10 (the
+      // review's fix guidance asked to re-check, not assume L10 was fine
+      // just because CR-03/WR-06 were filed against L6 specifically). L10's
+      // wall-clearance violation traced to ambushN.x being too close to the
+      // OUTER box's right edge (x=0.94), not this bottom wall — this wall's
+      // position (y=0.40) did not need to change; see ambushN comment below.
+      [0.86, 0.40, 0.94, 0.40],
+      [0.86, 0.08, 0.86, 0.10],
+      [0.86, 0.18, 0.86, 0.40],
+    ],
+    nodesN: [
+      { x: 0.18, y: 0.50 }, { x: 0.24, y: 0.24 }, { x: 0.24, y: 0.76 },
+      { x: 0.41, y: 0.50 }, { x: 0.61, y: 0.50 },
+      { x: 0.61, y: 0.14 }, { x: 0.61, y: 0.86 },
+      { x: 0.80, y: 0.24 }, { x: 0.80, y: 0.76 }, { x: 0.82, y: 0.50 },
+      { x: 0.86, y: 0.14 }, { x: 0.90, y: 0.13 },
+    ],
+    // LVL-03 finale ambush: the predator lies in wait in the exit chamber's
+    // far corner, visible in the same ping that reveals the room. Breaks on
+    // 120px proximity or 15s, same contract as L6's ambush (see startLevel()
+    // / updatePredator()'s AMBUSH MODE block). CR-01 fix: relocated from
+    // (0.89,0.22) — which sat only ~115px from the doorway/reveal entry
+    // point, guaranteeing an unavoidable break — to (0.925,0.315), ~137px
+    // from the doorway and ~135px from the exit at 1280x800, but CR-01 never
+    // re-checked 1024x768, where the same margin collapsed to 111-158px.
+    // CR-02 fix: relocated again to (0.925,0.36) (paired with the wall move
+    // above), verified 137-193px from the doorway and ~165px from the exit
+    // at 1024x768, and 150-207px/173px at 1280x800.
+    // CR-03 fix (iteration-3 re-review): CR-02 never checked the predator's
+    // own collision radius against the wall it was moved next to. Re-running
+    // collidesAt(ambush, PRED_R=13) against the live geometry found
+    // (0.925,0.36) collided with the level's OUTER right wall (x=0.94, not
+    // this chamber's own bottom/left walls) at 1024x768 (14.04px clearance)
+    // and 1280x800 (17.88px) — both under the PRED_R+5px=18px floor. Unlike
+    // L6, this level had ample slack: relocated ambushN.x from 0.925 to 0.91
+    // (y unchanged) without touching any wall. Re-verified the full
+    // constraint set at all three viewports: break-radius margin
+    // 131.0/141.3/200.7px (vs 120px floor), wall-clearance 27.2/28.5/39.7px
+    // (vs 18px floor, checked against every wall), and the exit-room
+    // ping-reveal distance is unaffected (163.3/174.3px at 1024x768/1280x800,
+    // same pre-existing 1920x1080-only miss as before — this move does not
+    // touch the ping-reveal geometry at all since only ambushN.x changed,
+    // not any wall).
+    ambushN: { x: 0.91, y: 0.36 },
+  },
+];
+
+// Resize-remap fix: an entity's absolute pixel position is losslessly
+// remapped across a window resize by round-tripping through the SAME
+// normalized-coordinate formula layoutLevel()'s toX/toY use (LEVEL_MARGIN +
+// n * contentBoxSize) — this keeps every entity's position relative to the
+// (also-remapped) walls/exit/ambush geometry EXACTLY consistent, not just
+// approximately, since RAW_LEVELS authors every point in the same [0,1]
+// space. Guards against a degenerate old/new content box (near-zero or
+// negative) by skipping the remap entirely rather than dividing by ~0.
+function remapEntityPositions(oldW, oldH, newW, newH) {
+  const oldBW = oldW - LEVEL_MARGIN * 2, oldBH = oldH - LEVEL_MARGIN * 2;
+  const newBW = newW - LEVEL_MARGIN * 2, newBH = newH - LEVEL_MARGIN * 2;
+  if (oldBW <= 1 || oldBH <= 1 || newBW <= 1 || newBH <= 1) return;
+  const remapX = (x) => LEVEL_MARGIN + ((x - LEVEL_MARGIN) / oldBW) * newBW;
+  const remapY = (y) => LEVEL_MARGIN + ((y - LEVEL_MARGIN) / oldBH) * newBH;
+
+  player.x = remapX(player.x); player.y = remapY(player.y);
+  predator.x = remapX(predator.x); predator.y = remapY(predator.y);
+  predator.tx = remapX(predator.tx); predator.ty = remapY(predator.ty);
+  predator.lastHeardX = remapX(predator.lastHeardX); predator.lastHeardY = remapY(predator.lastHeardY);
+  for (const p of pings) { p.x = remapX(p.x); p.y = remapY(p.y); }
+  for (const g of ghosts) {
+    g.x1 = remapX(g.x1); g.y1 = remapY(g.y1);
+    g.x2 = remapX(g.x2); g.y2 = remapY(g.y2);
+  }
+  for (const m of decoyMarks) { m.x = remapX(m.x); m.y = remapY(m.y); }
+  // predator.path[] holds transient pathfinding waypoints in absolute pixels
+  // from the OLD layout — cheaper and safer to drop them than remap; the
+  // predator's normal mode logic (hunt/idle/search) replans within a frame
+  // or two rather than tunneling through newly-repositioned walls.
+  predator.path = [];
+  predator.pathStep = 0;
+}
+
+// Resize-remap fix (part 2): labelState (the per-attempt RENDER copy of
+// in-world mechanic labels) isn't touched by remapEntityPositions/layoutLevel
+// — layoutLevel() rebuilds level.labels fresh with correct positions, so
+// this just re-syncs labelState's x/y to match, by mechanic name, without
+// disturbing each entry's life/used/text.
+function remapLabelPositions() {
+  for (const ls of labelState) {
+    const src = (level.labels || []).find((l) => l.mechanic === ls.mechanic);
+    if (src) { ls.x = src.x; ls.y = src.y; }
+  }
+}
+
+// Live (pixel-space) geometry, recomputed on layout.
+function layoutLevel() {
+  applyScale(); // C8: refresh all scaled gameplay values for this viewport
+  const raw = RAW_LEVELS[levelIndex];
+  const M = LEVEL_MARGIN;
+  const ax = M, ay = M, bw = W - M * 2, bh = H - M * 2;
+  const toX = (n) => ax + n * bw;
+  const toY = (n) => ay + n * bh;
+
+  level = {
+    name: raw.name,
+    blurb: raw.blurb || "",
+    decoy: !!raw.decoy,
+    // predSpeed: 0 means the hunter is dormant (early teaching levels).
+    // C8: authored speeds are reference-viewport values — scale like the rest.
+    huntSpeed: (raw.predSpeed != null) ? raw.predSpeed * SCALE : PRED_HUNT_SPEED,
+    dormant: raw.predSpeed === 0,
+    walls: raw.wallsN.map(([x1, y1, x2, y2]) => ({
+      x1: toX(x1), y1: toY(y1), x2: toX(x2), y2: toY(y2),
+    })),
+    exit: { x: toX(raw.exitN.x), y: toY(raw.exitN.y), r: BASE.EXIT_R * SCALE },
+    playerStart: { x: toX(raw.playerN.x), y: toY(raw.playerN.y) },
+    predStart: { x: toX(raw.predN.x), y: toY(raw.predN.y) },
+    nodes: (raw.nodesN || []).map((n) => ({ x: toX(n.x), y: toY(n.y) })),
+    patrol: (raw.patrolN || []).map((n) => ({ x: toX(n.x), y: toY(n.y) })),
+    // PRED-02: optional ambush chokepoint, same normalized N-suffix convention
+    // as patrolN/playerN/exitN — null when the level has no ambush configured.
+    ambush: raw.ambushN ? { x: toX(raw.ambushN.x), y: toY(raw.ambushN.y) } : null,
+    // PRED-03: optional mid-level hunt-burst trigger zone, same normalized
+    // N-suffix convention as ambushN, plus a radius. C8: the radius scales via
+    // SCALE (min-axis), like every other gameplay distance in this file,
+    // using the reference content-width (936) as its base — this preserves
+    // the exact same radius at the 1024x768 reference viewport (bw === 936,
+    // SCALE === 1) while staying consistent at every other aspect ratio,
+    // instead of ballooning with raw content width — null when the level has
+    // no hunt trigger configured.
+    huntTrigger: raw.huntTriggerN
+      ? { x: toX(raw.huntTriggerN.x), y: toY(raw.huntTriggerN.y), radius: raw.huntTriggerN.radius * 936 * SCALE }
+      : null,
+    // LVL-04: optional in-world mechanic labels, same normalized N-suffix
+    // convention as patrolN/ambushN. Levels without labelsN get an empty
+    // array (no label rendered).
+    labels: (raw.labelsN || []).map((l) => ({
+      x: toX(l.x), y: toY(l.y), mechanic: l.mechanic, text: l.text,
+    })),
+  };
+  // C9: bounding box of all walls — clamps decoy targets into the level.
+  let bMinX = Infinity, bMinY = Infinity, bMaxX = -Infinity, bMaxY = -Infinity;
+  for (const w of level.walls) {
+    bMinX = Math.min(bMinX, w.x1, w.x2); bMaxX = Math.max(bMaxX, w.x1, w.x2);
+    bMinY = Math.min(bMinY, w.y1, w.y2); bMaxY = Math.max(bMaxY, w.y1, w.y2);
+  }
+  level.bounds = { minX: bMinX, minY: bMinY, maxX: bMaxX, maxY: bMaxY };
+  buildNavGraph();
+}
+
+// ----------------------------------------------------------------------------
+// Pathfinding — a tiny visibility graph over authored nodes (+ dynamic
+// start/goal) so the predator routes AROUND walls (PRED-04). If no graph is
+// authored, the predator falls back to wall-sliding steering.
+// ----------------------------------------------------------------------------
+let navAdj = [];   // adjacency list over level.nodes indices
+function buildNavGraph() {
+  navAdj = [];
+  const N = level.nodes;
+  for (let i = 0; i < N.length; i++) navAdj.push([]);
+  for (let i = 0; i < N.length; i++) {
+    for (let j = i + 1; j < N.length; j++) {
+      if (lineClear(N[i].x, N[i].y, N[j].x, N[j].y)) {
+        const d = Math.hypot(N[i].x - N[j].x, N[i].y - N[j].y);
+        navAdj[i].push({ to: j, w: d });
+        navAdj[j].push({ to: i, w: d });
+      }
+    }
+  }
+}
+
+// True if the segment A->B does not cross any wall (with a little inset margin).
+function lineClear(ax, ay, bx, by) {
+  for (const w of level.walls) {
+    if (segsIntersect(ax, ay, bx, by, w.x1, w.y1, w.x2, w.y2)) return false;
+  }
+  return true;
+}
+
+// Dijkstra from the predator's nearest visible node to the goal's nearest node;
+// returns an array of pixel waypoints (ending at gx,gy) or [{x:gx,y:gy}] direct.
+function planPath(sx, sy, gx, gy) {
+  const N = level.nodes;
+  if (!N.length || lineClear(sx, sy, gx, gy)) return [{ x: gx, y: gy }];
+
+  const startNode = nearestVisibleNode(sx, sy);
+  const goalNode = nearestVisibleNode(gx, gy);
+  if (startNode < 0 || goalNode < 0) return [{ x: gx, y: gy }];
+
+  const dist = new Array(N.length).fill(Infinity);
+  const prev = new Array(N.length).fill(-1);
+  const seen = new Array(N.length).fill(false);
+  dist[startNode] = 0;
+  for (let it = 0; it < N.length; it++) {
+    let u = -1, best = Infinity;
+    for (let i = 0; i < N.length; i++) if (!seen[i] && dist[i] < best) { best = dist[i]; u = i; }
+    if (u < 0) break;
+    seen[u] = true;
+    if (u === goalNode) break;
+    for (const e of navAdj[u]) {
+      if (dist[u] + e.w < dist[e.to]) { dist[e.to] = dist[u] + e.w; prev[e.to] = u; }
+    }
+  }
+  if (dist[goalNode] === Infinity) return [{ x: gx, y: gy }];
+
+  const chain = [];
+  for (let n = goalNode; n >= 0; n = prev[n]) chain.unshift(n);
+  const pts = chain.map((i) => ({ x: N[i].x, y: N[i].y }));
+  pts.push({ x: gx, y: gy });
+  return pts;
+}
+
+function nearestVisibleNode(x, y) {
+  let best = -1, bd = Infinity;
+  for (let i = 0; i < level.nodes.length; i++) {
+    const n = level.nodes[i];
+    const d = Math.hypot(n.x - x, n.y - y);
+    if (d < bd && lineClear(x, y, n.x, n.y)) { bd = d; best = i; }
+  }
+  return best;
+}
+
+// ----------------------------------------------------------------------------
+// Input
+// ----------------------------------------------------------------------------
+const keys = Object.create(null);
+
+window.addEventListener("keydown", (e) => {
+  unlockAudio();
+  const k = e.key.toLowerCase();
+  if ([" ", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) e.preventDefault();
+
+  if (state === STATE.TITLE) {
+    if (k === "enter" || k === " ") { startLevel(progress > 0 ? Math.min(progress, RAW_LEVELS.length - 1) : 0); return; }
+  }
+  if (state === STATE.CAUGHT) {
+    if (k === "enter" || k === "r" || k === " ") { startLevel(levelIndex); return; }
+  }
+  if (state === STATE.WON) {
+    if ((k === "enter" || k === " " || k === "r") && !e.repeat) { advanceLevel(); return; }
+  }
+  if (state === STATE.CLEARED) {
+    if (k === "enter" || k === " " || k === "r") { state = STATE.TITLE; return; }
+  }
+
+  if (state === STATE.PLAYING) {
+    // C10: pause gate — game actions are swallowed while paused; meta keys
+    // (pause, mute, sonar assist, restart) stay live.
+    if ((k === "p" || k === "escape") && !e.repeat) {
+      paused = !paused;
+      if (paused) { setProximity(0); setTensionTone(0); } // silence continuous predator audio while paused
+    }
+    if (k === " " && !e.repeat && !paused) { tryPing(); }
+    if (k === "r") { startLevel(levelIndex); return; }
+    if (k === "`" || k === "~") { showDebug = !showDebug; }
+    // C2: sonar-assist toggle (accessibility/difficulty valve) — restores the
+    // old always-visible predator rendering. Persisted.
+    if (k === "v" && !e.repeat) {
+      sonarAssist = !sonarAssist;
+      try { localStorage.setItem(LS_ASSIST, sonarAssist ? "1" : "0"); } catch (e) {}
+    }
+    // C9: F is a tap — fires immediately in the last movement direction.
+    // Uses decoyKeyboardAngle() (not currentAimAngle()) so a stale mouse
+    // position never hijacks a keyboard-only throw.
+    if (k === "f" && level.decoy && !e.repeat && !paused) {
+      const a = decoyKeyboardAngle();
+      fireDecoy(player.x + Math.cos(a) * DECOY_REACH, player.y + Math.sin(a) * DECOY_REACH);
+      aiming = false; // also fixes FIX 7 below — cancels any pending shift-hold release
+    }
+    // Decoy aim (hidden alias): hold Shift + a direction / mouse, release fires.
+    if (k === "shift" && level.decoy && !paused) { aiming = true; }
+  }
+
+  // C10: mute toggle — any state, persisted.
+  if (k === "m" && !e.repeat) {
+    muted = !muted;
+    try { localStorage.setItem(LS_MUTED, muted ? "1" : "0"); } catch (e) {}
+    if (masterGain) masterGain.gain.setTargetAtTime(muted ? 0 : 0.9, now(), 0.05);
+  }
+
+  keys[k] = true;
+});
+
+window.addEventListener("keyup", (e) => {
+  const k = e.key.toLowerCase();
+  if (k === "shift" && aiming) {
+    if (state === STATE.PLAYING && !paused) fireDecoy();
+    aiming = false;
+  }
+  keys[k] = false;
+});
+
+// C-overnight: clear all held keys (and cancel an in-progress decoy aim) when
+// the window loses focus or the tab is backgrounded — otherwise a key held
+// during an alt-tab never receives its matching keyup and stays "pressed"
+// forever on refocus. Does NOT depend on any one key name, so it can't miss
+// a future keybinding.
+function clearHeldInput() {
+  for (const k in keys) keys[k] = false;
+  aiming = false;
+}
+
+// Backgrounding duck: the rAF game loop throttles/pauses on a hidden tab,
+// but Web Audio's oscillators keep running in real time regardless — without
+// this, ambient horror-game audio (drone/hum/tension) keeps blaring from a
+// backgrounded tab. Mirrors the existing masterGain ramp pattern used for
+// act-break silence. Respects `muted` (nothing to duck if already silent)
+// and `actBreakPending` (must not fight an intentional silence-in-progress
+// by restoring volume mid-transition).
+function duckAudioForBackground() {
+  if (!masterGain || muted) return;
+  masterGain.gain.setTargetAtTime(0, now(), 0.15);
+}
+function restoreAudioFromBackground() {
+  if (!masterGain || muted || actBreakPending) return;
+  masterGain.gain.setTargetAtTime(0.9, now(), 0.15);
+}
+window.addEventListener("blur", () => { clearHeldInput(); duckAudioForBackground(); });
+window.addEventListener("focus", restoreAudioFromBackground);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { clearHeldInput(); duckAudioForBackground(); }
+  else { restoreAudioFromBackground(); }
+});
+
+canvas.addEventListener("pointermove", (e) => {
+  mouseX = e.clientX; mouseY = e.clientY; hasMouse = true;
+});
+
+canvas.addEventListener("pointerdown", (e) => {
+  unlockAudio();
+  mouseX = e.clientX; mouseY = e.clientY; hasMouse = true;
+  if (state === STATE.TITLE) { startLevel(progress > 0 ? Math.min(progress, RAW_LEVELS.length - 1) : 0); return; }
+  if (state === STATE.CAUGHT) { startLevel(levelIndex); return; }
+  if (state === STATE.WON) { advanceLevel(); return; }
+  if (state === STATE.CLEARED) { state = STATE.TITLE; return; }
+  if (state === STATE.PLAYING) {
+    if (paused) return; // C10: clicks don't play while paused
+    // C9: right-click throws the decoy AT the cursor (capped at reach).
+    if (e.button === 2 && level.decoy) { fireDecoy(mouseX, mouseY); }
+    else { tryPing(); }
+  }
+});
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// Compute the current aim direction from keys or mouse.
+function currentAimAngle() {
+  let dx = 0, dy = 0;
+  if (keys["arrowleft"] || keys["a"]) dx -= 1;
+  if (keys["arrowright"] || keys["d"]) dx += 1;
+  if (keys["arrowup"] || keys["w"]) dy -= 1;
+  if (keys["arrowdown"] || keys["s"]) dy += 1;
+  if (dx !== 0 || dy !== 0) return Math.atan2(dy, dx);
+  if (hasMouse) return Math.atan2(mouseY - player.y, mouseX - player.x);
+  return lastMoveAng; // C9: fall back to the way you were last walking
+}
+
+// C9 fix: tap-F must resolve purely from movement — never fall through to a
+// stale mouse position the way currentAimAngle() does for the hold-aim flow.
+function decoyKeyboardAngle() {
+  let dx = 0, dy = 0;
+  if (keys["arrowleft"] || keys["a"]) dx -= 1;
+  if (keys["arrowright"] || keys["d"]) dx += 1;
+  if (keys["arrowup"] || keys["w"]) dy -= 1;
+  if (keys["arrowdown"] || keys["s"]) dy += 1;
+  if (dx !== 0 || dy !== 0) return Math.atan2(dy, dx);
+  return lastMoveAng;
+}
+
+// ----------------------------------------------------------------------------
+// Ping emission
+// ----------------------------------------------------------------------------
+// LVL-04: mark a mechanic's label as used — stops it rendering immediately
+// (drawMechanicLabels skips `used` entries regardless of remaining life) and
+// records it PERSISTENTLY in seenLabels so it never renders again on any
+// future attempt or after a page reload. Idempotent/harmless no-op when the
+// mechanic has no active labelState entry (e.g. a level with no label for
+// that mechanic, or a returning player whose label was already filtered out
+// of labelState by startLevel()) — the seenLabels write still happens so a
+// player who somehow used the mechanic before the label rendered is covered.
+function markLabelUsed(mechanic) {
+  const l = labelState.find((s) => s.mechanic === mechanic);
+  if (l) l.used = true;
+  if (!seenLabels[mechanic]) {
+    seenLabels[mechanic] = true;
+    saveSeenLabels();
+  }
+}
+
+function tryPing() {
+  if (aiming) return; // holding aim suppresses a real ping
+  if (cooldown > 0) return;
+  pings.push({ x: player.x, y: player.y, radius: 0, decoy: false });
+  cooldown = PING_COOLDOWN;
+  pingCount++;
+  markLabelUsed("ping"); // LVL-04: first real ping fades+persists the ping label
+  // Predator hunts the sound: route to this ping origin (PRED-01).
+  lurePredatorTo(player.x, player.y);
+  // juice
+  sndPing(false);
+  spawnParticles(player.x, player.y, 18, COLORS.wallGlow, { speed: 130, life: 0.55, size: 2.4 });
+}
+
+// Fire a decoy ping (TWIST-01). C9: with a target point (mouse), the decoy is
+// thrown AT that point, capped at DECOY_REACH — aiming at a spot is how
+// humans think about throwing. Without one (keyboard tap / shift-release),
+// it flies at fixed reach along the current aim direction.
+function fireDecoy(tx, ty) {
+  if (!level.decoy || decoyCooldown > 0) return;
+  let ox, oy;
+  if (tx != null) {
+    const ddx = tx - player.x, ddy = ty - player.y;
+    const d = Math.hypot(ddx, ddy) || 1;
+    const r = Math.min(d, DECOY_REACH);
+    aimAng = Math.atan2(ddy, ddx);
+    ox = player.x + (ddx / d) * r;
+    oy = player.y + (ddy / d) * r;
+  } else {
+    aimAng = currentAimAngle();
+    ox = player.x + Math.cos(aimAng) * DECOY_REACH;
+    oy = player.y + Math.sin(aimAng) * DECOY_REACH;
+  }
+  // C9: clamp into the level and nudge out of walls so the chalk X never
+  // renders inside a wall or in the outer void (where the predator would
+  // grind at the wall trying to reach it).
+  const pt = clearDecoyPoint(ox, oy);
+  ox = pt.x; oy = pt.y;
+  pings.push({ x: ox, y: oy, radius: 0, decoy: true });
+  // TENS-05: leave a lingering chalk-X at the decoy's exact (clamped) origin
+  // so the player can see exactly where the false signal landed.
+  decoyMarks.push({ x: ox, y: oy, life: DECOY_MARK_LIFE });
+  decoyCooldown = DECOY_COOLDOWN;
+  pingCount++; // decoys still count as sound made
+  markLabelUsed("decoy"); // LVL-04: first decoy fades+persists the decoy label
+  // The blind predator believes the lie: it hunts the decoy origin (TWIST-02).
+  lurePredatorTo(ox, oy);
+  sndPing(true);
+  spawnParticles(ox, oy, 22, COLORS.decoyGlow, { speed: 150, life: 0.6, size: 2.6 });
+  spawnParticles(player.x, player.y, 8, COLORS.decoy, { speed: 70, life: 0.4, angle: aimAng, spread: 0.7 });
+}
+
+// C9: clamp a decoy landing point into the level's wall bounding box, then
+// walk it back toward the player in small steps until it's wall-clear.
+// Falls back to the player's own position if no clear spot is found.
+function clearDecoyPoint(x, y) {
+  const inset = 12 * SCALE;
+  const b = level.bounds;
+  x = Math.max(b.minX + inset, Math.min(b.maxX - inset, x));
+  y = Math.max(b.minY + inset, Math.min(b.maxY - inset, y));
+  const dx = player.x - x, dy = player.y - y;
+  const d = Math.hypot(dx, dy) || 1;
+  const step = 8 * SCALE;
+  for (let i = 0; i < 40 && collidesAt(x, y, 8 * SCALE); i++) { x += (dx / d) * step; y += (dy / d) * step; }
+  if (collidesAt(x, y, 8 * SCALE)) { x = player.x; y = player.y; }
+  return { x, y };
+}
+
+// C6 (fun-redesign): the single funnel for everything the predator can hear.
+// loudness = hearing radius in px; pings/decoys pass Infinity (a shout).
+// One rule players can plan around: it goes to the last loud thing it heard.
+// Footsteps are deliberately NOT routed here — close-range footstep homing is
+// stalk mode's job (C3), which reacts faster than a path-hunt would.
+function noise(x, y, loudness) {
+  if (level && level.dormant) return; // teaching levels: the dark is empty
+  const dn = Math.hypot(x - predator.x, y - predator.y);
+  if (predator.mode === "ambush") {
+    // C4: a loud sound right beside a blind hunter flushes it; anything
+    // farther is ignored (keeps WR-01's actual bug fixed — no cross-map
+    // ping ever cancels the hold — while restoring the decoy counterplay
+    // at the chamber mouth).
+    if (dn > AMBUSH_BREAK_RADIUS) return;
+  } else if (dn > loudness) {
+    return; // out of earshot
+  }
+  predator.searchTimer = 0; // C3: a real sound overrides the lingering search
+  predator.mode = "hunt";
+  predator.tx = x; predator.ty = y;
+  predator.path = planPath(predator.x, predator.y, x, y);
+  predator.pathStep = 0;
+}
+
+// Send the predator hunting toward (x,y) — pings/decoys are heard everywhere.
+function lurePredatorTo(x, y) { noise(x, y, Infinity); }
+
+// ----------------------------------------------------------------------------
+// Init / reset
+// ----------------------------------------------------------------------------
+function startLevel(idx) {
+  levelIndex = Math.max(0, Math.min(idx, RAW_LEVELS.length - 1));
+  layoutLevel();
+  player.x = level.playerStart.x;
+  player.y = level.playerStart.y;
+  player.r = PLAYER_R;
+  predator.x = level.predStart.x;
+  predator.y = level.predStart.y;
+  predator.r = PRED_R;
+  predator.mode = "idle";
+  predator.tx = predator.x; predator.ty = predator.y;
+  predator.idleTimer = 0; predator.path = []; predator.pathStep = 0;
+  predator.hbTimer = 1.4; predator.stalking = false; predator.patrolStep = 0;
+  predator.heading = 0;
+  predator.searchTimer = 0; // C3
+  // C4 (fun-redesign): the ambush is UNARMED (Infinity) until the standoff
+  // actually starts — the player approaching within 2x break radius — then a
+  // 20s countdown prevents a soft-lock wait-out at the chamber mouth. This
+  // replaces the old 15s load-anchored timer, which expired before any real
+  // player ever reached the L6/L10 exit chambers (the mechanic was never
+  // witnessed despite three review cycles of geometry work guarding it).
+  predator.ambushTimer = Infinity;
+  // If this level configures an ambush chokepoint, spawn the predator DIRECTLY
+  // there in "ambush" mode instead of the default idle spawn/wander — the
+  // ambush point IS the effective spawn position, not a path target.
+  if (level.ambush) {
+    predator.x = level.ambush.x;
+    predator.y = level.ambush.y;
+    predator.mode = "ambush";
+    // BUG FIX: ambush points are hand-tuned purely for break-radius/wall-
+    // clearance math (see ambushN comments above) and sometimes land right
+    // next to a wall in the +x direction the hardcoded default heading (0)
+    // faces — on L10 that put the predator nose-to-wall ~30-55px away for
+    // the whole ambush hold. Facing the exit instead reads as "watching the
+    // way out" and reliably clears the nearby wall (verified against every
+    // ambush level's geometry, not just L10).
+    predator.heading = Math.atan2(level.exit.y - predator.y, level.exit.x - predator.x);
+  }
+  // PRED-03: reset the hunt-burst latch/state every attempt so the one-shot
+  // trigger fires fresh and a mid-burst capture/retry never carries the burst
+  // into the next attempt.
+  predator.huntTriggered = false;
+  predator.huntBurstActive = false;
+  predator.huntBurstTimer = 0;
+  pings = [];
+  ghosts = [];
+  decoyMarks = [];
+  particles = [];
+  cooldown = 0; decoyCooldown = 0;
+  footstepTimer = 0; stillTimer = 0;
+  // WR-01: restore the listening-pause drone duck to its un-ducked baseline —
+  // otherwise a duck engaged right before CAUGHT/WON persists into the next
+  // attempt/level since update() stops calling updateFootstepAudio() while
+  // not STATE.PLAYING.
+  if (droneNodes) droneNodes.g.gain.setTargetAtTime(0.05, now(), 0.1);
+  dripTimer = 3 + Math.random() * 5;
+  // C1/C2: per-attempt sonar state — the exit is unknown again, the predator
+  // fades back into the dark.
+  exitFound = false;
+  exitTickTimer = 4;
+  predVisFlash = 0;
+  predHBFlash = 0;
+  // C6/C7: per-attempt sound-system state.
+  bumpTimer = 0; wallContact = false;
+  burstVignette = 0;
+  pingCount = 0;
+  clearTime = 0;
+  introT = 4.5;       // show the level intro banner, then fade it
+  // LVL-04: rebuild the per-attempt label render set from this level's
+  // authored labels, filtering out any mechanic already recorded in the
+  // PERSISTENT seenLabels map — this is a per-attempt VISIBILITY reset only,
+  // it never clears or writes seenLabels itself, so once a label has been
+  // seen it stays out of this array on every future attempt/reload.
+  labelState = (level.labels || [])
+    .filter((l) => !seenLabels[l.mechanic])
+    .map((l) => ({ mechanic: l.mechanic, text: l.text, x: l.x, y: l.y, life: 4, used: false }));
+  transition = 1;     // play the enter-wipe
+  aiming = false;
+  paused = false;     // C10: a fresh attempt never starts paused
+  predator.stallTime = 0; // C9 stall guard
+  shake = 0; flash = 0;
+  // TENS-02: reset the capture sequence so a freeze/blackout engaged on a
+  // prior capture never bleeds into the new attempt.
+  freezeFrames = 0; captureStage = 0;
+  // TENS-03: reset the ping-ready ring's completion-pulse state so a pulse
+  // mid-fire never bleeds across levels/retries.
+  pingReadyPulse = 0; prevCooldown = 0;
+  state = STATE.PLAYING;
+  unlockAudio();
+}
+
+// AUDIO-08: act-break silence. Levels 2/6/10 (0-based indices 1/5/9) are the
+// final level of an act — fade all audio to silence for ~1.5s before the next
+// level's audio swells back in. Lives here (not onWin()) so the win bell sting
+// is never silenced; non-act-final advances are unchanged.
+// CR-01: guards the 1.5s act-break window against repeated/held input —
+// without this, re-entering advanceLevel() during the deferred startLevel()
+// call stacks competing masterGain ramps and startLevel() calls.
+let actBreakPending = false;
+function advanceLevel() {
+  if (actBreakPending) return;
+  if (levelIndex + 1 < RAW_LEVELS.length) {
+    const actBreak = (levelIndex === 1 || levelIndex === 5 || levelIndex === 9);
+    if (actBreak && masterGain) {
+      actBreakPending = true;
+      const t = now();
+      masterGain.gain.setTargetAtTime(0, t, 0.4);
+      const next = levelIndex + 1;
+      setTimeout(() => {
+        startLevel(next);
+        if (masterGain) masterGain.gain.setTargetAtTime(muted ? 0 : 0.9, now(), 0.4); // C10
+        actBreakPending = false;
+      }, 1500);
+    } else {
+      startLevel(levelIndex + 1);
+    }
+  } else {
+    state = STATE.CLEARED;
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Update
+// ----------------------------------------------------------------------------
+function update(dt) {
+  // Always tick particles / shake / flash so end screens animate.
+  updateParticles(dt);
+  shake = Math.max(0, shake - dt * 60);
+  flash = Math.max(0, flash - dt * 2.2);
+  transition = Math.max(0, transition - dt * 1.6);
+  // TENS-02: captureStage counts UP (elapsed time on the CAUGHT death screen)
+  // so it animates while state===CAUGHT; this preamble runs even when
+  // state!==PLAYING (the early-return below is AFTER this block). During the
+  // 3-frame freeze, update() is skipped entirely by frame(), so captureStage
+  // holds at 0 until the freeze releases, then begins counting. CR-01: this
+  // guarantee depends on frame()'s accumulator loop breaking immediately on
+  // any state transition out of PLAYING — without that break, leftover
+  // backlog iterations in the same rAF tick would keep calling this preamble
+  // (and inflating captureStage) after capture/win fires but before the
+  // freeze branch engages.
+  captureStage += dt;
+  // TENS-03: decay the one-shot ping-ready completion pulse every frame
+  // (always-run, like shake/flash) so it fades even across state changes.
+  pingReadyPulse = Math.max(0, pingReadyPulse - dt * PING_PULSE_DECAY);
+  // C7: decay the hunt-burst vignette (always-run, ~0.4s).
+  burstVignette = Math.max(0, burstVignette - dt / 0.4);
+
+  if (state !== STATE.PLAYING) { setProximity(0); setTensionTone(0); return; }
+
+  clearTime += dt;
+  introT = Math.max(0, introT - dt);
+  cooldown = Math.max(0, cooldown - dt);
+  // TENS-03: detect the exact >0 -> <=0 ready-crossing (fires the one-shot
+  // pulse exactly once, never while idle/ready) before updating prevCooldown.
+  if (prevCooldown > 0 && cooldown <= 0) pingReadyPulse = 1;
+  prevCooldown = cooldown;
+  decoyCooldown = Math.max(0, decoyCooldown - dt);
+  // C2: decay the two sonar-visibility flashes (ping ~1s, heartbeat ~0.5s).
+  predVisFlash = Math.max(0, predVisFlash - dt);
+  predHBFlash = Math.max(0, predHBFlash - dt * 2);
+  if (aiming) aimAng = currentAimAngle();
+  // LVL-04: advance each active label's fade timer. drawMechanicLabels()
+  // simply stops drawing once life<=0 (or used); entries are not deleted
+  // here — deletion/persistence-on-use happens in markLabelUsed() (Task 3).
+  for (const l of labelState) l.life = Math.max(0, l.life - dt);
+
+  updatePlayer(dt);
+  updateFootstepAudio(dt);
+  updatePings(dt);
+  updateGhosts(dt);
+  updateDecoyMarks(dt);
+
+  // PRED-03: one-shot trigger — checked BEFORE updatePredatorHeartbeat() so
+  // the halved heartbeat interval and forced "breath" audio apply starting
+  // on the very frame the player crosses into huntTrigger's radius, not one
+  // frame later. Fires exactly once per attempt on first entry (huntTriggered
+  // latch prevents any re-fire on subsequent entries during the same attempt).
+  if (level.huntTrigger && !predator.huntTriggered) {
+    const d = Math.hypot(player.x - level.huntTrigger.x, player.y - level.huntTrigger.y);
+    if (d < level.huntTrigger.radius) {
+      predator.huntTriggered = true;
+      predator.huntBurstActive = true;
+      predator.huntBurstTimer = HUNT_BURST_DURATION;
+      // C7: make the burst a MOMENT — roar + red edge vignette + a nudge of
+      // shake, instead of a stat change the player never consciously reads.
+      burstVignette = 1;
+      shake = Math.max(shake, 3);
+      sndHuntBurst();
+    }
+  }
+
+  updatePredatorHeartbeat(dt);
+  updatePredator(dt);
+  updateProximityAudio();
+  updateAmbience(dt);
+
+  // PRED-03: dt-driven hunt-burst countdown — the burst reverts after
+  // HUNT_BURST_DURATION seconds.
+  if (predator.huntBurstActive) {
+    predator.huntBurstTimer -= dt;
+    if (predator.huntBurstTimer <= 0) predator.huntBurstActive = false;
+  }
+
+  if (Math.hypot(player.x - level.exit.x, player.y - level.exit.y) < level.exit.r) { onWin(); return; }
+  if (Math.hypot(player.x - predator.x, player.y - predator.y) < PRED_CATCH) { onCaught(); }
+}
+
+function updatePlayer(dt) {
+  let dx = 0, dy = 0;
+  if (keys["arrowleft"] || keys["a"]) dx -= 1;
+  if (keys["arrowright"] || keys["d"]) dx += 1;
+  if (keys["arrowup"] || keys["w"]) dy -= 1;
+  if (keys["arrowdown"] || keys["s"]) dy += 1;
+  // AUDIO-03/04: movement-key INPUT intent, not net displacement — pushing
+  // into a wall still counts as "moving" and must not trigger the listening
+  // pause reward.
+  playerMoving = !(dx === 0 && dy === 0);
+  bumpTimer = Math.max(0, bumpTimer - dt);
+  if (dx === 0 && dy === 0) { wallContact = false; return; }
+  const len = Math.hypot(dx, dy) || 1;
+  dx /= len; dy /= len;
+  lastMoveAng = Math.atan2(dy, dx); // C9: keyboard decoys throw where you last walked
+  const step = PLAYER_SPEED * dt;
+  const blockedX = !tryPlayerMove(dx * step, 0);
+  const blockedY = !tryPlayerMove(0, dy * step);
+  const blocked = blockedX || blockedY;
+  // C6: a FRESH bump against an (often unrevealed) wall is a sound the dark
+  // can hear. Edge-triggered on wallContact (held grinding is one thud, not
+  // a stream) with bumpTimer as a re-trigger backstop.
+  if (blocked && !wallContact && bumpTimer <= 0) {
+    bumpTimer = 0.3;
+    wallThud();
+    noise(player.x, player.y, WALL_BUMP_HEAR_DIST);
+  }
+  wallContact = blocked;
+  // NOTE: quiet walking in the open still does NOT touch the predator beyond
+  // stalk-mode earshot (TWIST-04's spirit survives — silence is a choice).
+}
+
+// Returns true if the axis move succeeded (replaces the old void moveAndCollide).
+function tryPlayerMove(mx, my) {
+  const nx = player.x + mx, ny = player.y + my;
+  if (!collidesAt(nx, ny, player.r)) { player.x = nx; player.y = ny; return true; }
+  return false;
+}
+
+// AUDIO-03/AUDIO-04: rhythmic centered footstep clicks while a movement key is
+// held; after LISTEN_PAUSE_DELAY seconds of zero movement INPUT, duck the cave
+// drone (~50%) as a "listening pause" reward. The proximity hum is untouched —
+// it's diegetic predator-distance info the player still needs while still.
+function updateFootstepAudio(dt) {
+  if (playerMoving) {
+    stillTimer = 0;
+    footstepTimer -= dt;
+    if (footstepTimer <= 0) {
+      footstepClick();
+      footstepTimer = FOOTSTEP_INTERVAL;
+    }
+    if (droneNodes) droneNodes.g.gain.setTargetAtTime(0.05, now(), 0.3);
+  } else {
+    stillTimer += dt;
+    if (stillTimer >= LISTEN_PAUSE_DELAY) {
+      if (droneNodes) droneNodes.g.gain.setTargetAtTime(0.05 * DRONE_DUCK, now(), 0.3);
+    }
+  }
+}
+
+// AUDIO-06: cave drips fire on a dt-driven 3-8s countdown (no setInterval, to
+// avoid drift if the tab is backgrounded), each randomly panned left/right.
+// WR-03: short-circuit when there's no AudioContext so the countdown doesn't
+// silently churn through scheduled drips as no-ops on unsupported browsers.
+function updateAmbience(dt) {
+  if (!audioCtx) return;
+  dripTimer -= dt;
+  if (dripTimer <= 0) {
+    const pan = (Math.random() * 1.2) - 0.6;
+    caveDrip(pan);
+    dripTimer = 3 + Math.random() * 5;
+  }
+  // C1: exit breadcrumb, pre-discovery only, within 1.5 ping radii — an
+  // occasional quiet crystalline tick panned toward the exit.
+  if (!exitFound) {
+    exitTickTimer -= dt;
+    if (exitTickTimer <= 0) {
+      const de = Math.hypot(player.x - level.exit.x, player.y - level.exit.y);
+      if (de < PING_MAX_RADIUS * 1.5) exitTick();
+      exitTickTimer = 3 + Math.random() * 3;
+    }
+  }
+}
+
+function collidesAt(x, y, r) {
+  for (const w of level.walls) {
+    if (pointSegDist(x, y, w.x1, w.y1, w.x2, w.y2).d < r) return true;
+  }
+  return false;
+}
+
+function updatePings(dt) {
+  for (const p of pings) {
+    p.radius += PING_SPEED * dt;
+    revealAlongFront(p);
+    // C1: a player or decoy wavefront crossing the exit discovers it —
+    // generosity aids findability. The predator's own heartbeat (p.predHB)
+    // is explicitly EXCLUDED here: an earlier version let heartbeats count
+    // too, which silently auto-revealed the exit within seconds on any level
+    // whose predator starts near its own exit (L6/L8/L9/L10) — defeating the
+    // entire hidden-exit mechanic on those levels. Do not remove !p.predHB.
+    if (!p.predHB && !exitFound && level) {
+      const de = Math.hypot(level.exit.x - p.x, level.exit.y - p.y);
+      if (Math.abs(de - p.radius) < PING_BAND + level.exit.r) {
+        exitFound = true;
+        spawnParticles(level.exit.x, level.exit.y, 26, COLORS.exitGlow, { speed: 120, life: 0.9, size: 2.6 });
+        sndExitFound();
+      }
+    }
+    // C2: your sonar shows you the monster — at the price of having called it.
+    if (!p.predHB && !level.dormant) {
+      const dp = Math.hypot(predator.x - p.x, predator.y - p.y);
+      if (Math.abs(dp - p.radius) < PING_BAND + predator.r * 2) predVisFlash = 1;
+    }
+  }
+  pings = pings.filter((p) => p.radius <= (p.predHB ? PRED_HB_RADIUS : PING_MAX_RADIUS));
+}
+
+// AUDIO-01: collapses the code-level predator behaviors into the 3 audio
+// states, branching on predator.huntBurstActive, predator.stalking,
+// predator.searchTimer, predator.mode, and level.patrol, checked top-to-bottom
+// in that order. Precedence: huntBurstActive > stalking > searchTimer (C3,
+// "listening" while lingering at a last-heard spot) > hunt > patrol >
+// idle-wander (grumble).
+// PRED-02: "ambush" mode deliberately has NO dedicated branch here — it falls
+// through to the patrol/grumble mapping below (whichever the level has) and
+// stays quiet via the existing distance/occlusion-attenuated proximity and
+// heartbeat audio (Phase 60), not a new timbre. A forced near-silent/breath
+// branch for ambush is intentionally out of scope (that's PRED-03's job).
+function predatorAudioState() {
+  // PRED-03: the stalk-mode breath audio fires unconditionally for the entire
+  // burst duration, independent of the real proximity-detection flag below,
+  // so this is checked first, before every other branch.
+  if (predator.huntBurstActive) return "breath";
+  if (predator.stalking) return "breath";
+  // C3: while it searches a last-heard spot, you hear it LISTENING for you.
+  if (predator.searchTimer > 0) return "breath";
+  if (predator.mode === "hunt") return "hunt";
+  if (level.patrol && level.patrol.length > 0) return "pulse";
+  return "grumble";
+}
+
+function updatePredatorHeartbeat(dt) {
+  if (level.dormant) return;
+  predator.hbTimer -= dt;
+  if (predator.hbTimer <= 0) {
+    predator.hbTimer = predator.stalking ? 0.65 : PRED_HB_INTERVAL;
+    // PRED-03: applied AFTER the stalking/idle branch resolves, so the 0.5x
+    // stacks on top of whichever base interval was chosen (0.325s during a
+    // stalking burst, 1.3s during an idle burst) rather than overriding it.
+    if (predator.huntBurstActive) predator.hbTimer *= HUNT_HB_MULT;
+    pings.push({ x: predator.x, y: predator.y, radius: 0, predHB: true });
+    predHBFlash = 1; // C2: its own heartbeat briefly betrays its silhouette
+    predatorVoice(predatorAudioState(), panForX(predator.x), predOcclusion);
+  }
+}
+
+function revealAlongFront(p) {
+  for (const w of level.walls) {
+    const segLen = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+    const steps = Math.max(2, Math.ceil(segLen / 6));
+    let runStart = null;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const sx = w.x1 + (w.x2 - w.x1) * t;
+      const sy = w.y1 + (w.y2 - w.y1) * t;
+      const d = Math.hypot(sx - p.x, sy - p.y);
+      const onFront = Math.abs(d - p.radius) < PING_BAND;
+      if (onFront && runStart === null) runStart = t;
+      else if (!onFront && runStart !== null) { spawnGhost(w, runStart, (i - 1) / steps, p.decoy, p.predHB); runStart = null; }
+    }
+    if (runStart !== null) spawnGhost(w, runStart, 1, p.decoy, p.predHB);
+  }
+}
+
+// Non-linear age-to-alpha curve (TENS-04): fast-bright phase then a long slow
+// tail, flooring at GHOST_FLOOR_ALPHA rather than reaching 0. Exponential
+// decay with exponent 3 front-loads the brightness drop in the first few
+// seconds (clearly visible "just revealed vs a moment ago" contrast) then
+// trails off slowly for the remainder of GHOST_LIFE, never dropping below
+// the floor. All reveal sources (player ping, decoy, predator heartbeat)
+// share this one curve.
+function ghostAlpha(life) {
+  const t = Math.max(0, Math.min(1, life / GHOST_LIFE));
+  return GHOST_FLOOR_ALPHA + (1 - GHOST_FLOOR_ALPHA) * Math.pow(t, 3);
+}
+
+function spawnGhost(w, t0, t1, decoy, predHB) {
+  if (t1 <= t0) t1 = Math.min(1, t0 + 0.02);
+  ghosts.push({
+    x1: w.x1 + (w.x2 - w.x1) * t0, y1: w.y1 + (w.y2 - w.y1) * t0,
+    x2: w.x1 + (w.x2 - w.x1) * t1, y2: w.y1 + (w.y2 - w.y1) * t1,
+    life: GHOST_LIFE, decoy: !!decoy, predHB: !!predHB,
+  });
+}
+
+function updateGhosts(dt) {
+  // Age every ghost, but floor (never delete) so learned walls stay faintly
+  // visible forever — ghostAlpha already floors the render alpha once life
+  // reaches this tiny epsilon, so we just need life to stop going negative.
+  for (const g of ghosts) {
+    g.life -= dt;
+    if (g.life < dt) g.life = dt;
+  }
+  if (ghosts.length > 4000) ghosts.splice(0, ghosts.length - 4000);
+}
+
+// TENS-05: age decoy chalk-X marks and DELETE them at life<=0 — unlike
+// Plan 01's floored ghosts, decoyMarks are a 3s transient, not a forever-faint
+// wall, so this is a sibling updater that filters rather than clamps.
+function updateDecoyMarks(dt) {
+  for (const m of decoyMarks) m.life -= dt;
+  decoyMarks = decoyMarks.filter((m) => m.life > 0);
+}
+
+function updatePredator(dt) {
+  predator.rippleT += dt;
+  if (level.dormant) return;
+
+  // PRED-03: layered speed multiplier during a hunt burst — scales whatever
+  // speed the active mode already uses without changing mode/targeting or
+  // forcing a beeline.
+  const burst = predator.huntBurstActive ? HUNT_SPEED_MULT : 1;
+
+  // --- AMBUSH MODE (PRED-02): holds position at a level-authored chokepoint,
+  // near-silent, until the player steps within AMBUSH_BREAK_RADIUS AND has a
+  // clear line of sight to the predator, OR the level-load-anchored
+  // ambushTimer runs out — whichever comes first. CODE REVIEW FIX (WR-02,
+  // Phase 63 review): the proximity check used to be pure Euclidean distance
+  // with no occlusion test, unlike updateProximityAudio()'s lineClear()-gated
+  // predOcclusion — meaning the "blind predator, reacts to sound/pings, not
+  // omniscient" predator (see file header) could sense the player through a
+  // wall corner before any reveal ping or visual contact. Gating on
+  // lineClear() (already used elsewhere in this file for the same occlusion
+  // model) keeps proximity-breaks consistent with that identity. The timer
+  // is still a separate, independent race condition, no pause/reset on a
+  // partial proximity dip (the timer counts down monotonically regardless of
+  // distance/visibility). Placed BEFORE stalk/hunt/idle so it fully
+  // intercepts predator behavior while ambushing; once broken, the very next
+  // frame's stalk/hunt/idle logic takes over normally.
+  if (predator.mode === "ambush") {
+    const toPlAmbush = Math.hypot(player.x - predator.x, player.y - predator.y);
+    // C4: arm the countdown only when the standoff starts (player within 2x
+    // break radius); until then the hold is indefinite.
+    if (!isFinite(predator.ambushTimer)) {
+      if (toPlAmbush < AMBUSH_BREAK_RADIUS * 2) predator.ambushTimer = 20;
+    } else {
+      predator.ambushTimer -= dt;
+    }
+    const ambushSeesPlayer = toPlAmbush < AMBUSH_BREAK_RADIUS && lineClear(player.x, player.y, predator.x, predator.y);
+    if (ambushSeesPlayer || predator.ambushTimer <= 0) {
+      if (ambushSeesPlayer) {
+        predator.mode = "idle";
+        predator.idleTimer = 0;
+        pickIdleTarget();
+      } else {
+        // C4: timeout-break leaves the chamber purposefully (patrol point or
+        // its authored spawn), not a random wander inside the exit room.
+        const out = (level.patrol && level.patrol.length) ? level.patrol[0] : level.predStart;
+        predator.mode = "hunt";
+        predator.tx = out.x; predator.ty = out.y;
+        predator.path = planPath(predator.x, predator.y, out.x, out.y);
+        predator.pathStep = 0;
+      }
+    }
+    return;
+  }
+
+  // --- STALK MODE (C3): it hears FOOTSTEPS — a still player is silent. The
+  // old check was pure distance, which contradicted the blind-hunter fiction
+  // and deleted the freeze-while-it-prowls-past verb. playerMoving is input
+  // intent (updatePlayer), so pushing into a wall still counts as audible.
+  const toPl = Math.hypot(player.x - predator.x, player.y - predator.y);
+  if (toPl < PRED_SENSE_RADIUS && playerMoving) {
+    if (!predator.stalking) {
+      predator.stalking = true;
+      predator.hbTimer = 0; // pulse immediately on detection
+    }
+    stepToward((player.x - predator.x) / toPl, (player.y - predator.y) / toPl, level.huntSpeed * burst * dt);
+    return;
+  }
+  if (predator.stalking) {
+    // C3: contact lost — go to the last-heard spot and linger there instead
+    // of instantly wandering off. Reads as searching; gives a frozen player
+    // an agonizing, fair beat.
+    predator.stalking = false;
+    predator.lastHeardX = player.x; predator.lastHeardY = player.y;
+    predator.searchTimer = 3.0;
+    predator.mode = "hunt";
+    predator.tx = player.x; predator.ty = player.y;
+    predator.path = planPath(predator.x, predator.y, player.x, player.y);
+    predator.pathStep = 0;
+    // Only credit the FREEZE lesson when the player actually stopped moving —
+    // outrunning the sense radius while still holding a movement key should
+    // not permanently consume the teaching label.
+    if (!playerMoving) markLabelUsed("freeze");
+  }
+
+  // --- HUNT MODE: pathfind toward last-heard ping origin ---
+  if (predator.mode === "hunt") {
+    const wp = predator.path[predator.pathStep];
+    if (!wp) {
+      predator.mode = "idle"; predator.idleTimer = 0; pickIdleTarget();
+    } else {
+      const dx = wp.x - predator.x, dy = wp.y - predator.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < PRED_ARRIVE) {
+        predator.pathStep++;
+        if (predator.pathStep >= predator.path.length) {
+          predator.mode = "idle"; predator.idleTimer = 0; pickIdleTarget();
+        }
+      } else {
+        // C9 stall guard: an unreachable target (e.g. a sound near a wall's
+        // far side) must not wedge it grinding forever — after ~1.5s with no
+        // progress it loses interest and wanders off.
+        const px0 = predator.x, py0 = predator.y;
+        stepToward(dx / dist, dy / dist, level.huntSpeed * burst * dt);
+        if (Math.hypot(predator.x - px0, predator.y - py0) < 0.01) {
+          predator.stallTime = (predator.stallTime || 0) + dt;
+          if (predator.stallTime > 1.5) {
+            predator.stallTime = 0;
+            predator.mode = "idle"; predator.idleTimer = 0; pickIdleTarget();
+          }
+        } else {
+          predator.stallTime = 0;
+        }
+      }
+    }
+    return;
+  }
+
+  // --- IDLE: C3 last-heard search first, then patrol loop, then wander ---
+  if (predator.searchTimer > 0) {
+    predator.searchTimer -= dt;
+    predator.idleTimer -= dt;
+    if (predator.idleTimer <= 0) {
+      predator.idleTimer = 0.9;
+      const a = Math.random() * TAU, r = (30 + Math.random() * 60) * SCALE;
+      predator.tx = predator.lastHeardX + Math.cos(a) * r;
+      predator.ty = predator.lastHeardY + Math.sin(a) * r;
+    }
+    const sdx = predator.tx - predator.x, sdy = predator.ty - predator.y;
+    const sdist = Math.hypot(sdx, sdy);
+    if (sdist > 4) stepToward(sdx / sdist, sdy / sdist, PRED_IDLE_SPEED * burst * dt);
+    return;
+  }
+
+  // --- IDLE MODE: patrol loop if the level defines one, else random wander ---
+  if (level.patrol && level.patrol.length > 0) {
+    const pt = level.patrol[predator.patrolStep % level.patrol.length];
+    const dx = pt.x - predator.x, dy = pt.y - predator.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < PRED_ARRIVE) predator.patrolStep++;
+    else stepToward(dx / dist, dy / dist, PRED_IDLE_SPEED * burst * dt);
+  } else {
+    predator.idleTimer -= dt;
+    if (predator.idleTimer <= 0) { predator.idleTimer = PRED_IDLE_RETARGET; pickIdleTarget(); }
+    const dx = predator.tx - predator.x, dy = predator.ty - predator.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 4) stepToward(dx / dist, dy / dist, PRED_IDLE_SPEED * burst * dt);
+  }
+}
+
+function pickIdleTarget() {
+  // prefer wandering toward an authored node so idle drift stays in playable space
+  if (level.nodes.length) {
+    const n = level.nodes[(Math.random() * level.nodes.length) | 0];
+    if (lineClear(predator.x, predator.y, n.x, n.y)) { predator.tx = n.x; predator.ty = n.y; return; }
+  }
+  const ang = Math.random() * TAU;
+  const reach = (80 + Math.random() * 140) * SCALE;
+  predator.tx = Math.max(40 * SCALE, Math.min(W - 40 * SCALE, predator.x + Math.cos(ang) * reach));
+  predator.ty = Math.max(40 * SCALE, Math.min(H - 40 * SCALE, predator.y + Math.sin(ang) * reach));
+}
+
+// Move predator, wall-resolved per-axis (PRED-04 already enforced by path, this
+// is the safety net so it never tunnels through geometry).
+function stepToward(ux, uy, amt) {
+  // PRED-01: capture facing only when the direction is nonzero this frame,
+  // so predator.heading HOLDS its last value while stationary (e.g. a future
+  // ambush hold keeps facing its last direction rather than snapping to 0).
+  if (ux !== 0 || uy !== 0) predator.heading = Math.atan2(uy, ux);
+  const tryMove = (mx, my) => {
+    const nx = predator.x + mx, ny = predator.y + my;
+    if (!collidesAt(nx, ny, predator.r)) { predator.x = nx; predator.y = ny; }
+  };
+  tryMove(ux * amt, 0);
+  tryMove(0, uy * amt);
+}
+
+function updateProximityAudio() {
+  // C2: dormant (Act I) levels have no threat — keep the hum/tension silent
+  // rather than tracking a harmless prop in the corner.
+  if (level.dormant) { predOcclusion = 1; setProximity(0); setTensionTone(0); return; }
+  const d = Math.hypot(player.x - predator.x, player.y - predator.y);
+  const closeness = Math.max(0, Math.min(1, 1 - d / PROX_NEAR));
+  const occluded = !lineClear(predator.x, predator.y, player.x, player.y);
+  const occ = occluded ? OCCLUSION_ATTEN : 1;
+  predOcclusion = occ;
+  setProximity(closeness, occ);
+  // TENS-01: NEW close-range tension tone, stacked on the hum above — reuses
+  // the same `d` and `occ` already computed here (no second distance calc).
+  const closeness80 = Math.max(0, Math.min(1, 1 - d / TENSION_NEAR));
+  setTensionTone(closeness80, occ);
+}
+
+// Normalize a stored best entry to {pings, time} (old format was a bare number).
+function getBest(idx) {
+  const v = bestMap[String(idx)];
+  if (v == null) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? { pings: v, time: null } : null;
+  if (typeof v === "object" && !Array.isArray(v)) {
+    if (!Number.isFinite(v.pings)) return null;
+    if (v.time != null && !Number.isFinite(v.time)) return null;
+    return { pings: v.pings, time: v.time == null ? null : v.time };
+  }
+  return null; // malformed per-level entry — treat as no record rather than propagating garbage
+}
+
+function onWin() {
+  state = STATE.WON;
+  exitFound = true; // C1: grace wins (undiscovered touch) still render the exit
+  // Best = fewest pings, and separately fastest time.
+  const key = String(levelIndex);
+  const prev = getBest(levelIndex);
+  const next = {
+    pings: prev ? Math.min(prev.pings, pingCount) : pingCount,
+    time: prev && prev.time != null ? Math.min(prev.time, clearTime) : clearTime,
+  };
+  bestMap[key] = next; saveBestMap();
+  if (levelIndex + 1 > progress) { progress = levelIndex + 1; saveProgress(); }
+  flash = 0.7; flashColor = COLORS.exit;
+  shake = 6;
+  spawnParticles(level.exit.x, level.exit.y, 60, COLORS.exitGlow, { speed: 220, life: 1.0, size: 3 });
+  sndWin();
+}
+
+function onCaught() {
+  state = STATE.CAUGHT;
+  // TENS-02: replaces the old single-fade flash field (formerly set here)
+  // with the 3-beat capture sequence — 3-frame freeze, then captureStage
+  // drives the white->black overlay (see frame()/update()/render()).
+  // onWin()'s flash assignment is untouched.
+  freezeFrames = 3;
+  captureStage = 0;
+  shake = 14;
+  spawnParticles(player.x, player.y, 50, COLORS.predator, { speed: 200, life: 0.9, size: 3 });
+  // TENS-01: cut the tension tone + proximity hum to instant silence —
+  // the silence is the hit, landing right before the capture sting.
+  cutTensionAudio();
+  sndCapture();
+}
+
+// ----------------------------------------------------------------------------
+// Render
+// ----------------------------------------------------------------------------
+function render() {
+  ctx.save();
+  // screen shake
+  if (shake > 0.2) {
+    ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+  }
+
+  // void + vignette
+  drawVoid();
+
+  if (state === STATE.TITLE) { ctx.restore(); renderTitle(); return; }
+  if (state === STATE.CLEARED) { ctx.restore(); renderCleared(); return; }
+
+  renderWorld();
+  ctx.restore();
+
+  // full-screen flash overlay (above shake transform)
+  if (flash > 0.001) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(0.5, flash * 0.5);
+    ctx.fillStyle = flashColor;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // C7: brief red edge-vignette pulse when a hunt burst fires.
+  if (burstVignette > 0.001) {
+    ctx.save();
+    const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
+    g.addColorStop(0, "rgba(122,0,16,0)");
+    g.addColorStop(1, "rgba(122,0,16,0.28)");
+    ctx.globalAlpha = burstVignette;
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // TENS-02: capture white->black overlay — a SEPARATE opaque overlay from
+  // the `flash` block above (which caps at 0.5 alpha and is unchanged for
+  // WON/other paths). Only active once the 3-frame freeze has released and
+  // captureStage starts counting up (state===CAUGHT the whole time it runs).
+  // First CAPTURE_WHITE_DUR seconds: opaque white bleach. After that: opaque
+  // black, which persists and sits under renderEnd()'s CAUGHT screen.
+  if (state === STATE.CAUGHT) {
+    ctx.save();
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = captureStage < CAPTURE_WHITE_DUR ? "#ffffff" : COLORS.void;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // level-enter wipe: a descending dark veil that lifts as the level begins
+  if (transition > 0.001) {
+    ctx.save();
+    ctx.fillStyle = COLORS.void;
+    ctx.globalAlpha = Math.min(1, transition);
+    const veil = H * transition;
+    ctx.fillRect(0, 0, W, veil);
+    // a thin chalk scan-line at the leading edge
+    ctx.globalAlpha = Math.min(1, transition) * 0.6;
+    ctx.strokeStyle = COLORS.wallGlow;
+    ctx.lineWidth = 1.5;
+    line(0, veil, W, veil);
+    ctx.restore();
+  }
+
+  // C10: pause overlay — doubles as the mid-game controls reference.
+  if (paused && state === STATE.PLAYING) {
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.wallFront;
+    ctx.font = "700 28px system-ui, sans-serif";
+    ctx.fillText("PAUSED", W / 2, H / 2 - 40);
+    ctx.fillStyle = COLORS.hudBright;
+    ctx.font = "14px system-ui, sans-serif";
+    const lines = [
+      "SPACE — ping (lights walls, calls the hunter)",
+      "WASD / arrows — move · stand still to go silent",
+      "right-click or F — decoy (throws your voice)",
+      "V — sonar assist · M — mute · R — restart level",
+      "P / Esc — resume",
+    ];
+    lines.forEach((s, i) => ctx.fillText(s, W / 2, H / 2 + i * 22));
+    ctx.restore();
+  }
+
+  if (state === STATE.CAUGHT) renderEnd("CAUGHT", COLORS.predator, "The hunter found your sound.");
+  if (state === STATE.WON) renderEnd("ESCAPED", COLORS.exit, bestText());
+}
+
+function drawVoid() {
+  ctx.fillStyle = COLORS.void;
+  ctx.fillRect(-40, -40, W + 80, H + 80);
+  // radial vignette toward corners for depth
+  const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.75);
+  g.addColorStop(0, "rgba(0,0,0,0)");
+  g.addColorStop(1, COLORS.voidEdge);
+  ctx.fillStyle = g;
+  ctx.fillRect(-40, -40, W + 80, H + 80);
+}
+
+function renderWorld() {
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // Ghost-outlines (fading chalk fragments) with a soft bloom underlay.
+  for (const g of ghosts) {
+    const a = ghostAlpha(g.life);
+    const tint = g.predHB ? COLORS.predator : (g.decoy ? COLORS.decoy : COLORS.ghost);
+    // bloom
+    ctx.strokeStyle = tint;
+    ctx.globalAlpha = a * 0.18;
+    ctx.lineWidth = 6;
+    line(g.x1, g.y1, g.x2, g.y2);
+    // crisp line
+    ctx.globalAlpha = a * 0.9;
+    ctx.lineWidth = 1.8;
+    line(g.x1, g.y1, g.x2, g.y2);
+  }
+  ctx.globalAlpha = 1;
+
+  drawDecoyMarks();
+
+  // Live ping fronts: bright chalk-white intersections + a colored glow.
+  for (const p of pings) {
+    const maxR = p.predHB ? PRED_HB_RADIUS : PING_MAX_RADIUS;
+    const fade = Math.max(0, 1 - p.radius / maxR);
+    const frontGlow = p.predHB ? COLORS.predatorDeep : (p.decoy ? COLORS.decoyGlow : COLORS.wallGlow);
+    const frontCore = p.predHB ? COLORS.predator : (p.decoy ? COLORS.decoy : COLORS.wallFront);
+
+    for (const w of level.walls) {
+      const segLen = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+      const steps = Math.max(2, Math.ceil(segLen / 6));
+      let runStart = null;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const sx = w.x1 + (w.x2 - w.x1) * t;
+        const sy = w.y1 + (w.y2 - w.y1) * t;
+        const d = Math.hypot(sx - p.x, sy - p.y);
+        const onFront = Math.abs(d - p.radius) < PING_BAND;
+        if (onFront && runStart === null) runStart = t;
+        else if (!onFront && runStart !== null) { drawFrontSeg(w, runStart, (i - 1) / steps, fade, frontGlow, frontCore); runStart = null; }
+      }
+      if (runStart !== null) drawFrontSeg(w, runStart, 1, fade, frontGlow, frontCore);
+    }
+
+    // faint expanding ring guide
+    ctx.globalAlpha = fade * 0.10;
+    ctx.strokeStyle = frontGlow;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius, 0, TAU);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Particles (under markers).
+  drawParticles();
+
+  drawExit();
+  drawPredator();
+  drawAim();      // decoy aim indicator (only while aiming + unlocked)
+  drawPlayer();
+
+  drawGrain();    // proximity grain noise (TENS-06) — last world step, under the HUD
+  drawMechanicLabels(); // LVL-04: world-space chalk labels, distinct from the screen-space intro blurb
+
+  renderHUD();
+}
+
+function line(x1, y1, x2, y2) {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+
+// WR-03: shared two-pass "soft bloom, then crisp core" stroke helper. Used by
+// drawDecoyMarks(), drawFrontSeg(), and drawPredatorGhost() — each draws a
+// different shape (X of two lines, a single segment, an arc) so this takes a
+// drawShapeFn callback rather than baking in geometry. Callers are still
+// responsible for ctx.save()/ctx.restore() around the call so globalAlpha
+// changes don't leak.
+function strokeGlowThenCrisp(drawShapeFn, glow) {
+  ctx.strokeStyle = glow.color;
+  ctx.globalAlpha = glow.alpha;
+  ctx.lineWidth = glow.width;
+  drawShapeFn();
+  ctx.strokeStyle = glow.coreColor;
+  ctx.globalAlpha = glow.coreAlpha;
+  ctx.lineWidth = glow.coreWidth;
+  drawShapeFn();
+}
+
+// TENS-05: faint chalk-X lingering at each decoy's origin so the player can
+// see exactly where the false signal landed. Separate from drawAim()'s
+// aiming-only dashed line + ready-ring (game.js drawAim()) and from the
+// instantaneous fire particle burst (fireDecoy()) — this persists ~3s and
+// fades LINEARLY via decoyMarks' life/DECOY_MARK_LIFE ratio.
+function drawDecoyMarks() {
+  for (const m of decoyMarks) {
+    const a = Math.max(0, m.life / DECOY_MARK_LIFE);
+    const s = DECOY_MARK_SIZE;
+    ctx.save();
+    strokeGlowThenCrisp(() => {
+      line(m.x - s, m.y - s, m.x + s, m.y + s);
+      line(m.x - s, m.y + s, m.x + s, m.y - s);
+    }, {
+      color: COLORS.decoyGlow, alpha: a * 0.35, width: 4,
+      coreColor: COLORS.decoy, coreAlpha: a * 0.7, coreWidth: 1.6,
+    });
+    ctx.restore();
+  }
+}
+
+// LVL-04: floating chalk-style in-world mechanic labels. Drawn in WORLD space
+// (called from renderWorld(), same coordinate system as walls/player) so the
+// label pans with the level/camera — deliberately distinct from the
+// screen-space intro blurb banner drawn in renderHUD(). Fades linearly over
+// its 4s life, or stops rendering immediately once markLabelUsed() marks it
+// `used` (first real use of that mechanic).
+function drawMechanicLabels() {
+  for (const l of labelState) {
+    if (l.used || l.life <= 0) continue;
+    const a = Math.min(1, l.life / 4);
+    ctx.save();
+    ctx.globalAlpha = a * 0.85;
+    ctx.fillStyle = COLORS.ghostWarm;
+    ctx.strokeStyle = COLORS.ghost;
+    ctx.font = "13px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    // Soft bloom underlay, then crisp chalk core — matches the file's
+    // established glow-then-crisp convention (strokeGlowThenCrisp) but for
+    // fillText rather than a stroked shape.
+    ctx.globalAlpha = a * 0.25;
+    ctx.font = "700 13px system-ui, sans-serif";
+    ctx.fillText(l.text, l.x, l.y - 1);
+    ctx.globalAlpha = a * 0.85;
+    ctx.font = "13px system-ui, sans-serif";
+    ctx.fillText(l.text, l.x, l.y);
+    ctx.restore();
+  }
+}
+
+function drawFrontSeg(w, t0, t1, fade, glow, core) {
+  if (t1 < t0) return;
+  const x1 = w.x1 + (w.x2 - w.x1) * t0, y1 = w.y1 + (w.y2 - w.y1) * t0;
+  const x2 = w.x1 + (w.x2 - w.x1) * t1, y2 = w.y1 + (w.y2 - w.y1) * t1;
+  strokeGlowThenCrisp(() => line(x1, y1, x2, y2), {
+    color: glow, alpha: fade * 0.5, width: 7,
+    coreColor: core, coreAlpha: fade, coreWidth: 3,
+  });
+}
+
+// Proximity grain noise (TENS-06): scattered low-alpha monochrome fillRect
+// dots, density rising as the predator closes. Occlusion-free (no lineClear
+// check) — a raw danger-pressure overlay, not a sightline effect. Drawn as
+// the last world-layer step before renderHUD() so HUD text stays legible.
+function drawGrain() {
+  if (level.dormant) return; // C2: no danger-pressure from a harmless prop
+  const d = Math.hypot(player.x - predator.x, player.y - predator.y);
+  if (d >= GRAIN_FAR_DIST) return;
+  const dc = Math.max(GRAIN_NEAR_DIST, Math.min(GRAIN_FAR_DIST, d));
+  const t = (GRAIN_FAR_DIST - dc) / (GRAIN_FAR_DIST - GRAIN_NEAR_DIST); // 0 far -> 1 near
+  const count = Math.round(GRAIN_MIN_DOTS + (GRAIN_MAX_DOTS - GRAIN_MIN_DOTS) * t);
+
+  ctx.save();
+  ctx.fillStyle = "#e8e8f0";
+  for (let i = 0; i < count; i++) {
+    ctx.globalAlpha = 0.04 + Math.random() * 0.08;
+    const x = Math.random() * W;
+    const y = Math.random() * H;
+    const size = 1 + Math.random();
+    ctx.fillRect(x, y, size, size);
+  }
+  ctx.restore();
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const a = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * a, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawExit() {
+  if (!exitFound) return; // C1: undiscovered exits are part of the dark
+  const e = level.exit;
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 500);
+  ctx.save();
+  ctx.strokeStyle = COLORS.exitGlow;
+  ctx.globalAlpha = 0.18 + pulse * 0.18;
+  ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, TAU); ctx.stroke();
+  ctx.strokeStyle = COLORS.exit;
+  ctx.globalAlpha = 0.4 + pulse * 0.4;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, TAU); ctx.stroke();
+  ctx.globalAlpha = 0.7 + pulse * 0.3;
+  ctx.fillStyle = COLORS.exit;
+  ctx.beginPath(); ctx.arc(e.x, e.y, 3, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
+function drawPredator() {
+  if (level.dormant) return; // C2: Act I — the dark really is empty
+  // C2: the predator is a creature of sound. It renders only while sonar
+  // shows it: a ping-front flash (chalk-white, ~1s), its own heartbeat blip
+  // (dim red, ~0.5s), close range (fades in from the void), or sonar assist.
+  const dPl = Math.hypot(player.x - predator.x, player.y - predator.y);
+  const closeVis = Math.max(0, 1 - dPl / PRED_VIS_NEAR);
+  const vis = sonarAssist ? 1 : Math.max(predVisFlash, predHBFlash * 0.35, closeVis);
+  if (vis <= 0.02) return;
+
+  ctx.save();
+  ctx.translate(predator.x, predator.y);
+  ctx.rotate(predator.heading);
+
+  const t = performance.now() / 1000;
+  // PRED-01: stalk-gated pulse — near-static while wandering, visibly "alive"
+  // while stalking. Amplitude (not just the oscillation) is gated on the flag.
+  const pulse = 0.5 + 0.5 * Math.sin(t * 5);
+  const stalkAmt = predator.stalking ? 1 : 0.12;
+
+  // PRED-02: reduced ripple telegraph, intensified only when stalking.
+  for (let i = 0; i < 3; i++) {
+    const ph = (predator.rippleT * 1.1 + i / 3) % 1;
+    const rr = predator.r * (0.5 + ph * 2.2);
+    ctx.globalAlpha = (1 - ph) * (predator.mode === "hunt" ? 0.5 : 0.3) * stalkAmt * vis;
+    ctx.strokeStyle = COLORS.predator;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.stroke();
+  }
+
+  // Angular wireframe silhouette in LOCAL space (already translated+rotated).
+  ctx.beginPath();
+  ctx.moveTo(PRED_SHAPE[0].x * predator.r, PRED_SHAPE[0].y * predator.r);
+  for (let i = 1; i < PRED_SHAPE.length; i++) {
+    ctx.lineTo(PRED_SHAPE[i].x * predator.r, PRED_SHAPE[i].y * predator.r);
+  }
+  ctx.closePath();
+  ctx.globalAlpha = (0.25 + pulse * 0.18 * stalkAmt) * vis;
+  ctx.fillStyle = COLORS.predatorDeep;
+  ctx.fill();
+  ctx.globalAlpha = (0.85 + pulse * 0.15 * stalkAmt) * vis;
+  ctx.strokeStyle = COLORS.predator;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Small filled core for body presence, pulsing only when stalking.
+  ctx.globalAlpha = (0.7 + pulse * 0.3 * stalkAmt) * vis;
+  ctx.fillStyle = COLORS.predator;
+  ctx.beginPath(); ctx.arc(0, 0, predator.r * 0.32, 0, TAU); ctx.fill();
+
+  // C2: chalk-white sonar flash overlay while a wavefront reveal is fresh —
+  // your echo painting the monster, same chalk as the walls it lives among.
+  if (predVisFlash > 0.02 && !sonarAssist) {
+    ctx.beginPath();
+    ctx.moveTo(PRED_SHAPE[0].x * predator.r, PRED_SHAPE[0].y * predator.r);
+    for (let i = 1; i < PRED_SHAPE.length; i++) {
+      ctx.lineTo(PRED_SHAPE[i].x * predator.r, PRED_SHAPE[i].y * predator.r);
+    }
+    ctx.closePath();
+    ctx.globalAlpha = predVisFlash * 0.9;
+    ctx.strokeStyle = COLORS.wallFront;
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// TENS-02: chalk-white STROKE-ONLY outline at the predator's frozen position,
+// drawn on the CAUGHT death screen instead of the normal pulsing drawPredator.
+// predator.x/predator.y are already frozen — update() returns early once
+// state !== STATE.PLAYING, so the position never advances after capture.
+// Deliberately distinct from drawPredator(): no filled core, no pulsing
+// ripples, cool-chalk palette (not COLORS.predator). Fades from clearly
+// visible toward a dim floor over the death-screen lifetime, driven by
+// captureStage (the same elapsed-time-up timer that drives the white->black
+// overlay in render() — it keeps counting for the rest of the CAUGHT screen
+// after the white window passes, so it doubles as the death-screen clock).
+const GHOST_FADE_DUR = 2.5;    // seconds over which the outline dims to its floor
+const GHOST_FADE_FLOOR = 0.18; // never fully vanishes — stays faintly visible
+function drawPredatorGhost() {
+  const t = Math.max(0, Math.min(1, captureStage / GHOST_FADE_DUR));
+  const a = 1 - (1 - GHOST_FADE_FLOOR) * t;
+  ctx.save();
+  strokeGlowThenCrisp(() => {
+    ctx.beginPath(); ctx.arc(predator.x, predator.y, predator.r * 1.15, 0, TAU); ctx.stroke();
+  }, {
+    color: COLORS.wallGlow, alpha: a * 0.35, width: 5,
+    coreColor: COLORS.wallFront, coreAlpha: a * 0.9, coreWidth: 1.8,
+  });
+  ctx.restore();
+}
+
+function drawPlayer() {
+  ctx.save();
+  // halo
+  ctx.fillStyle = COLORS.playerGlow;
+  ctx.globalAlpha = 0.16;
+  ctx.beginPath(); ctx.arc(player.x, player.y, player.r * 1.4, 0, TAU); ctx.fill();
+  // core
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = COLORS.player;
+  ctx.beginPath(); ctx.arc(player.x, player.y, player.r * 0.5, 0, TAU); ctx.fill();
+  ctx.restore();
+
+  drawCooldownRing();
+}
+
+// TENS-03: in-world clockwise cooldown ring around the player dot — an
+// at-a-glance "can I ping?" readout additional to the top-left HUD bar
+// (game.js renderHUD(), ~line 1819). Reuses the EXACT same fraction the HUD
+// bar uses so ring and bar always agree, and tracks the real-ping `cooldown`
+// only (never decoyCooldown — drawAim() already shows a decoy-ready ring at
+// the decoy origin). Flares brighter for ~0.3s via pingReadyPulse the instant
+// the cooldown completes.
+function drawCooldownRing() {
+  const frac = Math.max(0, Math.min(1, 1 - cooldown / PING_COOLDOWN));
+  const ringR = player.r * 2.2;
+  const start = -Math.PI / 2; // begin the sweep at the top, fill clockwise
+  ctx.save();
+  ctx.strokeStyle = COLORS.wallGlow;
+  ctx.lineWidth = 2 + pingReadyPulse * 1.5;
+  ctx.globalAlpha = 0.5 + pingReadyPulse * 0.5;
+  ctx.beginPath();
+  if (frac >= 1) {
+    ctx.arc(player.x, player.y, ringR, 0, TAU);
+  } else if (frac > 0) {
+    ctx.arc(player.x, player.y, ringR, start, start + frac * TAU);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Decoy aim arc — appears only while a decoy is being aimed (unlocked levels).
+function drawAim() {
+  if (!level.decoy) return;
+  if (!aiming) return; // keep it clean: only show while actually aiming
+  const ang = aimAng;
+  const ox = player.x + Math.cos(ang) * DECOY_REACH;
+  const oy = player.y + Math.sin(ang) * DECOY_REACH;
+  ctx.save();
+  ctx.setLineDash([4, 6]);
+  ctx.strokeStyle = COLORS.decoy;
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 1.5;
+  line(player.x, player.y, ox, oy);
+  ctx.setLineDash([]);
+  const ready = decoyCooldown <= 0;
+  ctx.globalAlpha = ready ? 0.8 : 0.3;
+  ctx.strokeStyle = COLORS.decoyGlow;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(ox, oy, 14, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+
+// ----------------------------------------------------------------------------
+// HUD + overlays (canvas-drawn)
+// ----------------------------------------------------------------------------
+function renderHUD() {
+  ctx.save();
+  ctx.font = "13px system-ui, sans-serif";
+  ctx.textBaseline = "top";
+
+  ctx.fillStyle = COLORS.hudBright;
+  ctx.fillText(`LEVEL ${levelIndex + 1}/${RAW_LEVELS.length} · ${level.name}`, 16, 14);
+
+  const ready = cooldown <= 0;
+  ctx.fillStyle = ready ? COLORS.player : COLORS.hud;
+  ctx.fillText(ready ? "PING READY (space)" : "recharging…", 16, 34);
+
+  ctx.fillStyle = COLORS.hud;
+  ctx.fillText(`pings: ${pingCount}   time: ${fmtTime(clearTime)}`, 16, 52);
+  const bk = getBest(levelIndex);
+  if (bk != null) ctx.fillText(`best: ${bk.pings} pings${bk.time != null ? " / " + fmtTime(bk.time) : ""}`, 200, 52);
+
+  // ping cooldown bar
+  const bw = 120, bx = 16, by = 74;
+  ctx.globalAlpha = 0.3; ctx.fillStyle = COLORS.hud; ctx.fillRect(bx, by, bw, 4);
+  ctx.globalAlpha = 0.95; ctx.fillStyle = ready ? COLORS.player : COLORS.hudBright;
+  ctx.fillRect(bx, by, bw * Math.max(0, Math.min(1, 1 - cooldown / PING_COOLDOWN)), 4);
+  ctx.globalAlpha = 1;
+
+  // decoy affordance (only when unlocked)
+  if (level.decoy) {
+    const dReady = decoyCooldown <= 0;
+    ctx.fillStyle = dReady ? COLORS.decoy : COLORS.hud;
+    ctx.fillText(dReady ? "DECOY READY (right-click, or F)" : "decoy charging…", 16, 88);
+    const dby = 108;
+    ctx.globalAlpha = 0.3; ctx.fillStyle = COLORS.hud; ctx.fillRect(bx, dby, bw, 4);
+    ctx.globalAlpha = 0.95; ctx.fillStyle = dReady ? COLORS.decoyGlow : COLORS.hudBright;
+    ctx.fillRect(bx, dby, bw * Math.max(0, Math.min(1, 1 - decoyCooldown / DECOY_COOLDOWN)), 4);
+    ctx.globalAlpha = 1;
+  }
+
+  // bottom hint
+  ctx.fillStyle = COLORS.hud;
+  ctx.textBaseline = "bottom";
+  const hint = level.decoy
+    ? "SPACE ping · WASD/arrows move · right-click or F = DECOY · R reset · P pause · V sonar assist"
+    : "SPACE ping · WASD/arrows move · R reset · P pause · V sonar assist";
+  ctx.fillText(hint, 16, H - 14);
+
+  if (showDebug) {
+    ctx.fillStyle = "#79f"; ctx.textBaseline = "top";
+    ctx.fillText(`pings:${pings.length} ghosts:${ghosts.length} parts:${particles.length} pred:${predator.mode} step:${predator.pathStep}/${predator.path.length}`, 16, 130);
+  }
+  ctx.restore();
+
+  drawIntroBanner();
+}
+
+// Per-level onboarding banner: the level name + a one-line "what's new" hint that
+// fades after a few seconds, so a first-time player learns each idea in context.
+function drawIntroBanner() {
+  if (introT <= 0 || !level.blurb) return;
+  // Fade in quickly, hold, then fade out over the last second.
+  const a = Math.min(1, introT) * Math.min(1, (4.5 - introT) * 4 + 1);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, a));
+  ctx.textAlign = "center";
+
+  const cx = W / 2, cy = H * 0.16;
+  // panel
+  ctx.font = "13px system-ui, sans-serif";
+  const tw = Math.max(ctx.measureText(level.blurb).width, 260) + 48;
+  ctx.fillStyle = "rgba(2,8,16,0.72)";
+  ctx.fillRect(cx - tw / 2, cy - 30, tw, 60);
+  ctx.strokeStyle = COLORS.wallGlow; ctx.globalAlpha *= 0.8;
+  ctx.lineWidth = 1; ctx.strokeRect(cx - tw / 2, cy - 30, tw, 60);
+  ctx.globalAlpha = Math.max(0, Math.min(1, a));
+
+  ctx.fillStyle = COLORS.wallFront;
+  ctx.font = "700 16px system-ui, sans-serif";
+  ctx.fillText(`LEVEL ${levelIndex + 1} — ${level.name}`, cx, cy - 18);
+  ctx.fillStyle = COLORS.hudBright;
+  ctx.font = "13px system-ui, sans-serif";
+  ctx.fillText(level.blurb, cx, cy + 6);
+  ctx.restore();
+}
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return (m > 0 ? m + ":" + String(sec).padStart(2, "0") : sec + "s");
+}
+
+function bestText() {
+  const bk = getBest(levelIndex);
+  const bestPings = (bk == null) ? pingCount : bk.pings;
+  const bestTime = (bk == null || bk.time == null) ? clearTime : bk.time;
+  const next = (levelIndex + 1 < RAW_LEVELS.length) ? "  ·  next level →" : "  ·  final level!";
+  return `This run: ${pingCount} pings / ${fmtTime(clearTime)}   ·   Best: ${bestPings} / ${fmtTime(bestTime)}${next}`;
+}
+
+function renderTitle() {
+  ctx.save();
+  ctx.textAlign = "center";
+
+  // C12: attract-mode ping — a slow breathing ring from center every 4s; the
+  // title brightens briefly as the front passes its baseline. The game's
+  // identity IS the reveal, so the first impression is the mechanic itself.
+  // Ambience, not gameplay: faint, unlabeled, pointer-transparent.
+  const attractPh = (performance.now() % 4000) / 4000; // 0..1
+  const attractR = attractPh * Math.max(W, H) * 0.6;
+  ctx.strokeStyle = COLORS.wallGlow;
+  ctx.globalAlpha = 0.12 * (1 - attractPh);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(W / 2, H / 2, attractR, 0, TAU); ctx.stroke();
+  ctx.globalAlpha = 1;
+  const titleBoost = Math.max(0, 1 - Math.abs(attractR - 110) / 60) * 0.3;
+
+  ctx.fillStyle = COLORS.wallFront;
+  // clamp()/calc() are not valid inside canvas font strings (browsers keep
+  // the previous font on a bad assignment) — compute the size in JS instead.
+  ctx.font = `700 ${Math.round(Math.max(28, Math.min(54, W * 0.06)))}px system-ui, sans-serif`;
+  ctx.globalAlpha = Math.min(1, 0.82 + titleBoost); // C12: lifts as the ring passes
+  ctx.fillText("ECHO CARTOGRAPHER", W / 2, H / 2 - 110);
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = COLORS.ghost; ctx.globalAlpha = 0.8;
+  ctx.font = "16px system-ui, sans-serif";
+  ctx.fillText("See by sound. The dark hunts your echoes.", W / 2, H / 2 - 66);
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = COLORS.hudBright; ctx.font = "15px system-ui, sans-serif";
+  ctx.fillText("SPACE = ping (lights walls, but draws the hunter) · WASD/arrows = move", W / 2, H / 2 - 18);
+
+  ctx.fillStyle = COLORS.decoy; ctx.globalAlpha = 0.9;
+  ctx.font = "14px system-ui, sans-serif";
+  ctx.fillText("Later: hold SHIFT + aim (or right-click) to throw a DECOY and lure the hunter away.", W / 2, H / 2 + 12);
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = COLORS.exit; ctx.globalAlpha = 0.85; ctx.font = "14px system-ui, sans-serif";
+  ctx.fillText("Find the exit. Stand still to vanish — it hunts sound, not sight.", W / 2, H / 2 + 42);
+  ctx.globalAlpha = 1;
+
+  if (progress > 0) {
+    const resumeAt = Math.min(progress, RAW_LEVELS.length - 1) + 1;
+    const cleared = Math.min(progress, RAW_LEVELS.length);
+    ctx.fillStyle = COLORS.hud; ctx.font = "13px system-ui, sans-serif";
+    const msg = (progress >= RAW_LEVELS.length)
+      ? `All ${RAW_LEVELS.length} levels cleared — replay from level ${resumeAt}`
+      : `Resuming at level ${resumeAt} of ${RAW_LEVELS.length}  ·  ${cleared} cleared`;
+    ctx.fillText(msg, W / 2, H / 2 + 72);
+  } else {
+    ctx.fillStyle = COLORS.hud; ctx.font = "13px system-ui, sans-serif";
+    ctx.fillText(`${RAW_LEVELS.length} levels of deepening dark`, W / 2, H / 2 + 72);
+  }
+
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 400);
+  ctx.fillStyle = COLORS.player; ctx.globalAlpha = 0.5 + pulse * 0.5;
+  ctx.font = "700 18px system-ui, sans-serif";
+  ctx.fillText("Press SPACE or click to begin", W / 2, H / 2 + 104);
+  ctx.restore();
+}
+
+function renderEnd(title, color, sub) {
+  ctx.save();
+  // TENS-02: CAUGHT gets a full opaque-black background (hiding ghosts/walls/
+  // particles drawn earlier by renderWorld()) plus the fading chalk-outline
+  // predator at its frozen position. WON (and any other use) keeps the
+  // original 50% overlay and never draws the chalk outline — ESCAPED is
+  // unchanged.
+  if (state === STATE.CAUGHT) {
+    ctx.fillStyle = COLORS.void;
+    ctx.fillRect(0, 0, W, H);
+    drawPredatorGhost();
+  } else {
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.textAlign = "center";
+  ctx.fillStyle = color;
+  ctx.font = `700 ${Math.round(Math.max(32, Math.min(60, W * 0.07)))}px system-ui, sans-serif`;
+  ctx.fillText(title, W / 2, H / 2 - 30);
+  ctx.fillStyle = COLORS.hudBright; ctx.font = "16px system-ui, sans-serif";
+  ctx.fillText(sub, W / 2, H / 2 + 14);
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 400);
+  ctx.fillStyle = COLORS.player; ctx.globalAlpha = 0.5 + pulse * 0.5;
+  ctx.font = "700 16px system-ui, sans-serif";
+  const prompt = (state === STATE.WON)
+    ? "Press SPACE / click to continue"
+    : "Press SPACE / R / click to try again";
+  ctx.fillText(prompt, W / 2, H / 2 + 56);
+  ctx.restore();
+}
+
+function renderCleared() {
+  ctx.save();
+  ctx.textAlign = "center";
+  // celebratory drifting particles
+  if (Math.random() < 0.4) {
+    spawnParticles(Math.random() * W, H + 10, 1, Math.random() < 0.5 ? COLORS.exit : COLORS.player,
+      { speed: 60, life: 2.5, size: 2.5, angle: -Math.PI / 2, spread: 0.6 });
+  }
+  drawParticles();
+  ctx.fillStyle = COLORS.exit;
+  ctx.font = `700 ${Math.round(Math.max(30, Math.min(56, W * 0.065)))}px system-ui, sans-serif`;
+  ctx.fillText("YOU MAPPED THE DARK", W / 2, H / 2 - 30);
+  ctx.fillStyle = COLORS.hudBright; ctx.font = "16px system-ui, sans-serif";
+  ctx.fillText("Every corridor learned. Every lie believed. Every echo silenced.", W / 2, H / 2 + 12);
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 400);
+  ctx.fillStyle = COLORS.player; ctx.globalAlpha = 0.5 + pulse * 0.5;
+  ctx.font = "700 16px system-ui, sans-serif";
+  ctx.fillText("Press SPACE / click for the title", W / 2, H / 2 + 56);
+  ctx.restore();
+}
+
+// ----------------------------------------------------------------------------
+// Main loop — fixed-timestep update + rAF render
+// ----------------------------------------------------------------------------
+const FIXED = 1 / 120;
+let acc = 0, last = 0;
+
+function frame(now2) {
+  if (!last) last = now2;
+  let dt = (now2 - last) / 1000;
+  last = now2;
+  if (dt > 0.25) dt = 0.25;
+  acc += dt;
+  // TENS-02: while freezeFrames > 0, hold the image — skip the update
+  // accumulator entirely (not just one iteration) so the held frames do not
+  // cause a catch-up burst-replay of update() once the freeze releases, then
+  // decrement once per rendered frame. render() always still runs.
+  if (freezeFrames > 0) {
+    acc = 0;
+    freezeFrames--;
+  } else if (paused && state === STATE.PLAYING) {
+    // C10: hold the simulation while paused — render (with the pause overlay)
+    // continues; acc is drained so resume never burst-replays the pause.
+    acc = 0;
+  } else {
+    let guard = 0;
+    // CR-01: stop draining the backlog the instant a frame's update() call
+    // transitions state away from PLAYING (capture or win). Without this,
+    // remaining backlog iterations in the same rAF tick still run update()'s
+    // always-run preamble (captureStage += dt among others) even though the
+    // state is no longer PLAYING, which can inflate captureStage before the
+    // freeze branch ever engages and skip the documented white-flash window.
+    // CR-02: only short-circuit on the tick where the transition actually
+    // happens DURING this loop. If state was already non-PLAYING at loop
+    // entry (every CAUGHT/WON tick after the triggering frame), let the loop
+    // drain acc normally so captureStage/flash/shake/particles keep tracking
+    // real elapsed time instead of being capped at one FIXED tick per frame.
+    const wasPlayingAtEntry = state === STATE.PLAYING;
+    while (acc >= FIXED && guard < 600) {
+      update(FIXED);
+      acc -= FIXED;
+      guard++;
+      if (wasPlayingAtEntry && state !== STATE.PLAYING) { acc = 0; break; }
+    }
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+
+// ----------------------------------------------------------------------------
+// Boot
+// ----------------------------------------------------------------------------
+resize();
+layoutLevel();
+requestAnimationFrame(frame);

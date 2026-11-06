@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neon Gauntlet</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- HUD (in-game) -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <div class="hud-bar-wrap">
+        <div class="hud-label">HP</div>
+        <div class="bar hp"><div id="hp-fill" class="fill"></div></div>
+      </div>
+      <div class="hud-bar-wrap">
+        <div class="hud-label">LV <span id="level">1</span></div>
+        <div class="bar xp"><div id="xp-fill" class="fill"></div></div>
+      </div>
+    </div>
+    <div class="hud-stats">
+      <button id="mute-btn" title="Toggle mute">🔊</button>
+    </div>
+    <a class="back-link" href="../../index.html">&larr; Back to games</a>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,2352 @@
+# Tank Yard Fable Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build Tank Yard Fable — the collection's first WebGL/3D game — per `docs/superpowers/specs/2026-07-02-tank-yard-design.md`: a slow-paced third-person tank survival game with hand-rolled toon-shaded placeholder geometry, zero dependencies, registered on the hub.
+
+**Architecture:** Single file `games/tank-yard-fable/game.js` (repo convention: one dependency-free file per game) containing, in order: a small `mat4`/`vec3` math module, two procedural mesh builders (box, cylinder), WebGL setup/shader-compile helpers, one toon-shading shader pair used for every object, and game state/loop. All gameplay-decision logic (collision, AI, damage, turret aim, spawn timing) is written as **pure functions** taking plain data in and returning plain data out — no direct `gl.*`/DOM access inside them — so `games/tank-yard-fable/dev/smoke.js` (a Node-only harness, never loaded by the game) can test them without a real WebGL context, using a stub GL object for anything that merely needs to not crash during setup/render.
+
+**Tech Stack:** Vanilla JS, raw WebGL1 (`canvas.getContext("webgl")`), HTML/CSS for the HUD overlay. No libraries, no build step, no bundler — matches every other game in this repo.
+
+## Global Constraints
+
+- Must run from `file://` — no ES modules, no `fetch`, no external assets (repo-wide rule; see `docs/superpowers/specs/2026-07-02-tank-yard-design.md` header).
+- Zero dependencies of any kind, including vendored single-file libraries — the math module and geometry builders are hand-written (spec §5).
+- All game logic that isn't a direct WebGL draw call must be a pure function, testable from Node without a browser (spec §11).
+- Camera: third-person chase cam, lerped, offset 10 units behind / 6 units above the hull, looking 2 units above hull position (spec §4).
+- Player: 6 units/sec forward speed, ~1.2 rad/sec turn rate, 0.8s fire cooldown, 4 hits to destroy, 1s post-hit invulnerability (spec §4, §7).
+- Enemy: 4.5 units/sec seek speed, 25-unit engage range, 1.5s fire cooldown, spawns every 6s ramping linearly to every 3.5s by the 2-minute mark, floor 3s (spec §8).
+- Shells travel at 20 units/sec in a straight line at fixed height (spec §9).
+- Arena: 80×80 units, invisible boundary clamp, 8-12 hand-authored obstacles (spec §6, §8).
+- All collision is 2D (x, z only) — circle-circle for tanks, circle-AABB for box obstacles (spec §6).
+- Toon shading: 3 hard lighting bands, no smooth gradient (spec §5).
+- HUD is an HTML/CSS overlay, not drawn into the WebGL scene (spec §10).
+
+---
+
+### Task 1: Math module (mat4 / vec3) — pure, zero mocking needed
+
+**Files:**
+- Create: `games/tank-yard-fable/game.js` (starts here — file header comment + `"use strict"` + the math module only; later tasks append to this same file)
+- Create: `games/tank-yard-fable/dev/smoke.js` (starts here too — a Node test runner that loads `game.js` in a `vm` sandbox and exercises the math functions directly; no DOM/canvas stubbing needed yet since nothing in the file touches the DOM at this point)
+
+**Interfaces:**
+- Produces (used by every later task): `mat4Identity()`, `mat4Multiply(a,b)`, `mat4Translate(m,x,y,z)`, `mat4Scale(m,x,y,z)`, `mat4RotateX(m,rad)`, `mat4RotateY(m,rad)`, `mat4Perspective(fovy,aspect,near,far)`, `mat4LookAt(eye,target,up)`, `mat4Invert(m)`, `mat4TransformPoint(m,p)` — all matrices are `Float32Array(16)` in column-major order (the WebGL convention); all vec3s are plain 3-element arrays `[x,y,z]`. `vec3Add(a,b)`, `vec3Sub(a,b)`, `vec3Scale(a,s)`, `vec3Dot(a,b)`, `vec3Cross(a,b)`, `vec3Length(a)`, `vec3Normalize(a)`.
+
+- [ ] **Step 1: Write `game.js`'s header and the math module**
+
+```js
+/*
+ * TANK YARD — a slow-paced, third-person tank survival game.
+ * Inspired by Battlezone's core loop, rendered in a toon-shaded cartoonish
+ * style via hand-rolled WebGL1. No libraries, no build step, no external
+ * assets — runs from file://. See docs/superpowers/specs/2026-07-02-tank-yard-design.md.
+ *
+ * Sections: Math -> Geometry -> WebGL setup -> Shaders -> Game state ->
+ * Input -> Update (pure logic) -> Render -> Loop.
+ */
+"use strict";
+
+// ----------------------------------------------------------------------------
+// Math — mat4 (column-major Float32Array(16), the WebGL convention) + vec3
+// (plain 3-element arrays). Pure functions only, no shared mutable state.
+// ----------------------------------------------------------------------------
+function mat4Identity() {
+  return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+}
+
+function mat4Multiply(a, b) {
+  const out = new Float32Array(16);
+  for (let col = 0; col < 4; col++) {
+    for (let row = 0; row < 4; row++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) sum += a[k * 4 + row] * b[col * 4 + k];
+      out[col * 4 + row] = sum;
+    }
+  }
+  return out;
+}
+
+function mat4Translate(m, x, y, z) {
+  const t = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1]);
+  return mat4Multiply(m, t);
+}
+
+function mat4Scale(m, x, y, z) {
+  const s = new Float32Array([x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0, 0, 0, 0, 1]);
+  return mat4Multiply(m, s);
+}
+
+// Positive angle rotates +X toward +Z (i.e. rotateY(PI/2) maps (1,0,0)->(0,0,1)).
+function mat4RotateY(m, rad) {
+  const c = Math.cos(rad), s = Math.sin(rad);
+  const r = new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]);
+  return mat4Multiply(m, r);
+}
+
+// Positive angle rotates +Y toward -Z. Unused by v1 gameplay (cannon stays
+// level, spec S4) but kept per the spec's math-module contract for a likely
+// future barrel-elevation feature.
+function mat4RotateX(m, rad) {
+  const c = Math.cos(rad), s = Math.sin(rad);
+  const r = new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]);
+  return mat4Multiply(m, r);
+}
+
+function mat4Perspective(fovy, aspect, near, far) {
+  const f = 1 / Math.tan(fovy / 2);
+  const nf = 1 / (near - far);
+  const out = new Float32Array(16);
+  out[0] = f / aspect;
+  out[5] = f;
+  out[10] = (far + near) * nf;
+  out[11] = -1;
+  out[14] = 2 * far * near * nf;
+  return out;
+}
+
+function mat4LookAt(eye, target, up) {
+  const zAxis = vec3Normalize(vec3Sub(eye, target));
+  const xAxis = vec3Normalize(vec3Cross(up, zAxis));
+  const yAxis = vec3Cross(zAxis, xAxis);
+  return new Float32Array([
+    xAxis[0], yAxis[0], zAxis[0], 0,
+    xAxis[1], yAxis[1], zAxis[1], 0,
+    xAxis[2], yAxis[2], zAxis[2], 0,
+    -vec3Dot(xAxis, eye), -vec3Dot(yAxis, eye), -vec3Dot(zAxis, eye), 1,
+  ]);
+}
+
+// General 4x4 inverse (cofactor expansion). Returns null if singular — every
+// caller in this game (camera unproject, TBD Task 5) must check for null.
+function mat4Invert(m) {
+  const a00 = m[0], a01 = m[1], a02 = m[2], a03 = m[3];
+  const a10 = m[4], a11 = m[5], a12 = m[6], a13 = m[7];
+  const a20 = m[8], a21 = m[9], a22 = m[10], a23 = m[11];
+  const a30 = m[12], a31 = m[13], a32 = m[14], a33 = m[15];
+
+  const b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10, b02 = a00 * a13 - a03 * a10;
+  const b03 = a01 * a12 - a02 * a11, b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12;
+  const b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30, b08 = a20 * a33 - a23 * a30;
+  const b09 = a21 * a32 - a22 * a31, b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
+
+  let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+  if (!det) return null;
+  det = 1 / det;
+
+  const out = new Float32Array(16);
+  out[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
+  out[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
+  out[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det;
+  out[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
+  out[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det;
+  out[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
+  out[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det;
+  out[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
+  out[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det;
+  out[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
+  out[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det;
+  out[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
+  out[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det;
+  out[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
+  out[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
+  out[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
+  return out;
+}
+
+// Transforms a point (w=1) by m — used for both the model->world vertex math
+// and the camera unproject (Task 5).
+function mat4TransformPoint(m, p) {
+  const x = p[0], y = p[1], z = p[2];
+  return [
+    m[0] * x + m[4] * y + m[8] * z + m[12],
+    m[1] * x + m[5] * y + m[9] * z + m[13],
+    m[2] * x + m[6] * y + m[10] * z + m[14],
+  ];
+}
+
+function vec3Add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+function vec3Sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function vec3Scale(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
+function vec3Dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function vec3Cross(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+function vec3Length(a) { return Math.hypot(a[0], a[1], a[2]); }
+function vec3Normalize(a) {
+  const len = vec3Length(a);
+  return len > 1e-8 ? [a[0] / len, a[1] / len, a[2] / len] : [0, 0, 0];
+}
+```
+
+- [ ] **Step 2: Write `dev/smoke.js`'s runner + math tests**
+
+```js
+#!/usr/bin/env node
+"use strict";
+// Headless test harness for Tank Yard. Zero dependencies. WebGL can't run in
+// Node, so this only ever tests PURE functions (math, geometry data, game
+// logic) — anything touching gl.* is exercised via a stub GL object (added
+// in Task 3) that just needs to not throw, not to render correctly.
+//
+// Run: node games/tank-yard-fable/dev/smoke.js   (exit 0 = all tests pass)
+const fs = require("fs");
+const path = require("path");
+const vm = require("vm");
+
+const GAME_PATH = path.join(__dirname, "..", "game.js");
+const GAME = fs.readFileSync(GAME_PATH, "utf8");
+
+// Shim appended to the game source so this harness can reach its top-level
+// functions/state — const/let/function at vm-script top level are NOT
+// context globals, so the shim must be concatenated into the same script.
+const SHIM = `
+;globalThis.__t = {
+  mat4Identity, mat4Multiply, mat4Translate, mat4Scale, mat4RotateX, mat4RotateY,
+  mat4Perspective, mat4LookAt, mat4Invert, mat4TransformPoint,
+  vec3Add, vec3Sub, vec3Scale, vec3Dot, vec3Cross, vec3Length, vec3Normalize,
+};`;
+
+function load() {
+  const sandbox = { console };
+  vm.createContext(sandbox);
+  vm.runInContext(GAME + SHIM, sandbox, { filename: "game.js" });
+  return sandbox.__t;
+}
+
+let failures = 0, count = 0;
+function test(name, fn) {
+  count++;
+  try { fn(); console.log("  ok   " + name); }
+  catch (e) { failures++; console.log("  FAIL " + name + "\n       " + (e && e.message)); }
+}
+function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
+function closeArr(a, b, tol, msg) {
+  for (let i = 0; i < a.length; i++) {
+    if (Math.abs(a[i] - b[i]) > tol) throw new Error((msg || "arrays differ") + ` at index ${i}: ${a[i]} vs ${b[i]}`);
+  }
+}
+
+console.log("math module");
+const t = load();
+
+test("mat4Identity transforms a point to itself", () => {
+  closeArr(t.mat4TransformPoint(t.mat4Identity(), [3, -2, 5]), [3, -2, 5], 1e-9);
+});
+
+test("mat4Translate moves a point by the given offset", () => {
+  const m = t.mat4Translate(t.mat4Identity(), 1, 2, 3);
+  closeArr(t.mat4TransformPoint(m, [0, 0, 0]), [1, 2, 3], 1e-9);
+});
+
+test("mat4Scale scales a point about the origin", () => {
+  const m = t.mat4Scale(t.mat4Identity(), 2, 3, 4);
+  closeArr(t.mat4TransformPoint(m, [1, 1, 1]), [2, 3, 4], 1e-9);
+});
+
+test("mat4RotateY(PI/2) maps +X to +Z", () => {
+  const m = t.mat4RotateY(t.mat4Identity(), Math.PI / 2);
+  closeArr(t.mat4TransformPoint(m, [1, 0, 0]), [0, 0, 1], 1e-6);
+});
+
+test("mat4RotateX(PI/2) maps +Y to -Z", () => {
+  const m = t.mat4RotateX(t.mat4Identity(), Math.PI / 2);
+  closeArr(t.mat4TransformPoint(m, [0, 1, 0]), [0, 0, -1], 1e-6);
+});
+
+test("mat4Multiply composes transforms left-to-right (translate then scale)", () => {
+  // scale(translate(I,1,0,0), 2,2,2) applied to origin: translate first -> (1,0,0), then scale -> (2,0,0)
+  const m = t.mat4Scale(t.mat4Translate(t.mat4Identity(), 1, 0, 0), 2, 2, 2);
+  closeArr(t.mat4TransformPoint(m, [0, 0, 0]), [2, 0, 0], 1e-9);
+});
+
+test("mat4Invert(m) composed with m is the identity", () => {
+  let m = t.mat4Translate(t.mat4Identity(), 5, -3, 2);
+  m = t.mat4RotateY(m, 0.7);
+  m = t.mat4Scale(m, 1.5, 2, 0.5);
+  const inv = t.mat4Invert(m);
+  assert(inv !== null, "invertible matrix must not return null");
+  const roundTrip = t.mat4Multiply(inv, m);
+  closeArr(roundTrip, t.mat4Identity(), 1e-4, "inv(m)*m should be ~identity");
+});
+
+test("mat4LookAt places the eye at the origin of its own view space", () => {
+  const view = t.mat4LookAt([0, 5, 10], [0, 0, 0], [0, 1, 0]);
+  const eyeInView = t.mat4TransformPoint(view, [0, 5, 10]);
+  closeArr(eyeInView, [0, 0, 0], 1e-5, "the eye position transforms to the view-space origin");
+});
+
+test("mat4Perspective is invertible (sanity check on the projection matrix)", () => {
+  const p = t.mat4Perspective(Math.PI / 3, 16 / 9, 0.1, 1000);
+  assert(t.mat4Invert(p) !== null, "perspective matrix must be invertible");
+});
+
+test("vec3 basic ops", () => {
+  closeArr(t.vec3Add([1, 2, 3], [4, 5, 6]), [5, 7, 9], 1e-9);
+  closeArr(t.vec3Sub([4, 5, 6], [1, 2, 3]), [3, 3, 3], 1e-9);
+  closeArr(t.vec3Scale([1, 2, 3], 2), [2, 4, 6], 1e-9);
+  assert(Math.abs(t.vec3Dot([1, 0, 0], [0, 1, 0])) < 1e-9, "perpendicular vectors dot to 0");
+  closeArr(t.vec3Cross([1, 0, 0], [0, 1, 0]), [0, 0, 1], 1e-9);
+  assert(Math.abs(t.vec3Length([3, 4, 0]) - 5) < 1e-9, "3-4-5 triangle");
+  const n = t.vec3Normalize([0, 3, 4]);
+  assert(Math.abs(t.vec3Length(n) - 1) < 1e-9, "normalized vector has length 1");
+});
+
+console.log(`\n${count - failures}/${count} passed`);
+process.exitCode = failures ? 1 : 0;
+```
+
+- [ ] **Step 3: Run the tests**
+
+Run: `node games/tank-yard-fable/dev/smoke.js`
+Expected: `10/10 passed`, exit 0.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add games/tank-yard-fable/game.js games/tank-yard-fable/dev/smoke.js
+git commit -m "feat(tank-yard): math module (mat4/vec3) with full test coverage"
+```
+
+---
+
+### Task 2: Geometry builders (box, cylinder) — pure, zero mocking needed
+
+**Files:**
+- Modify: `games/tank-yard-fable/game.js` (append after the math module)
+- Modify: `games/tank-yard-fable/dev/smoke.js` (append tests + shim entries)
+
+**Interfaces:**
+- Consumes: nothing from Task 1 directly (geometry math is independent of the mat4/vec3 module).
+- Produces (used by Task 3's buffer upload and every later task that draws a shape): `makeBox(w, h, d)` and `makeCylinder(radialSegments, height, radiusTop, radiusBottom)`, both returning `{ positions: Float32Array, normals: Float32Array, indices: Uint16Array }`. Every face across both builders is flat-shaded (each face/quad has its own duplicated vertices and a single constant normal) — there is no vertex-normal averaging anywhere in this game's geometry, by design (toon shading reads as faceted either way, and flat-shading is simpler to generate correctly).
+
+- [ ] **Step 1: Append the geometry builders to `game.js`**
+
+```js
+
+// ----------------------------------------------------------------------------
+// Geometry — two procedural builders cover every shape in the game (spec S5).
+// Every face is FLAT-shaded: each face gets its own duplicated vertices and a
+// single constant normal, never averaged with a neighboring face. Positions
+// are centered on the local origin (callers position/orient via the model
+// matrix, never by baking an offset into the vertex data).
+// ----------------------------------------------------------------------------
+function makeBox(w, h, d) {
+  const hw = w / 2, hh = h / 2, hd = d / 2;
+  const faces = [
+    { n: [0, 0, 1], v: [[-hw, -hh, hd], [hw, -hh, hd], [hw, hh, hd], [-hw, hh, hd]] },
+    { n: [0, 0, -1], v: [[hw, -hh, -hd], [-hw, -hh, -hd], [-hw, hh, -hd], [hw, hh, -hd]] },
+    { n: [1, 0, 0], v: [[hw, -hh, hd], [hw, -hh, -hd], [hw, hh, -hd], [hw, hh, hd]] },
+    { n: [-1, 0, 0], v: [[-hw, -hh, -hd], [-hw, -hh, hd], [-hw, hh, hd], [-hw, hh, -hd]] },
+    { n: [0, 1, 0], v: [[-hw, hh, hd], [hw, hh, hd], [hw, hh, -hd], [-hw, hh, -hd]] },
+    { n: [0, -1, 0], v: [[-hw, -hh, -hd], [hw, -hh, -hd], [hw, -hh, hd], [-hw, -hh, hd]] },
+  ];
+  const positions = [], normals = [], indices = [];
+  faces.forEach((face, fi) => {
+    const base = fi * 4;
+    face.v.forEach((v) => {
+      positions.push(v[0], v[1], v[2]);
+      normals.push(face.n[0], face.n[1], face.n[2]);
+    });
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  });
+  return {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    indices: new Uint16Array(indices),
+  };
+}
+
+// radiusTop = 0 produces a cone (the top ring collapses to a point and the
+// top-cap fan is skipped entirely — no separate cone builder needed).
+// radiusBottom = 0 produces an inverted cone the same way.
+function makeCylinder(radialSegments, height, radiusTop, radiusBottom) {
+  const hh = height / 2;
+  const positions = [], normals = [], indices = [];
+  let idx = 0;
+
+  // Side wall: one flat quad per segment. Normal = the segment's midpoint
+  // radial direction — exact for a straight cylinder, a reasonable
+  // placeholder approximation for a tapered one (ignores the slant).
+  for (let i = 0; i < radialSegments; i++) {
+    const a0 = (i / radialSegments) * Math.PI * 2;
+    const a1 = ((i + 1) / radialSegments) * Math.PI * 2;
+    const aMid = (a0 + a1) / 2;
+    const nx = Math.cos(aMid), nz = Math.sin(aMid);
+    const quad = [
+      [radiusBottom * Math.cos(a0), -hh, radiusBottom * Math.sin(a0)],
+      [radiusBottom * Math.cos(a1), -hh, radiusBottom * Math.sin(a1)],
+      [radiusTop * Math.cos(a1), hh, radiusTop * Math.sin(a1)],
+      [radiusTop * Math.cos(a0), hh, radiusTop * Math.sin(a0)],
+    ];
+    quad.forEach((v) => { positions.push(v[0], v[1], v[2]); normals.push(nx, 0, nz); });
+    indices.push(idx, idx + 1, idx + 2, idx, idx + 2, idx + 3);
+    idx += 4;
+  }
+
+  if (radiusTop > 0) {
+    const centerIdx = idx;
+    positions.push(0, hh, 0); normals.push(0, 1, 0); idx++;
+    for (let i = 0; i <= radialSegments; i++) {
+      const a = (i / radialSegments) * Math.PI * 2;
+      positions.push(radiusTop * Math.cos(a), hh, radiusTop * Math.sin(a));
+      normals.push(0, 1, 0);
+      idx++;
+    }
+    for (let i = 0; i < radialSegments; i++) indices.push(centerIdx, centerIdx + 1 + i, centerIdx + 2 + i);
+  }
+
+  if (radiusBottom > 0) {
+    const centerIdx = idx;
+    positions.push(0, -hh, 0); normals.push(0, -1, 0); idx++;
+    for (let i = 0; i <= radialSegments; i++) {
+      const a = (i / radialSegments) * Math.PI * 2;
+      positions.push(radiusBottom * Math.cos(a), -hh, radiusBottom * Math.sin(a));
+      normals.push(0, -1, 0);
+      idx++;
+    }
+    // Reversed winding vs. the top cap so it still faces outward (downward).
+    for (let i = 0; i < radialSegments; i++) indices.push(centerIdx, centerIdx + 2 + i, centerIdx + 1 + i);
+  }
+
+  return {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    indices: new Uint16Array(indices),
+  };
+}
+```
+
+- [ ] **Step 2: Add `makeBox`/`makeCylinder` to the `smoke.js` shim and write tests**
+
+In `dev/smoke.js`, add to the `SHIM` string's exported object: `makeBox, makeCylinder,` (alongside the existing math exports).
+
+```js
+console.log("geometry builders");
+
+test("makeBox produces 24 vertices (4 per face x 6 faces) and 36 indices", () => {
+  const box = t.makeBox(2, 1, 3);
+  assert(box.positions.length === 24 * 3, "24 vertices x 3 components");
+  assert(box.normals.length === 24 * 3, "one normal per vertex");
+  assert(box.indices.length === 36, "6 faces x 2 triangles x 3 indices");
+  for (let i = 0; i < box.indices.length; i++) {
+    assert(box.indices[i] < box.positions.length / 3, "every index references a real vertex");
+  }
+});
+
+test("makeBox normals are all unit length", () => {
+  const box = t.makeBox(2, 1, 3);
+  for (let i = 0; i < box.normals.length; i += 3) {
+    const len = Math.hypot(box.normals[i], box.normals[i + 1], box.normals[i + 2]);
+    close(len, 1, 1e-9, `normal at vertex ${i / 3} should be unit length`);
+  }
+});
+
+test("makeCylinder(straight) produces the expected vertex/index counts with both caps", () => {
+  const seg = 8;
+  const cyl = t.makeCylinder(seg, 2, 1, 1); // radiusTop === radiusBottom > 0 -> both caps present
+  const expectedVerts = seg * 4 /* side */ + (1 + seg + 1) /* top cap: center + ring */ + (1 + seg + 1) /* bottom cap */;
+  assert(cyl.positions.length / 3 === expectedVerts, `expected ${expectedVerts} vertices, got ${cyl.positions.length / 3}`);
+  const expectedIndices = seg * 6 /* side */ + seg * 3 /* top cap fan */ + seg * 3 /* bottom cap fan */;
+  assert(cyl.indices.length === expectedIndices, `expected ${expectedIndices} indices, got ${cyl.indices.length}`);
+  for (let i = 0; i < cyl.indices.length; i++) {
+    assert(cyl.indices[i] < cyl.positions.length / 3, "every index references a real vertex");
+  }
+});
+
+test("makeCylinder(radiusTop=0) omits the top cap entirely (cone shape)", () => {
+  const seg = 6;
+  const cone = t.makeCylinder(seg, 2, 0, 1); // radiusTop === 0 -> no top cap
+  const expectedVerts = seg * 4 /* side (degenerate at the tip, still 4 verts/quad) */ + (1 + seg + 1) /* bottom cap only */;
+  assert(cone.positions.length / 3 === expectedVerts, `expected ${expectedVerts} vertices for a cone, got ${cone.positions.length / 3}`);
+});
+
+test("makeCylinder side-wall normals are unit length", () => {
+  const cyl = t.makeCylinder(8, 2, 1, 0.5);
+  const sideVertCount = 8 * 4;
+  for (let i = 0; i < sideVertCount * 3; i += 3) {
+    const len = Math.hypot(cyl.normals[i], cyl.normals[i + 1], cyl.normals[i + 2]);
+    close(len, 1, 1e-9, `side normal at vertex ${i / 3} should be unit length`);
+  }
+});
+```
+
+- [ ] **Step 3: Run the tests**
+
+Run: `node games/tank-yard-fable/dev/smoke.js`
+Expected: `15/15 passed` (10 from Task 1 + 5 new), exit 0.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add games/tank-yard-fable/game.js games/tank-yard-fable/dev/smoke.js
+git commit -m "feat(tank-yard): procedural box/cylinder geometry builders with full test coverage"
+```
+
+---
+
+### Task 3: WebGL scaffold — context setup, shader/program/mesh helpers, mock-GL test harness
+
+**Files:**
+- Create: `games/tank-yard-fable/index.html`
+- Create: `games/tank-yard-fable/style.css`
+- Modify: `games/tank-yard-fable/game.js` (append after the geometry builders)
+- Modify: `games/tank-yard-fable/dev/smoke.js` (replace the Task-1 `load()` helper with a full `boot()` — from this task on, `game.js` touches the DOM at top level, so every test run needs the full stub environment, same reasoning as Echo Cartographer's `dev/smoke.js`)
+
+**Interfaces:**
+- Consumes: nothing new from Tasks 1-2 directly, but `makeMesh` (below) takes the `{positions, normals, indices}` shape `makeBox`/`makeCylinder` produce.
+- Produces (used by Task 4 onward): `compileShader(gl, type, source)`, `createProgram(gl, vsSource, fsSource)`, `makeMesh(gl, meshData)` returning `{posBuf, normBuf, idxBuf, count}`. Module-level `gl` (the WebGL context, or `null` if unsupported), `canvas`, `W`/`H` (current CSS pixel size), `resize()`.
+
+- [ ] **Step 1: Create `index.html`**
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tank Yard Fable</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="stage">
+    <canvas id="game"></canvas>
+    <div id="noWebgl">Your browser doesn't support WebGL, so Tank Yard Fable can't run here.</div>
+    <div id="hud"></div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
+```
+
+- [ ] **Step 2: Create `style.css`**
+
+```css
+html, body { margin: 0; padding: 0; overflow: hidden; background: #1a1a1a; }
+#stage { position: relative; width: 100vw; height: 100vh; }
+#game { display: block; width: 100%; height: 100%; }
+#noWebgl {
+  display: none; position: absolute; inset: 0; color: #eee; background: #1a1a1a;
+  font: 16px system-ui, sans-serif; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px;
+}
+#hud { position: absolute; inset: 0; pointer-events: none; font: 14px system-ui, sans-serif; color: #fff; }
+```
+
+(The duplicate `display:` in `#noWebgl` is intentional: `display: none` is the default hidden state; Task 9's HUD work will flip it to `display: flex` via a class toggle from `game.js` if `gl` is null. Both declarations are listed now so the class-toggle target is unambiguous later — remove the redundant first `display: none;` once Task 9 adds the real toggle class, keeping only the flex declaration under that class.)
+
+- [ ] **Step 3: Append the WebGL scaffold to `game.js`**
+
+```js
+
+// ----------------------------------------------------------------------------
+// WebGL setup — context creation, resize, shader/program/mesh helpers.
+// gl stays null if unsupported (file://-safe: never throw on script load,
+// matching this hub's convention of never crashing on unsupported browsers).
+// ----------------------------------------------------------------------------
+const canvas = document.getElementById("game");
+const gl = canvas.getContext("webgl");
+if (!gl) {
+  const warn = document.getElementById("noWebgl");
+  if (warn) warn.style.display = "flex";
+}
+
+let W = 0, H = 0;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+  if (gl) gl.viewport(0, 0, W, H);
+}
+window.addEventListener("resize", resize);
+
+function compileShader(glCtx, type, source) {
+  const shader = glCtx.createShader(type);
+  glCtx.shaderSource(shader, source);
+  glCtx.compileShader(shader);
+  if (!glCtx.getShaderParameter(shader, glCtx.COMPILE_STATUS)) {
+    const info = glCtx.getShaderInfoLog(shader);
+    glCtx.deleteShader(shader);
+    throw new Error("Shader compile error: " + info);
+  }
+  return shader;
+}
+
+function createProgram(glCtx, vsSource, fsSource) {
+  const vs = compileShader(glCtx, glCtx.VERTEX_SHADER, vsSource);
+  const fs = compileShader(glCtx, glCtx.FRAGMENT_SHADER, fsSource);
+  const program = glCtx.createProgram();
+  glCtx.attachShader(program, vs);
+  glCtx.attachShader(program, fs);
+  glCtx.linkProgram(program);
+  if (!glCtx.getProgramParameter(program, glCtx.LINK_STATUS)) {
+    throw new Error("Program link error: " + glCtx.getProgramInfoLog(program));
+  }
+  return program;
+}
+
+// Uploads a {positions, normals, indices} mesh (from makeBox/makeCylinder)
+// into 3 WebGL buffers. `count` is what gl.drawElements needs later.
+function makeMesh(glCtx, meshData) {
+  const posBuf = glCtx.createBuffer();
+  glCtx.bindBuffer(glCtx.ARRAY_BUFFER, posBuf);
+  glCtx.bufferData(glCtx.ARRAY_BUFFER, meshData.positions, glCtx.STATIC_DRAW);
+
+  const normBuf = glCtx.createBuffer();
+  glCtx.bindBuffer(glCtx.ARRAY_BUFFER, normBuf);
+  glCtx.bufferData(glCtx.ARRAY_BUFFER, meshData.normals, glCtx.STATIC_DRAW);
+
+  const idxBuf = glCtx.createBuffer();
+  glCtx.bindBuffer(glCtx.ELEMENT_ARRAY_BUFFER, idxBuf);
+  glCtx.bufferData(glCtx.ELEMENT_ARRAY_BUFFER, meshData.indices, glCtx.STATIC_DRAW);
+
+  return { posBuf, normBuf, idxBuf, count: meshData.indices.length };
+}
+
+resize();
+```
+
+- [ ] **Step 4: Replace `dev/smoke.js`'s `load()` with a full `boot()` that stubs the DOM + a mock WebGL context**
+
+Replace the entire current `load()` function and the `SHIM`/test-setup lines around it with:
+
+```js
+// SHIM: appended to the game source so this harness can reach its top-level
+// functions/state. Extend this object as later tasks add more to game.js.
+const SHIM = `
+;globalThis.__t = {
+  mat4Identity, mat4Multiply, mat4Translate, mat4Scale, mat4RotateX, mat4RotateY,
+  mat4Perspective, mat4LookAt, mat4Invert, mat4TransformPoint,
+  vec3Add, vec3Sub, vec3Scale, vec3Dot, vec3Cross, vec3Length, vec3Normalize,
+  makeBox, makeCylinder,
+  compileShader, createProgram, makeMesh,
+  get gl() { return gl; },
+};`;
+
+// A minimal WebGL context stub: constants resolve to distinct numbers,
+// create* calls return unique dummy handles, get*Parameter calls report
+// success so compile/link error-checking code never takes its throw path,
+// and every other method (bindBuffer, bufferData, useProgram, drawElements,
+// etc.) is a silent no-op — mirrors the same Proxy trick this repo's other
+// dev/smoke.js harnesses use for a mocked 2D canvas context.
+function makeMockGL() {
+  let handleCounter = 1;
+  const constants = {
+    VERTEX_SHADER: 1, FRAGMENT_SHADER: 2, COMPILE_STATUS: 3, LINK_STATUS: 4,
+    ARRAY_BUFFER: 5, ELEMENT_ARRAY_BUFFER: 6, STATIC_DRAW: 7,
+    TRIANGLES: 8, POINTS: 9, UNSIGNED_SHORT: 10, FLOAT: 11,
+    DEPTH_TEST: 12, LEQUAL: 13, CULL_FACE: 14, BACK: 15,
+    COLOR_BUFFER_BIT: 16, DEPTH_BUFFER_BIT: 17, BLEND: 18, SRC_ALPHA: 19,
+    ONE_MINUS_SRC_ALPHA: 20,
+  };
+  const base = Object.assign({}, constants, {
+    createShader: () => ({ id: handleCounter++ }),
+    createProgram: () => ({ id: handleCounter++ }),
+    createBuffer: () => ({ id: handleCounter++ }),
+    getShaderParameter: () => true,
+    getProgramParameter: () => true,
+    getShaderInfoLog: () => "",
+    getProgramInfoLog: () => "",
+    getAttribLocation: () => 0,
+    getUniformLocation: () => ({ id: handleCounter++ }),
+  });
+  return new Proxy(base, {
+    get(t, prop) {
+      if (prop in t) return t[prop];
+      if (typeof prop === "string") { t[prop] = () => {}; return t[prop]; }
+      return undefined;
+    },
+  });
+}
+
+function makeMockCanvas() {
+  return {
+    width: 0, height: 0, style: {},
+    getContext: (type) => (type === "webgl" ? makeMockGL() : null),
+    addEventListener() {},
+  };
+}
+
+function boot() {
+  const gameCanvas = makeMockCanvas();
+  const noWebglDiv = { style: {} };
+  const hudDiv = { style: {}, classList: { add() {}, remove() {} } };
+  const elementsById = { game: gameCanvas, noWebgl: noWebglDiv, hud: hudDiv };
+  const sandbox = {
+    console,
+    window: { innerWidth: 1280, innerHeight: 800, addEventListener() {} },
+    document: { getElementById: (id) => elementsById[id] || null, addEventListener() {} },
+    performance: { now: () => 0 },
+    requestAnimationFrame() {},
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(GAME + SHIM, sandbox, { filename: "game.js" });
+  return sandbox.__t;
+}
+```
+
+Then change every existing test's `load()` call to `boot()` (search-and-replace `const t = load();` → `const t = boot();`).
+
+- [ ] **Step 5: Add WebGL-scaffold tests**
+
+```js
+console.log("WebGL scaffold");
+
+test("gl is non-null under the mock environment (WebGL context created successfully)", () => {
+  const t = boot();
+  assert(t.gl !== null && t.gl !== undefined, "mock getContext('webgl') should yield a truthy context");
+});
+
+test("createProgram compiles+links without throwing under the mock GL", () => {
+  const t = boot();
+  const program = t.createProgram(t.gl, "attribute vec3 p; void main(){gl_Position=vec4(p,1.0);}", "void main(){gl_FragColor=vec4(1.0);}");
+  assert(program !== null && program !== undefined, "createProgram should return a program handle");
+});
+
+test("makeMesh uploads a box mesh without throwing and reports the right index count", () => {
+  const t = boot();
+  const box = t.makeBox(1, 1, 1);
+  const mesh = t.makeMesh(t.gl, box);
+  assert(mesh.count === box.indices.length, "mesh.count should equal the source mesh's index count");
+  assert(mesh.posBuf && mesh.normBuf && mesh.idxBuf, "all three buffer handles should be truthy");
+});
+```
+
+- [ ] **Step 6: Run the tests**
+
+Run: `node games/tank-yard-fable/dev/smoke.js`
+Expected: `18/18 passed` (15 from Tasks 1-2 + 3 new), exit 0.
+
+- [ ] **Step 7: Manual sanity check**
+
+Open `games/tank-yard-fable/index.html` in a real browser. Expected: a blank canvas filling the window, no console errors, no "WebGL not supported" message (unless your browser genuinely lacks WebGL). There is nothing to render yet — Task 4 adds the first visible shape.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add games/tank-yard-fable/index.html games/tank-yard-fable/style.css games/tank-yard-fable/game.js games/tank-yard-fable/dev/smoke.js
+git commit -m "feat(tank-yard): WebGL context setup, shader/program/mesh helpers, mock-GL test harness"
+```
+
+---
+
+### Task 4: Toon shader + first rendered shape (the "does the pipeline actually work" milestone)
+
+**Files:**
+- Modify: `games/tank-yard-fable/game.js` (append after the WebGL scaffold)
+- Modify: `games/tank-yard-fable/dev/smoke.js` (append boot-without-throwing tests + shim entries)
+
+**Interfaces:**
+- Consumes: `createProgram`, `makeMesh`, `gl`, `W`/`H`, `mat4*` (Tasks 1-3).
+- Produces (used by every later task that renders something): `drawMesh(mesh, modelMatrix, color)`, module-level `viewMatrix`/`projMatrix`, `LIGHT_DIR`, `initShaders()`, `render()`. Establishes GLSL attribute/uniform naming (`aPosition`, `aNormal`, `uModel`, `uView`, `uProjection`, `uColor`, `uLightDir`) that no later task changes.
+
+- [ ] **Step 1: Append the shader source, program init, and `drawMesh` to `game.js`**
+
+```js
+
+// ----------------------------------------------------------------------------
+// Toon shader — one vertex + one fragment program used for EVERY object in
+// the game (tanks, obstacles, ground, shells, particles). 3-band quantized
+// lighting is what makes this read as cartoonish rather than a flat default
+// Lambert look (spec S5) — the whole "look" of this game lives in the
+// fragment shader's if/else chain below.
+// ----------------------------------------------------------------------------
+const VERTEX_SHADER_SRC = `
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+varying vec3 vNormal;
+void main() {
+  vNormal = mat3(uModel) * aNormal;
+  gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
+}
+`;
+
+const FRAGMENT_SHADER_SRC = `
+precision mediump float;
+varying vec3 vNormal;
+uniform vec3 uColor;
+uniform vec3 uLightDir;
+void main() {
+  vec3 n = normalize(vNormal);
+  float ndotl = max(dot(n, normalize(uLightDir)), 0.0);
+  float band;
+  if (ndotl > 0.6) { band = 1.0; }
+  else if (ndotl > 0.2) { band = 0.65; }
+  else { band = 0.35; }
+  gl_FragColor = vec4(uColor * band, 1.0);
+}
+`;
+
+let program = null;
+let locs = null;
+function initShaders() {
+  if (!gl) return;
+  program = createProgram(gl, VERTEX_SHADER_SRC, FRAGMENT_SHADER_SRC);
+  locs = {
+    aPosition: gl.getAttribLocation(program, "aPosition"),
+    aNormal: gl.getAttribLocation(program, "aNormal"),
+    uModel: gl.getUniformLocation(program, "uModel"),
+    uView: gl.getUniformLocation(program, "uView"),
+    uProjection: gl.getUniformLocation(program, "uProjection"),
+    uColor: gl.getUniformLocation(program, "uColor"),
+    uLightDir: gl.getUniformLocation(program, "uLightDir"),
+  };
+}
+
+let viewMatrix = mat4Identity();
+let projMatrix = mat4Identity();
+const LIGHT_DIR = [0.5, 1.0, 0.3]; // one fixed directional "sun", never moves
+
+function updateProjection() {
+  projMatrix = mat4Perspective(Math.PI / 3, W / Math.max(1, H), 0.1, 500);
+}
+
+function drawMesh(mesh, modelMatrix, color) {
+  if (!gl) return;
+  gl.useProgram(program);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.posBuf);
+  gl.enableVertexAttribArray(locs.aPosition);
+  gl.vertexAttribPointer(locs.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.normBuf);
+  gl.enableVertexAttribArray(locs.aNormal);
+  gl.vertexAttribPointer(locs.aNormal, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.idxBuf);
+
+  gl.uniformMatrix4fv(locs.uModel, false, modelMatrix);
+  gl.uniformMatrix4fv(locs.uView, false, viewMatrix);
+  gl.uniformMatrix4fv(locs.uProjection, false, projMatrix);
+  gl.uniform3fv(locs.uColor, color);
+  gl.uniform3fv(locs.uLightDir, LIGHT_DIR);
+
+  gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+}
+
+function render() {
+  if (!gl) return;
+  gl.viewport(0, 0, W, H);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+  gl.clearColor(0.55, 0.75, 0.95, 1); // flat sky color, no gradient/skybox needed
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+}
+
+// --- Task-4-only test scene: proves the whole pipeline renders a shape.
+// Task 5 replaces this with the real player/enemy/obstacle scene. ---
+let __testBoxMesh = null;
+function __initTestScene() {
+  if (!gl) return;
+  __testBoxMesh = makeMesh(gl, makeBox(2, 2, 2));
+  viewMatrix = mat4LookAt([4, 4, 8], [0, 0, 0], [0, 1, 0]);
+}
+function __renderTestScene() {
+  render();
+  if (__testBoxMesh) drawMesh(__testBoxMesh, mat4Identity(), [0.24, 0.86, 0.42]);
+}
+
+function frame() {
+  updateProjection();
+  __renderTestScene();
+  requestAnimationFrame(frame);
+}
+
+initShaders();
+__initTestScene();
+requestAnimationFrame(frame);
+```
+
+- [ ] **Step 2: Add boot-without-throwing tests to `dev/smoke.js`**
+
+Add `initShaders, render, drawMesh, makeMesh, mat4LookAt,` to the shim if not already present (`makeMesh`/`mat4LookAt` already are). Add `initShaders,` and `render,`.
+
+```js
+console.log("toon shader + first render");
+
+test("initShaders compiles+links the toon shader program without throwing", () => {
+  const t = boot();
+  t.initShaders();
+});
+
+test("render() clears the screen without throwing (no shape drawn yet in this call)", () => {
+  const t = boot();
+  t.initShaders();
+  t.render();
+});
+
+test("drawMesh issues a full draw call without throwing", () => {
+  const t = boot();
+  t.initShaders();
+  const mesh = t.makeMesh(t.gl, t.makeBox(1, 1, 1));
+  t.render();
+  t.drawMesh(mesh, t.mat4Identity(), [1, 0, 0]);
+});
+```
+
+- [ ] **Step 3: Run the tests**
+
+Run: `node games/tank-yard-fable/dev/smoke.js`
+Expected: `21/21 passed` (18 from Tasks 1-3 + 3 new), exit 0.
+
+- [ ] **Step 4: Manual sanity check (this is the real verification for this task)**
+
+Open `games/tank-yard-fable/index.html` in a real browser. Expected: a light-blue background fills the window, and a **green box is visible in the center**, shaded with visible hard light/shadow bands (not a smooth gradient) — confirming the toon shader, the box geometry, the camera, and the full buffer/draw pipeline all work together. If the box is missing, black, or the console shows a shader error, stop and fix before continuing — every later task builds on this exact pipeline.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add games/tank-yard-fable/game.js games/tank-yard-fable/dev/smoke.js
+git commit -m "feat(tank-yard): toon-shading shader + first rendered shape"
+```
+
+---
+
+### Task 5: Ground plane, chase camera, player tank composition, turret-aim math
+
+**Files:**
+- Modify: `games/tank-yard-fable/game.js` (replaces Task 4's `VERTEX_SHADER_SRC`/`FRAGMENT_SHADER_SRC`/`drawMesh`/`locs`/test-scene block with the versions below; appends the new math/composition functions)
+- Modify: `games/tank-yard-fable/dev/smoke.js` (append tests + shim entries)
+
+**Interfaces:**
+- Consumes: everything from Tasks 1-4.
+- Produces (used by Task 6 onward): `mat4TransformVec4(m,x,y,z,w)`, `unprojectPoint(invVP,ndcX,ndcY,ndcZ)`, `screenRayGroundIntersection(invVP,ndcX,ndcY)` (returns `[x,y,z]` or `null`), `turretAimYaw(hullX,hullZ,hullYaw,targetX,targetZ)` (returns turret yaw *relative* to hull yaw), `tankTransforms(tank)` where `tank = {x,z,hullYaw,turretYaw}` (returns `{hullMatrix,turretMatrix,barrelMatrix}`), `updateChaseCam(camPos,camLook,hullX,hullZ,hullYaw,dt)` (returns `{pos,look}`), `drawGround(mesh,modelMatrix)`, `HULL_SIZE`, `TURRET_HEIGHT_OFFSET`, `BARREL_FORWARD_OFFSET` constants.
+
+- [ ] **Step 1: Replace Task 4's shader/drawMesh/locs block to add ground-checkerboard support**
+
+Find the `VERTEX_SHADER_SRC` through `render()` block from Task 4 and replace `VERTEX_SHADER_SRC`, `FRAGMENT_SHADER_SRC`, the `locs` object inside `initShaders`, and `drawMesh`, with:
+
+```js
+const VERTEX_SHADER_SRC = `
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+varying vec3 vNormal;
+varying vec3 vWorldPos;
+void main() {
+  vNormal = mat3(uModel) * aNormal;
+  vec4 worldPos = uModel * vec4(aPosition, 1.0);
+  vWorldPos = worldPos.xyz;
+  gl_Position = uProjection * uView * worldPos;
+}
+`;
+
+const FRAGMENT_SHADER_SRC = `
+precision mediump float;
+varying vec3 vNormal;
+varying vec3 vWorldPos;
+uniform vec3 uColor;
+uniform vec3 uLightDir;
+uniform float uIsGround;
+void main() {
+  vec3 n = normalize(vNormal);
+  float ndotl = max(dot(n, normalize(uLightDir)), 0.0);
+  float band;
+  if (ndotl > 0.6) { band = 1.0; }
+  else if (ndotl > 0.2) { band = 0.65; }
+  else { band = 0.35; }
+
+  vec3 baseColor = uColor;
+  if (uIsGround > 0.5) {
+    float checker = mod(floor(vWorldPos.x / 4.0) + floor(vWorldPos.z / 4.0), 2.0);
+    baseColor = mix(vec3(0.30, 0.62, 0.30), vec3(0.26, 0.56, 0.26), checker);
+  }
+
+  gl_FragColor = vec4(baseColor * band, 1.0);
+}
+`;
+```
+
+Inside `initShaders()`, add `uIsGround: gl.getUniformLocation(program, "uIsGround"),` to the `locs` object.
+
+Replace `drawMesh` with:
+
+```js
+function drawMeshRaw(mesh, modelMatrix, color, isGround) {
+  if (!gl) return;
+  gl.useProgram(program);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.posBuf);
+  gl.enableVertexAttribArray(locs.aPosition);
+  gl.vertexAttribPointer(locs.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.normBuf);
+  gl.enableVertexAttribArray(locs.aNormal);
+  gl.vertexAttribPointer(locs.aNormal, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.idxBuf);
+
+  gl.uniformMatrix4fv(locs.uModel, false, modelMatrix);
+  gl.uniformMatrix4fv(locs.uView, false, viewMatrix);
+  gl.uniformMatrix4fv(locs.uProjection, false, projMatrix);
+  gl.uniform3fv(locs.uColor, color);
+  gl.uniform3fv(locs.uLightDir, LIGHT_DIR);
+  gl.uniform1f(locs.uIsGround, isGround ? 1 : 0);
+
+  gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+}
+function drawMesh(mesh, modelMatrix, color) { drawMeshRaw(mesh, modelMatrix, color, false); }
+// Color is ignored for the ground (the shader computes its own checkerboard)
+// but a value is still passed for uniform-upload consistency.
+function drawGround(mesh, modelMatrix) { drawMeshRaw(mesh, modelMatrix, [1, 1, 1], true); }
+```
+
+Delete the entire `__testBoxMesh`/`__initTestScene`/`__renderTestScene`/`frame()`/boot-sequence block from Task 4 (from `let __testBoxMesh = null;` through the trailing `requestAnimationFrame(frame);`) — Step 6 below replaces it with the real scene.
+
+- [ ] **Step 2: Append the unproject / turret-aim math**
+
+```js
+
+// ----------------------------------------------------------------------------
+// Turret aim — the one genuinely nontrivial piece of math in this game (spec
+// S14). Mouse screen position -> NDC -> world-space ray -> ground-plane
+// intersection -> yaw angle. Every function here is pure.
+// ----------------------------------------------------------------------------
+function mat4TransformVec4(m, x, y, z, w) {
+  return [
+    m[0] * x + m[4] * y + m[8] * z + m[12] * w,
+    m[1] * x + m[5] * y + m[9] * z + m[13] * w,
+    m[2] * x + m[6] * y + m[10] * z + m[14] * w,
+    m[3] * x + m[7] * y + m[11] * z + m[15] * w,
+  ];
+}
+
+// Unprojects an NDC point (each axis in [-1,1]) back to world space through
+// the given INVERSE view-projection matrix, including the perspective divide
+// mat4TransformPoint deliberately skips (that function assumes an affine,
+// w-preserving transform, which a projection matrix is not).
+function unprojectPoint(invVP, ndcX, ndcY, ndcZ) {
+  const r = mat4TransformVec4(invVP, ndcX, ndcY, ndcZ, 1);
+  return [r[0] / r[3], r[1] / r[3], r[2] / r[3]];
+}
+
+// Casts a ray from the camera through an NDC screen point and returns where
+// it crosses the y=0 ground plane, or null if the ray is parallel to (or
+// pointing away from) the ground.
+function screenRayGroundIntersection(invVP, ndcX, ndcY) {
+  const near = unprojectPoint(invVP, ndcX, ndcY, -1);
+  const far = unprojectPoint(invVP, ndcX, ndcY, 1);
+  const dir = vec3Sub(far, near);
+  if (Math.abs(dir[1]) < 1e-8) return null;
+  const tHit = -near[1] / dir[1];
+  if (tHit < 0) return null;
+  return vec3Add(near, vec3Scale(dir, tHit));
+}
+
+// Returns the turret yaw RELATIVE to hullYaw needed to aim at (targetX,
+// targetZ) — add this to hullYaw to get the turret's absolute world yaw
+// (spec S7's composition rule). Convention: yaw 0 faces local +Z, and
+// mat4RotateY(theta) maps local +Z's rotated frame such that the facing
+// direction is (-sin(theta), 0, cos(theta)) — this formula is the inverse of
+// that mapping.
+function turretAimYaw(hullX, hullZ, hullYaw, targetX, targetZ) {
+  const dx = targetX - hullX, dz = targetZ - hullZ;
+  const absoluteYaw = Math.atan2(-dx, dz);
+  return absoluteYaw - hullYaw;
+}
+```
+
+- [ ] **Step 3: Append tank transform composition**
+
+```js
+
+// ----------------------------------------------------------------------------
+// Tank composition (spec S7): hull -> turret -> barrel, chained transforms.
+// `tank` is {x, z, hullYaw, turretYaw} (turretYaw relative to hullYaw, same
+// convention turretAimYaw returns). Pure — returns model matrices, draws
+// nothing itself.
+// ----------------------------------------------------------------------------
+const HULL_SIZE = [2, 0.8, 3];       // width, height, depth
+const TURRET_SIZE = [0.4, 1.3, 0.4]; // radiusBottom-ish, height, radiusTop-ish (see Task 7's makeCylinder call)
+const TURRET_HEIGHT_OFFSET = 0.9;    // where the turret pivot sits above the hull's own origin
+const BARREL_FORWARD_OFFSET = 1.6;   // how far forward of the turret pivot the barrel sits
+
+function tankTransforms(tank) {
+  let hullMatrix = mat4Translate(mat4Identity(), tank.x, HULL_SIZE[1] / 2, tank.z);
+  hullMatrix = mat4RotateY(hullMatrix, tank.hullYaw);
+
+  let turretMatrix = mat4Translate(hullMatrix, 0, TURRET_HEIGHT_OFFSET, 0);
+  turretMatrix = mat4RotateY(turretMatrix, tank.turretYaw);
+
+  const barrelMatrix = mat4Translate(turretMatrix, 0, 0, BARREL_FORWARD_OFFSET);
+
+  return { hullMatrix, turretMatrix, barrelMatrix };
+}
+```
+
+- [ ] **Step 4: Append the chase camera**
+
+```js
+
+// ----------------------------------------------------------------------------
+// Chase camera (spec S4): fixed offset behind+above the hull, lerped toward
+// its target each frame rather than snapping, so turns carry some weight.
+// Pure — caller stores {pos, look} in its own state and feeds it back in
+// next frame.
+// ----------------------------------------------------------------------------
+const CAM_BACK_OFFSET = 10;
+const CAM_UP_OFFSET = 6;
+const CAM_LOOK_HEIGHT = 2;
+const CAM_LERP_SPEED = 3; // higher = snappier; framerate-independent via exp decay
+
+function updateChaseCam(camPos, camLook, hullX, hullZ, hullYaw, dt) {
+  const backDir = mat4TransformPoint(mat4RotateY(mat4Identity(), hullYaw), [0, 0, -1]);
+  const desiredPos = [
+    hullX + backDir[0] * CAM_BACK_OFFSET,
+    CAM_UP_OFFSET,
+    hullZ + backDir[2] * CAM_BACK_OFFSET,
+  ];
+  const desiredLook = [hullX, CAM_LOOK_HEIGHT, hullZ];
+
+  const lerpAmt = 1 - Math.exp(-CAM_LERP_SPEED * dt);
+  return {
+    pos: vec3Add(camPos, vec3Scale(vec3Sub(desiredPos, camPos), lerpAmt)),
+    look: vec3Add(camLook, vec3Scale(vec3Sub(desiredLook, camLook), lerpAmt)),
+  };
+}
+```
+
+- [ ] **Step 5: Add tests for all of the above to `dev/smoke.js`**
+
+Add to the shim: `mat4TransformVec4, unprojectPoint, screenRayGroundIntersection, turretAimYaw, tankTransforms, updateChaseCam, drawGround, HULL_SIZE, TURRET_HEIGHT_OFFSET, BARREL_FORWARD_OFFSET,`.
+
+```js
+console.log("camera, tank composition, turret aim");
+
+test("screenRayGroundIntersection hits directly below the camera (straight-down view, screen center)", () => {
+  const proj = t.mat4Perspective(Math.PI / 3, 1, 0.1, 100);
+  const view = t.mat4LookAt([0, 10, 0], [0, 0, 0], [0, 0, -1]);
+  const invVP = t.mat4Invert(t.mat4Multiply(proj, view));
+  const hit = t.screenRayGroundIntersection(invVP, 0, 0);
+  assert(hit !== null, "a straight-down view must hit the ground plane");
+  closeArr(hit, [0, 0, 0], 1e-3, "screen-center ray should hit directly below the camera");
+});
+
+test("screenRayGroundIntersection returns null for a perfectly horizontal view (looking at the horizon)", () => {
+  const proj = t.mat4Perspective(Math.PI / 3, 1, 0.1, 100);
+  const view = t.mat4LookAt([0, 5, 0], [0, 5, -10], [0, 1, 0]);
+  const invVP = t.mat4Invert(t.mat4Multiply(proj, view));
+  const hit = t.screenRayGroundIntersection(invVP, 0, 0);
+  assert(hit === null, "a screen-center ray with a horizontal view direction must not report a ground hit");
+});
+
+test("turretAimYaw's resulting absolute yaw faces the target (self-consistent with mat4RotateY)", () => {
+  const hullX = 0, hullZ = 0, hullYaw = 0.4;
+  const targetX = 12, targetZ = -7;
+  const relYaw = t.turretAimYaw(hullX, hullZ, hullYaw, targetX, targetZ);
+  const absoluteYaw = hullYaw + relYaw;
+  const facing = t.mat4TransformPoint(t.mat4RotateY(t.mat4Identity(), absoluteYaw), [0, 0, 1]);
+  const toTarget = t.vec3Normalize([targetX - hullX, 0, targetZ - hullZ]);
+  closeArr(facing, toTarget, 1e-6, "the resulting absolute yaw should face the target");
+});
+
+test("tankTransforms: unrotated tank at the origin places hull/turret/barrel on a straight vertical+forward line", () => {
+  const parts = t.tankTransforms({ x: 0, z: 0, hullYaw: 0, turretYaw: 0 });
+  const hullPos = t.mat4TransformPoint(parts.hullMatrix, [0, 0, 0]);
+  const turretPos = t.mat4TransformPoint(parts.turretMatrix, [0, 0, 0]);
+  const barrelPos = t.mat4TransformPoint(parts.barrelMatrix, [0, 0, 0]);
+  closeArr(hullPos, [0, t.HULL_SIZE[1] / 2, 0], 1e-9);
+  closeArr(turretPos, [0, t.HULL_SIZE[1] / 2 + t.TURRET_HEIGHT_OFFSET, 0], 1e-9);
+  closeArr(barrelPos, [0, t.HULL_SIZE[1] / 2 + t.TURRET_HEIGHT_OFFSET, t.BARREL_FORWARD_OFFSET], 1e-9);
+});
+
+test("tankTransforms: the turret rides along with the hull's yaw, plus its own relative yaw on top", () => {
+  const parts = t.tankTransforms({ x: 0, z: 0, hullYaw: Math.PI / 2, turretYaw: 0 });
+  // hullYaw alone (turretYaw=0) should already rotate the barrel's direction
+  // the same way turretAimYaw's test proved a bare yaw rotates local +Z.
+  const barrelPos = t.mat4TransformPoint(parts.barrelMatrix, [0, 0, 0]);
+  const turretPos = t.mat4TransformPoint(parts.turretMatrix, [0, 0, 0]);
+  const barrelDir = t.vec3Normalize(t.vec3Sub(barrelPos, turretPos));
+  const expectedDir = t.mat4TransformPoint(t.mat4RotateY(t.mat4Identity(), Math.PI / 2), [0, 0, 1]);
+  closeArr(barrelDir, expectedDir, 1e-6, "barrel direction should follow hullYaw when turretYaw is 0");
+});
+
+test("updateChaseCam converges to the desired offset/look over repeated steps", () => {
+  let camPos = [0, 0, 0], camLook = [0, 0, 0];
+  for (let i = 0; i < 300; i++) {
+    const next = t.updateChaseCam(camPos, camLook, 5, 5, 0, 1 / 60);
+    camPos = next.pos; camLook = next.look;
+  }
+  closeArr(camPos, [5, 6, 5 - 10], 1e-2, "camera should converge behind (-Z, at hullYaw=0) and above the hull");
+  closeArr(camLook, [5, 2, 5], 1e-2, "look target should converge to just above the hull");
+});
+
+test("updateChaseCam moves partway toward the target on one small step, not instantly", () => {
+  const next = t.updateChaseCam([0, 0, 0], [0, 0, 0], 5, 5, 0, 1 / 60);
+  const dist = t.vec3Length(next.pos);
+  assert(dist > 0 && dist < t.vec3Length([5, 6, -5]), "one small step should move partway, matching spec S4's lerp requirement");
+});
+```
+
+- [ ] **Step 6: Wire up the real (still static) scene**
+
+Append, replacing the deleted Task-4 test-scene block:
+
+```js
+
+// ----------------------------------------------------------------------------
+// Scene assembly — meshes shared across every instance of a shape (spec S5:
+// only ~4 distinct buffer sets in the whole game).
+// ----------------------------------------------------------------------------
+let groundMesh = null, hullMesh = null, turretMesh = null, barrelMesh = null;
+function initMeshes() {
+  if (!gl) return;
+  groundMesh = makeMesh(gl, makeBox(80, 0.2, 80));
+  hullMesh = makeMesh(gl, makeBox(HULL_SIZE[0], HULL_SIZE[1], HULL_SIZE[2]));
+  turretMesh = makeMesh(gl, makeCylinder(10, 0.7, 0.9, 1.0));
+  barrelMesh = makeMesh(gl, makeCylinder(8, 1.6, 0.12, 0.12));
+}
+
+const PLAYER_COLOR = [0.24, 0.86, 0.42];
+
+// Static for now — no input wired up until Task 6. Proves the ground,
+// camera, and tank composition render together correctly.
+const player = { x: 0, z: 0, hullYaw: 0, turretYaw: 0 };
+let camPos = [0, CAM_UP_OFFSET, -CAM_BACK_OFFSET];
+let camLook = [0, CAM_LOOK_HEIGHT, 0];
+
+function drawPlayer() {
+  const parts = tankTransforms(player);
+  drawMesh(hullMesh, parts.hullMatrix, PLAYER_COLOR);
+  drawMesh(turretMesh, parts.turretMatrix, PLAYER_COLOR);
+  drawMesh(barrelMesh, parts.barrelMatrix, [0.15, 0.15, 0.15]);
+}
+
+function frame(nowMs) {
+  updateProjection();
+
+  const cam = updateChaseCam(camPos, camLook, player.x, player.z, player.hullYaw, 1 / 60);
+  camPos = cam.pos; camLook = cam.look;
+  viewMatrix = mat4LookAt(camPos, camLook, [0, 1, 0]);
+
+  render();
+  drawGround(groundMesh, mat4Translate(mat4Identity(), 0, -0.1, 0));
+  drawPlayer();
+
+  requestAnimationFrame(frame);
+}
+
+initShaders();
+initMeshes();
+requestAnimationFrame(frame);
+```
+
+- [ ] **Step 7: Run the tests**
+
+Run: `node games/tank-yard-fable/dev/smoke.js`
+Expected: `28/28 passed` (21 from Tasks 1-4 minus none removed + 7 new — the Task-4 test-scene tests still pass unchanged since `initShaders`/`render`/`drawMesh` keep the same signatures), exit 0.
+
+- [ ] **Step 8: Manual sanity check**
+
+Open `games/tank-yard-fable/index.html`. Expected: a green-and-darker-green checkerboard ground fills most of the view, and a green tank (boxy hull + cylindrical turret + thin barrel pointing away from the camera) sits at the center, viewed from behind-and-above. Nothing moves yet (Task 6 adds input) — this is purely confirming the composed model and camera framing look right before wiring controls.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add games/tank-yard-fable/game.js games/tank-yard-fable/dev/smoke.js
+git commit -m "feat(tank-yard): ground plane, chase camera, tank composition, turret-aim math"
+```
+
+---
+
+### Task 6: Player controls — drive, turret aim, firing, shells, arena bounds
+
+**Files:**
+- Modify: `games/tank-yard-fable/game.js` (append pure logic; replace the static `player`/`frame()` from Task 5 with real input-driven versions)
+- Modify: `games/tank-yard-fable/dev/smoke.js` (append tests + shim entries)
+
+**Interfaces:**
+- Consumes: `tankTransforms`, `mat4RotateY`, `mat4TransformPoint`, `screenRayGroundIntersection`, `turretAimYaw` (Task 5).
+- Produces (used by Tasks 7-8): `updateTankMovement(state,input,speed,turnRate,dt)` (generic — reused by enemy AI in Task 7), `circleCircleCollide(x1,z1,r1,x2,z2,r2)`, `circleAABBCollide(cx,cz,cr,boxX,boxZ,halfW,halfD)`, `clampToArena(x,z,margin)`, `spawnShell(tank,ownerIsPlayer)`, `updateShell(shell,dt)`, `computeTurretAimFromMouse(invVP,ndcX,ndcY,hullX,hullZ,hullYaw)`, `ARENA_HALF_SIZE`, `TANK_COLLISION_RADIUS`, `SHELL_SPEED`, `SHELL_MAX_LIFE`.
+
+- [ ] **Step 1: Append movement, collision, and arena-bounds pure functions**
+
+```js
+
+// ----------------------------------------------------------------------------
+// Movement, collision, arena bounds — all pure, all 2D (x,z only; spec S6).
+// updateTankMovement is shared by the player (this task) and enemy AI
+// (Task 7) — same function, different speed/turnRate.
+// ----------------------------------------------------------------------------
+const ARENA_HALF_SIZE = 40; // 80x80 arena (spec S6)
+const TANK_COLLISION_RADIUS = 1.6; // approximates the boxy hull for circle collision
+
+function updateTankMovement(state, input, speed, turnRate, dt) {
+  const hullYaw = state.hullYaw + input.turn * turnRate * dt;
+  const forwardDir = mat4TransformPoint(mat4RotateY(mat4Identity(), hullYaw), [0, 0, 1]);
+  const dist = input.forward * speed * dt;
+  return { x: state.x + forwardDir[0] * dist, z: state.z + forwardDir[2] * dist, hullYaw };
+}
+
+function circleCircleCollide(x1, z1, r1, x2, z2, r2) {
+  const dx = x2 - x1, dz = z2 - z1;
+  const minDist = r1 + r2;
+  return dx * dx + dz * dz < minDist * minDist;
+}
+
+function circleAABBCollide(cx, cz, cr, boxX, boxZ, halfW, halfD) {
+  const closestX = Math.max(boxX - halfW, Math.min(cx, boxX + halfW));
+  const closestZ = Math.max(boxZ - halfD, Math.min(cz, boxZ + halfD));
+  const dx = cx - closestX, dz = cz - closestZ;
+  return dx * dx + dz * dz < cr * cr;
+}
+
+function clampToArena(x, z, margin) {
+  const lim = ARENA_HALF_SIZE - margin;
+  return [Math.max(-lim, Math.min(lim, x)), Math.max(-lim, Math.min(lim, z))];
+}
+```
+
+- [ ] **Step 2: Append turret-aim-from-mouse composition, shell spawn/motion**
+
+```js
+
+// Composes Task 5's ray-cast + aim-angle functions into the one call input
+// handling actually needs each frame. Returns null (keep the previous
+// turretYaw) if the mouse ray doesn't hit the ground (spec S14 edge case).
+function computeTurretAimFromMouse(invVP, ndcX, ndcY, hullX, hullZ, hullYaw) {
+  const hit = screenRayGroundIntersection(invVP, ndcX, ndcY);
+  if (!hit) return null;
+  return turretAimYaw(hullX, hullZ, hullYaw, hit[0], hit[2]);
+}
+
+const SHELL_SPEED = 20;      // units/sec (spec S9)
+const SHELL_MAX_LIFE = 4;    // seconds before a shell despawns unhit
+const PLAYER_FIRE_COOLDOWN = 0.8;
+
+function spawnShell(tank, ownerIsPlayer) {
+  const absoluteYaw = tank.hullYaw + tank.turretYaw;
+  const dir = mat4TransformPoint(mat4RotateY(mat4Identity(), absoluteYaw), [0, 0, 1]);
+  return {
+    x: tank.x + dir[0] * (BARREL_FORWARD_OFFSET + 0.3),
+    z: tank.z + dir[2] * (BARREL_FORWARD_OFFSET + 0.3),
+    dx: dir[0], dz: dir[2],
+    ownerIsPlayer,
+    life: SHELL_MAX_LIFE,
+  };
+}
+
+function updateShell(shell, dt) {
+  return {
+    x: shell.x + shell.dx * SHELL_SPEED * dt,
+    z: shell.z + shell.dz * SHELL_SPEED * dt,
+    dx: shell.dx, dz: shell.dz,
+    ownerIsPlayer: shell.ownerIsPlayer,
+    life: shell.life - dt,
+  };
+}
+```
+
+- [ ] **Step 3: Add tests for all of the above**
+
+Add to the shim: `updateTankMovement, circleCircleCollide, circleAABBCollide, clampToArena, computeTurretAimFromMouse, spawnShell, updateShell, ARENA_HALF_SIZE, TANK_COLLISION_RADIUS, SHELL_SPEED, SHELL_MAX_LIFE,`.
+
+```js
+console.log("player controls: movement, collision, shells");
+
+test("updateTankMovement drives forward along the current facing direction", () => {
+  const next = t.updateTankMovement({ x: 0, z: 0, hullYaw: 0 }, { forward: 1, turn: 0 }, 6, 1.2, 1);
+  closeArr([next.x, next.hullYaw, next.z], [0, 0, 6], 1e-9, "yaw=0 faces +Z, so 1 full second at speed 6 moves 6 units in +Z");
+});
+
+test("updateTankMovement turns the hull without moving when forward=0", () => {
+  const next = t.updateTankMovement({ x: 3, z: 3, hullYaw: 0 }, { forward: 0, turn: 1 }, 6, 1.2, 0.5);
+  close(next.hullYaw, 0.6, 1e-9, "0.5s at 1.2 rad/s = 0.6 rad turned");
+  close(next.x, 3, 1e-9, "no forward input, no movement");
+  close(next.z, 3, 1e-9, "no forward input, no movement");
+});
+
+test("circleCircleCollide detects overlap and non-overlap correctly", () => {
+  assert(t.circleCircleCollide(0, 0, 1, 1.5, 0, 1) === true, "circles 1.5 apart with radii summing to 2 should overlap");
+  assert(t.circleCircleCollide(0, 0, 1, 5, 0, 1) === false, "circles far apart should not overlap");
+});
+
+test("circleAABBCollide detects a circle overlapping a box it's not centered on", () => {
+  assert(t.circleAABBCollide(5, 0, 1, 0, 0, 4, 4) === true, "circle just past the box edge (box half-width 4, circle at x=5 r=1) should overlap");
+  assert(t.circleAABBCollide(10, 0, 1, 0, 0, 4, 4) === false, "circle far from the box should not overlap");
+});
+
+test("clampToArena keeps a point inside the arena bounds minus the margin", () => {
+  const [x, z] = t.clampToArena(1000, -1000, 2);
+  close(x, t.ARENA_HALF_SIZE - 2, 1e-9);
+  close(z, -(t.ARENA_HALF_SIZE - 2), 1e-9);
+});
+
+test("computeTurretAimFromMouse returns a yaw pointing at the ground-plane hit point", () => {
+  const proj = t.mat4Perspective(Math.PI / 3, 1, 0.1, 100);
+  const view = t.mat4LookAt([0, 10, 0], [0, 0, 0], [0, 0, -1]);
+  const invVP = t.mat4Invert(t.mat4Multiply(proj, view));
+  const relYaw = t.computeTurretAimFromMouse(invVP, 0, 0, 0, 0, 0);
+  assert(relYaw !== null, "a straight-down view's screen center hits the ground");
+});
+
+test("computeTurretAimFromMouse returns null when the ray misses the ground", () => {
+  const proj = t.mat4Perspective(Math.PI / 3, 1, 0.1, 100);
+  const view = t.mat4LookAt([0, 5, 0], [0, 5, -10], [0, 1, 0]);
+  const invVP = t.mat4Invert(t.mat4Multiply(proj, view));
+  assert(t.computeTurretAimFromMouse(invVP, 0, 0, 0, 0, 0) === null, "a horizontal view's screen center misses the ground");
+});
+
+test("spawnShell travels in the turret's absolute facing direction and despawns after SHELL_MAX_LIFE", () => {
+  let shell = t.spawnShell({ x: 0, z: 0, hullYaw: 0, turretYaw: 0 }, true);
+  close(shell.life, t.SHELL_MAX_LIFE, 1e-9);
+  const startZ = shell.z;
+  shell = t.updateShell(shell, 1);
+  assert(shell.z > startZ, "shell should move forward (+Z, matching yaw=0) after 1 second");
+  close(shell.life, t.SHELL_MAX_LIFE - 1, 1e-9);
+});
+```
+
+- [ ] **Step 4: Wire real input, replacing Task 5's static player/frame()**
+
+Find and delete the `player`/`camPos`/`camLook`/`drawPlayer`/`frame` block from Task 5 (from `const player = ...` through the trailing `requestAnimationFrame(frame);`), replacing it with:
+
+```js
+
+// ----------------------------------------------------------------------------
+// Input — keyboard drive/turn, mouse-driven turret aim, click to fire.
+// ----------------------------------------------------------------------------
+const keys = Object.create(null);
+window.addEventListener("keydown", (e) => { keys[e.key.toLowerCase()] = true; });
+window.addEventListener("keyup", (e) => { keys[e.key.toLowerCase()] = false; });
+
+let mouseNdcX = 0, mouseNdcY = 0;
+canvas.addEventListener("pointermove", (e) => {
+  mouseNdcX = (e.clientX / W) * 2 - 1;
+  mouseNdcY = -((e.clientY / H) * 2 - 1);
+});
+
+let firePressed = false;
+canvas.addEventListener("pointerdown", () => { firePressed = true; });
+
+const player = { x: 0, z: 0, hullYaw: 0, turretYaw: 0 };
+let playerFireCooldown = 0;
+let camPos = [0, CAM_UP_OFFSET, -CAM_BACK_OFFSET];
+let camLook = [0, CAM_LOOK_HEIGHT, 0];
+let shells = [];
+
+function readPlayerDriveInput() {
+  let forward = 0, turn = 0;
+  if (keys["w"] || keys["arrowup"]) forward += 1;
+  if (keys["s"] || keys["arrowdown"]) forward -= 1;
+  if (keys["a"] || keys["arrowleft"]) turn += 1;
+  if (keys["d"] || keys["arrowright"]) turn -= 1;
+  return { forward, turn };
+}
+
+function updatePlayer(dt) {
+  const moved = updateTankMovement(player, readPlayerDriveInput(), 6, 1.2, dt);
+  const [cx, cz] = clampToArena(moved.x, moved.z, TANK_COLLISION_RADIUS);
+  player.x = cx; player.z = cz; player.hullYaw = moved.hullYaw;
+
+  const invVP = mat4Invert(mat4Multiply(projMatrix, viewMatrix));
+  if (invVP) {
+    const aim = computeTurretAimFromMouse(invVP, mouseNdcX, mouseNdcY, player.x, player.z, player.hullYaw);
+    if (aim !== null) player.turretYaw = aim;
+  }
+
+  playerFireCooldown = Math.max(0, playerFireCooldown - dt);
+  if (firePressed && playerFireCooldown <= 0) {
+    shells.push(spawnShell(player, true));
+    playerFireCooldown = PLAYER_FIRE_COOLDOWN;
+  }
+  firePressed = false;
+
+  shells = shells.map((s) => updateShell(s, dt)).filter((s) => s.life > 0);
+}
+
+function drawPlayer() {
+  const parts = tankTransforms(player);
+  drawMesh(hullMesh, parts.hullMatrix, PLAYER_COLOR);
+  drawMesh(turretMesh, parts.turretMatrix, PLAYER_COLOR);
+  drawMesh(barrelMesh, parts.barrelMatrix, [0.15, 0.15, 0.15]);
+}
+
+function drawShells() {
+  for (const s of shells) {
+    const m = mat4Scale(mat4Translate(mat4Identity(), s.x, 1, s.z), 0.25, 0.25, 0.25);
+    drawMesh(shellMesh, m, [1, 0.85, 0.2]);
+  }
+}
+
+let last = 0;
+function frame(nowMs) {
+  const dt = last ? Math.min(0.25, (nowMs - last) / 1000) : 0;
+  last = nowMs;
+
+  updateProjection();
+  updatePlayer(dt);
+
+  const cam = updateChaseCam(camPos, camLook, player.x, player.z, player.hullYaw, dt);
+  camPos = cam.pos; camLook = cam.look;
+  viewMatrix = mat4LookAt(camPos, camLook, [0, 1, 0]);
+
+  render();
+  drawGround(groundMesh, mat4Translate(mat4Identity(), 0, -0.1, 0));
+  drawPlayer();
+  drawShells();
+
+  requestAnimationFrame(frame);
+}
+```
+
+Add a shell mesh to `initMeshes()` — insert this line alongside the existing `hullMesh`/`turretMesh`/`barrelMesh` assignments:
+
+```js
+  shellMesh = makeMesh(gl, makeCylinder(6, 1, 1, 1)); // a low-poly stand-in sphere per spec S9
+```
+
+And declare it alongside the other mesh variables: change `let groundMesh = null, hullMesh = null, turretMesh = null, barrelMesh = null;` to also include `shellMesh = null`.
+
+- [ ] **Step 5: Run the tests**
+
+Run: `node games/tank-yard-fable/dev/smoke.js`
+Expected: `36/36 passed` (28 from Tasks 1-5 + 8 new), exit 0.
+
+- [ ] **Step 6: Manual sanity check**
+
+Open `games/tank-yard-fable/index.html`. Expected: WASD/arrows drive and turn the tank across the ground; the turret independently tracks the mouse cursor (project it onto the ground) regardless of hull facing; clicking fires a small yellow shell that travels forward from the barrel and disappears after ~4 seconds or once it's far away. The camera should follow smoothly, lagging slightly behind turns rather than snapping.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add games/tank-yard-fable/game.js games/tank-yard-fable/dev/smoke.js
+git commit -m "feat(tank-yard): player drive/turret-aim/fire controls, shells, collision primitives, arena bounds"
+```
+
+---
+
+### Task 7: Enemy AI (seek/engage), line-of-sight, spawn ramp
+
+**Files:**
+- Modify: `games/tank-yard-fable/game.js` (append pure logic; extend `frame()` to update/render/fire enemies)
+- Modify: `games/tank-yard-fable/dev/smoke.js` (append tests + shim entries)
+
+**Interfaces:**
+- Consumes: `updateTankMovement`, `spawnShell`, `mat4*` (Tasks 5-6).
+- Produces (used by Task 8): `decideEnemyAIState(distToPlayer,hasLineOfSight)` (returns `"engage"`/`"seek"`), `seekInput(x,z,hullYaw,targetX,targetZ)` (returns `{forward,turn}`), `hasLineOfSight(x1,z1,x2,z2,obstacles)` (obstacles: `[{x,z,halfW,halfD}]`, empty array is valid and always returns `true`), `currentSpawnInterval(elapsedSeconds)`, `pickEnemySpawn()`, module-level `obstacles` array (starts empty — Task 8 populates it; every function that reads it already handles the empty case correctly, so Task 8 needs no changes here).
+
+- [ ] **Step 1: Append the line-of-sight segment-intersection helpers**
+
+```js
+
+// ----------------------------------------------------------------------------
+// Line-of-sight — same segment-intersection technique used elsewhere in this
+// hub's games (e.g. Echo Cartographer's lineClear/segsIntersect) for a
+// simple, fast "is this straight line blocked by any obstacle" check.
+// `obstacles` is [{x,z,halfW,halfD}] (AABBs in the x/z plane) — an empty
+// array (the default until Task 8 populates it) always returns true.
+// ----------------------------------------------------------------------------
+function segsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const d1 = cross(cx, cy, dx, dy, ax, ay);
+  const d2 = cross(cx, cy, dx, dy, bx, by);
+  const d3 = cross(ax, ay, bx, by, cx, cy);
+  const d4 = cross(ax, ay, bx, by, dx, dy);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+  return false;
+}
+function cross(ax, ay, bx, by, px, py) {
+  return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+}
+
+function hasLineOfSight(x1, z1, x2, z2, obstacles) {
+  for (const o of obstacles) {
+    const left = o.x - o.halfW, right = o.x + o.halfW;
+    const top = o.z - o.halfD, bottom = o.z + o.halfD;
+    const edges = [
+      [left, top, right, top], [right, top, right, bottom],
+      [right, bottom, left, bottom], [left, bottom, left, top],
+    ];
+    for (const e of edges) {
+      if (segsIntersect(x1, z1, x2, z2, e[0], e[1], e[2], e[3])) return false;
+    }
+    if (x1 > left && x1 < right && z1 > top && z1 < bottom) return false;
+    if (x2 > left && x2 < right && z2 > top && z2 < bottom) return false;
+  }
+  return true;
+}
+```
+
+- [ ] **Step 2: Append the AI decision/steering/spawn-ramp pure functions**
+
+```js
+
+// ----------------------------------------------------------------------------
+// Enemy AI (spec S8) — deliberately simple, no pathfinding: Seek a random
+// point, or Engage (stop + aim + fire) once in range with line-of-sight.
+// Split into small pure functions so each decision is independently
+// testable: WHICH state (decideEnemyAIState), HOW to steer toward a point
+// (seekInput), and the difficulty ramp (currentSpawnInterval) are all pure.
+// Only the actual random point-picking (pickEnemySpawn, and the wiring
+// layer's "pick a new seek point" call) touches Math.random().
+// ----------------------------------------------------------------------------
+const ENEMY_SPEED = 4.5;
+const ENEMY_TURN_RATE = 1.0;
+const ENEMY_ENGAGE_RANGE = 25;
+const ENEMY_FIRE_COOLDOWN = 1.5;
+const ENEMY_COLOR = [0.85, 0.26, 0.24];
+
+function decideEnemyAIState(distToPlayer, hasLos) {
+  return (distToPlayer < ENEMY_ENGAGE_RANGE && hasLos) ? "engage" : "seek";
+}
+
+// Steers toward (targetX,targetZ): turns to face it first, only drives
+// forward once roughly aligned (avoids an unrealistic wide circling arc).
+// Same yaw convention as turretAimYaw (yaw 0 faces +Z).
+function seekInput(x, z, hullYaw, targetX, targetZ) {
+  const dx = targetX - x, dz = targetZ - z;
+  if (Math.hypot(dx, dz) < 0.5) return { forward: 0, turn: 0 };
+  const desiredYaw = Math.atan2(-dx, dz);
+  let diff = desiredYaw - hullYaw;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  const turn = Math.abs(diff) < 0.05 ? 0 : (diff > 0 ? 1 : -1);
+  const forward = Math.abs(diff) < Math.PI / 3 ? 1 : 0;
+  return { forward, turn };
+}
+
+const ENEMY_SPAWN_START_INTERVAL = 6;
+const ENEMY_SPAWN_END_INTERVAL = 3.5;
+const ENEMY_SPAWN_RAMP_DURATION = 120; // 2 minutes (spec S8)
+
+function currentSpawnInterval(elapsedSeconds) {
+  const t2 = Math.min(1, elapsedSeconds / ENEMY_SPAWN_RAMP_DURATION);
+  return ENEMY_SPAWN_START_INTERVAL + (ENEMY_SPAWN_END_INTERVAL - ENEMY_SPAWN_START_INTERVAL) * t2;
+}
+
+// Impure (Math.random) — picks a point just inside the arena edge, facing
+// inward, and returns a fresh enemy state object.
+function pickEnemySpawn() {
+  const lim = ARENA_HALF_SIZE - 2;
+  const edge = Math.floor(Math.random() * 4);
+  let x, z, hullYaw;
+  if (edge === 0) { x = -lim; z = (Math.random() * 2 - 1) * lim; hullYaw = Math.PI / 2; }
+  else if (edge === 1) { x = lim; z = (Math.random() * 2 - 1) * lim; hullYaw = -Math.PI / 2; }
+  else if (edge === 2) { x = (Math.random() * 2 - 1) * lim; z = -lim; hullYaw = 0; }
+  else { x = (Math.random() * 2 - 1) * lim; z = lim; hullYaw = Math.PI; }
+  return { x, z, hullYaw, turretYaw: 0, aiState: "seek", seekX: x, seekZ: z, fireCooldown: 0 };
+}
+
+function pickSeekPoint() {
+  const lim = ARENA_HALF_SIZE - 5;
+  return { seekX: (Math.random() * 2 - 1) * lim, seekZ: (Math.random() * 2 - 1) * lim };
+}
+```
+
+- [ ] **Step 3: Add tests for all of the above**
+
+Add to the shim: `decideEnemyAIState, seekInput, hasLineOfSight, currentSpawnInterval, pickEnemySpawn, pickSeekPoint, ENEMY_ENGAGE_RANGE, ENEMY_SPAWN_START_INTERVAL, ENEMY_SPAWN_END_INTERVAL, get obstacles() { return obstacles; },`.
+
+```js
+console.log("enemy AI: state, steering, line-of-sight, spawn ramp");
+
+test("decideEnemyAIState engages only when in range AND has line of sight", () => {
+  assert(t.decideEnemyAIState(10, true) === "engage");
+  assert(t.decideEnemyAIState(10, false) === "seek", "in range but blocked -> keep seeking");
+  assert(t.decideEnemyAIState(100, true) === "seek", "visible but too far -> keep seeking");
+});
+
+test("seekInput turns to face a target directly to the side before driving forward", () => {
+  const input = t.seekInput(0, 0, 0, 10, 0); // target directly on +X, hull faces +Z
+  assert(input.forward === 0, "not yet facing the target -> don't drive forward yet");
+  assert(input.turn !== 0, "should be turning to face it");
+});
+
+test("seekInput drives forward once already facing the target", () => {
+  const input = t.seekInput(0, 0, 0, 0, 10); // target straight ahead (+Z, matching yaw=0)
+  assert(input.forward === 1, "already facing the target -> drive forward");
+  assert(input.turn === 0, "no correction needed");
+});
+
+test("seekInput stops once very close to the target", () => {
+  const input = t.seekInput(0, 0, 0, 0.1, 0.1);
+  assert(input.forward === 0 && input.turn === 0, "close enough -> stop");
+});
+
+test("hasLineOfSight is true with no obstacles, false when one blocks the segment", () => {
+  assert(t.hasLineOfSight(-10, 0, 10, 0, []) === true, "no obstacles -> always visible");
+  assert(t.hasLineOfSight(-10, 0, 10, 0, [{ x: 0, z: 0, halfW: 2, halfD: 2 }]) === false, "obstacle centered on the line -> blocked");
+  assert(t.hasLineOfSight(-10, 0, 10, 0, [{ x: 0, z: 20, halfW: 2, halfD: 2 }]) === true, "obstacle far off the line -> not blocked");
+});
+
+test("currentSpawnInterval ramps linearly from 6s to 3.5s over 2 minutes, then holds", () => {
+  close(t.currentSpawnInterval(0), t.ENEMY_SPAWN_START_INTERVAL, 1e-9);
+  close(t.currentSpawnInterval(60), 4.75, 1e-9, "halfway through the 120s ramp");
+  close(t.currentSpawnInterval(120), t.ENEMY_SPAWN_END_INTERVAL, 1e-9);
+  close(t.currentSpawnInterval(999), t.ENEMY_SPAWN_END_INTERVAL, 1e-9, "holds flat past the ramp duration");
+});
+
+test("pickEnemySpawn places the enemy just inside one of the four arena edges", () => {
+  const e = t.pickEnemySpawn();
+  const lim = t.ARENA_HALF_SIZE - 2;
+  const onAnEdge = Math.abs(Math.abs(e.x) - lim) < 1e-9 || Math.abs(Math.abs(e.z) - lim) < 1e-9;
+  assert(onAnEdge, "spawn point should sit exactly on one of the four edge lines");
+  assert(Math.abs(e.x) <= lim + 1e-9 && Math.abs(e.z) <= lim + 1e-9, "spawn point should stay within arena bounds");
+});
+```
+
+- [ ] **Step 4: Wire enemies into game state, update, and render**
+
+Append (after the input/player block from Task 6):
+
+```js
+
+// ----------------------------------------------------------------------------
+// Enemies (spec S8). `obstacles` starts empty — Task 8 populates it; every
+// function above that reads it already handles the empty-array case.
+// ----------------------------------------------------------------------------
+let obstacles = [];
+let enemies = [];
+let survivalTime = 0;
+let enemySpawnTimer = ENEMY_SPAWN_START_INTERVAL;
+
+function updateEnemies(dt) {
+  survivalTime += dt;
+  enemySpawnTimer -= dt;
+  if (enemySpawnTimer <= 0) {
+    enemies.push(pickEnemySpawn());
+    enemySpawnTimer = currentSpawnInterval(survivalTime);
+  }
+
+  for (const e of enemies) {
+    const distToPlayer = Math.hypot(player.x - e.x, player.z - e.z);
+    const los = hasLineOfSight(e.x, e.z, player.x, player.z, obstacles);
+    e.aiState = decideEnemyAIState(distToPlayer, los);
+    e.fireCooldown = Math.max(0, e.fireCooldown - dt);
+
+    if (e.aiState === "engage") {
+      e.turretYaw = turretAimYaw(e.x, e.z, e.hullYaw, player.x, player.z);
+      if (e.fireCooldown <= 0) {
+        shells.push(spawnShell(e, false));
+        e.fireCooldown = ENEMY_FIRE_COOLDOWN;
+      }
+    } else {
+      const distToSeek = Math.hypot(e.seekX - e.x, e.seekZ - e.z);
+      if (distToSeek < 3) Object.assign(e, pickSeekPoint());
+      const input = seekInput(e.x, e.z, e.hullYaw, e.seekX, e.seekZ);
+      const moved = updateTankMovement(e, input, ENEMY_SPEED, ENEMY_TURN_RATE, dt);
+      const [cx, cz] = clampToArena(moved.x, moved.z, TANK_COLLISION_RADIUS);
+      e.x = cx; e.z = cz; e.hullYaw = moved.hullYaw;
+      e.turretYaw = 0;
+    }
+  }
+}
+
+function drawEnemies() {
+  for (const e of enemies) {
+    const parts = tankTransforms(e);
+    drawMesh(hullMesh, parts.hullMatrix, ENEMY_COLOR);
+    drawMesh(turretMesh, parts.turretMatrix, ENEMY_COLOR);
+    drawMesh(barrelMesh, parts.barrelMatrix, [0.15, 0.15, 0.15]);
+  }
+}
+```
+
+In `frame()`, add `updateEnemies(dt);` right after `updatePlayer(dt);`, and add `drawEnemies();` right after `drawPlayer();` (before `drawShells();`).
+
+- [ ] **Step 5: Run the tests**
+
+Run: `node games/tank-yard-fable/dev/smoke.js`
+Expected: `43/43 passed` (36 from Tasks 1-6 + 7 new), exit 0.
+
+- [ ] **Step 6: Manual sanity check**
+
+Open `games/tank-yard-fable/index.html`. Expected: red enemy tanks spawn at the arena's edges every few seconds, drive toward random points, and — once you get within roughly a quarter of the arena's width of one with a clear line of sight — it stops and starts firing yellow shells at you (no damage yet, Task 8 adds that). New enemies should appear more frequently the longer you survive.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add games/tank-yard-fable/game.js games/tank-yard-fable/dev/smoke.js
+git commit -m "feat(tank-yard): enemy AI (seek/engage), line-of-sight, spawn ramp"
+```
+
+---
+
+### Task 8: Obstacles, damage/health/invulnerability, shell collisions, explosions, death/restart
+
+**Files:**
+- Modify: `games/tank-yard-fable/game.js` (append pure logic + obstacle data/meshes; extend `player`/`pickEnemySpawn`/`frame()`)
+- Modify: `games/tank-yard-fable/dev/smoke.js` (append tests + shim entries)
+
+**Interfaces:**
+- Consumes: `circleCircleCollide`, `circleAABBCollide`, `updateTankMovement` (Task 6); `enemies`, `obstacles`, `shells` (Tasks 6-7).
+- Produces (used by Task 9): `applyDamage(entity)`, `tickInvuln(entity,dt)`, `moveWithObstacleCollision(x,z,newX,newZ,obstacles,radius)`, `updateParticle(p,dt)`, module-level `player.health`/`player.invulnTimer`, `score`, `gameOver`, `restartGame()`. `PLAYER_MAX_HEALTH`, `ENEMY_MAX_HEALTH`, `HIT_INVULN_DURATION`.
+
+- [ ] **Step 1: Append damage/invulnerability/obstacle-sliding pure functions**
+
+```js
+
+// ----------------------------------------------------------------------------
+// Damage, invulnerability, obstacle-sliding collision — all pure. Spec S7's
+// "brief invulnerability window with a visual flash" pattern (mirrors Echo
+// Cartographer's capture choreography: damage must be readable and fair).
+// ----------------------------------------------------------------------------
+const PLAYER_MAX_HEALTH = 4; // spec S7
+// Not pinned by the spec's own numbers (S8 only fixes fire-rate/speed
+// asymmetry) -- 2 hits keeps a lone enemy clearly weaker than the 4-hit
+// player while avoiding a too-trivial one-shot kill. A S14-style tuning
+// candidate like every other number in this file.
+const ENEMY_MAX_HEALTH = 2;
+const HIT_INVULN_DURATION = 1; // spec S7
+
+function applyDamage(entity) {
+  if (entity.invulnTimer > 0) return entity; // no-op while still invulnerable from a prior hit
+  return Object.assign({}, entity, { health: entity.health - 1, invulnTimer: HIT_INVULN_DURATION });
+}
+
+function tickInvuln(entity, dt) {
+  return Object.assign({}, entity, { invulnTimer: Math.max(0, entity.invulnTimer - dt) });
+}
+
+// Resolves movement one axis at a time so a tank SLIDES along an obstacle's
+// edge instead of stopping dead on any contact — tries the new X (at the old
+// Z) first, then the new Z (at whatever X just got resolved).
+function moveWithObstacleCollision(x, z, newX, newZ, obstacleList, radius) {
+  const blocked = (px, pz) => obstacleList.some((o) => circleAABBCollide(px, pz, radius, o.x, o.z, o.halfW, o.halfD));
+  const rx = blocked(newX, z) ? x : newX;
+  const rz = blocked(rx, newZ) ? z : newZ;
+  return [rx, rz];
+}
+
+const PARTICLE_LIFE = 0.5;
+function updateParticle(p, dt) {
+  return { x: p.x + p.vx * dt, z: p.z + p.vz * dt, vx: p.vx, vz: p.vz, life: p.life - dt };
+}
+```
+
+- [ ] **Step 2: Add tests for the pure functions above**
+
+Add to the shim: `applyDamage, tickInvuln, moveWithObstacleCollision, updateParticle, PLAYER_MAX_HEALTH, ENEMY_MAX_HEALTH, HIT_INVULN_DURATION,`.
+
+```js
+console.log("damage, invulnerability, obstacle sliding");
+
+test("applyDamage reduces health by 1 and starts the invulnerability window", () => {
+  const hit = t.applyDamage({ health: 4, invulnTimer: 0 });
+  assert(hit.health === 3);
+  close(hit.invulnTimer, t.HIT_INVULN_DURATION, 1e-9);
+});
+
+test("applyDamage is a no-op while still invulnerable from a prior hit", () => {
+  const hit = t.applyDamage({ health: 4, invulnTimer: 0.5 });
+  assert(hit.health === 4, "should not take a second hit mid-invulnerability");
+});
+
+test("tickInvuln counts down and floors at 0, letting a fresh hit land afterward", () => {
+  let entity = { health: 4, invulnTimer: 1 };
+  entity = t.tickInvuln(entity, 1.5);
+  close(entity.invulnTimer, 0, 1e-9, "should floor at 0, not go negative");
+  entity = t.applyDamage(entity);
+  assert(entity.health === 3, "a fresh hit should land once invulnerability has expired");
+});
+
+test("moveWithObstacleCollision slides along one axis when the other is blocked", () => {
+  const obs = [{ x: 0, z: 5, halfW: 2, halfD: 2 }]; // occupies x in [-2,2], z in [3,7]
+  const [rx, rz] = t.moveWithObstacleCollision(5, 2, 0, 6, obs, 0.5);
+  close(rx, 0, 1e-9, "X movement should succeed (old z=2 misses the obstacle)");
+  close(rz, 2, 1e-9, "Z movement should be blocked (new x=0 + new z=6 both hit the obstacle)");
+});
+
+test("moveWithObstacleCollision allows free movement with no nearby obstacles", () => {
+  const [rx, rz] = t.moveWithObstacleCollision(0, 0, 10, 10, [{ x: -50, z: -50, halfW: 1, halfD: 1 }], 0.5);
+  close(rx, 10, 1e-9);
+  close(rz, 10, 1e-9);
+});
+
+test("updateParticle moves by velocity and counts life down", () => {
+  const p = t.updateParticle({ x: 0, z: 0, vx: 2, vz: -1, life: 0.5 }, 0.2);
+  close(p.x, 0.4, 1e-9);
+  close(p.z, -0.2, 1e-9);
+  close(p.life, 0.3, 1e-9);
+});
+```
+
+- [ ] **Step 3: Extend `player` (Task 6) and `pickEnemySpawn` (Task 7) with health/invulnerability fields**
+
+In the `player` object literal (Task 6), change:
+```js
+const player = { x: 0, z: 0, hullYaw: 0, turretYaw: 0 };
+```
+to:
+```js
+const player = { x: 0, z: 0, hullYaw: 0, turretYaw: 0, health: PLAYER_MAX_HEALTH, invulnTimer: 0 };
+```
+
+In `pickEnemySpawn()` (Task 7), change the returned object's last line from:
+```js
+  return { x, z, hullYaw, turretYaw: 0, aiState: "seek", seekX: x, seekZ: z, fireCooldown: 0 };
+```
+to:
+```js
+  return { x, z, hullYaw, turretYaw: 0, aiState: "seek", seekX: x, seekZ: z, fireCooldown: 0, health: ENEMY_MAX_HEALTH, invulnTimer: 0 };
+```
+
+- [ ] **Step 4: Append the authored obstacle layout, meshes, and particle/explosion wiring**
+
+```js
+
+// ----------------------------------------------------------------------------
+// Obstacles (spec S6/S8) — a small hand-authored layout, same pattern as
+// Echo Cartographer's RAW_LEVELS. "rock" and "rubble" share one AABB
+// collision shape; only their rendering differs (drawObstacles, Step 6).
+// ----------------------------------------------------------------------------
+const OBSTACLE_LAYOUT = [
+  { x: -15, z: -10, halfW: 2, halfD: 2, type: "rubble" },
+  { x: 12, z: -18, halfW: 1.5, halfD: 1.5, type: "rock" },
+  { x: -22, z: 8, halfW: 1.5, halfD: 1.5, type: "rock" },
+  { x: 18, z: 15, halfW: 2, halfD: 2, type: "rubble" },
+  { x: 0, z: -25, halfW: 1.5, halfD: 1.5, type: "rock" },
+  { x: -8, z: 22, halfW: 2, halfD: 2, type: "rubble" },
+  { x: 25, z: -5, halfW: 1.5, halfD: 1.5, type: "rock" },
+  { x: -28, z: -22, halfW: 2, halfD: 2, type: "rubble" },
+  { x: 8, z: 4, halfW: 1.5, halfD: 1.5, type: "rock" },
+  { x: -5, z: -30, halfW: 2, halfD: 2, type: "rubble" },
+];
+
+let particles = [];
+function spawnExplosionInto(x, z, count) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const speed = 3 + Math.random() * 4;
+    particles.push({ x, z, vx: Math.cos(ang) * speed, vz: Math.sin(ang) * speed, life: PARTICLE_LIFE });
+  }
+}
+function updateParticles(dt) {
+  particles = particles.map((p) => updateParticle(p, dt)).filter((p) => p.life > 0);
+}
+```
+
+- [ ] **Step 5: Append shell-collision resolution, restart, and wire it all into `frame()`**
+
+```js
+
+// ----------------------------------------------------------------------------
+// Shell collisions -> damage/destruction/score. Obstacles block everyone's
+// shells equally; only enemy shells hurt the player; only the player's
+// shells hurt enemies (spec S8/S9).
+// ----------------------------------------------------------------------------
+let score = 0;
+let gameOver = false;
+
+function resolveShellCollisions() {
+  const surviving = [];
+  for (const s of shells) {
+    let hitSomething = false;
+
+    for (const o of obstacles) {
+      if (circleAABBCollide(s.x, s.z, 0.25, o.x, o.z, o.halfW, o.halfD)) { hitSomething = true; break; }
+    }
+
+    if (!hitSomething && !s.ownerIsPlayer && circleCircleCollide(s.x, s.z, 0.25, player.x, player.z, TANK_COLLISION_RADIUS)) {
+      const dmg = applyDamage(player);
+      if (dmg !== player) { player.health = dmg.health; player.invulnTimer = dmg.invulnTimer; spawnExplosionInto(s.x, s.z, 12); }
+      hitSomething = true;
+    }
+
+    if (!hitSomething && s.ownerIsPlayer) {
+      for (const e of enemies) {
+        if (circleCircleCollide(s.x, s.z, 0.25, e.x, e.z, TANK_COLLISION_RADIUS)) {
+          const dmg = applyDamage(e);
+          if (dmg !== e) { e.health = dmg.health; e.invulnTimer = dmg.invulnTimer; spawnExplosionInto(s.x, s.z, 12); }
+          hitSomething = true;
+          break;
+        }
+      }
+    }
+
+    if (!hitSomething) surviving.push(s);
+  }
+  shells = surviving;
+
+  const stillAlive = [];
+  for (const e of enemies) {
+    if (e.health <= 0) { spawnExplosionInto(e.x, e.z, 26); score += 1; }
+    else stillAlive.push(e);
+  }
+  enemies = stillAlive;
+
+  if (player.health <= 0 && !gameOver) {
+    spawnExplosionInto(player.x, player.z, 40);
+    gameOver = true;
+  }
+}
+
+function restartGame() {
+  player.x = 0; player.z = 0; player.hullYaw = 0; player.turretYaw = 0;
+  player.health = PLAYER_MAX_HEALTH; player.invulnTimer = 0;
+  enemies = []; shells = []; particles = [];
+  obstacles = OBSTACLE_LAYOUT.slice();
+  survivalTime = 0; enemySpawnTimer = ENEMY_SPAWN_START_INTERVAL;
+  score = 0; gameOver = false;
+}
+restartGame(); // populate obstacles + reset state once at startup
+```
+
+Now update `updatePlayer(dt)` (Task 6) and the Seek branch of `updateEnemies(dt)` (Task 7) to use `moveWithObstacleCollision` instead of the plain arena-only clamp, and tick invulnerability. In `updatePlayer(dt)`, replace:
+```js
+  const moved = updateTankMovement(player, readPlayerDriveInput(), 6, 1.2, dt);
+  const [cx, cz] = clampToArena(moved.x, moved.z, TANK_COLLISION_RADIUS);
+  player.x = cx; player.z = cz; player.hullYaw = moved.hullYaw;
+```
+with:
+```js
+  const moved = updateTankMovement(player, readPlayerDriveInput(), 6, 1.2, dt);
+  const [ax, az] = clampToArena(moved.x, moved.z, TANK_COLLISION_RADIUS);
+  const [ox, oz] = moveWithObstacleCollision(player.x, player.z, ax, az, obstacles, TANK_COLLISION_RADIUS);
+  player.x = ox; player.z = oz; player.hullYaw = moved.hullYaw;
+  const invuln = tickInvuln(player, dt);
+  player.invulnTimer = invuln.invulnTimer;
+```
+In `updateEnemies(dt)`'s Seek branch, replace:
+```js
+      const moved = updateTankMovement(e, input, ENEMY_SPEED, ENEMY_TURN_RATE, dt);
+      const [cx, cz] = clampToArena(moved.x, moved.z, TANK_COLLISION_RADIUS);
+      e.x = cx; e.z = cz; e.hullYaw = moved.hullYaw;
+      e.turretYaw = 0;
+```
+with:
+```js
+      const moved = updateTankMovement(e, input, ENEMY_SPEED, ENEMY_TURN_RATE, dt);
+      const [ax, az] = clampToArena(moved.x, moved.z, TANK_COLLISION_RADIUS);
+      const [ox, oz] = moveWithObstacleCollision(e.x, e.z, ax, az, obstacles, TANK_COLLISION_RADIUS);
+      e.x = ox; e.z = oz; e.hullYaw = moved.hullYaw;
+      e.turretYaw = 0;
+```
+And add, right after the `for (const e of enemies) {` loop's `e.fireCooldown = ...` line: `const ei = tickInvuln(e, dt); e.invulnTimer = ei.invulnTimer;`.
+
+In `frame()`, add `resolveShellCollisions(); updateParticles(dt);` right after `updateEnemies(dt);`, and guard the whole gameplay-update block behind `if (!gameOver)` (movement/AI/collisions freeze once destroyed, matching Echo Cartographer's `state !== PLAYING` early-return convention — Task 9 adds the actual DESTROYED overlay and restart trigger). Change:
+```js
+  updateProjection();
+  updatePlayer(dt);
+  updateEnemies(dt);
+  resolveShellCollisions();
+  updateParticles(dt);
+```
+to:
+```js
+  updateProjection();
+  if (!gameOver) {
+    updatePlayer(dt);
+    updateEnemies(dt);
+    resolveShellCollisions();
+    updateParticles(dt);
+  }
+```
+
+- [ ] **Step 6: Append obstacle/particle meshes and draw functions**
+
+Add to `initMeshes()`: `rockMesh = makeMesh(gl, makeCylinder(10, 1.2, 1.4, 1.6));`, `rubbleBoxMesh = makeMesh(gl, makeBox(1, 0.8, 1));`, `particleMesh = makeMesh(gl, makeBox(0.3, 0.3, 0.3));`. Add these three to the `let groundMesh = ...` declaration line alongside the existing mesh variables.
+
+```js
+
+function drawObstacles() {
+  const rubbleOffsets = [
+    { dx: -0.6, dz: -0.3, rot: 0.3, s: 1.0 },
+    { dx: 0.5, dz: 0.4, rot: -0.5, s: 0.8 },
+    { dx: 0.1, dz: -0.6, rot: 1.1, s: 0.7 },
+  ];
+  for (const o of obstacles) {
+    if (o.type === "rock") {
+      drawMesh(rockMesh, mat4Translate(mat4Identity(), o.x, 0.6, o.z), [0.55, 0.5, 0.45]);
+    } else {
+      for (const off of rubbleOffsets) {
+        let m = mat4Translate(mat4Identity(), o.x + off.dx, 0.4 * off.s, o.z + off.dz);
+        m = mat4RotateY(m, off.rot);
+        m = mat4Scale(m, off.s, off.s, off.s);
+        drawMesh(rubbleBoxMesh, m, [0.5, 0.42, 0.35]);
+      }
+    }
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const s = Math.max(0.05, p.life / PARTICLE_LIFE) * 0.3;
+    drawMesh(particleMesh, mat4Scale(mat4Translate(mat4Identity(), p.x, 0.5, p.z), s, s, s), [1, 0.6, 0.15]);
+  }
+}
+```
+
+In `frame()`, add `drawObstacles();` right after `drawGround(...)` and before `drawPlayer();`, and add `drawParticles();` right after `drawShells();`.
+
+- [ ] **Step 7: Run the tests**
+
+Run: `node games/tank-yard-fable/dev/smoke.js`
+Expected: `49/49 passed` (43 from Tasks 1-7 + 6 new), exit 0.
+
+- [ ] **Step 8: Manual sanity check**
+
+Open `games/tank-yard-fable/index.html`. Expected: rock/rubble obstacles are scattered around the arena and physically block movement for both you and enemies (tanks slide along their edges rather than stopping dead or clipping through); shells stop on hitting an obstacle; taking an enemy hit briefly flickers/pauses further damage for a second; destroying an enemy (2 player hits) spawns a small explosion of orange particles and removes it; taking 4 hits triggers a bigger explosion and freezes the scene (no HUD/restart yet — Task 9).
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add games/tank-yard-fable/game.js games/tank-yard-fable/dev/smoke.js
+git commit -m "feat(tank-yard): obstacles, damage/invulnerability, shell collisions, explosions, death state"
+```
+
+---
+
+### Task 9: HUD overlay, pause, restart, hit-flash feedback
+
+**Files:**
+- Modify: `games/tank-yard-fable/index.html` (fill in the `#hud` div from Task 3)
+- Modify: `games/tank-yard-fable/style.css` (style the HUD elements)
+- Modify: `games/tank-yard-fable/game.js` (append HUD wiring, pause/restart input; modify `drawPlayer`/`drawEnemies` for hit-flash)
+- Modify: `games/tank-yard-fable/dev/smoke.js` (append the one pure function this task adds, plus a boot-without-throwing check)
+
+**Interfaces:**
+- Consumes: `player.health`, `gameOver`, `score`, `survivalTime`, `restartGame()` (Task 8).
+- Produces: `fmtTime(seconds)` (pure), module-level `paused`.
+
+- [ ] **Step 1: Fill in the HUD markup in `index.html`**
+
+Replace `<div id="hud"></div>` with:
+
+```html
+  <div id="hud">
+    <div id="healthBar"><div id="healthFill"></div></div>
+    <div id="scoreboard"><span id="timer">0:00</span> &middot; <span id="scoreText">Score: 0</span></div>
+    <div id="pauseOverlay" class="overlay hidden">
+      <div class="overlayTitle">PAUSED</div>
+      <div class="overlayText">WASD/arrows drive &middot; mouse aims turret &middot; click fires &middot; P/Esc resume</div>
+    </div>
+    <div id="destroyedOverlay" class="overlay hidden">
+      <div class="overlayTitle">DESTROYED</div>
+      <div class="overlayText" id="finalScoreText">Final score: 0</div>
+      <div class="overlayText">Click or press R to try again</div>
+    </div>
+  </div>
+```
+
+- [ ] **Step 2: Style the HUD in `style.css`**
+
+Append:
+
+```css
+#healthBar { position: absolute; top: 16px; left: 16px; width: 160px; height: 14px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.6); border-radius: 3px; overflow: hidden; }
+#healthFill { height: 100%; width: 100%; background: #3ddc6a; transition: width 0.15s ease-out; }
+#scoreboard { position: absolute; top: 16px; right: 16px; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+.overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); text-align: center; pointer-events: auto; cursor: pointer;
+}
+.overlay.hidden { display: none; }
+.overlayTitle { font-size: 40px; font-weight: 700; margin-bottom: 12px; }
+.overlayText { font-size: 15px; opacity: 0.85; margin-top: 4px; }
+```
+
+- [ ] **Step 3: Append `fmtTime` and HUD wiring to `game.js`**
+
+```js
+
+// ----------------------------------------------------------------------------
+// HUD — an HTML/CSS overlay (spec S10), never drawn into the WebGL scene.
+// ----------------------------------------------------------------------------
+function fmtTime(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+let paused = false;
+window.addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+  if (k === "p" || k === "escape") paused = !paused;
+  if (k === "r" && gameOver) restartGame();
+});
+
+const healthFillEl = document.getElementById("healthFill");
+const timerEl = document.getElementById("timer");
+const scoreTextEl = document.getElementById("scoreText");
+const pauseOverlayEl = document.getElementById("pauseOverlay");
+const destroyedOverlayEl = document.getElementById("destroyedOverlay");
+const finalScoreTextEl = document.getElementById("finalScoreText");
+if (destroyedOverlayEl) {
+  destroyedOverlayEl.addEventListener("click", () => { if (gameOver) restartGame(); });
+}
+
+function updateHud() {
+  if (healthFillEl) healthFillEl.style.width = Math.max(0, player.health / PLAYER_MAX_HEALTH) * 100 + "%";
+  if (timerEl) timerEl.textContent = fmtTime(survivalTime);
+  if (scoreTextEl) scoreTextEl.textContent = "Score: " + score;
+  if (pauseOverlayEl) pauseOverlayEl.classList.toggle("hidden", !paused);
+  if (destroyedOverlayEl) destroyedOverlayEl.classList.toggle("hidden", !gameOver);
+  if (gameOver && finalScoreTextEl) finalScoreTextEl.textContent = "Final score: " + score;
+}
+```
+
+- [ ] **Step 4: Add hit-flash flicker to `drawPlayer`/`drawEnemies` (Tasks 6-7)**
+
+Replace `drawPlayer` (Task 6) with:
+
+```js
+function drawPlayer() {
+  if (player.invulnTimer > 0 && Math.floor(player.invulnTimer * 10) % 2 === 0) return; // flicker while invulnerable
+  const parts = tankTransforms(player);
+  drawMesh(hullMesh, parts.hullMatrix, PLAYER_COLOR);
+  drawMesh(turretMesh, parts.turretMatrix, PLAYER_COLOR);
+  drawMesh(barrelMesh, parts.barrelMatrix, [0.15, 0.15, 0.15]);
+}
+```
+
+Replace `drawEnemies` (Task 7) with:
+
+```js
+function drawEnemies() {
+  for (const e of enemies) {
+    if (e.invulnTimer > 0 && Math.floor(e.invulnTimer * 10) % 2 === 0) continue; // flicker while invulnerable
+    const parts = tankTransforms(e);
+    drawMesh(hullMesh, parts.hullMatrix, ENEMY_COLOR);
+    drawMesh(turretMesh, parts.turretMatrix, ENEMY_COLOR);
+    drawMesh(barrelMesh, parts.barrelMatrix, [0.15, 0.15, 0.15]);
+  }
+}
+```
+
+- [ ] **Step 5: Wire pause/HUD into `frame()`**
+
+Replace the `if (!gameOver) { ... }` block from Task 8 and the lines around it with:
+
+```js
+  updateProjection();
+  if (!gameOver && !paused) {
+    updatePlayer(dt);
+    updateEnemies(dt);
+    resolveShellCollisions();
+    updateParticles(dt);
+  }
+
+  const cam = updateChaseCam(camPos, camLook, player.x, player.z, player.hullYaw, (paused || gameOver) ? 0 : dt);
+  camPos = cam.pos; camLook = cam.look;
+  viewMatrix = mat4LookAt(camPos, camLook, [0, 1, 0]);
+
+  render();
+  drawGround(groundMesh, mat4Translate(mat4Identity(), 0, -0.1, 0));
+  drawObstacles();
+  drawPlayer();
+  drawEnemies();
+  drawShells();
+  drawParticles();
+
+  updateHud();
+
+  requestAnimationFrame(frame);
+```
+
+(This keeps the same `updateProjection()`/`render()`/draw-call ordering already established in Tasks 5-8; only the pause/HUD lines are new.)
+
+- [ ] **Step 6: Add tests**
+
+Add `fmtTime,` to the shim.
+
+```js
+console.log("HUD");
+
+test("fmtTime formats seconds as m:ss", () => {
+  assert(t.fmtTime(5) === "0:05");
+  assert(t.fmtTime(65) === "1:05");
+  assert(t.fmtTime(600) === "10:00");
+});
+```
+
+Also add `healthFill`, `timer`, `scoreText`, `pauseOverlay`, `destroyedOverlay`, `finalScoreText` to `boot()`'s mock `elementsById` map (each a plain `{ style: {}, classList: { toggle() {}, add() {}, remove() {} }, textContent: "", addEventListener() {} }` object) so `game.js`'s `document.getElementById` calls for these new IDs don't return `null` and silently no-op in a way that would mask a real bug — the existing `if (el) ...` guards in `updateHud()` mean the game itself tolerates a `null` return, but the test environment should still exercise the real code path.
+
+- [ ] **Step 7: Run the tests**
+
+Run: `node games/tank-yard-fable/dev/smoke.js`
+Expected: `50/50 passed` (49 from Tasks 1-8 + 1 new), exit 0.
+
+- [ ] **Step 8: Manual sanity check**
+
+Open `games/tank-yard-fable/index.html`. Expected: a health bar (top-left) drains as you take hits and your tank flickers briefly after each one; a timer and score count up (top-right); pressing P/Esc shows a "PAUSED" overlay and freezes everything (camera included); taking your 4th hit shows a "DESTROYED — final score: N" overlay, and clicking it (or pressing R) fully resets the game — player position/health, enemies, shells, particles, obstacles, timer, and score all return to their starting state.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add games/tank-yard-fable/index.html games/tank-yard-fable/style.css games/tank-yard-fable/game.js games/tank-yard-fable/dev/smoke.js
+git commit -m "feat(tank-yard): HUD overlay, pause, restart, hit-flash feedback"
+```
+
+---
+
+### Task 10: Hub registration + full integration playtest
+
+**Files:**
+- Modify: `hub.js` (add a `GAMES` array entry, same mechanism as every existing game)
+
+**Interfaces:**
+- Consumes: nothing new — this task only wires up discovery from the hub landing page.
+
+- [ ] **Step 1: Add the hub card entry**
+
+In `hub.js`, add a new entry to the `GAMES` array (matching the existing entries' exact shape — `title`, `description`, `path`, `tags`, `accent`, inline-SVG `art`):
+
+```js
+  {
+    title: "Tank Yard Fable",
+    description:
+      "Drive a slow, sturdy tank through a toon-shaded arena, blast an endless stream of enemy tanks, and rack up your survival score.",
+    path: "games/tank-yard-fable/index.html",
+    tags: ["Action", "Survival", "3D"],
+    accent: "#3ddc6a",
+    // Inline SVG art so the hub needs no image assets.
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="0" y="0" width="120" height="80" fill="#242424" />
+        <rect x="30" y="45" width="60" height="20" rx="4" fill="#3ddc6a" />
+        <circle cx="60" cy="42" r="12" fill="#3ddc6a" />
+        <rect x="60" y="38" width="30" height="6" rx="2" fill="#1a1a1a" />
+        <circle cx="25" cy="65" r="6" fill="#1a1a1a" />
+        <circle cx="95" cy="65" r="6" fill="#1a1a1a" />
+      </svg>`,
+  },
+```
+
+(Display title is "Tank Yard Fable" — the user asked for a "Fable" suffix to track that this build was implemented by the Fable model, per the plan-approval conversation. The directory slug stays `games/tank-yard-fable/`, unbranded.)
+
+- [ ] **Step 2: Run the full test suite one more time**
+
+Run: `node games/tank-yard-fable/dev/smoke.js`
+Expected: `50/50 passed`, exit 0 — confirms nothing in this task's change (pure hub wiring) touched any tested logic.
+
+- [ ] **Step 3: Full manual integration playtest**
+
+Open the hub's `index.html` (or serve the repo root, per the hub's README) and click into Tank Yard Fable from the card — confirm it launches correctly from the hub, not just when opened directly. Then play a full attempt covering every task's individual manual check at once:
+- Toon-shaded green player tank, red enemies, checkerboard ground, brown/gray obstacles all render with visible hard-banded lighting (not smooth gradients).
+- WASD/arrows drive+turn the hull; mouse independently aims the turret at the ground-plane cursor position; click fires; the chase camera lags smoothly behind turns.
+- Enemies spawn at the arena edges, seek toward random points, stop and fire once in range with line-of-sight, and get more frequent over ~2 minutes of survival.
+- Obstacles block movement (with sliding, not a hard stop) and block shells for both sides.
+- Taking a hit flickers the tank and briefly prevents a second hit; 4 hits ends the run with an explosion, the DESTROYED overlay, and a final score; clicking/pressing R fully restarts.
+- Destroying an enemy takes 2 hits, spawns a smaller explosion, and increments the score.
+- P/Esc pauses (camera and all motion freeze; overlay shows controls); unpausing resumes cleanly.
+- No console errors at any point during the above.
+
+If anything above doesn't hold up, treat it as a bug to fix before considering v1 done — this is the one part of the whole plan with no automated coverage (spec S11), so this manual pass **is** the test for the rendering/feel layer.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add hub.js
+git commit -m "feat(tank-yard): register on the hub"
+```
+
+## Self-review notes
+
+- **Spec coverage:** S1-S2 (vision/scope) — reflected across all tasks, deferred items never added. S3 (core loop) — Task 7's spawn ramp + Task 8's scoring. S4 (camera/controls) — Task 5 (camera math), Task 6 (drive/aim/fire input), Task 9 (pause). S5 (rendering architecture) — Tasks 1-4 (math, geometry, WebGL scaffold, toon shader). S6 (scene/arena) — Task 5 (ground), Task 6 (arena bounds), Task 8 (obstacles). S7 (player tank) — Task 5 (composition), Task 6 (movement/fire), Task 8 (health/invuln), Task 9 (hit-flash). S8 (enemies/obstacles) — Task 7 (AI/spawn), Task 8 (obstacle layout/collision, enemy health). S9 (combat) — Task 6 (shells), Task 8 (collisions/explosions). S10 (HUD) — Task 9. S12 (file structure/hub) — Tasks 1-3 scaffold the files, Task 10 registers the hub entry. S13 (art direction) — the toon shader (Task 4-5) and color choices throughout are the concrete realization of this section; no dedicated task needed since it's not a separable unit of work. S14 (risks) — the turret-aim math got dedicated extra test coverage (Task 5's two `screenRayGroundIntersection` cases) per its own callout; tuning numbers are called out as first-guess at every point they're introduced; the `gl.POINTS` risk was resolved during planning by choosing the spec's own pre-approved fallback (tiny mesh-based particles) from the start, documented in Task 8.
+- **Placeholder scan:** no TBD/TODO; every step shows complete, runnable code.
+- **Type consistency:** `tank` objects (`{x,z,hullYaw,turretYaw}`) passed to `tankTransforms`/`updateTankMovement` have the same shape whether built by `pickEnemySpawn` (Task 7) or the player literal (Task 6); `applyDamage`/`tickInvuln` (Task 8) operate on the same `{health,invulnTimer}` shape for both `player` and enemy objects (Task 8 Step 3 explicitly extends both to match before Task 8's collision code uses them); shell objects have a consistent shape from `spawnShell` through `updateShell` through the collision/render code that reads `s.x/s.z/s.ownerIsPlayer/s.life`.
+- A note for whoever executes this: Tasks 4 through 9 each **replace** a block of code introduced by an earlier task rather than only appending. Read each "Replace X with Y" step carefully and make sure the old block is fully removed — don't leave both versions in the file (e.g. two `drawPlayer` definitions would silently use whichever one is declared last, masking the intended behavior).

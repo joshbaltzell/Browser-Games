@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tank Yard Fable</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="stage">
+    <canvas id="game"></canvas>
+    <div id="noWebgl">Your browser doesn't support WebGL, so Tank Yard Fable can't run here.</div>
+    <div id="hud">
+      <div id="healthBar"><div id="healthFill"></div></div>
+      <div id="scoreboard"><span id="timer">0:00</span> &middot; <span id="scoreText">Score: 0</span></div>
+      <div id="pauseOverlay" class="overlay hidden">
+        <div class="overlayTitle">PAUSED</div>
+        <div class="overlayText">WASD/arrows drive &middot; mouse aims turret &middot; click fires &middot; P/Esc resume</div>
+      </div>
+      <div id="destroyedOverlay" class="overlay hidden">
+        <div class="overlayTitle">DESTROYED</div>
+        <div class="overlayText" id="finalScoreText">Final score: 0</div>
+        <div class="overlayText">Click or press R to try again</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+/* Echo Cartographer — pure black void, full-bleed canvas, no scrollbars.
+   All gameplay UI is rendered on the canvas itself. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #02040a;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: #e8eef2;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: crosshair;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: block;
+  background: #02040a;
+}
+
+#game {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  background: #02040a;
+  touch-action: none;
+}

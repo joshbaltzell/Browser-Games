@@ -1,0 +1,66 @@
+:root {
+  --bg-0: #0c0d08;
+  --bg-1: #14160d;
+  --moss: #5a6b3a;
+  --beige: #c9bd97;
+  --wax: #7a2f24;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 30%, #161a0e 0%, #0c0d08 60%, #060702 100%);
+  font-family: "Courier New", ui-monospace, monospace;
+  color: var(--beige);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Stage centres the fixed-aspect desk and is the positioning context. */
+#stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+#game {
+  display: block;
+  border-radius: 8px;
+  background: #0a0b06;
+  /* A candlelit office framed by a damp, mossy glow and a blood-wax rim. */
+  box-shadow:
+    0 0 0 1px rgba(90, 107, 58, 0.3),
+    0 0 0 4px rgba(122, 47, 36, 0.18),
+    0 0 90px -14px rgba(224, 178, 90, 0.22),
+    0 0 70px -16px rgba(90, 107, 58, 0.35),
+    0 30px 90px -28px rgba(0, 0, 0, 0.96);
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.back-link {
+  position: absolute;
+  left: 18px;
+  bottom: 14px;
+  color: rgba(201, 189, 151, 0.5);
+  text-decoration: none;
+  font-family: "Courier New", monospace;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  transition: color 0.15s ease;
+  z-index: 5;
+}
+
+.back-link:hover {
+  color: var(--beige);
+}

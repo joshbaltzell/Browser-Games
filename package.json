@@ -1,0 +1,24 @@
+{
+  "name": "browser-games",
+  "version": "1.0.0",
+  "description": "A growing arcade of tiny, **dependency-free** browser games. No frameworks, no build step, no `node_modules` — just plain HTML, CSS, and Canvas. Open the landing page and play.",
+  "main": "hub.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joshbaltzell/Browser-Games.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/joshbaltzell/Browser-Games/issues"
+  },
+  "homepage": "https://github.com/joshbaltzell/Browser-Games#readme"
+}

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LexiGrid</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Home Screen -->
+  <div id="screen-home" class="screen">
+    <div class="screen-wrapper">
+      <a class="hub-back" href="../../index.html">&larr; Browser Games</a>
+      <h1>LexiGrid</h1>
+      <div class="daily-card">
+        <div class="daily-card__header">
+          <span class="daily-card__date"></span>
+          <span class="difficulty-badge" data-level="1"></span>
+        </div>
+        <h2 class="daily-card__title"></h2>
+        <a class="btn-play" role="button" href="#">Play Today's Puzzle</a>
+      </div>
+      <a class="library-link" href="#">Browse all puzzles &rarr;</a>
+    </div>
+  </div>
+
+  <!-- Library Screen -->
+  <div id="screen-library" class="screen">
+    <div class="screen-wrapper">
+      <a class="back-link" href="#">&larr; Home</a>
+      <h2 class="screen-title">Puzzle Library</h2>
+      <div id="library-sections"></div>
+    </div>
+  </div>
+
+  <!-- Game Screen -->
+  <div id="screen-game" class="screen">
+    <div class="screen-wrapper">
+      <div id="score-bar">
+        <span class="score-label">Score:</span>
+        <span id="score-value">0</span>
+        <span class="words-label">Words:</span>
+        <span id="words-count">0</span>
+        <div id="found-words-list" aria-live="polite"></div>
+        <button id="btn-hc" aria-pressed="false" aria-label="Toggle high contrast">HC</button>
+      </div>
+      <div id="grid"></div>
+      <div id="tray"></div>
+      <div id="game-controls">
+        <button id="btn-undo" disabled>Undo</button>
+        <button id="btn-reset">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results Screen -->
+  <div id="screen-results" class="screen">
+    <div class="screen-wrapper">
+      <div class="postcard">
+        <div class="postcard__header">
+          <p class="postcard__title"></p>
+          <div class="postcard__stamp">
+            <span class="stamp-inner">
+              <span>LEXI</span><span>GRID</span>
+            </span>
+          </div>
+        </div>
+        <div class="postcard__score-block"></div>
+        <div class="postcard__words">
+          <p class="postcard__words-label">Words found:</p>
+          <p class="postcard__words-list"></p>
+        </div>
+        <div class="postcard__actions">
+          <button class="btn-copy">Copy to Share</button>
+          <button class="btn-play-again">Play Again</button>
+          <button class="btn-home">Home</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Designer Screen (Phase 37) -->
+  <div id="screen-designer" class="screen">
+    <div class="screen-wrapper">
+      <a class="back-link" id="btn-designer-back" href="#">Home</a>
+      <h2 class="screen-title">Puzzle Designer</h2>
+
+      <div class="designer-section">
+        <label for="designer-grid">Grid</label>
+        <div class="designer-grid" id="designer-grid"></div>
+      </div>
+
+      <div class="designer-section">
+        <label for="designer-title">Title</label>
+        <input type="text" id="designer-title" placeholder="Puzzle title" />
+
+        <label for="designer-difficulty">Difficulty</label>
+        <select id="designer-difficulty">
+          <option value="1" selected>Easy</option>
+          <option value="2">Medium</option>
+          <option value="3">Hard</option>
+        </select>
+
+        <label for="designer-tray">Tray Letters</label>
+        <input type="text" id="designer-tray" placeholder="A,B,C,D,E,F,G" />
+
+        <label for="designer-words">Word List</label>
+        <textarea id="designer-words" rows="6" placeholder="One word per line"></textarea>
+
+        <label for="designer-dedication">Dedication (optional)</label>
+        <input type="text" id="designer-dedication" placeholder="Optional dedication" />
+      </div>
+
+      <div class="designer-actions">
+        <button id="btn-compute">Compute Max Score</button>
+      </div>
+
+      <div id="designer-feedback"></div>
+
+      <pre id="designer-output">Fill in the grid and word list, then click Compute Max Score.</pre>
+
+      <div class="designer-actions">
+        <button id="btn-copy-json">Copy JSON</button>
+        <button id="btn-play-test">Play Test</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tutorial Screen (Phase 38) -->
+  <div id="screen-tutorial" class="screen" role="region" aria-label="How to play tutorial">
+    <div class="screen-wrapper">
+      <h2 class="screen-title">How to Play</h2>
+
+      <!--
+        3×3 dummy grid — decorative, aria-hidden.
+        Layout (row-major):
+          [0] C  [1] A  [2] T   ← top row "CAT" (Step 2 forward, Step 3 backward)
+          [3] _  [4] A  [5] E   ← [3] empty; Step 1 places tile here
+          [6] P  [7] E  [8] T
+        Diagonal top-right→center→bottom-left: T(2)→A(4)→P(6) = "TAP" (Step 4)
+      -->
+      <div id="tutorial-grid" aria-hidden="true">
+        <!-- Row 1 -->
+        <div class="cell">
+          <div class="tile"><span class="tile-letter">C</span><span class="tile-point">3</span></div>
+          <span class="bloom-overlay bloom-amber tutorial-bloom--step2"></span>
+          <span class="bloom-overlay bloom-backwards tutorial-bloom--step3"></span>
+        </div>
+        <div class="cell">
+          <div class="tile"><span class="tile-letter">A</span><span class="tile-point">1</span></div>
+          <span class="bloom-overlay bloom-amber tutorial-bloom--step2"></span>
+          <span class="bloom-overlay bloom-backwards tutorial-bloom--step3"></span>
+          <span class="dir-badge tutorial-badge--step3">&#8592;</span>
+        </div>
+        <div class="cell">
+          <div class="tile"><span class="tile-letter">T</span><span class="tile-point">1</span></div>
+          <span class="bloom-overlay bloom-amber tutorial-bloom--step2"></span>
+          <span class="bloom-overlay bloom-backwards tutorial-bloom--step3"></span>
+          <span class="bloom-overlay bloom-diagonal tutorial-bloom--step4"></span>
+        </div>
+        <!-- Row 2 -->
+        <div class="cell" id="tutorial-cell-place">
+          <div class="tutorial-tile-fly" aria-hidden="true">
+            <div class="tile tile--selected"><span class="tile-letter">R</span><span class="tile-point">1</span></div>
+          </div>
+        </div>
+        <div class="cell">
+          <div class="tile tutorial-tile--step5-a"><span class="tile-letter">A</span><span class="tile-point">1</span></div>
+          <span class="bloom-overlay bloom-diagonal tutorial-bloom--step4"></span>
+          <span class="dir-badge tutorial-badge--step4">&#8600;</span>
+        </div>
+        <div class="cell">
+          <div class="tile tutorial-tile--step5-b"><span class="tile-letter">E</span><span class="tile-point">1</span></div>
+        </div>
+        <!-- Row 3 -->
+        <div class="cell">
+          <div class="tile tutorial-tile--step5-c"><span class="tile-letter">P</span><span class="tile-point">3</span></div>
+          <span class="bloom-overlay bloom-diagonal tutorial-bloom--step4"></span>
+        </div>
+        <div class="cell">
+          <div class="tile"><span class="tile-letter">E</span><span class="tile-point">1</span></div>
+        </div>
+        <div class="cell">
+          <div class="tile"><span class="tile-letter">T</span><span class="tile-point">1</span></div>
+        </div>
+      </div>
+
+      <!-- Five step animation panels (siblings, not inside the grid) -->
+      <!-- Step 1: opacity panel only — tile fly is rendered inside #tutorial-cell-place -->
+      <div class="tutorial-step tutorial-step--1" aria-hidden="true"></div>
+      <!-- Steps 2–5: purely CSS-driven overlays on the grid cells (bloom/badge already inside cells above) -->
+      <div class="tutorial-step tutorial-step--2" aria-hidden="true"></div>
+      <div class="tutorial-step tutorial-step--3" aria-hidden="true"></div>
+      <div class="tutorial-step tutorial-step--4" aria-hidden="true"></div>
+      <!-- Step 5: score swap -->
+      <div class="tutorial-step tutorial-step--5" aria-hidden="true">
+        <div class="tutorial-score-wrap">
+          <span id="tutorial-score-a">0 pts</span>
+          <span id="tutorial-score-b">8 pts</span>
+        </div>
+      </div>
+
+      <!-- Caption: each span fades in/out via its own @keyframes -->
+      <div id="tutorial-caption" aria-live="polite">
+        <span class="tutorial-caption--1">Place a tile</span>
+        <span class="tutorial-caption--2">Form a word</span>
+        <span class="tutorial-caption--3">Words work backwards too</span>
+        <span class="tutorial-caption--4">Even diagonally!</span>
+        <span class="tutorial-caption--5">Rearrange for more points</span>
+      </div>
+
+      <button id="btn-tutorial-skip" class="btn-play">Got it &mdash; Play</button>
+    </div>
+  </div>
+
+  <script src="dictionary.js"></script>
+  <script src="puzzles.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
