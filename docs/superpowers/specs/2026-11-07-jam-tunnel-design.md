@@ -87,6 +87,25 @@ about a minute, then makes it their own by changing individual notes.
 - Adding an instrument offers three matching options, plus customize and other styles.
 - The mockup's flow and look (approved as a whole).
 - **Many genres, around 20.** Classic hip hop, trap and pop are required.
+- **The tunnel is rendered with WebGL so it looks great.**
+
+## Look (WebGL)
+
+The tunnel is drawn with raw WebGL 2, like the repo's Tank Yard and Tic-Tac-Toe night ocean: no
+libraries, all shaders and geometry in plain script files, nothing loaded from disk. The mockup's
+layout and colors stay; WebGL is what makes it glow. Claude's proposed visual goals:
+- Notes are glowing 3D slabs with real depth, and the scene has bloom, so bright notes bleed light.
+- Notes light the tunnel around them: a note passing along the floor tints the walls near it, and
+  the surfaces are slightly glossy, so passing notes reflect in them.
+- When a note sounds at the gate it flashes and throws a short burst of sparks, and the gate frame
+  pulses on every beat, harder on the first beat of each bar.
+- Distance fog and a warm vanishing glow at the far end, as in the mockup.
+- A gentle camera sway that follows the groove (more for swung genres, less for straight ones),
+  respecting reduced-motion settings.
+- Ghost notes (previews) shimmer and look clearly unfinished next to kept notes.
+- Each genre can tint the tunnel (warm amber for southern rock, purple haze for trap, and so on).
+- Quality adapts to the device: phones render at lower resolution with lighter effects, and a
+  browser without WebGL 2 falls back to the mockup's flat 2D drawing.
 
 ## Genres
 
@@ -164,5 +183,4 @@ other genres are added afterwards in batches of four or five, each batch playabl
 - Exact scoring weights in the suggestion engine, as long as the mockup's examples come out right
   (a shuffle guitar ranks shuffle drums first and marks straight-eighth patterns as clashing).
 - Synth voice design details.
-- Tunnel rendering technique (the mockup uses a 2D canvas with perspective math; WebGL is fine too).
 - Performance tuning, accessibility details, and phone layout specifics within the constraints above.
