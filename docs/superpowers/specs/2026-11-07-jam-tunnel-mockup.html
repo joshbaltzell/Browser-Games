@@ -1,0 +1,656 @@
+<meta charset="utf-8">
+<title>Jam Tunnel</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: the song is a tunnel you fly through (full-bleed canvas). Layers list floats top-left,
+     transport top-right, and the suggestion tray docks to the bottom. Single dark look by choice. */
+  :root {
+    --night: #0d0b10;
+    --panel: rgba(22, 19, 27, 0.82);
+    --panel-solid: #16131b;
+    --line: rgba(255, 236, 214, 0.12);
+    --ink: #f4ede4;
+    --ink-dim: #a99e92;
+    --ember: #ff8a3d;    /* guitar */
+    --ice: #7cc7ff;      /* drums */
+    --plum: #c58cff;     /* bass */
+    --good: #8fd9a8;
+    --warn: #ffb36b;
+    --font-display: "Bricolage Grotesque", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+    --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--night);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 14px;
+    overflow: hidden;
+  }
+  canvas#tunnel { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .ui {
+    position: fixed; inset: 0; pointer-events: none;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 12px;
+    padding-top: calc(env(safe-area-inset-top, 0px) + 14px);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .ui > * { pointer-events: auto; min-width: 0; }
+  .bar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; pointer-events: none; }
+  .bar > * { pointer-events: auto; }
+
+  .song .name { font-family: var(--font-display); font-weight: 700; font-size: 1.35rem; letter-spacing: -0.01em; }
+  .song .meta { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-dim); margin-top: 2px; }
+  .mock { display: inline-block; margin-top: 6px; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; }
+
+  .transport { display: flex; gap: 8px; }
+  button {
+    font: inherit; color: var(--ink); cursor: pointer;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 12px;
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  button:hover { border-color: rgba(255, 236, 214, 0.3); }
+  button:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.primary { background: var(--ember); color: #1a0f06; border-color: transparent; font-weight: 500; }
+  button.primary:hover { filter: brightness(1.08); }
+  .sound[aria-pressed="true"] { border-color: var(--ember); color: var(--ember); }
+
+  .layers {
+    align-self: start; justify-self: start;
+    width: 230px; max-width: 100%;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px; display: grid; gap: 8px;
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  .layers h2 { font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-dim); font-weight: 500; }
+  .layer { display: grid; grid-template-columns: 10px 1fr; gap: 2px 10px; align-items: center; }
+  .layer .sw { width: 10px; height: 10px; border-radius: 3px; grid-row: span 2; align-self: start; margin-top: 4px; }
+  .layer .ln { font-weight: 500; }
+  .layer .ld { color: var(--ink-dim); font-size: 0.78rem; }
+  .layer.pending .ln::after { content: " · choosing"; color: var(--ink-dim); font-weight: 400; }
+  .layer.empty { opacity: 0.5; }
+
+  .tray {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px; display: grid; gap: 12px;
+    max-width: 980px; width: 100%; justify-self: center;
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    max-height: 52vh; overflow-y: auto;
+  }
+  .tray-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .tray-head h3 { font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; text-wrap: balance; }
+  .tray-head p { color: var(--ink-dim); font-size: 0.82rem; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .card {
+    text-align: left; display: grid; gap: 8px; padding: 12px;
+    background: rgba(255, 255, 255, 0.03); border-radius: 10px;
+  }
+  .card[aria-pressed="true"] { border-color: var(--accent, var(--ice)); box-shadow: 0 0 0 1px var(--accent, var(--ice)) inset; background: rgba(255, 255, 255, 0.06); }
+  .card .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .card .nm { font-family: var(--font-display); font-weight: 700; font-size: 1rem; }
+  .fit { font-size: 0.7rem; padding: 2px 7px; border-radius: 999px; white-space: nowrap; border: 1px solid currentColor; }
+  .fit.best, .fit.great, .fit.good { color: var(--good); }
+  .fit.clash { color: var(--warn); }
+  .card .why { color: var(--ink-dim); font-size: 0.8rem; line-height: 1.4; }
+  .mini { display: block; width: 100%; height: 34px; }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .panel { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+  .panel[hidden] { display: none; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .row label { min-width: 90px; color: var(--ink-dim); font-size: 0.82rem; }
+  .row input[type="range"] { flex: 1; min-width: 140px; accent-color: var(--ember); }
+  .row .val { font-family: var(--font-mono); font-size: 0.78rem; min-width: 7ch; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { padding: 6px 10px; border-radius: 999px; font-size: 0.8rem; display: inline-flex; gap: 6px; align-items: center; }
+  .chip[aria-pressed="true"] { border-color: var(--ember); }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); }
+  .chip .dot.clash { background: var(--warn); }
+  .hint { color: var(--ink-dim); font-size: 0.8rem; }
+
+  @media (max-width: 760px) {
+    .cards { grid-template-columns: 1fr; }
+    .layers { width: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .layers h2 { grid-column: 1 / -1; }
+    .layer .ld { display: none; }
+    .song .name { font-size: 1.1rem; }
+    .tray { max-height: 46vh; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<canvas id="tunnel" aria-label="The song drawn as a tunnel you fly through. Guitar notes run along the left wall, drums along the floor, bass along the right wall."></canvas>
+
+<div class="ui">
+  <div class="bar">
+    <div class="song">
+      <div class="name">Untitled jam</div>
+      <div class="meta">E blues · southern rock shuffle · 96 BPM · 12/8 feel</div>
+      <div class="mock">Clickable mockup</div>
+    </div>
+    <div class="transport">
+      <button type="button" id="pause" aria-pressed="false">Pause</button>
+      <button type="button" class="sound" id="sound" aria-pressed="false">Turn on sound</button>
+    </div>
+  </div>
+
+  <div class="layers" id="layers" aria-label="Layers"></div>
+
+  <section class="tray" id="tray" aria-live="polite"></section>
+</div>
+
+<script>
+(function () {
+  // ---------- song constants ----------
+  const BPM = 96;
+  const STEPS_PER_BAR = 12;            // eighth-note triplets: a shuffle grid
+  const BARS = 4;
+  const LOOP = STEPS_PER_BAR * BARS;
+  const STEP = 60 / BPM / 3;           // seconds per triplet step
+  const ROOTS = [0, 0, 5, 0];          // E E A E, as semitones above E
+  const COLORS = { guitar: '#ff8a3d', drums: '#7cc7ff', bass: '#c58cff' };
+
+  // ---------- the guitar riff: an E boogie with a turnaround ----------
+  const guitar = [];
+  for (let b = 0; b < BARS; b++) {
+    const r = 40 + ROOTS[b];
+    const hits = b === 3 ? [[0, 7], [2, 7], [3, 9], [5, 9]] : [[0, 7], [2, 7], [3, 9], [5, 9], [6, 7], [8, 7], [9, 9], [11, 9]];
+    hits.forEach(([s, top]) => {
+      guitar.push({ s: b * 12 + s, p: r, len: 1.2, v: s % 3 === 0 ? 1 : 0.8 });
+      guitar.push({ s: b * 12 + s, p: r + top, len: 1.2, v: s % 3 === 0 ? 1 : 0.8 });
+    });
+    if (b === 3) [[6, 43], [8, 45], [9, 46], [11, 47]].forEach(([s, p]) => guitar.push({ s: b * 12 + s, p, len: 1.4, v: 1 }));
+  }
+
+  // ---------- drum patterns (one bar, [step, velocity]) ----------
+  const SHUFFLE_8THS = [0, 2, 3, 5, 6, 8, 9, 11];
+  const DRUMS = [
+    { id: 'shuffle', name: 'Shuffle groove', fit: 'best', fitText: 'Best match',
+      why: 'The hi-hat swings with the guitar’s boogie. Backbeat on 2 and 4.',
+      bar: { kick: [[0, 1], [6, 0.9]], snare: [[3, 1], [9, 1]], hat: SHUFFLE_8THS.map(s => [s, s % 3 ? 0.55 : 0.85]) } },
+    { id: 'halftime', name: 'Half-time stomp', fit: 'great', fitText: 'Great match',
+      why: 'Heavy and roomy. One big snare per bar leaves space for the riff.',
+      bar: { kick: [[0, 1], [8, 0.85]], snare: [[6, 1]], hat: [[0, 0.8], [3, 0.6], [6, 0.8], [9, 0.6]] } },
+    { id: 'train', name: 'Train beat', fit: 'good', fitText: 'Good match',
+      why: 'Rolling ghost notes on every triplet. Drives a faster southern rock feel.',
+      bar: { kick: [[0, 1], [6, 1]], snare: Array.from({ length: 12 }, (_, s) => [s, s === 3 || s === 9 ? 1 : 0.28]), hat: [] } },
+  ];
+  const DRUM_OTHERS = [
+    { id: 'slow12', name: 'Slow blues 12/8', fit: 'good', fitText: 'Good match',
+      why: 'Every triplet on the hat, a lazy backbeat. Works if you slow the song down.',
+      bar: { kick: [[0, 1], [7, 0.6]], snare: [[3, 1], [9, 1]], hat: Array.from({ length: 12 }, (_, s) => [s, s % 3 ? 0.4 : 0.8]) } },
+    { id: 'straight', name: 'Straight rock', fit: 'clash', fitText: 'Clashes',
+      why: 'Straight eighths fight the guitar’s swing. Pick this if you plan to straighten the riff.',
+      bar: { kick: [[0, 1], [6, 1], [7.5, 0.8]], snare: [[3, 1], [9, 1]], hat: [0, 1.5, 3, 4.5, 6, 7.5, 9, 10.5].map(s => [s, 0.7]) } },
+    { id: 'four', name: 'Four on the floor', fit: 'clash', fitText: 'Clashes',
+      why: 'A dance-floor kick on every beat. It flattens the shuffle.',
+      bar: { kick: [[0, 1], [3, 1], [6, 1], [9, 1]], snare: [[3, 1], [9, 1]], hat: [1.5, 4.5, 7.5, 10.5].map(s => [s, 0.8]) } },
+  ];
+
+  // ---------- bass lines (one bar, [step, semitones above the bar's root, length]) ----------
+  const BASSES = [
+    { id: 'boogie', name: 'Boogie walk', fit: 'best', fitText: 'Best match',
+      why: d => `Walks the same boogie as the guitar and lands with the ${d} kick.`,
+      bar: [[0, 0, 1.4], [2, 4, 1], [3, 7, 1.4], [5, 9, 1], [6, 10, 1.4], [8, 9, 1], [9, 7, 1.4], [11, 4, 1]] },
+    { id: 'pump', name: 'Root pump', fit: 'great', fitText: 'Great match',
+      why: d => `Hammers the root on every swung eighth. Solid under the ${d}.`,
+      bar: SHUFFLE_8THS.map(s => [s, 0, 1]) },
+    { id: 'sparse', name: 'Long roots', fit: 'good', fitText: 'Good match',
+      why: d => `Long held notes. Lots of space so the ${d} and guitar lead.`,
+      bar: [[0, 0, 5], [6, 0, 2.6], [9, 7, 2.6]] },
+  ];
+  const BASS_OTHERS = [
+    { id: 'walk4', name: 'Jazz walk', fit: 'good', fitText: 'Good match',
+      why: () => 'A note on every beat climbing to the next chord. Lighter and bouncier.',
+      bar: [[0, 0, 2.6], [3, 4, 2.6], [6, 7, 2.6], [9, 9, 2.6]] },
+    { id: 'funk', name: 'Funk sixteenths', fit: 'clash', fitText: 'Clashes',
+      why: () => 'Busy straight sixteenths. They pull against the shuffle.',
+      bar: [0, 0.75, 1.5, 3, 4.5, 5.25, 6, 7.5, 9, 9.75, 10.5].map((s, i) => [s, i % 4 === 3 ? 12 : 0, 0.6]) },
+  ];
+
+  // ---------- building notes from a pattern and the customize controls ----------
+  function buildDrums(def, opts) {
+    const out = [];
+    for (let b = 0; b < BARS; b++) {
+      const bar = { kick: def.bar.kick.slice(), snare: def.bar.snare.slice(), hat: def.bar.hat.slice() };
+      if (opts.busy === 0) {
+        bar.hat = bar.hat.filter(([s]) => s % 3 === 0);
+        bar.snare = bar.snare.filter(([, v]) => v >= 0.5);
+      } else if (opts.busy === 2) {
+        const hatSteps = new Set(bar.hat.map(([s]) => s));
+        const grid = def.id === 'straight' || def.id === 'four' ? [0, 1.5, 3, 4.5, 6, 7.5, 9, 10.5] : SHUFFLE_8THS;
+        grid.forEach(s => { if (!hatSteps.has(s)) bar.hat.push([s, 0.4]); });
+        [2, 8].forEach(s => { if (!bar.snare.some(([x]) => x === s)) bar.snare.push([s, 0.25]); });
+        if (b % 2 === 1) bar.kick.push([11, 0.6]);
+      }
+      let tom = [];
+      if (opts.fill && b === BARS - 1) {
+        bar.snare = bar.snare.filter(([s]) => s < 6).concat([[6, 0.9], [8, 0.6], [9, 0.9]]);
+        bar.hat = bar.hat.filter(([s]) => s < 6);
+        bar.kick = bar.kick.filter(([s]) => s <= 6);
+        tom = [[10, 0.9], [11, 1]];
+      }
+      Object.entries({ ...bar, tom }).forEach(([piece, hits]) =>
+        hits.forEach(([s, v]) => out.push({ s: b * 12 + s, piece, v, len: piece === 'kick' ? 0.8 : 0.55 })));
+    }
+    return out;
+  }
+  function buildBass(def, opts) {
+    const out = [];
+    for (let b = 0; b < BARS; b++) {
+      let bar = def.bar.slice();
+      if (opts.busy === 0) bar = bar.filter(([s]) => s % 3 === 0);
+      if (opts.busy === 2) SHUFFLE_8THS.forEach(s => { if (!bar.some(([x]) => x === s)) bar.push([s, 12, 0.9]); });
+      bar.forEach(([s, iv, len]) => out.push({ s: b * 12 + s, p: 28 + ROOTS[b] + iv, len, v: s % 3 === 0 ? 1 : 0.8 }));
+    }
+    return out;
+  }
+
+  // ---------- state ----------
+  const state = {
+    stage: 'drums',                // drums -> drumsKept -> bass -> done
+    pick: 0,                       // index into the current option list
+    others: false, customize: false,
+    opts: { busy: 1, fill: false },
+    drums: null, drumsDef: null,   // kept drum notes
+    bass: null, bassDef: null,     // kept bass notes
+  };
+  const options = () => state.stage === 'drums' ? DRUMS.concat(DRUM_OTHERS) : BASSES.concat(BASS_OTHERS);
+  const current = () => options()[state.pick];
+  function preview() {
+    if (state.stage === 'drums') return { drums: buildDrums(current(), state.opts) };
+    if (state.stage === 'bass') return { bass: buildBass(current(), state.opts) };
+    return {};
+  }
+
+  // ---------- UI ----------
+  const layersEl = document.getElementById('layers');
+  const trayEl = document.getElementById('tray');
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function renderLayers() {
+    const rows = [
+      `<h2>Layers</h2>`,
+      layerRow('guitar', 'Blues guitar', 'Left wall · E boogie riff', ''),
+    ];
+    if (state.stage === 'drums') rows.push(layerRow('drums', 'Drum kit', 'Floor · previewing ' + current().name, 'pending'));
+    else rows.push(layerRow('drums', 'Drum kit', 'Floor · ' + state.drumsDef.name, ''));
+    if (state.stage === 'bass') rows.push(layerRow('bass', 'Bass', 'Right wall · previewing ' + current().name, 'pending'));
+    else if (state.bass) rows.push(layerRow('bass', 'Bass', 'Right wall · ' + state.bassDef.name, ''));
+    else rows.push(`<div class="layer empty"><span class="sw" style="background:transparent;border:1px dashed var(--ink-dim)"></span><span class="ln">Right wall</span><span class="ld">Empty</span></div>`);
+    rows.push(`<div class="layer empty"><span class="sw" style="background:transparent;border:1px dashed var(--ink-dim)"></span><span class="ln">Ceiling</span><span class="ld">Empty</span></div>`);
+    layersEl.innerHTML = rows.join('');
+  }
+  function layerRow(key, name, desc, cls) {
+    return `<div class="layer ${cls}"><span class="sw" style="background:${COLORS[key]}"></span><span class="ln">${esc(name)}</span><span class="ld">${esc(desc)}</span></div>`;
+  }
+
+  function miniSvg(def, kind) {
+    // One bar of the pattern as dots: drums in three rows, bass as a contour
+    const W = 240, H = 34, x = s => 6 + s / 12 * (W - 12);
+    let dots = '';
+    for (let s = 0; s < 12; s += 3) dots += `<line x1="${x(s)}" x2="${x(s)}" y1="2" y2="${H - 2}" stroke="rgba(255,236,214,.12)"/>`;
+    if (kind === 'drums') {
+      const rows = { hat: 7, snare: 17, kick: 27 };
+      Object.entries(rows).forEach(([piece, y]) =>
+        def.bar[piece].forEach(([s, v]) => { dots += `<circle cx="${x(s)}" cy="${y}" r="${2 + v * 2.2}" style="fill:var(--accent)" fill-opacity="${0.35 + v * 0.65}"/>`; }));
+    } else {
+      def.bar.forEach(([s, iv, len]) => {
+        const y = 28 - iv * 1.6;
+        dots += `<rect x="${x(s)}" y="${y - 2.5}" width="${Math.max(4, len / 12 * (W - 12) - 2)}" height="5" rx="2.5" style="fill:var(--accent)"/>`;
+      });
+    }
+    return `<svg class="mini" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${dots}</svg>`;
+  }
+
+  function renderTray() {
+    if (state.stage === 'drums' || state.stage === 'bass') {
+      const kind = state.stage;
+      const accent = COLORS[kind];
+      const list = options();
+      const top3 = list.slice(0, 3);
+      const drumName = state.drumsDef ? state.drumsDef.name.toLowerCase() : '';
+      const why = d => typeof d.why === 'function' ? d.why(drumName) : d.why;
+      const head = kind === 'drums'
+        ? ['Drum patterns that fit your blues guitar', 'Matched to the shuffle feel, the tempo, and where the riff leaves gaps.']
+        : ['Bass lines that fit the guitar and drums', `Matched to the E–A chords in the riff and the ${drumName} kick.`];
+      trayEl.style.setProperty('--accent', accent);
+      trayEl.innerHTML = `
+        <div class="tray-head"><h3>${head[0]}</h3><p>${head[1]}</p></div>
+        <div class="cards">${top3.map((d, i) => `
+          <button type="button" class="card" data-pick="${i}" aria-pressed="${state.pick === i}" style="--accent:${accent}">
+            <span class="top"><span class="nm">${esc(d.name)}</span><span class="fit ${d.fit}">${d.fitText}</span></span>
+            ${miniSvg(d, kind)}
+            <span class="why">${esc(why(d))}</span>
+          </button>`).join('')}
+        </div>
+        ${state.pick >= 3 ? `<p class="hint">Previewing <strong>${esc(current().name)}</strong>: ${esc(why(current()))}</p>` : ''}
+        <div class="actions">
+          <button type="button" class="primary" id="keep">Keep ${esc(current().name)}</button>
+          <button type="button" id="custom" aria-expanded="${state.customize}">Customize</button>
+          <button type="button" id="other" aria-expanded="${state.others}">Other styles</button>
+        </div>
+        <div class="panel" id="customPanel" ${state.customize ? '' : 'hidden'}>
+          <div class="row"><label for="busy">How busy</label>
+            <input type="range" id="busy" min="0" max="2" step="1" value="${state.opts.busy}">
+            <span class="val">${['Sparser', 'As suggested', 'Busier'][state.opts.busy]}</span></div>
+          ${kind === 'drums' ? `<div class="row"><label for="fill">Fill</label>
+            <button type="button" class="chip" id="fill" aria-pressed="${state.opts.fill}">${state.opts.fill ? 'Fill into every 4th bar: on' : 'Fill into every 4th bar: off'}</button></div>` : ''}
+          <p class="hint">Fine changes, note by note, would happen right in the tunnel.</p>
+        </div>
+        <div class="panel" id="otherPanel" ${state.others ? '' : 'hidden'}>
+          <div class="chips">${list.map((d, i) => `
+            <button type="button" class="chip" data-pick="${i}" aria-pressed="${state.pick === i}"><span class="dot ${d.fit === 'clash' ? 'clash' : ''}"></span>${esc(d.name)}</button>`).join('')}
+          </div>
+          <p class="hint">Green fits what you already have. Orange works against it.</p>
+        </div>`;
+    } else if (state.stage === 'drumsKept') {
+      trayEl.innerHTML = `
+        <div class="tray-head"><h3>Drum kit added: ${esc(state.drumsDef.name)}</h3><p>Two layers now. Add the next instrument and the suggestions take both into account.</p></div>
+        <div class="actions">
+          <button type="button" class="primary" id="addBass">Add bass</button>
+          <button type="button" disabled title="Not in this mockup">Add keys</button>
+          <button type="button" id="redoDrums">Change drum pattern</button>
+        </div>`;
+    } else {
+      trayEl.innerHTML = `
+        <div class="tray-head"><h3>Three layers in about a minute</h3><p>${esc(state.drumsDef.name)} drums and ${esc(state.bassDef.name.toLowerCase())} bass under your guitar. From here you would tweak notes in the tunnel.</p></div>
+        <div class="actions">
+          <button type="button" id="redoBass">Change bass line</button>
+          <button type="button" id="restart">Start over</button>
+        </div>`;
+    }
+  }
+
+  function render() { renderLayers(); renderTray(); }
+
+  trayEl.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.pick !== undefined) { state.pick = +b.dataset.pick; render(); return; }
+    switch (b.id) {
+      case 'keep':
+        if (state.stage === 'drums') { state.drumsDef = current(); state.drums = buildDrums(current(), state.opts); state.stage = 'drumsKept'; }
+        else { state.bassDef = current(); state.bass = buildBass(current(), state.opts); state.stage = 'done'; }
+        state.others = state.customize = false;
+        break;
+      case 'custom': state.customize = !state.customize; break;
+      case 'other': state.others = !state.others; break;
+      case 'fill': state.opts.fill = !state.opts.fill; break;
+      case 'addBass': state.stage = 'bass'; state.pick = 0; state.opts = { busy: 1, fill: false }; break;
+      case 'redoDrums': state.stage = 'drums'; state.pick = Math.max(0, options().indexOf(state.drumsDef)); state.drums = null; break;
+      case 'redoBass': state.stage = 'bass'; state.pick = Math.max(0, options().indexOf(state.bassDef)); state.bass = null; break;
+      case 'restart': Object.assign(state, { stage: 'drums', pick: 0, others: false, customize: false, opts: { busy: 1, fill: false }, drums: null, drumsDef: null, bass: null, bassDef: null }); break;
+    }
+    render();
+  });
+  trayEl.addEventListener('input', e => {
+    if (e.target.id === 'busy') {
+      state.opts.busy = +e.target.value;
+      e.target.nextElementSibling.textContent = ['Sparser', 'As suggested', 'Busier'][state.opts.busy];
+    }
+  });
+
+  // ---------- transport (visual clock, switched to the audio clock when sound is on) ----------
+  let paused = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let pos = 0;                       // song position in steps
+  let visOrigin = performance.now();
+  let ac = null, soundOn = false, audioOrigin = 0, nextStep = 0, master = null, noiseBuf = null;
+
+  function position(now) {
+    if (paused) return pos;
+    if (soundOn) return (ac.currentTime - audioOrigin) / STEP;
+    return (now - visOrigin) / 1000 / STEP;
+  }
+  function rebase(now) {
+    visOrigin = now - pos * STEP * 1000;
+    if (ac) { audioOrigin = ac.currentTime - pos * STEP; nextStep = Math.ceil(pos); }
+  }
+  const pauseBtn = document.getElementById('pause');
+  const soundBtn = document.getElementById('sound');
+  function syncTransport() {
+    pauseBtn.textContent = paused ? 'Play' : 'Pause';
+    pauseBtn.setAttribute('aria-pressed', String(paused));
+    soundBtn.textContent = soundOn ? 'Sound on' : 'Turn on sound';
+    soundBtn.setAttribute('aria-pressed', String(soundOn));
+  }
+  pauseBtn.addEventListener('click', () => {
+    const now = performance.now();
+    pos = position(now);
+    paused = !paused;
+    rebase(now);
+    if (ac) paused ? ac.suspend() : ac.resume();
+    syncTransport();
+  });
+  soundBtn.addEventListener('click', () => {
+    const now = performance.now();
+    pos = position(now);
+    if (!ac) setupAudio();
+    soundOn = !soundOn;
+    if (soundOn) { ac.resume(); rebase(now); }
+    else visOrigin = now - pos * STEP * 1000;
+    syncTransport();
+  });
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); pauseBtn.click(); }
+  });
+
+  // ---------- synth voices ----------
+  function setupAudio() {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    master = ac.createGain();
+    master.gain.value = 0.7;
+    const comp = ac.createDynamicsCompressor();
+    master.connect(comp).connect(ac.destination);
+    noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    setInterval(schedule, 25);
+  }
+  const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+  const drive = (() => { let c = null; return () => { if (c) return c; const n = 1024; c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i / n * 2 - 1; c[i] = Math.tanh(x * 3); } return c; }; })();
+
+  function env(g, t, peak, attack, decay) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+  }
+  function playGuitar(t, n) {
+    const g = ac.createGain();
+    const f = ac.createBiquadFilter(); f.type = 'lowpass';
+    f.frequency.setValueAtTime(2600, t); f.frequency.exponentialRampToValueAtTime(700, t + 0.2);
+    const sh = ac.createWaveShaper(); sh.curve = drive();
+    [-6, 6].forEach(det => {
+      const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz(n.p); o.detune.value = det;
+      o.connect(sh); o.start(t); o.stop(t + 0.4);
+    });
+    sh.connect(f).connect(g).connect(master);
+    env(g, t, 0.07 * n.v, 0.004, 0.28);
+  }
+  function playBass(t, n) {
+    const g = ac.createGain();
+    const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 520;
+    const o = ac.createOscillator(); o.type = 'triangle'; o.frequency.value = hz(n.p);
+    const o2 = ac.createOscillator(); o2.type = 'sine'; o2.frequency.value = hz(n.p);
+    o.connect(f); o2.connect(f); f.connect(g).connect(master);
+    const dur = Math.max(0.15, n.len * STEP * 0.95);
+    o.start(t); o2.start(t); o.stop(t + dur + 0.1); o2.stop(t + dur + 0.1);
+    env(g, t, 0.32 * n.v, 0.008, dur);
+  }
+  function noise(t, dur, type, freq, peak) {
+    const s = ac.createBufferSource(); s.buffer = noiseBuf;
+    const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq;
+    const g = ac.createGain();
+    s.connect(f).connect(g).connect(master);
+    env(g, t, peak, 0.002, dur);
+    s.start(t); s.stop(t + dur + 0.05);
+  }
+  function tone(t, f0, f1, dur, peak) {
+    const o = ac.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    const g = ac.createGain(); o.connect(g).connect(master);
+    env(g, t, peak, 0.002, dur);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+  function playDrum(t, n) {
+    if (n.piece === 'kick') tone(t, 130, 42, 0.32, 0.9 * n.v);
+    else if (n.piece === 'snare') { noise(t, 0.16, 'highpass', 1400, 0.45 * n.v); tone(t, 220, 160, 0.08, 0.25 * n.v); }
+    else if (n.piece === 'hat') noise(t, 0.045, 'highpass', 7500, 0.18 * n.v);
+    else if (n.piece === 'tom') tone(t, 190, 95, 0.3, 0.6 * n.v);
+  }
+
+  function activeLayers() {
+    const p = preview();
+    return { guitar, drums: state.drums || p.drums || [], bass: state.bass || p.bass || [] };
+  }
+  function schedule() {
+    if (!soundOn || paused) return;
+    const L = activeLayers();
+    while (audioOrigin + nextStep * STEP < ac.currentTime + 0.12) {
+      const base = audioOrigin + nextStep * STEP;
+      const i = ((nextStep % LOOP) + LOOP) % LOOP;
+      const at = n => n.s >= i && n.s < i + 1;
+      L.guitar.filter(at).forEach(n => playGuitar(base + (n.s - i) * STEP, n));
+      L.drums.filter(at).forEach(n => playDrum(base + (n.s - i) * STEP, n));
+      L.bass.filter(at).forEach(n => playBass(base + (n.s - i) * STEP, n));
+      nextStep++;
+    }
+  }
+
+  // ---------- the tunnel ----------
+  const canvas = document.getElementById('tunnel');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, dpr = 1;
+  function resize() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    canvas.width = Math.floor(W * dpr); canvas.height = Math.floor(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  addEventListener('resize', resize);
+  resize();
+
+  const HALF_W = 1.6, HALF_H = 1.0;       // tunnel cross-section (y down)
+  const DEPTH = 0.45;                     // world units per step
+  const GATE = 3.0;                       // where notes sound
+  const NEAR = 0.8, FAR = 26;
+  const DRUM_LANES = { hat: -1.15, snare: -0.4, kick: 0.4, tom: 1.15 };
+  let f = 1, cx = 0, cy = 0;
+  const proj = (x, y, z) => [cx + x * f / z, cy + y * f / z];
+
+  function quad(pts, fill, alpha, outline) {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.globalAlpha = alpha;
+    if (outline) { ctx.setLineDash([5, 4]); ctx.strokeStyle = fill; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = alpha * 0.25; }
+    ctx.fillStyle = fill; ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  // Every note becomes a slab on its surface, between depths z0 and z1
+  function noteShape(layer, n, z0, z1) {
+    if (layer === 'drums') {
+      const x = DRUM_LANES[n.piece], w = 0.26 + n.v * 0.06;
+      return [proj(x - w, HALF_H, z0), proj(x + w, HALF_H, z0), proj(x + w, HALF_H, z1), proj(x - w, HALF_H, z1)];
+    }
+    const wall = layer === 'guitar' ? -HALF_W : HALF_W;
+    const [lo, hi] = layer === 'guitar' ? [38, 60] : [26, 46];
+    const y = HALF_H - 0.12 - (n.p - lo) / (hi - lo) * (2 * HALF_H - 0.3);
+    const t = 0.07;
+    return [proj(wall, y - t, z0), proj(wall, y + t, z0), proj(wall, y + t, z1), proj(wall, y - t, z1)];
+  }
+
+  function draw(now) {
+    const p = position(now);
+    f = Math.min(W, H) * 0.62;
+    cx = W / 2; cy = H * 0.34;
+    ctx.fillStyle = '#0d0b10';
+    ctx.fillRect(0, 0, W, H);
+
+    // vanishing glow
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.6);
+    g.addColorStop(0, 'rgba(255,138,61,0.10)'); g.addColorStop(0.35, 'rgba(124,199,255,0.04)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+    // tunnel edges
+    ctx.strokeStyle = 'rgba(255,236,214,0.10)'; ctx.lineWidth = 1;
+    [[-HALF_W, -HALF_H], [HALF_W, -HALF_H], [HALF_W, HALF_H], [-HALF_W, HALF_H]].forEach(([x, y]) => {
+      const a = proj(x, y, NEAR), b = proj(x, y, FAR);
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    });
+
+    // beat and bar gates
+    const first = Math.ceil(p - (GATE - NEAR) / DEPTH);
+    for (let s = Math.ceil(first / 3) * 3; s < p + (FAR - GATE) / DEPTH; s += 3) {
+      const z = GATE + (s - p) * DEPTH;
+      if (z < NEAR) continue;
+      const bar = ((s % LOOP) + LOOP) % LOOP % 12 === 0;
+      const fog = Math.max(0, 1 - z / FAR);
+      const a = proj(-HALF_W, -HALF_H, z), b = proj(HALF_W, HALF_H, z);
+      ctx.strokeStyle = bar ? `rgba(255,236,214,${0.35 * fog})` : `rgba(255,236,214,${0.08 * fog})`;
+      ctx.lineWidth = bar ? 1.4 : 1;
+      ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
+      if (bar && fog > 0.2) {
+        ctx.fillStyle = `rgba(255,236,214,${0.5 * fog})`;
+        ctx.font = `500 ${Math.max(9, 13 * fog)}px "IBM Plex Mono", monospace`;
+        ctx.fillText('bar ' + (Math.floor((((s % LOOP) + LOOP) % LOOP) / 12) + 1), a[0] + 6, a[1] + 14 * fog + 4);
+      }
+    }
+
+    // notes, far to near
+    const L = activeLayers();
+    const ghost = { drums: state.stage === 'drums', bass: state.stage === 'bass', guitar: false };
+    const shapes = [];
+    Object.entries(L).forEach(([layer, notes]) => notes.forEach(n => {
+      const rel0 = (((n.s - p) % LOOP) + LOOP) % LOOP;
+      [rel0, rel0 - LOOP].forEach(rel => {
+        const z0 = GATE + rel * DEPTH, z1 = z0 + Math.max(0.12, n.len * DEPTH * 0.9);
+        if (z1 < NEAR || z0 > FAR) return;
+        const playing = rel <= 0 && rel + n.len > 0;
+        shapes.push({ z: z0, layer, n, z0: Math.max(NEAR, z0), z1, playing });
+      });
+    }));
+    shapes.sort((a, b) => b.z - a.z);
+    shapes.forEach(sh => {
+      const fog = Math.max(0, 1 - sh.z0 / FAR);
+      const behind = sh.z0 < GATE ? Math.max(0, (sh.z0 - NEAR) / (GATE - NEAR)) : 1;
+      let alpha = (0.35 + 0.65 * sh.n.v) * fog * (0.3 + 0.7 * behind);
+      if (sh.playing) alpha = Math.min(1, alpha + 0.4);
+      const color = COLORS[sh.layer];
+      if (sh.playing) { ctx.shadowColor = color; ctx.shadowBlur = 18; }
+      quad(noteShape(sh.layer, sh.n, sh.z0, sh.z1), color, ghost[sh.layer] ? alpha * 0.8 : alpha, ghost[sh.layer]);
+      ctx.shadowBlur = 0;
+    });
+
+    // the gate where notes sound
+    const a = proj(-HALF_W, -HALF_H, GATE), b = proj(HALF_W, HALF_H, GATE);
+    ctx.strokeStyle = 'rgba(255,138,61,0.55)'; ctx.lineWidth = 2;
+    ctx.shadowColor = '#ff8a3d'; ctx.shadowBlur = 14;
+    ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
+    ctx.shadowBlur = 0;
+
+    // lane labels on the floor at the gate
+    ctx.font = '500 11px "IBM Plex Mono", monospace';
+    ctx.fillStyle = 'rgba(124,199,255,0.65)';
+    ctx.textAlign = 'center';
+    Object.entries(DRUM_LANES).forEach(([piece, x]) => { const q = proj(x, HALF_H, GATE); ctx.fillText(piece, q[0], q[1] + 16); });
+    ctx.textAlign = 'left';
+  }
+
+  function frame(now) { draw(now); requestAnimationFrame(frame); }
+  render();
+  syncTransport();
+  requestAnimationFrame(frame);
+})();
+</script>
