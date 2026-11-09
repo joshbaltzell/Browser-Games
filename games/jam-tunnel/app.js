@@ -203,7 +203,10 @@
       JT.ROLES.forEach(r => { voices[r] = voiceOf(r); });
       const muted = JSON.parse(JSON.stringify(state.track));
       JT.ROLES.forEach(r => { if (state.muted[r]) muted.parts[r] = []; });
-      const blob = await JT.renderWav(state.song, muted, voices);
+      const blob = await JT.renderWav(state.song, muted, voices, f => {
+        const btn = document.querySelector('[data-act="export"]');
+        if (btn) btn.textContent = `Rendering your song… ${Math.round(f * 100)}%`;
+      });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `jam-tunnel-${state.song.genre}.wav`;

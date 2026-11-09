@@ -144,8 +144,9 @@ window.JT = window.JT || {};
     return { parts, sections, length: beat + 4 };
   };
 
-  // Render the whole song offline and return a 16-bit stereo WAV as a Blob
-  JT.renderWav = async function(song, track, voices) {
+  // Render the whole song offline and return a 16-bit stereo WAV as a Blob.
+  // onProgress(0..1) is called as rendering moves along.
+  JT.renderWav = async function(song, track, voices, onProgress) {
     const spb = 60 / song.bpm;
     const seconds = track.length * spb + 1.5;
     const rate = 44100;
@@ -153,8 +154,28 @@ window.JT = window.JT || {};
     const audio = JT.createAudio(ctx);
     await audio.ready;
     const parts = JT.ROLES.filter(r => track.parts[r].length).map(r => ({ voice: voices[r], notes: track.parts[r], lead: r === 'lead' }));
-    audio.schedule(parts, 0, track.length, 0.1, spb, track.length + 1000);
+    // Create notes a couple of seconds ahead of the renderer instead of all at once: thousands of
+    // waiting audio nodes slow offline rendering down about four times.
+    const CHUNK = 2;
+    const chunkBeats = CHUNK / spb;
+    let from = 0;
+    const scheduleNext = () => {
+      const to = Math.min(track.length, from + chunkBeats);
+      if (to > from) audio.schedule(parts, from, to, 0.1, spb, track.length + 1000);
+      from = to;
+    };
+    scheduleNext();
+    scheduleNext();
+    for (let t = CHUNK; t < seconds - 0.05; t += CHUNK) {
+      const at = Math.floor(t * rate / 128) * 128 / rate;   // suspend times must fall on a render quantum
+      ctx.suspend(at).then(() => {
+        scheduleNext();
+        if (onProgress) onProgress(at / seconds);
+        ctx.resume();
+      });
+    }
     const buf = await ctx.startRendering();
+    if (onProgress) onProgress(1);
 
     const n = buf.length, ch = [buf.getChannelData(0), buf.getChannelData(1)];
     const data = new DataView(new ArrayBuffer(44 + n * 4));
