@@ -761,6 +761,8 @@ window.JT = window.JT || {};
     return style.gen(ctx, T.rng(seed), busy).filter(n => n.b >= 0 && n.b < 16);
   };
 
+  JT.setProgression = (song, i) => setProgression(song, i);
+
   JT.changeChords = function(song) {
     const g = JT.GENRES[song.genre];
     setProgression(song, (song.progIndex + 1) % g.progressions.length);
@@ -821,6 +823,18 @@ window.JT = window.JT || {};
       if (style.clash) score -= 10;
       return { style, seed, busy: 1, notes, score, why: style.why, reasons };
     });
+    // The song's pace: slow songs favor sparser parts, fast songs busier ones
+    if (song.pace != null && options.length > 1) {
+      const dens = options.map(o => o.notes.length);
+      const lo = Math.min(...dens), hi = Math.max(...dens);
+      options.forEach(o => {
+        if (o.style.clash || hi === lo) return;
+        const d = (o.notes.length - lo) / (hi - lo);            // 0 = sparsest option, 1 = busiest
+        o.score += 1.8 * (1 - Math.abs(d - song.pace));
+        if (song.pace < 0.3 && d < 0.35) o.reasons.push('Sparse, which suits a slow song.');
+        if (song.pace > 0.7 && d > 0.65) o.reasons.push('Busy and driving, which suits a fast song.');
+      });
+    }
     options.sort((a, b) => b.score - a.score);
     const labels = ['Best match', 'Great match', 'Good match'];
     let n = 0;

@@ -196,6 +196,25 @@
     render();
   }
 
+  function pickGenre(id) {
+    startAudio();
+    state.song = JT.newSong(id, (Math.random() * 1e9) | 0);
+    state.song.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    state.salt = 0;
+    state.mode = 'loop';
+    state.arrangement = null;
+    state.track = null;
+    state.role = null;
+    state.muted = { drums: false, bass: false, lead: false, pad: false };
+    // Start from the mood closest to the genre's own default chords
+    const own = JT.GENRES[id].progressions[0].bright;
+    state.mood = JT.MOOD.reduce((a, b) => Math.abs(b.value - own) < Math.abs(a.value - own) ? b : a).id;
+    state.pace = 'medium';
+    state.moodPicked = false;
+    applyMood(true);   // the genre's signature chords until a mood is picked
+    state.tray = 'mood';
+  }
+
   // Pace and mood decide the tempo and the chords
   function applyMood(signature) {
     freeze();
@@ -204,6 +223,124 @@
     JT.applyMood(state.song, pace, bright);
     moodPreview = null;
     rebase(performance.now());
+  }
+
+  // --- SURPRISE ME ---
+  // Fill every empty part in one go: mostly the best match, sometimes another good one, and now and
+  // then a different sound. Parts already kept stay.
+  function surpriseFill() {
+    const g = JT.GENRES[state.song.genre];
+    STEPS.forEach(role => {
+      if (state.song.layers[role]) return;
+      const opts = JT.suggest(state.song, role, (Math.random() * 1e6) | 0).filter(o => o.fit !== 'clash');
+      const o = Math.random() < 0.6 ? opts[0] : opts[Math.floor(Math.random() * Math.min(3, opts.length))];
+      const sounds = g.roles[role].sounds || [];
+      const sound = sounds.length > 1 && Math.random() < 0.35 ? sounds[1 + Math.floor(Math.random() * (sounds.length - 1))].id : g.roles[role].voice;
+      state.song.layers[role] = { styleId: o.style.id, name: o.style.name, seed: o.seed, busy: 1, sound, notes: o.notes };
+    });
+    regenerateOthers(null);
+    state.role = null;
+    state.tray = 'ready';
+    render();
+  }
+  // From the start screen: a random genre, pace and mood too
+  function surpriseAll() {
+    const ids = Object.keys(JT.GENRES);
+    pickGenre(ids[Math.floor(Math.random() * ids.length)]);
+    state.pace = JT.PACE[Math.floor(Math.random() * 3)].id;
+    state.mood = JT.MOOD[Math.floor(Math.random() * 3)].id;
+    state.moodPicked = true;
+    applyMood();
+    surpriseFill();
+  }
+
+  // --- SAVED JAMS (in this browser) ---
+  const STORE = 'jamTunnel.jams.v1';
+  function loadJams() {
+    try { return JSON.parse(localStorage.getItem(STORE)) || []; } catch (e) { return []; }
+  }
+  function writeJams(list) {
+    try { localStorage.setItem(STORE, JSON.stringify(list)); } catch (e) { /* storage blocked or full: keep going */ }
+  }
+  // A jam is saved as recipes; only parts edited by hand keep their notes
+  function snapshot() {
+    const song = state.song;
+    const layers = {};
+    Object.entries(song.layers).forEach(([role, L]) => {
+      layers[role] = { styleId: L.styleId, name: L.name, seed: L.seed, busy: L.busy, sound: L.sound, edited: !!L.edited, notes: L.edited ? L.notes : undefined };
+    });
+    return {
+      id: song.id, genre: song.genre, seed: song.seed, bpm: song.bpm, pace: song.pace, bright: song.bright,
+      progIndex: song.progIndex, layers, arrangement: state.arrangement, savedAt: Date.now(),
+    };
+  }
+  let saveTimer = null;
+  function scheduleSave() {
+    if (!state.song || !Object.keys(state.song.layers).length) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      if (!state.song) return;
+      const list = loadJams().filter(j => j.id !== state.song.id);
+      list.unshift(snapshot());
+      writeJams(list.slice(0, 24));
+    }, 400);
+  }
+  function openJam(id) {
+    const j = loadJams().find(x => x.id === id);
+    if (!j || !JT.GENRES[j.genre]) return;
+    startAudio();
+    const song = JT.newSong(j.genre, j.seed);
+    song.id = j.id;
+    song.pace = j.pace;
+    song.bright = j.bright;
+    JT.setProgression(song, Math.min(j.progIndex, JT.GENRES[j.genre].progressions.length - 1));
+    song.bpm = j.bpm;
+    STEPS.forEach(role => {
+      const L = j.layers[role];
+      if (!L) return;
+      const notes = L.edited ? L.notes : JT.generate(song, role, L.styleId, L.seed, L.busy);
+      song.layers[role] = Object.assign({}, L, { notes });
+    });
+    state.song = song;
+    state.arrangement = j.arrangement ? j.arrangement.map(sec => Object.assign({}, sec, { layers: Object.assign({}, sec.layers) })) : null;
+    if (state.arrangement) JT.syncSectionIds(state.arrangement);
+    state.track = null;
+    state.mode = 'loop';
+    state.role = null;
+    state.muted = { drums: false, bass: false, lead: false, pad: false };
+    state.tray = nextStep() ? 'add' : 'ready';
+    jumpTo(0);
+    render();
+  }
+  function deleteJam(id) {
+    writeJams(loadJams().filter(j => j.id !== id));
+    renderTray();
+  }
+  function ago(t) {
+    const m = Math.round((Date.now() - t) / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return m + ' min ago';
+    const h = Math.round(m / 60);
+    if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+    const days = Math.round(h / 24);
+    return days + (days === 1 ? ' day ago' : ' days ago');
+  }
+
+  function downloadBlob(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+  function exportMidi() {
+    const voices = {}, names = {};
+    JT.ROLES.forEach(r => { voices[r] = voiceOf(r); names[r] = soundName(r); });
+    const track = JSON.parse(JSON.stringify(state.track));
+    JT.ROLES.forEach(r => { if (state.muted[r]) track.parts[r] = []; });
+    downloadBlob(JT.renderMidi(state.song, track, voices, names), `jam-tunnel-${state.song.genre}.mid`);
   }
 
   // --- THE FULL SONG ---
@@ -247,13 +384,7 @@
         const btn = document.querySelector('[data-act="export"]');
         if (btn) btn.textContent = `Rendering your song… ${Math.round(f * 100)}%`;
       });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `jam-tunnel-${state.song.genre}.wav`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      downloadBlob(blob, `jam-tunnel-${state.song.genre}.wav`);
     } finally {
       state.exporting = false;
       renderTray();
@@ -321,11 +452,12 @@
       const len = E.role === 'drums' ? 0.18 : E.role === 'pad' ? 1 : grid * 2;
       const note = { b: q, len, p: lane, v: 0.9 };
       L.notes = L.notes.concat([note]).sort((a, b) => a.b - b.b);
-      if (audio && audioReady && soundOn) audio.playNow(voiceOf(E.role), Object.assign({ lead: E.role === 'lead' }, note), spb());
+      if (audio && audioReady && soundOn) audio.playNow(voiceOf(E.role), Object.assign({ lead: E.role === 'lead' }, note), spb(), E.role);
     }
     L.edited = true;
     renderLayers();
     renderTray();
+    scheduleSave();
   }
   function undoEdit() {
     const E = state.edit;
@@ -337,7 +469,7 @@
     const E = state.edit;
     E.cursor = Math.max(0, Math.min(E.lanes.length - 1, E.cursor + dir * SCREEN_SIGN[E.role]));
     // Let the lane be heard when moving across pitches
-    if (E.role !== 'drums' && audio && audioReady && soundOn) audio.playNow(voiceOf(E.role), { b: 0, len: 0.25, p: E.lanes[E.cursor], v: 0.5, lead: E.role === 'lead' }, spb());
+    if (E.role !== 'drums' && audio && audioReady && soundOn) audio.playNow(voiceOf(E.role), { b: 0, len: 0.25, p: E.lanes[E.cursor], v: 0.5, lead: E.role === 'lead' }, spb(), E.role);
     renderTray();
   }
   function stepTime(dir) {
@@ -352,6 +484,7 @@
 
   function render() {
     loadSounds();
+    scheduleSave();
     renderSong();
     renderLayers();
     renderTray();
@@ -433,6 +566,22 @@
     return `<svg class="mini" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${s}</svg>`;
   }
 
+  function jamsList() {
+    const jams = loadJams().filter(j => JT.GENRES[j.genre]);
+    if (!jams.length) return '';
+    return `<div class="tray-head"><h3 class="small">Your jams</h3><p>Saved in this browser as you work.</p></div>
+      <div class="jams">${jams.slice(0, 6).map(j => {
+        const jg = JT.GENRES[j.genre];
+        const prog = jg.progressions[Math.min(j.progIndex, jg.progressions.length - 1)];
+        const chords = T.chordsOf(jg.key, prog.chords, jg.sharps).map(T.chordName).join(' ');
+        return `<div class="jam" style="--accent:${jg.accent}">
+          <span class="nm">${esc(jg.name)}</span>
+          <span class="sub">${esc(chords)} · ${j.bpm} BPM · ${Object.keys(j.layers).length} parts${j.arrangement ? ' · full song' : ''} · ${ago(j.savedAt)}</span>
+          <span class="acts"><button type="button" data-jam="${esc(j.id)}">Open</button><button type="button" data-deljam="${esc(j.id)}" aria-label="Delete this jam">✕</button></span>
+        </div>`;
+      }).join('')}</div>`;
+  }
+
   function stepsStrip(active) {
     const items = ['Pick a genre and mood', 'Build a 4-bar loop', 'Make it a full song'];
     return `<ol class="steps">${items.map((t, i) => `<li class="${i < active ? 'done' : i === active ? 'now' : ''}"><span>${i + 1}</span>${t}</li>`).join('')}</ol>`;
@@ -459,7 +608,8 @@
           ${stepsStrip(0)}
           <p class="hint">Your song flies toward you: drums on the floor, bass on the right wall, melody on the left wall, chords on the ceiling.</p>
         </div>
-        <div class="tray-head"><h3 class="small">Pick a genre to begin</h3><p>It sets the key, tempo, chords and instruments.</p></div>
+        ${jamsList()}
+        <div class="tray-head"><h3 class="small">Pick a genre to begin</h3><p>It sets the key, tempo, chords and instruments. <button type="button" class="link" data-act="surpriseall">Or surprise me</button></p></div>
         <div class="cards four">${Object.values(JT.GENRES).map(g => `
           <button type="button" class="card" data-genre="${g.id}" style="--accent:${g.accent}">
             <span class="top"><span class="nm">${esc(g.name)}</span></span>
@@ -489,6 +639,7 @@
         </div>
         <div class="actions">
           <button type="button" class="primary" data-act="build">Start building</button>
+          <button type="button" data-act="surprise">Surprise me: build the whole loop</button>
           <button type="button" data-act="genres">Pick a different genre</button>
         </div>`;
       return;
@@ -515,7 +666,10 @@
             <span class="why">${ROLE_ABOUT[r]}</span>
           </button>`).join('')}
         </div>
-        ${count >= 2 ? `<div class="actions"><button type="button" data-act="song">My loop is done: make it a full song</button></div>` : ''}`;
+        <div class="actions">
+          ${count >= 2 ? `<button type="button" data-act="song">My loop is done: make it a full song</button>` : ''}
+          <button type="button" data-act="surprise">Surprise me: fill in the rest</button>
+        </div>`;
       return;
     }
 
@@ -621,6 +775,7 @@
         <p>Click a section to jump there and change it.</p></div>
       <div class="actions">
         <button type="button" class="primary" data-act="export" ${state.exporting ? 'disabled' : ''}>${state.exporting ? 'Rendering your song…' : 'Download as WAV'}</button>
+        <button type="button" data-act="midi" title="Notes for FL Studio, Ableton, Logic, GarageBand and other music apps">Download MIDI</button>
         <button type="button" data-act="chords">Try different chords</button>
         <button type="button" data-act="reset">Reset the arrangement</button>
         <button type="button" data-act="loop">Back to the loop</button>
@@ -667,25 +822,9 @@
     const b = e.target.closest('button');
     if (!b || b.disabled) return;
     const d = b.dataset;
-    if (d.genre) {
-      startAudio();
-      state.song = JT.newSong(d.genre, (Math.random() * 1e9) | 0);
-      state.salt = 0;
-      state.mode = 'loop';
-      state.arrangement = null;
-      state.track = null;
-      state.muted = { drums: false, bass: false, lead: false, pad: false };
-      // Start from the mood closest to the genre's own default chords
-      const g = JT.GENRES[d.genre];
-      const own = g.progressions[0].bright;
-      state.mood = JT.MOOD.reduce((a, b) => Math.abs(b.value - own) < Math.abs(a.value - own) ? b : a).id;
-      state.pace = 'medium';
-      state.moodPicked = false;
-      applyMood(true);   // the genre's signature chords until a mood is picked
-      state.tray = 'mood';
-      render();
-      return;
-    }
+    if (d.genre) { pickGenre(d.genre); render(); return; }
+    if (d.jam) { openJam(d.jam); return; }
+    if (d.deljam) { deleteJam(d.deljam); return; }
     if (d.pace) { state.pace = d.pace; applyMood(!state.moodPicked); render(); return; }
     if (d.moodpick) { state.mood = d.moodpick; state.moodPicked = true; applyMood(); render(); return; }
     if (d.add) { openSuggestions(d.add); return; }
@@ -713,6 +852,9 @@
     switch (d.act) {
       case 'keep': keepPick(); break;
       case 'build': state.tray = 'add'; render(); break;
+      case 'surprise': surpriseFill(); break;
+      case 'surpriseall': surpriseAll(); break;
+      case 'midi': exportMidi(); break;
       case 'genres': state.song = null; state.tray = 'start'; render(); break;
       case 'done': exitEdit(); break;
       case 'undo': undoEdit(); break;

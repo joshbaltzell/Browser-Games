@@ -34,7 +34,7 @@
     const audio = JT.createAudio(ctx, { samplesBase: '../samples/' });
     const roles = JT.ROLES.filter(r => !onlyRole || r === onlyRole);
     await audio.load(roles.map(r => JT.instOf(voice(r))));
-    audio.schedule(roles.map(r => ({ voice: voice(r), notes: song.layers[r].notes, lead: r === 'lead' })), 0, 16, 0.05, spb, 16);
+    audio.schedule(roles.map(r => ({ role: r, voice: voice(r), notes: song.layers[r].notes, lead: r === 'lead' })), 0, 16, 0.05, spb, 16);
     const buf = await ctx.startRendering();
     let sum = 0, peak = 0, n = 0;
     for (let ch = 0; ch < 2; ch++) {

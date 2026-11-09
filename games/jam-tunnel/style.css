@@ -216,3 +216,14 @@ kbd { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink); back
   border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, 0.03); }
 .mood-result .chords strong { font-size: 1.15rem; }
 .mood-result .mood { font-style: italic; color: var(--ink-dim); }
+
+/* --- SAVED JAMS --- */
+.jams { display: grid; gap: 6px; }
+.jam { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: center;
+  padding: 8px 10px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; }
+.jam .nm { font-weight: 500; }
+.jam .sub { color: var(--ink-dim); font-size: 0.78rem; font-family: var(--font-mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jam .acts { display: flex; gap: 4px; }
+.jam .acts button { padding: 4px 9px; font-size: 0.78rem; }
+button.link { background: none; border: 0; padding: 0; color: var(--ember); text-decoration: underline; font-size: inherit; -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (max-width: 520px) { .jam { grid-template-columns: 1fr auto; } .jam .sub { grid-column: 1 / -1; grid-row: 2; } }

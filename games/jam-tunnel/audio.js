@@ -126,10 +126,35 @@ window.JT = window.JT || {};
     const ready = Promise.resolve();
 
     // A gain node feeding the master bus and, optionally, the reverb
+    // --- MIX: where each note sits in the stereo field, and which bus it feeds ---
+    // Chords go through a bus that ducks briefly on every kick (the "pumping" of trap and pop).
+    const duckBus = ctx.createGain();
+    duckBus.connect(master);
+    function duck(t) {
+      duckBus.gain.setValueAtTime(1, t);
+      duckBus.gain.linearRampToValueAtTime(0.6, t + 0.012);
+      duckBus.gain.linearRampToValueAtTime(1, t + 0.22);
+    }
+    const DRUM_PAN = { hat: 0.25, openhat: 0.25, tomhigh: -0.25, tomlow: 0.3, crash: -0.2 };
+    let place = null;   // set by play() for the note being built
+    function placement(role, n) {
+      if (role === 'drums') return { pan: DRUM_PAN[n.p] || 0 };
+      if (role === 'pad') return { pan: (((n.p % 3) + 3) % 3 - 1) * 0.35, bus: duckBus };   // fan chord notes left and right
+      if (role === 'lead') return { pan: 0.18 };
+      return null;
+    }
+
     function out(t, value, wet) {
       const g = ctx.createGain();
       g.gain.setValueAtTime(value, t);
-      g.connect(master);
+      const dest = (place && place.bus) || master;
+      if (place && place.pan) {
+        const pan = ctx.createStereoPanner();
+        pan.pan.value = place.pan;
+        g.connect(pan).connect(dest);
+      } else {
+        g.connect(dest);
+      }
       if (wet) {
         const s = ctx.createGain();
         s.gain.value = wet;
@@ -303,7 +328,13 @@ window.JT = window.JT || {};
     }
 
     // --- ONE NOTE ON ONE VOICE ---
-    function play(voice, n, t, spb) {
+    function play(voice, n, t, spb, role) {
+      place = placement(role, n);
+      if (n.p === 'kick' && (voice === 'kit' || voice === '808kit')) duck(t);
+      playVoice(voice, n, t, spb);
+      place = null;
+    }
+    function playVoice(voice, n, t, spb) {
       const dur = n.len * spb;
       switch (voice) {
         case 'kit': {
@@ -340,13 +371,13 @@ window.JT = window.JT || {};
           if (abs < fromBeat || abs >= toBeat) continue;
           const jitter = part.voice === 'kit' || part.voice === '808kit' ? 0 : (Math.random() - 0.5) * 0.006;
           const t = Math.max(ctx.currentTime, origin + abs * spb + jitter);
-          play(part.voice, part.lead ? Object.assign({ lead: true }, n) : n, t, spb);
+          play(part.voice, part.lead ? Object.assign({ lead: true }, n) : n, t, spb, part.role);
         }
       }));
     }
 
     // Play one note right now (feedback while editing)
-    const playNow = (voice, n, spb) => play(voice, n, ctx.currentTime + 0.005, spb);
+    const playNow = (voice, n, spb, role) => play(voice, n, ctx.currentTime + 0.005, spb, role);
 
     return { ctx, ready, load, schedule, master, playNow };
   };

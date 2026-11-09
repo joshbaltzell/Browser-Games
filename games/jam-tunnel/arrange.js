@@ -151,6 +151,60 @@ window.JT = window.JT || {};
     return { parts, sections, length: beat + 4 };
   };
 
+  // Keep new section ids above any loaded from a saved jam
+  JT.syncSectionIds = arrangement => { arrangement.forEach(sec => { nextId = Math.max(nextId, sec.id + 1); }); };
+
+  // --- MIDI EXPORT ---
+  // A type-1 Standard MIDI File: a tempo track, then one named track per instrument with a
+  // General MIDI program, drums on channel 10 using the standard drum notes.
+  const GM_PROGRAM = {
+    guitar: 29, distguitar: 30, bass: 33, upright: 32, synthbass: 38, '808': 38, organ: 16,
+    piano: 0, darkpiano: 0, epiano: 4, strings: 48, warmpad: 89, musicbox: 10, flute: 73, vibes: 11,
+    acoustic: 25, fiddle: 40, banjo: 105, cleanguitar: 27, harmonica: 22, synthlead: 81,
+  };
+  const GM_DRUM = { kick: 36, snare: 38, clap: 39, hat: 42, openhat: 46, tomlow: 45, tomhigh: 48, crash: 49 };
+  const ROLE_CHANNEL = { bass: 0, pad: 1, lead: 2, drums: 9 };
+  const TRACK_NAME = { drums: 'Drums', bass: 'Bass', pad: 'Chords', lead: 'Melody' };
+
+  JT.renderMidi = function(song, track, voices, names) {
+    const TPQ = 480;
+    const vlq = n => { const out = [n & 0x7f]; while ((n >>= 7)) out.unshift((n & 0x7f) | 0x80); return out; };
+    const text = (type, str) => { const b = Array.from(new TextEncoder().encode(str)); return [0xff, type, ...vlq(b.length), ...b]; };
+    function chunk(events) {
+      events.sort((a, b) => a.tick - b.tick || a.order - b.order);
+      const bytes = [];
+      let last = 0;
+      events.forEach(e => { bytes.push(...vlq(e.tick - last), ...e.data); last = e.tick; });
+      bytes.push(0, 0xff, 0x2f, 0);
+      return [0x4d, 0x54, 0x72, 0x6b, (bytes.length >>> 24) & 255, (bytes.length >>> 16) & 255, (bytes.length >>> 8) & 255, bytes.length & 255, ...bytes];
+    }
+    const usPerBeat = Math.round(60000000 / song.bpm);
+    const tracks = [chunk([
+      { tick: 0, order: 0, data: text(0x03, 'Jam Tunnel: ' + JT.GENRES[song.genre].name) },
+      { tick: 0, order: 1, data: [0xff, 0x51, 0x03, (usPerBeat >> 16) & 255, (usPerBeat >> 8) & 255, usPerBeat & 255] },
+      { tick: 0, order: 2, data: [0xff, 0x58, 0x04, 4, 2, 24, 8] },
+    ])];
+    ['drums', 'bass', 'pad', 'lead'].forEach(role => {
+      const notes = track.parts[role];
+      if (!notes || !notes.length) return;
+      const ch = ROLE_CHANNEL[role];
+      const events = [{ tick: 0, order: 0, data: text(0x03, `${TRACK_NAME[role]} (${names[role]})`) }];
+      if (role !== 'drums') events.push({ tick: 0, order: 1, data: [0xc0 | ch, GM_PROGRAM[voices[role]] || 0] });
+      notes.forEach(n => {
+        const key = role === 'drums' ? GM_DRUM[n.p] : Math.round(n.p);
+        if (key == null) return;
+        const on = Math.max(0, Math.round(n.b * TPQ));
+        const off = on + Math.max(30, Math.round((role === 'drums' ? 0.125 : n.len) * TPQ));
+        const vel = Math.max(1, Math.min(127, Math.round(n.v * 100)));
+        events.push({ tick: on, order: 3, data: [0x90 | ch, key, vel] });
+        events.push({ tick: off, order: 2, data: [0x80 | ch, key, 0] });   // note-offs sort before note-ons at the same tick
+      });
+      tracks.push(chunk(events));
+    });
+    const header = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, tracks.length, (TPQ >> 8) & 255, TPQ & 255];
+    return new Blob([new Uint8Array(header.concat(...tracks))], { type: 'audio/midi' });
+  };
+
   // Render the whole song offline and return a 16-bit stereo WAV as a Blob.
   // onProgress(0..1) is called as rendering moves along.
   JT.renderWav = async function(song, track, voices, onProgress) {
@@ -161,7 +215,7 @@ window.JT = window.JT || {};
     const audio = JT.createAudio(ctx);
     await audio.ready;
     await audio.load(Object.values(voices).map(JT.instOf));
-    const parts = JT.ROLES.filter(r => track.parts[r].length).map(r => ({ voice: voices[r], notes: track.parts[r], lead: r === 'lead' }));
+    const parts = JT.ROLES.filter(r => track.parts[r].length).map(r => ({ role: r, voice: voices[r], notes: track.parts[r], lead: r === 'lead' }));
     // Create notes a couple of seconds ahead of the renderer instead of all at once: thousands of
     // waiting audio nodes slow offline rendering down about four times.
     const CHUNK = 2;
