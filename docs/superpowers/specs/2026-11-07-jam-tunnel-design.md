@@ -87,7 +87,10 @@ about a minute, then makes it their own by changing individual notes.
 - Adding an instrument offers three matching options, plus customize and other styles.
 - The mockup's flow and look (approved as a whole).
 - **Many genres, around 20.** Classic hip hop, trap and pop are required.
-- **The tunnel is rendered with WebGL so it looks great.**
+- **The tunnel is rendered with WebGL so it looks great**, with antialiasing and a bright, glowing
+  exposure (the user reviewed the WebGL look test and asked for both).
+- **Music options are built on solid music theory.** The look test's hand-typed riffs and toy synth
+  voices were the weakest part.
 
 ## Look (WebGL)
 
@@ -106,6 +109,34 @@ layout and colors stay; WebGL is what makes it glow. Claude's proposed visual go
 - Each genre can tint the tunnel (warm amber for southern rock, purple haze for trap, and so on).
 - Quality adapts to the device: phones render at lower resolution with lighter effects, and a
   browser without WebGL 2 falls back to the mockup's flat 2D drawing.
+
+## Music (theory engine)
+
+Every part is generated from one shared harmonic plan, so layers agree with each other by
+construction instead of by luck.
+
+- **Key and progression first.** Each genre profile lists typical progressions in Roman numerals
+  (pop I-V-vi-IV, trap i-VI-III-VII, 12-bar blues I7-IV7-V7, boom-bap minor 7th loops, and so on).
+  Picking one sets the song's chord track.
+- **Chords** get voicings suited to the instrument (power chords and barre shapes for guitar,
+  close and open piano voicings, spread pads) and smooth voice leading: each chord tone moves the
+  shortest distance to the next chord.
+- **Bass** puts roots on strong beats, uses fifths and octaves, and walks or approaches into the
+  next chord on the last beat before a change. The 808 follows the kick and glides between roots.
+- **Melodies and riffs** use chord tones on strong beats and passing or neighbor notes on weak
+  beats, from a scale that fits the chord (blues scale over dominant sevenths, pentatonic in pop,
+  natural or harmonic minor in trap). A short motif is stated, then repeated and varied
+  (transposed to fit the chord, rhythm kept); phrases end on stable notes; motion is mostly
+  stepwise, and leaps resolve by step the other way.
+- **Rhythm** comes from genre grooves with the genre's swing amount, accents, and small human
+  variations in timing and velocity.
+- **Fit scoring** rejects notes that clash with the chord track (except passing tones), keeps
+  layers in separate registers (bass low, chords middle, lead high) so the mix doesn't get muddy,
+  rewards the bass landing with the kick, and keeps busy parts from stacking on each other.
+- **The three options differ on purpose** (for example sparse, steady, busy) instead of being
+  three near-copies.
+- **Ears are the test.** Claude can't listen to audio, so the plan includes listening checkpoints
+  where the user judges each genre before it is called done.
 
 ## Genres
 
@@ -139,11 +170,13 @@ other genres are added afterwards in batches of four or five, each batch playabl
   layers: matching feel and swing, rhythmic complement (bass landing with the kick, parts leaving
   gaps where another part is busy), harmonic fit with the chord track, and balanced busyness. The
   "why" sentence is assembled from whichever rules scored highest. No AI model, no network.
-- **Sound is synthesized with the Web Audio API**, improved well beyond the mockup's placeholder
-  voices. Each genre picks from a shared set of synth voices (band kit and electronic kit, 808,
-  electric and synth bass, overdriven and clean guitar, piano, organ, pads, leads). No sample files,
-  since the tool runs from `file://`; short samples embedded in a script are allowed later if a
-  synthesized sound can't get close enough.
+- **Real recorded instruments where it matters (proposed, not yet approved).** Acoustic and
+  electric instruments (piano, guitars, bass, band and hip-hop drum kits) use recorded samples, which
+  is the biggest single improvement to how it sounds. Samples are stored as JavaScript files with the
+  audio embedded, which still works when `index.html` is opened by double-clicking. This costs
+  several megabytes per instrument, and every sample set needs a license that allows this use.
+  Electronic sounds that are synthesized in real music anyway (808, synth bass, pads, leads) stay
+  synthesized with the Web Audio API.
 - **Loop length** is 4 or 8 bars, chosen when starting the song.
 - **Jams save automatically** to the browser's local storage, with a list of saved jams.
 - **Editing notes** (Goal 7): pausing lets you scrub through the tunnel (scroll or drag). Clicking a
