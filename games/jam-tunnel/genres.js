@@ -496,8 +496,21 @@ window.JT = window.JT || {};
       const rhythms = kind === 'sparse' ? [[0, 1, 2, 3], [0, 1.5, 2, 3]]
         : kind === 'licks' ? [[0, 0.25, 0.5, 1, 1.5, 2, 2.5, 3], [0, 0.5, 0.75, 1, 2, 2.25, 2.5, 3]]
         : [[0, 0.5, 1, 2, 2.5, 3], [0, 1, 1.5, 2, 3], [0.5, 1, 1.5, 2.5, 3]];
-      const scaleOf = () => scalePcs(ctx.key, 'majorPent');
-      return melody(r, ctx.chords, { rhythms, scaleOf, lo: 62, hi: 81, busy });
+      // The full major scale, not just the pentatonic: five-note melodies on their own read as
+      // East Asian. Strong beats are still chord notes.
+      const scaleOf = () => scalePcs(ctx.key, 'major');
+      const notes = melody(r, ctx.chords, { rhythms, scaleOf, lo: 62, hi: 81, busy });
+      // The country slide: a quick grace note a half step below, sliding up into the chord's third
+      const slides = [];
+      notes.forEach(n => {
+        const c = ctx.chords[Math.min(BARS - 1, Math.floor(n.b / 4))];
+        const third = c.pcs[1];
+        const onBeat = Math.abs(n.b - Math.round(n.b)) < 1e-6;
+        if (onBeat && T.mod12(n.p) === third && n.b >= 0.1 && r() < 0.75) {
+          slides.push({ b: n.b - 0.08, len: 0.08, p: n.p - 1, v: n.v * 0.75 });
+        }
+      });
+      return notes.concat(slides).sort((a, b) => a.b - b.b);
     };
   }
 
@@ -654,7 +667,7 @@ window.JT = window.JT || {};
         { roman: 'I - I - IV - V', mood: 'Honky-tonk: stay home, then head for the turnaround', chords: [[0, 'maj'], [0, 'maj'], [5, 'maj'], [7, 'maj']] },
       ],
       roles: {
-        lead: { label: 'Fiddle', voice: 'fiddle', range: [60, 84], sounds: [{ id: 'fiddle', name: 'Fiddle' }, { id: 'banjo', name: 'Banjo' }, { id: 'cleanguitar', name: 'Twangy electric' }, { id: 'harmonica', name: 'Harmonica' }], styles: [
+        lead: { label: 'Fiddle', voice: 'fiddle', range: [60, 84], sounds: [{ id: 'fiddle', name: 'Fiddle' }, { id: 'cleanguitar', name: 'Twangy electric' }, { id: 'harmonica', name: 'Harmonica' }], styles: [
           { id: 'tune', name: 'Fiddle tune', why: 'A singable phrase on the major pentatonic, the sound of country.', gen: countryLead('tune') },
           { id: 'licks', name: 'Hot licks', why: 'Quick runs between the chord notes.', gen: countryLead('licks') },
           { id: 'sparse', name: 'Sparse', why: 'A few long notes that leave room for a singer.', gen: countryLead('sparse') },

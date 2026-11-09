@@ -27,7 +27,7 @@ window.JT = window.JT || {};
     flute: { inst: 'flute', level: 0.3, wet: 0.3, attack: 0.03 },
     vibes: { inst: 'vibes', level: 0.32, wet: 0.3, minDur: 0.9 },
     acoustic: { inst: 'acoustic', level: 0.16, wet: 0.15, minDur: 0.4 },
-    fiddle: { inst: 'fiddle', level: 0.38, wet: 0.25, attack: 0.04 },
+    fiddle: { inst: 'violin', level: 0.38, wet: 0.25, attack: 0.04 },   // a violin played country-style
     banjo: { inst: 'banjo', level: 0.26, wet: 0.12, minDur: 0.35, leadBoost: 2 },
     cleanguitar: { inst: 'cleanguitar', level: 0.36, wet: 0.2, minDur: 0.35 },
     harmonica: { inst: 'harmonica', level: 0.3, wet: 0.2, attack: 0.03 },

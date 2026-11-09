@@ -39,7 +39,9 @@ MELODIC = {
     'flute': ('flute', 58, 88),
     'vibes': ('vibraphone', 53, 86),
     'acoustic': ('acoustic_guitar_steel', 40, 76),
-    'fiddle': ('fiddle', 55, 88),
+    # The country fiddle uses the orchestral violin: General MIDI's 'Fiddle' sits in the Ethnic group
+    # and in this sound font sounds closer to an erhu than to a Nashville fiddle.
+    'violin': ('violin', 55, 88),
     'banjo': ('banjo', 48, 84),
     'cleanguitar': ('electric_guitar_clean', 40, 80),
     'harmonica': ('harmonica', 55, 86),
