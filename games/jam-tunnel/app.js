@@ -24,7 +24,10 @@
   const state = {
     song: null,
     mode: 'loop',           // loop | song
-    tray: 'start',          // start | add | suggest | ready | song
+    tray: 'start',          // start | mood | add | suggest | ready | song | edit
+    pace: 'medium',         // the "what kind of song?" choices
+    mood: 'bright',
+    moodPicked: false,      // until a mood is clicked, the genre keeps its signature chords
     role: null,             // role being chosen
     options: [],
     pick: 0,
@@ -94,7 +97,7 @@
   // Load the sample sets the current song needs (each instrument's script is added once)
   function loadSounds() {
     if (!audio || !state.song) return;
-    const need = JT.ROLES.filter(r => state.song.layers[r] || (state.tray === 'suggest' && state.role === r)).map(r => JT.instOf(voiceOf(r)));
+    const need = JT.ROLES.filter(r => state.song.layers[r] || (state.tray === 'suggest' && state.role === r) || (state.tray === 'mood' && r === 'pad')).map(r => JT.instOf(voiceOf(r)));
     audio.load(need);
   }
   const rangeOf = role => JT.GENRES[state.song.genre].roles[role].range || [36, 72];
@@ -108,6 +111,13 @@
         role, voice: voiceOf(role), notes: state.track.parts[role], lead: role === 'lead',
         ghost: false, muted: state.muted[role], range: rangeOf(role),
       }));
+    }
+    if (state.tray === 'mood') {
+      const g = JT.GENRES[song.genre];
+      const style = g.roles.pad.styles.find(st => st.id === 'held') || g.roles.pad.styles[0];
+      const key = 'mood|' + song.progIndex;
+      if (!moodPreview || moodPreview.key !== key) moodPreview = { key, notes: JT.generate(song, 'pad', style.id, 1, 0) };
+      return [{ role: 'pad', voice: g.roles.pad.voice, notes: moodPreview.notes, lead: false, ghost: false, muted: false, range: rangeOf('pad') }];
     }
     const parts = [];
     JT.ROLES.forEach(role => {
@@ -129,6 +139,7 @@
 
   // --- BUILDING THE LOOP ---
   let previewCache = null;
+  let moodPreview = null;
   function previewNotes() {
     const o = state.options[state.pick];
     if (!o) return null;
@@ -183,6 +194,16 @@
     if (state.tray === 'suggest') { openSuggestions(state.role, state.options[state.pick].style.id); return; }
     if (state.mode === 'song') rebuildTrack();
     render();
+  }
+
+  // Pace and mood decide the tempo and the chords
+  function applyMood(signature) {
+    freeze();
+    const pace = JT.PACE.find(x => x.id === state.pace).value;
+    const bright = signature ? null : JT.MOOD.find(x => x.id === state.mood).value;
+    JT.applyMood(state.song, pace, bright);
+    moodPreview = null;
+    rebase(performance.now());
   }
 
   // --- THE FULL SONG ---
@@ -361,7 +382,7 @@
     if (key === chordsKey) return;
     chordsKey = key;
     const g = JT.GENRES[state.song.genre];
-    const names = T.chordsOf(g.key, prog.chords).map(T.chordName).join('  ');
+    const names = T.chordsOf(g.key, prog.chords, g.sharps).map(T.chordName).join('  ');
     $('chords').innerHTML = `<span class="lbl">${esc(label)}</span> <strong>${esc(names)}</strong> <span class="mood">${esc(prog.mood || '')}</span>`;
   }
 
@@ -413,7 +434,7 @@
   }
 
   function stepsStrip(active) {
-    const items = ['Pick a genre', 'Build a 4-bar loop', 'Make it a full song'];
+    const items = ['Pick a genre and mood', 'Build a 4-bar loop', 'Make it a full song'];
     return `<ol class="steps">${items.map((t, i) => `<li class="${i < active ? 'done' : i === active ? 'now' : ''}"><span>${i + 1}</span>${t}</li>`).join('')}</ol>`;
   }
   function loopProgress() {
@@ -450,6 +471,28 @@
     }
 
     const g = JT.GENRES[song.genre];
+
+    if (state.tray === 'mood') {
+      tray.style.setProperty('--accent', g.accent);
+      tray.innerHTML = `
+        ${stepsStrip(0)}
+        <div class="tray-head"><h3>What kind of ${esc(g.name.toLowerCase())} song?</h3>
+          <p>This sets the tempo and the chords. You can change both later.</p></div>
+        <div class="mood-grid">
+          <div class="row"><span class="lbl">Pace</span><span class="seg">${JT.PACE.map(x => `<button type="button" data-pace="${x.id}" aria-pressed="${state.pace === x.id}">${x.name}</button>`).join('')}</span></div>
+          <div class="row"><span class="lbl">Mood</span><span class="seg">${JT.MOOD.map(x => `<button type="button" data-moodpick="${x.id}" aria-pressed="${state.mood === x.id}">${x.name}</button>`).join('')}</span></div>
+        </div>
+        <div class="mood-result">
+          <span class="chords"><strong>${esc(song.chords.map(T.chordName).join('  '))}</strong></span>
+          <span class="mood">${esc(song.prog.mood)} · ${song.bpm} BPM</span>
+          <span class="hint">Playing now, so you can hear the mood.</span>
+        </div>
+        <div class="actions">
+          <button type="button" class="primary" data-act="build">Start building</button>
+          <button type="button" data-act="genres">Pick a different genre</button>
+        </div>`;
+      return;
+    }
 
     if (state.tray === 'add') {
       const next = nextStep();
@@ -588,7 +631,7 @@
         <span class="playhead" id="playhead"></span>
       </div>
       <div class="panel section-panel" style="--c:${type.color}">
-        <div class="sec-head"><strong>${type.name}</strong> <span class="hint">bars ${info.start / 4 + 1}–${info.end / 4} · chords ${esc(T.chordsOf(g.key, info.prog.chords).map(T.chordName).join(' '))}</span></div>
+        <div class="sec-head"><strong>${type.name}</strong> <span class="hint">bars ${info.start / 4 + 1}–${info.end / 4} · chords ${esc(T.chordsOf(g.key, info.prog.chords, g.sharps).map(T.chordName).join(' '))}</span></div>
         <p class="hint">${esc(type.about)}</p>
         <div class="controls">
         <div class="row"><span class="lbl">Plays</span><span class="chips">${STEPS.filter(r => state.song.layers[r]).map(r => `
@@ -632,11 +675,19 @@
       state.arrangement = null;
       state.track = null;
       state.muted = { drums: false, bass: false, lead: false, pad: false };
-      jumpTo(0);
-      state.tray = 'add';
+      // Start from the mood closest to the genre's own default chords
+      const g = JT.GENRES[d.genre];
+      const own = g.progressions[0].bright;
+      state.mood = JT.MOOD.reduce((a, b) => Math.abs(b.value - own) < Math.abs(a.value - own) ? b : a).id;
+      state.pace = 'medium';
+      state.moodPicked = false;
+      applyMood(true);   // the genre's signature chords until a mood is picked
+      state.tray = 'mood';
       render();
       return;
     }
+    if (d.pace) { state.pace = d.pace; applyMood(!state.moodPicked); render(); return; }
+    if (d.moodpick) { state.mood = d.moodpick; state.moodPicked = true; applyMood(); render(); return; }
     if (d.add) { openSuggestions(d.add); return; }
     if (d.pick !== undefined) { state.pick = +d.pick; render(); return; }
     if (d.busy !== undefined) { state.busy = +d.busy; render(); return; }
@@ -661,6 +712,8 @@
     }
     switch (d.act) {
       case 'keep': keepPick(); break;
+      case 'build': state.tray = 'add'; render(); break;
+      case 'genres': state.song = null; state.tray = 'start'; render(); break;
       case 'done': exitEdit(); break;
       case 'undo': undoEdit(); break;
       case 'clear': { const L = state.song.layers[state.edit.role]; state.edit.undo.push(L.notes); L.notes = []; L.edited = true; render(); break; }

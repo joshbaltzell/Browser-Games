@@ -519,13 +519,15 @@ window.JT = window.JT || {};
   // ===================================================================
   JT.GENRES = {
     rock: {
-      id: 'rock', name: 'Southern rock', grid: 1 / 3, editScale: [0, 2, 3, 4, 5, 7, 9, 10],  blurb: 'Blues shuffle, overdriven guitar and organ',
-      key: 4, keyName: 'E', bpm: 96, tempo: [80, 120], swing: 1.0,
+      id: 'rock', name: 'Southern rock', sharps: true, grid: 1 / 3, editScale: [0, 2, 3, 4, 5, 7, 9, 10],  blurb: 'Blues shuffle, overdriven guitar and organ',
+      key: 4, keyName: 'E', bpm: 96, tempo: [70, 124], swing: 1.0,
       tint: [1.0, 0.5, 0.22], fog: [0.022, 0.012, 0.008], accent: '#ff8a3d',
       progressions: [
-        { roman: 'I7 - IV7 - I7 - V7', mood: 'Classic blues: home, away, home, then a push back', chords: [[0, '7'], [5, '7'], [0, '7'], [7, '7']] },
-        { roman: 'I - bVII - IV - I', mood: 'Big and open, the southern rock anthem sound', chords: [[0, 'maj'], [10, 'maj'], [5, 'maj'], [0, 'maj']] },
-        { roman: 'I7 - I7 - IV7 - V7', mood: 'Sits at home, then builds tension at the end', chords: [[0, '7'], [0, '7'], [5, '7'], [7, '7']] },
+        { roman: 'I7 - IV7 - I7 - V7', bright: 0.6, mood: 'Classic blues: home, away, home, then a push back', chords: [[0, '7'], [5, '7'], [0, '7'], [7, '7']] },
+        { roman: 'I - bVII - IV - I', bright: 0.9, mood: 'Big and open, the southern rock anthem sound', chords: [[0, 'maj'], [10, 'maj'], [5, 'maj'], [0, 'maj']] },
+        { roman: 'I7 - I7 - IV7 - V7', bright: 0.65, mood: 'Sits at home, then builds tension at the end', chords: [[0, '7'], [0, '7'], [5, '7'], [7, '7']] },
+        { roman: 'i - bVII - bVI - bVII', bright: 0.1, mood: 'Brooding minor rock', chords: [[0, 'min'], [10, 'maj'], [8, 'maj'], [10, 'maj']] },
+        { roman: 'vi - IV - I - V', bright: 0.4, mood: 'A bittersweet anthem', chords: [[9, 'min'], [5, 'maj'], [0, 'maj'], [7, 'maj']] },
       ],
       roles: {
         lead: { label: 'Overdriven guitar', voice: 'guitar', sounds: [{ id: 'guitar', name: 'Overdriven guitar' }, { id: 'distguitar', name: 'Distortion guitar' }], range: [38, 68], styles: [
@@ -561,9 +563,10 @@ window.JT = window.JT || {};
       key: 5, keyName: 'F minor', minor: true, verseKeepsChords: true, bpm: 140, tempo: [120, 160], swing: 0.3,
       tint: [0.62, 0.28, 1.0], fog: [0.012, 0.007, 0.026], accent: '#9d6bff',
       progressions: [
-        { roman: 'i - VI - III - VII', mood: 'Dark and epic', chords: [[0, 'min'], [8, 'maj'], [3, 'maj'], [10, 'maj']] },
-        { roman: 'i - iv - VI - V', mood: 'Tense, with a dramatic pull back home', chords: [[0, 'min'], [5, 'min'], [8, 'maj'], [7, 'maj']] },
-        { roman: 'i - VI - iv - V', mood: 'Moody, ending on a cliffhanger', chords: [[0, 'min'], [8, 'maj'], [5, 'min'], [7, 'maj']] },
+        { roman: 'i - VI - III - VII', bright: 0.55, mood: 'Dark and epic', chords: [[0, 'min'], [8, 'maj'], [3, 'maj'], [10, 'maj']] },
+        { roman: 'i - iv - VI - V', bright: 0.15, mood: 'Tense, with a dramatic pull back home', chords: [[0, 'min'], [5, 'min'], [8, 'maj'], [7, 'maj']] },
+        { roman: 'i - VI - iv - V', bright: 0.3, mood: 'Moody, ending on a cliffhanger', chords: [[0, 'min'], [8, 'maj'], [5, 'min'], [7, 'maj']] },
+        { roman: 'VI - III - VII - i', bright: 0.8, mood: 'Hopeful, climbing out of the dark', chords: [[8, 'maj'], [3, 'maj'], [10, 'maj'], [0, 'min']] },
       ],
       roles: {
         lead: { label: 'Dark piano', voice: 'darkpiano', sounds: [{ id: 'darkpiano', name: 'Dark piano' }, { id: 'musicbox', name: 'Bells' }, { id: 'flute', name: 'Flute' }, { id: 'synthlead', name: 'Synth pluck' }], range: [60, 82], styles: [
@@ -592,12 +595,13 @@ window.JT = window.JT || {};
 
     pop: {
       id: 'pop', name: 'Pop', grid: 0.25, editScale: [0, 2, 4, 5, 7, 9, 11],  blurb: 'Bright chords, a catchy synth hook',
-      key: 0, keyName: 'C', bpm: 112, tempo: [96, 128], swing: 0.2,
+      key: 0, keyName: 'C', bpm: 112, tempo: [76, 128], swing: 0.2,
       tint: [1.0, 0.45, 0.7], fog: [0.02, 0.01, 0.018], accent: '#ff6fae',
       progressions: [
-        { roman: 'I - V - vi - IV', mood: 'Bright and uplifting, the most-used pop progression', chords: [[0, 'maj'], [7, 'maj'], [9, 'min'], [5, 'maj']] },
-        { roman: 'vi - IV - I - V', mood: 'Emotional and bittersweet', chords: [[9, 'min'], [5, 'maj'], [0, 'maj'], [7, 'maj']] },
-        { roman: 'I - vi - IV - V', mood: 'Warm and nostalgic, classic doo-wop pop', chords: [[0, 'maj'], [9, 'min'], [5, 'maj'], [7, 'maj']] },
+        { roman: 'I - V - vi - IV', bright: 0.9, mood: 'Bright and uplifting, the most-used pop progression', chords: [[0, 'maj'], [7, 'maj'], [9, 'min'], [5, 'maj']] },
+        { roman: 'vi - IV - I - V', bright: 0.45, mood: 'Emotional and bittersweet', chords: [[9, 'min'], [5, 'maj'], [0, 'maj'], [7, 'maj']] },
+        { roman: 'I - vi - IV - V', bright: 0.7, mood: 'Warm and nostalgic, classic doo-wop pop', chords: [[0, 'maj'], [9, 'min'], [5, 'maj'], [7, 'maj']] },
+        { roman: 'vi - V - IV - V', bright: 0.15, mood: 'Melancholy, never quite resolving', chords: [[9, 'min'], [7, 'maj'], [5, 'maj'], [7, 'maj']] },
       ],
       roles: {
         lead: { label: 'Synth hook', voice: 'synthlead', sounds: [{ id: 'synthlead', name: 'Synth hook' }, { id: 'piano', name: 'Piano' }, { id: 'musicbox', name: 'Bells' }, { id: 'flute', name: 'Flute' }], range: [64, 86], styles: [
@@ -629,9 +633,10 @@ window.JT = window.JT || {};
       key: 2, keyName: 'D minor', minor: true, verseKeepsChords: true, bpm: 90, tempo: [80, 100], swing: 0.7,
       tint: [0.95, 0.75, 0.35], fog: [0.02, 0.016, 0.01], accent: '#e8c15a',
       progressions: [
-        { roman: 'i7 - i7 - iv7 - iv7', mood: 'A hypnotic two-chord loop', chords: [[0, 'm7'], [0, 'm7'], [5, 'm7'], [5, 'm7']] },
-        { roman: 'i7 - VImaj7 - iv7 - v7', mood: 'Jazzy and smooth', chords: [[0, 'm7'], [8, 'maj7'], [5, 'm7'], [7, 'm7']] },
-        { roman: 'i7 - VII7 - VImaj7 - v7', mood: 'Soulful, stepping down', chords: [[0, 'm7'], [10, '7'], [8, 'maj7'], [7, 'm7']] },
+        { roman: 'i7 - i7 - iv7 - iv7', bright: 0.15, mood: 'A hypnotic two-chord loop', chords: [[0, 'm7'], [0, 'm7'], [5, 'm7'], [5, 'm7']] },
+        { roman: 'i7 - VImaj7 - iv7 - v7', bright: 0.5, mood: 'Jazzy and smooth', chords: [[0, 'm7'], [8, 'maj7'], [5, 'm7'], [7, 'm7']] },
+        { roman: 'i7 - VII7 - VImaj7 - v7', bright: 0.35, mood: 'Soulful, stepping down', chords: [[0, 'm7'], [10, '7'], [8, 'maj7'], [7, 'm7']] },
+        { roman: 'i7 - IV7 - i7 - IV7', bright: 0.8, mood: 'Warm and soulful, the bright side of minor', chords: [[0, 'm7'], [5, '7'], [0, 'm7'], [5, '7']] },
       ],
       roles: {
         lead: { label: 'String line', voice: 'strings', sounds: [{ id: 'strings', name: 'String line' }, { id: 'flute', name: 'Flute' }, { id: 'vibes', name: 'Vibraphone' }, { id: 'darkpiano', name: 'Dark piano' }], range: [60, 82], styles: [
@@ -657,14 +662,16 @@ window.JT = window.JT || {};
       },
     },
     country: {
-      id: 'country', name: 'Country', blurb: 'Three chords and the truth: boom-chick bass, strummed acoustic, fiddle',
+      id: 'country', name: 'Country', sharps: true, blurb: 'Three chords and the truth: boom-chick bass, strummed acoustic, fiddle',
       grid: 0.25, editScale: [0, 2, 4, 5, 7, 9, 11],
-      key: 7, keyName: 'G', bpm: 104, tempo: [88, 124], swing: 0.4,
+      key: 7, keyName: 'G', bpm: 104, tempo: [72, 124], swing: 0.4,
       tint: [1.0, 0.7, 0.32], fog: [0.022, 0.016, 0.01], accent: '#d9a441',
       progressions: [
-        { roman: 'I - IV - V - I', mood: 'Three chords and the truth', chords: [[0, 'maj'], [5, 'maj'], [7, 'maj'], [0, 'maj']] },
-        { roman: 'I - V - vi - IV', mood: 'Modern country radio', chords: [[0, 'maj'], [7, 'maj'], [9, 'min'], [5, 'maj']] },
-        { roman: 'I - I - IV - V', mood: 'Honky-tonk: stay home, then head for the turnaround', chords: [[0, 'maj'], [0, 'maj'], [5, 'maj'], [7, 'maj']] },
+        { roman: 'I - IV - V - I', bright: 0.8, mood: 'Three chords and the truth', chords: [[0, 'maj'], [5, 'maj'], [7, 'maj'], [0, 'maj']] },
+        { roman: 'I - V - vi - IV', bright: 0.7, mood: 'Modern country radio', chords: [[0, 'maj'], [7, 'maj'], [9, 'min'], [5, 'maj']] },
+        { roman: 'I - I - IV - V', bright: 0.9, mood: 'Honky-tonk: stay home, then head for the turnaround', chords: [[0, 'maj'], [0, 'maj'], [5, 'maj'], [7, 'maj']] },
+        { roman: 'vi - IV - I - V', bright: 0.3, mood: 'A heartbreak ballad', chords: [[9, 'min'], [5, 'maj'], [0, 'maj'], [7, 'maj']] },
+        { roman: 'I - iii - vi - IV', bright: 0.45, mood: 'Wistful, looking back', chords: [[0, 'maj'], [4, 'min'], [9, 'min'], [5, 'maj']] },
       ],
       roles: {
         lead: { label: 'Fiddle', voice: 'fiddle', range: [60, 84], sounds: [{ id: 'fiddle', name: 'Fiddle' }, { id: 'cleanguitar', name: 'Twangy electric' }, { id: 'harmonica', name: 'Harmonica' }], styles: [
@@ -693,6 +700,10 @@ window.JT = window.JT || {};
   };
 
   JT.ROLES = ['drums', 'bass', 'lead', 'pad'];
+
+  // The "what kind of song?" choices: pace sets the tempo, mood picks the chords
+  JT.PACE = [{ id: 'slow', name: 'Slow', value: 0.1 }, { id: 'medium', name: 'Medium', value: 0.5 }, { id: 'fast', name: 'Fast', value: 0.9 }];
+  JT.MOOD = [{ id: 'somber', name: 'Somber', value: 0.1 }, { id: 'bittersweet', name: 'Bittersweet', value: 0.45 }, { id: 'bright', name: 'Bright', value: 0.9 }];
   JT.SURFACE = { drums: 'floor', bass: 'right wall', lead: 'left wall', pad: 'ceiling' };
 
   // ===================================================================
@@ -713,11 +724,28 @@ window.JT = window.JT || {};
     return song;
   };
 
+  // Tempo from the pace, and the progression whose brightness is closest to the mood
+  // bright = null keeps the genre's signature progression (its first one)
+  JT.applyMood = function(song, pace, bright) {
+    const g = JT.GENRES[song.genre];
+    song.pace = pace;
+    song.bpm = Math.round(g.tempo[0] + (g.tempo[1] - g.tempo[0]) * pace);
+    if (bright == null) {
+      setProgression(song, 0);
+      song.bright = song.prog.bright;
+      return;
+    }
+    song.bright = bright;
+    let best = 0;
+    g.progressions.forEach((p, i) => { if (Math.abs(p.bright - bright) < Math.abs(g.progressions[best].bright - bright)) best = i; });
+    setProgression(song, best);
+  };
+
   function setProgression(song, progIndex) {
     const g = JT.GENRES[song.genre];
     song.progIndex = progIndex;
     song.prog = g.progressions[progIndex];
-    song.chords = T.chordsOf(g.key, song.prog.chords);
+    song.chords = T.chordsOf(g.key, song.prog.chords, g.sharps);
   }
 
   // Regenerate a kept or previewed part from its recipe

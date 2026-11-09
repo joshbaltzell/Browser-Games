@@ -53,8 +53,15 @@ window.JT = window.JT || {};
   JT.verseChords = function(song) {
     const g = JT.GENRES[song.genre];
     if (g.verseKeepsChords) return { chords: song.chords, prog: song.prog };
-    const prog = g.progressions[(song.progIndex + 1) % g.progressions.length];
-    return { chords: T.chordsOf(g.key, prog.chords), prog };
+    // The other progression closest in mood to the chorus
+    const target = song.bright != null ? song.bright : song.prog.bright;
+    let best = -1;
+    g.progressions.forEach((p, i) => {
+      if (i === song.progIndex) return;
+      if (best < 0 || Math.abs(p.bright - target) < Math.abs(g.progressions[best].bright - target)) best = i;
+    });
+    const prog = g.progressions[best];
+    return { chords: T.chordsOf(g.key, prog.chords, g.sharps), prog };
   };
 
   // A drum fill in the last beat (or, with build = true, a roll across the whole last bar)
@@ -123,7 +130,7 @@ window.JT = window.JT || {};
         const lastBar = end - 4;
         JT.ROLES.forEach(role => { parts[role] = parts[role].filter(n => !(n.b >= lastBar && n.b < end)); });
         const tonic = song.prog.chords.find(([deg]) => deg === 0);
-        const home = T.chordsOf(g.key, [[0, tonic ? tonic[1] : (g.minor ? 'min' : 'maj')]]);
+        const home = T.chordsOf(g.key, [[0, tonic ? tonic[1] : (g.minor ? 'min' : 'maj')]], g.sharps);
         if (song.layers.pad) {
           const range = g.roles.pad.range;
           T.voiceLead(home, range[0] + 4, range[1] - 2)[0].forEach(p => parts.pad.push({ b: lastBar, len: 3.8, p, v: 0.9 }));

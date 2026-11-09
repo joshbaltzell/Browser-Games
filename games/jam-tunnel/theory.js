@@ -18,6 +18,7 @@ window.JT = window.JT || {};
 
   // --- CHORDS AND SCALES ---
   const NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+  const SHARP_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const QUALITY = {
     maj: [0, 4, 7], min: [0, 3, 7], '7': [0, 4, 7, 10], m7: [0, 3, 7, 10], maj7: [0, 4, 7, 11],
   };
@@ -32,15 +33,15 @@ window.JT = window.JT || {};
     minorPent: [0, 3, 5, 7, 10],
   };
 
-  // A progression is [semitones above the key, quality] per bar
-  function chordsOf(key, chords) {
+  // A progression is [semitones above the key, quality] per bar. sharps: spell names with sharps (E, G...)
+  function chordsOf(key, chords, sharps) {
     return chords.map(([deg, q]) => ({
-      deg, q,
+      deg, q, sharps: !!sharps,
       root: mod12(key + deg),
       pcs: QUALITY[q].map(i => mod12(key + deg + i)),
     }));
   }
-  const chordName = c => NAMES[c.root] + SUFFIX[c.q];
+  const chordName = c => (c.sharps ? SHARP_NAMES : NAMES)[c.root] + SUFFIX[c.q];
   const scalePcs = (key, name) => SCALE[name].map(i => mod12(key + i));
 
   // --- PITCH HELPERS ---
