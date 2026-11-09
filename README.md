@@ -66,6 +66,12 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 | **[Neon Four](games/neon-four/)** | A neon Connect Four. |
 | **[Connect 4 AI](games/neon-connect-four-local/)** | Connect Four against a computer opponent. |
 
+### Music
+
+| Game | Description |
+| --- | --- |
+| **[Jam Tunnel](games/jam-tunnel/)** | *Draft.* Fly through your song in a WebGL tunnel. Pick a genre (southern rock, trap, pop, classic hip hop), then add drums, bass, lead and chords from three suggested parts that music theory says fit together. |
+
 ### Idle
 
 | Game | Description |

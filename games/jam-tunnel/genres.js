@@ -1,0 +1,629 @@
+// Jam Tunnel — genre profiles and part generators
+// Each genre sets a key, tempo, feel and chord progressions, and lists styles for each of the four
+// roles (drums on the floor, bass on the right wall, lead on the left wall, chords on the ceiling).
+// A style's gen(ctx, r, busy) returns notes: { b: start beat, len: beats, p: pitch or drum piece, v: velocity }.
+// The loop is always 4 bars of 4 beats.
+
+window.JT = window.JT || {};
+
+(function() {
+  const T = JT.theory;
+  const { pick, mod12, above, fold, snap, voiceLead, melody, swing16, scalePcs } = T;
+  const BARS = 4;
+  const hum = r => 0.88 + r() * 0.18;              // small human variation in velocity
+
+  // Drum note helper
+  const hit = (out, b, p, v, len) => out.push({ b, p, v, len: len || 0.18 });
+  // Kick positions of the kept drum part, if any (beats within the loop)
+  const keptKicks = ctx => ctx.layers.drums ? ctx.layers.drums.notes.filter(n => n.p === 'kick').map(n => n.b) : null;
+
+  // ===================================================================
+  // SOUTHERN ROCK — E blues, triplet shuffle (one step = a third of a beat)
+  // ===================================================================
+  const st = s => s / 3;
+  const SH8 = [0, 2, 3, 5, 6, 8, 9, 11];
+
+  function rockDrums(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      for (let bar = 0; bar < BARS; bar++) {
+        const o = bar * 12, fill = bar === 3, B = s => st(o + s);
+        if (bar === 0) hit(out, 0, 'crash', 0.75, 0.5);
+        if (kind === 'shuffle') {
+          const hats = busy === 0 ? [0, 3, 6, 9] : SH8;
+          hats.forEach(s => { if (!(fill && s >= 6)) hit(out, B(s), 'hat', (s % 3 ? 0.5 : 0.8) * hum(r)); });
+          hit(out, B(0), 'kick', 1); hit(out, B(3), 'snare', hum(r));
+          if (!fill) { hit(out, B(6), 'kick', 0.9); if (busy > 0) hit(out, B(8), 'kick', 0.55); hit(out, B(9), 'snare', hum(r)); }
+          if (busy === 2) [2, 8].forEach(s => hit(out, B(s), 'snare', 0.22));
+        } else if (kind === 'halftime') {
+          const hats = busy === 2 ? SH8 : [0, 3, 6, 9];
+          hats.forEach(s => { if (!(fill && s >= 6)) hit(out, B(s), 'hat', 0.72 * hum(r)); });
+          hit(out, B(0), 'kick', 1); if (busy > 0) hit(out, B(8), 'kick', 0.85);
+          if (!fill) hit(out, B(6), 'snare', 1);
+        } else if (kind === 'train') {
+          for (let s = 0; s < (fill ? 6 : 12); s++) {
+            if (busy === 0 && s % 3 !== 0) continue;
+            hit(out, B(s), 'snare', s === 3 || s === 9 ? 1 : 0.25 * hum(r), 0.12);
+          }
+          hit(out, B(0), 'kick', 1); if (!fill) hit(out, B(6), 'kick', 1);
+        } else if (kind === 'straight') {
+          for (let h = 0; h < 4; h += 0.5) hit(out, bar * 4 + h, 'hat', 0.7 * hum(r));
+          hit(out, bar * 4, 'kick', 1); hit(out, bar * 4 + 2, 'kick', 0.9); hit(out, bar * 4 + 2.5, 'kick', 0.7);
+          hit(out, bar * 4 + 1, 'snare', 1); hit(out, bar * 4 + 3, 'snare', 1);
+        } else if (kind === 'four') {
+          [0, 1, 2, 3].forEach(q => hit(out, bar * 4 + q, 'kick', 1));
+          [1, 3].forEach(q => hit(out, bar * 4 + q, 'snare', 0.9));
+          [0.5, 1.5, 2.5, 3.5].forEach(q => hit(out, bar * 4 + q, 'openhat', 0.6));
+        }
+        if (fill && kind !== 'straight' && kind !== 'four') {
+          hit(out, B(6), 'snare', 0.9); hit(out, B(8), 'snare', 0.6);
+          hit(out, B(9), 'tomhigh', 0.9); hit(out, B(10), 'tomhigh', 0.8); hit(out, B(11), 'tomlow', 1);
+        }
+      }
+      return out;
+    };
+  }
+
+  function rockBass(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      ctx.chords.forEach((c, bar) => {
+        const next = ctx.chords[(bar + 1) % BARS];
+        const br = above(c.root, 28);
+        const third = c.q === 'min' || c.q === 'm7' ? 3 : 4;
+        if (kind === 'long') {
+          [[0, 0, 5], [6, 0, 2.6], [9, 7, 2.6]].forEach(([s, iv, len]) => out.push({ b: st(bar * 12 + s), len: st(len), p: br + iv, v: hum(r) }));
+          return;
+        }
+        if (kind === 'funk') {
+          [0, 0.75, 1.5, 2, 2.75, 3.5].forEach((q, i) => out.push({ b: bar * 4 + q, len: 0.2, p: br + (i % 3 === 2 ? 12 : 0), v: hum(r) }));
+          return;
+        }
+        const shape = kind === 'walking' ? [0, third, 7, 9, 10, 9, 7, third]
+          : kind === 'rootfifth' ? [0, 0, 7, 7, 12, 12, 7, 7] : [0, 0, 0, 0, 0, 0, 0, 0];
+        SH8.forEach((s, i) => {
+          if (busy === 0 && s % 3 !== 0) return;
+          let p = br + shape[i];
+          // Approach the next chord by a half step on the last swung eighth
+          if (s === 11 && next.root !== c.root) p = above(next.root, 28) + (r() < 0.6 ? -1 : 1);
+          out.push({ b: st(bar * 12 + s), len: st(busy === 0 ? 2.6 : 1.3), p, v: (s % 3 === 0 ? 1 : 0.8) * hum(r) });
+        });
+      });
+      return out;
+    };
+  }
+
+  function rockGuitar(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      const blues = scalePcs(ctx.key, 'blues');
+      ctx.chords.forEach((c, bar) => {
+        const o = bar * 12;
+        const next = ctx.chords[(bar + 1) % BARS];
+        let gr = above(c.root, 40);
+        if (gr > 50) gr -= 12;
+        const lickBar = bar === 3 || (busy === 2 && bar === 1);
+        let steps = kind === 'stabs' ? [0, 5, 9] : SH8;
+        if (kind === 'straight') steps = [0, 1.5, 3, 4.5, 6, 7.5, 9, 10.5];
+        if (busy === 0) steps = steps.filter(s => s % 3 === 0);
+        steps.forEach(s => {
+          if (lickBar && s >= 6) return;
+          const top = kind === 'boogie' && [3, 5, 9, 11].includes(s) ? 9 : 7;
+          const len = kind === 'stabs' ? 1.8 : 1.1;
+          const v = (s % 3 === 0 ? 1 : 0.78) * hum(r);
+          out.push({ b: st(o + s), len: st(len), p: gr, v }, { b: st(o + s), len: st(len), p: gr + top, v });
+        });
+        if (lickBar) {
+          // A blues-scale lick that lands on a chord tone
+          let p = snap(52 + Math.floor(r() * 6), blues);
+          const dir = r() < 0.5 ? 1 : -1;
+          [6, 8, 9, 11].forEach((s, i) => {
+            if (i > 0) p = T.stepScale(p, blues, dir);
+            if (i === 3) p = snap(p, next.pcs.concat(c.pcs));
+            out.push({ b: st(o + s), len: st(i === 3 ? 1.5 : 1.2), p: fold(p, 45, 64), v: hum(r) });
+          });
+        }
+      });
+      return out;
+    };
+  }
+
+  function rockOrgan(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      voiceLead(ctx.chords, 52, 74).forEach((v, bar) => v.forEach(p => {
+        const o = bar * 4;
+        if (kind === 'held') out.push({ b: o, len: 3.9, p, v: 0.8 });
+        else if (kind === 'pushed') { out.push({ b: o, len: 2.5, p, v: 0.8 }); out.push({ b: o + st(8), len: 1.2, p, v: 0.7 }); }
+        else [1, 3].concat(busy === 2 ? [st(5), st(11)] : []).forEach(q => out.push({ b: o + q, len: 0.4, p, v: 0.75 }));
+      }));
+      return out;
+    };
+  }
+
+  // ===================================================================
+  // TRAP — F minor, half-time at 140 BPM, sixteenth grid with hi-hat rolls
+  // ===================================================================
+  const TRAP_KICKS = [[0, 1.75, 2.5], [0, 0.75, 2.75], [0, 1.75, 2.5, 3.25], [0, 0.75, 2.5], [0, 2.25, 2.75], [0, 1.5, 2.75]];
+
+  function trapDrums(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      const kickA = pick(r, TRAP_KICKS), kickB = pick(r, TRAP_KICKS);
+      const rollType = pick(r, ['triplet', '32nd']);
+      for (let bar = 0; bar < BARS; bar++) {
+        const o = bar * 4;
+        if (kind === 'boombap') {
+          [0, 1.75, 2.5].forEach(k => hit(out, o + k, 'kick', 1));
+          [1, 3].forEach(q => hit(out, o + q, 'clap', 1));
+          for (let h = 0; h < 4; h += 0.5) hit(out, o + h, 'hat', 0.6 * hum(r));
+          continue;
+        }
+        const kicks = kind === 'sparse' ? (bar % 2 ? [0, 2.75] : [0]) : (bar % 2 ? kickB : kickA);
+        kicks.forEach(k => hit(out, o + k, 'kick', 1));
+        hit(out, o + 2, 'clap', 1);
+        const roll = kind === 'rolling' ? true : kind === 'bouncy' ? bar % 2 === 1 : false;
+        const step = kind === 'rolling' || busy === 2 ? 0.25 : busy === 0 ? 1 : 0.5;
+        for (let h = 0; h < 4; h += step) {
+          if (roll && h >= 3) continue;
+          hit(out, o + h, 'hat', (h % 1 === 0 ? 0.85 : h % 0.5 === 0 ? 0.6 : 0.42) * hum(r), 0.08);
+        }
+        if (roll) {
+          const n = (kind === 'rolling' && bar % 2 === 0) || rollType === 'triplet' ? 6 : 8;
+          for (let i = 0; i < n; i++) hit(out, o + 3 + i / n, 'hat', 0.35 + 0.55 * (i / n), 0.06);
+        }
+        if (kind !== 'sparse' && r() < 0.5) hit(out, o + 1.5, 'openhat', 0.7, 0.3);
+      }
+      return out;
+    };
+  }
+
+  function trap808(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      const kicks = keptKicks(ctx);
+      const kickA = pick(r, TRAP_KICKS), kickB = pick(r, TRAP_KICKS);
+      ctx.chords.forEach((c, bar) => {
+        const o = bar * 4;
+        const next = ctx.chords[(bar + 1) % BARS];
+        const p = 36 + c.root;
+        let hits = kind === 'held' ? [0]
+          : kicks ? kicks.filter(b => b >= o && b < o + 4).map(b => b - o)
+          : (bar % 2 ? kickB : kickA);
+        if (!hits.length) hits = [0];
+        if (busy === 0) hits = hits.slice(0, 1);
+        hits.forEach((k, i) => {
+          const end = i + 1 < hits.length ? hits[i + 1] : 4;
+          const glide = i === hits.length - 1 && next.root !== c.root && r() < (kind === 'held' ? 0.8 : 0.5) ? 36 + next.root : null;
+          const oct = kind === 'bounce' && i % 2 === 1 ? 12 : 0;
+          out.push({ b: o + k, len: end - k, p: p + oct, v: 1, glideTo: glide });
+        });
+      });
+      return out;
+    };
+  }
+
+  function trapPiano(kind) {
+    return (ctx, r, busy) => {
+      const rhythms = kind === 'sparse'
+        ? [[0, 1.5, 2, 3], [0, 0.75, 2, 3.5], [0, 2, 2.75]]
+        : [[0, 0.75, 1.5, 2, 2.75, 3.5], [0, 0.5, 1, 1.5, 2.5, 3], [0, 0.75, 1.5, 2.5, 3], [0, 1, 1.5, 2, 3, 3.5]];
+      const scaleOf = c => scalePcs(ctx.key, c.deg === 7 ? 'harmonic' : 'minor');
+      let notes = melody(r, ctx.chords, { rhythms, scaleOf, lo: 63, hi: 80, busy });
+      if (kind === 'callresponse') notes = notes.filter(n => !(n.b >= 4 && n.b < 8) && !(n.b >= 9.5 && n.b < 12));
+      return notes;
+    };
+  }
+
+  function trapStrings(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      voiceLead(ctx.chords, 53, 72).forEach((v, bar) => v.forEach(p => {
+        const o = bar * 4;
+        if (kind === 'held') out.push({ b: o, len: 4, p, v: 0.75 });
+        else if (kind === 'swell') out.push({ b: o, len: 4, p, v: 0.85, swell: true });
+        else (busy === 2 ? [0, 0.75, 1.5, 2.5, 3.25] : [0, 1.5, 3]).forEach(q => out.push({ b: o + q, len: 0.35, p, v: 0.8 }));
+      }));
+      return out;
+    };
+  }
+
+  // ===================================================================
+  // POP — C major, 112 BPM, straight sixteenths
+  // ===================================================================
+  function popDrums(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      for (let bar = 0; bar < BARS; bar++) {
+        const o = bar * 4;
+        if (bar === 0) hit(out, 0, 'crash', 0.6, 0.5);
+        if (kind === 'backbeat') {
+          [0, 1.5, 2].forEach(k => hit(out, o + k, 'kick', 1));
+          [1, 3].forEach(q => hit(out, o + q, 'snare', 1));
+          for (let h = 0; h < 4; h += busy === 2 ? 0.25 : busy === 0 ? 1 : 0.5) hit(out, o + h, 'hat', (h % 1 ? 0.5 : 0.75) * hum(r));
+          if (bar === 3) [3.5, 3.75].forEach(q => hit(out, o + q, 'snare', 0.7));
+        } else if (kind === 'four') {
+          [0, 1, 2, 3].forEach(k => hit(out, o + k, 'kick', 1));
+          [1, 3].forEach(q => hit(out, o + q, 'clap', 0.95));
+          [0.5, 1.5, 2.5, 3.5].forEach(q => hit(out, o + q, 'openhat', 0.55));
+          if (busy === 2) for (let h = 0; h < 4; h += 0.25) if (h % 0.5) hit(out, o + h, 'hat', 0.35);
+        } else if (kind === 'ballad') {
+          hit(out, o, 'kick', 1); if (busy > 0) hit(out, o + 2.75, 'kick', 0.7);
+          hit(out, o + 2, 'snare', 1);
+          for (let h = 0; h < 4; h += busy === 2 ? 0.5 : 1) hit(out, o + h, 'hat', 0.6 * hum(r));
+        } else if (kind === 'shuffle') {
+          [0, 2 / 3, 1, 5 / 3, 2, 8 / 3, 3, 11 / 3].forEach(q => hit(out, o + q, 'hat', 0.6));
+          hit(out, o, 'kick', 1); hit(out, o + 2, 'kick', 0.9);
+          [1, 3].forEach(q => hit(out, o + q, 'snare', 1));
+        }
+      }
+      return out;
+    };
+  }
+
+  function popBass(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      ctx.chords.forEach((c, bar) => {
+        const o = bar * 4;
+        const next = ctx.chords[(bar + 1) % BARS];
+        const br = above(c.root, 31);
+        let pattern;
+        if (kind === 'eighths') pattern = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5].map(q => [q, 0]);
+        else if (kind === 'octave') pattern = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5].map((q, i) => [q, i % 2 ? 12 : 0]);
+        else pattern = [[0, 0], [0.75, 0], [1.5, 7], [2.5, 0], [3, 12]];
+        if (busy === 0) pattern = pattern.filter(([q]) => q % 1 === 0);
+        pattern.forEach(([q, iv], i) => {
+          let p = br + iv;
+          if (i === pattern.length - 1 && next.root !== c.root && kind !== 'octave') p = above(next.root, 31) + (r() < 0.5 ? -2 : -1);
+          out.push({ b: o + q, len: kind === 'syncopated' ? 0.6 : 0.42, p, v: (q % 1 ? 0.8 : 1) * hum(r) });
+        });
+      });
+      return out;
+    };
+  }
+
+  function popLead(kind) {
+    return (ctx, r, busy) => {
+      const rhythms = kind === 'sparse'
+        ? [[0, 1, 2, 3], [0, 1.5, 2, 3.5], [0.5, 1.5, 2.5]]
+        : kind === 'busy'
+          ? [[0, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 3.5], [0, 0.25, 0.5, 1, 1.5, 1.75, 2, 3, 3.5]]
+          : [[0, 0.5, 1, 1.5, 2.5, 3], [0, 0.75, 1.5, 2, 3], [0.5, 1, 1.5, 2, 2.5, 3.5]];
+      const scaleOf = () => scalePcs(ctx.key, 'majorPent').concat(scalePcs(ctx.key, 'major'));
+      return melody(r, ctx.chords, { rhythms, scaleOf, lo: 67, hi: 84, busy });
+    };
+  }
+
+  function popPiano(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      voiceLead(ctx.chords, 55, 74).forEach((v, bar) => {
+        const o = bar * 4;
+        if (kind === 'quarters') [0, 1, 2, 3].forEach(q => v.forEach(p => out.push({ b: o + q, len: 0.85, p, v: q % 2 ? 0.7 : 0.85 })));
+        else if (kind === 'held') v.forEach(p => out.push({ b: o, len: 3.9, p, v: 0.8 }));
+        else {
+          const seq = v.concat(v.slice(1, -1).reverse());   // up the chord and back down
+          const step = busy === 2 ? 0.25 : 0.5;
+          for (let i = 0, q = 0; q < 4; q += step, i++) out.push({ b: o + q, len: step * 1.6, p: seq[i % seq.length], v: 0.75 });
+        }
+      });
+      return out;
+    };
+  }
+
+  // ===================================================================
+  // CLASSIC HIP HOP (boom bap) — D minor, 90 BPM, swung sixteenths, minor 7th chords
+  // ===================================================================
+  const BB_SWING = 0.55;
+
+  function bbDrums(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      for (let bar = 0; bar < BARS; bar++) {
+        const o = bar * 4;
+        if (kind === 'classic') {
+          (bar % 2 ? [0, 0.75, 2.5] : [0, 1.75, 2.5]).forEach(k => hit(out, o + k, 'kick', 1));
+          [1, 3].forEach(q => hit(out, o + q, 'snare', 1));
+          for (let h = 0; h < 4; h += busy === 2 ? 0.25 : busy === 0 ? 1 : 0.5) hit(out, o + h, 'hat', (h % 1 ? 0.45 : 0.7) * hum(r));
+        } else if (kind === 'laidback') {
+          [0, 2.75].forEach(k => hit(out, o + k, 'kick', 1));
+          [1, 3].forEach(q => hit(out, o + q, 'snare', 0.95));
+          [0, 1, 2, 3].forEach(q => hit(out, o + q, 'hat', 0.55 * hum(r)));
+          if (busy > 0) hit(out, o + 3.75, 'snare', 0.3);
+        } else if (kind === 'busy') {
+          [0, 0.75, 1.75, 2.5].forEach(k => hit(out, o + k, 'kick', 1));
+          [1, 3].forEach(q => hit(out, o + q, 'snare', 1));
+          [1.75, 3.25].forEach(q => hit(out, o + q, 'snare', 0.28));
+          for (let h = 0; h < 4; h += 0.25) hit(out, o + h, 'hat', (h % 0.5 ? 0.35 : 0.6) * hum(r));
+        } else if (kind === 'halftime') {
+          [0, 1.75].forEach(k => hit(out, o + k, 'kick', 1));
+          hit(out, o + 2, 'snare', 1);
+          for (let h = 0; h < 4; h += 0.25) hit(out, o + h, 'hat', 0.5);
+        }
+      }
+      return kind === 'halftime' ? out : swing16(out, BB_SWING);
+    };
+  }
+
+  function bbBass(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      const kicks = keptKicks(ctx);
+      ctx.chords.forEach((c, bar) => {
+        const o = bar * 4;
+        const next = ctx.chords[(bar + 1) % BARS];
+        const br = above(c.root, 31);
+        if (kind === 'kick') {
+          const hits = kicks ? kicks.filter(b => b >= o && b < o + 4).map(b => b - o) : [0, 1.75, 2.5];
+          hits.forEach((k, i) => out.push({ b: o + k, len: 0.45, p: br + (i === 1 && busy === 2 ? 7 : 0), v: hum(r) }));
+        } else if (kind === 'walking') {
+          const tones = [0, c.pcs.length > 3 ? mod12(c.pcs[3] - c.root) : 7, 7, 0];
+          [0, 1, 2, 3].forEach(q => {
+            let p = br + tones[q];
+            if (q === 3 && next.root !== c.root) p = above(next.root, 31) - 1;
+            out.push({ b: o + q, len: 0.8, p, v: hum(r) });
+          });
+        } else {
+          out.push({ b: o, len: 1.6, p: br, v: 1 });
+          if (busy > 0) out.push({ b: o + 2.5, len: 1.2, p: br + 7, v: 0.8 });
+        }
+      });
+      return swing16(out, BB_SWING);
+    };
+  }
+
+  function bbStrings(kind) {
+    return (ctx, r, busy) => {
+      const rhythms = kind === 'long'
+        ? [[0, 2], [0, 1.5, 3], [0, 2.5]]
+        : [[0, 0.75, 1.5, 2.5, 3], [0, 0.5, 1.75, 2.5, 3.25], [0, 1, 1.75, 2.5]];
+      const scaleOf = c => scalePcs(ctx.key, c.deg === 8 ? 'minor' : 'dorian');
+      return swing16(melody(r, ctx.chords, { rhythms, scaleOf, lo: 62, hi: 79, busy }), BB_SWING);
+    };
+  }
+
+  function bbPiano(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      voiceLead(ctx.chords, 53, 72).forEach((v, bar) => {
+        const o = bar * 4;
+        const times = kind === 'chops' ? (busy === 2 ? [0, 0.75, 1.75, 2.5, 3.25] : [0, 1.75, 2.5])
+          : kind === 'stabs' ? [1, 3] : [0];
+        times.forEach(q => v.forEach(p => out.push({ b: o + q, len: kind === 'held' ? 3.9 : 0.5, p, v: 0.8 })));
+      });
+      return swing16(out, BB_SWING);
+    };
+  }
+
+  // ===================================================================
+  // GENRE PROFILES
+  // ===================================================================
+  JT.GENRES = {
+    rock: {
+      id: 'rock', name: 'Southern rock', blurb: 'Blues shuffle, overdriven guitar and organ',
+      key: 4, keyName: 'E', bpm: 96, tempo: [80, 120], swing: 1.0,
+      tint: [1.0, 0.5, 0.22], fog: [0.022, 0.012, 0.008], accent: '#ff8a3d',
+      progressions: [
+        { roman: 'I7 - IV7 - I7 - V7', chords: [[0, '7'], [5, '7'], [0, '7'], [7, '7']] },
+        { roman: 'I - bVII - IV - I', chords: [[0, 'maj'], [10, 'maj'], [5, 'maj'], [0, 'maj']] },
+        { roman: 'I7 - I7 - IV7 - V7', chords: [[0, '7'], [0, '7'], [5, '7'], [7, '7']] },
+      ],
+      roles: {
+        lead: { label: 'Overdriven guitar', voice: 'guitar', range: [38, 68], styles: [
+          { id: 'boogie', name: 'Boogie riff', why: 'Rocks between the fifth and sixth of each chord, the classic shuffle riff.', gen: rockGuitar('boogie') },
+          { id: 'chug', name: 'Power chug', why: 'Steady power chords on every swung eighth.', gen: rockGuitar('chug') },
+          { id: 'stabs', name: 'Chord stabs', why: 'Three accented hits per bar leave room for the other parts.', gen: rockGuitar('stabs') },
+          { id: 'straight', name: 'Straight eighths', clash: 'Straight eighths fight the shuffle.', why: 'Even eighth-note chugging.', gen: rockGuitar('straight') },
+        ] },
+        drums: { label: 'Band kit', voice: 'kit', styles: [
+          { id: 'shuffle', name: 'Shuffle groove', why: 'The hi-hat swings with the shuffle; backbeat on 2 and 4.', gen: rockDrums('shuffle') },
+          { id: 'halftime', name: 'Half-time stomp', why: 'One big snare per bar, heavy and roomy.', gen: rockDrums('halftime') },
+          { id: 'train', name: 'Train beat', why: 'Rolling ghost notes on every triplet drive it forward.', gen: rockDrums('train') },
+          { id: 'straight', name: 'Straight rock', clash: 'Straight eighths fight the shuffle.', why: 'A straight rock beat.', gen: rockDrums('straight') },
+          { id: 'four', name: 'Four on the floor', clash: 'A dance kick flattens the swing.', why: 'A kick on every beat.', gen: rockDrums('four') },
+        ] },
+        bass: { label: 'Electric bass', voice: 'bass', range: [26, 52], styles: [
+          { id: 'walking', name: 'Boogie walk', why: 'Walks root, third, fifth, sixth and seventh, the blues boogie line.', gen: rockBass('walking') },
+          { id: 'rootfifth', name: 'Root and fifth', why: 'Root, fifth and octave; solid and simple.', gen: rockBass('rootfifth') },
+          { id: 'pumping', name: 'Root pump', why: 'Hammers the root, then steps into each new chord.', gen: rockBass('pumping') },
+          { id: 'long', name: 'Long roots', why: 'Held notes that leave lots of space.', gen: rockBass('long') },
+          { id: 'funk', name: 'Funk sixteenths', clash: 'Straight sixteenths pull against the shuffle.', why: 'Busy funk bass.', gen: rockBass('funk') },
+        ] },
+        pad: { label: 'Organ', voice: 'organ', range: [48, 76], styles: [
+          { id: 'held', name: 'Held chords', why: 'Sustained chords that glue the band together.', gen: rockOrgan('held') },
+          { id: 'pushed', name: 'Pushed chords', why: 'Re-hits on the swung eighth before beat 4.', gen: rockOrgan('pushed') },
+          { id: 'backbeat', name: 'Backbeat stabs', why: 'Short chords on 2 and 4 with the snare.', gen: rockOrgan('backbeat') },
+        ] },
+      },
+    },
+
+    trap: {
+      id: 'trap', name: 'Trap', blurb: '808s, hi-hat rolls and a dark piano',
+      key: 5, keyName: 'F minor', bpm: 140, tempo: [120, 160], swing: 0.3,
+      tint: [0.62, 0.28, 1.0], fog: [0.012, 0.007, 0.026], accent: '#9d6bff',
+      progressions: [
+        { roman: 'i - VI - III - VII', chords: [[0, 'min'], [8, 'maj'], [3, 'maj'], [10, 'maj']] },
+        { roman: 'i - iv - VI - V', chords: [[0, 'min'], [5, 'min'], [8, 'maj'], [7, 'maj']] },
+        { roman: 'i - VI - iv - V', chords: [[0, 'min'], [8, 'maj'], [5, 'min'], [7, 'maj']] },
+      ],
+      roles: {
+        lead: { label: 'Piano melody', voice: 'piano', range: [60, 82], styles: [
+          { id: 'motif', name: 'Dark motif', why: 'A short phrase repeated over each chord, resolving at the end.', gen: trapPiano('motif') },
+          { id: 'sparse', name: 'Sparse motif', why: 'Fewer, longer notes that leave space for vocals.', gen: trapPiano('sparse') },
+          { id: 'callresponse', name: 'Call and response', why: 'A phrase, a gap, then an answer.', gen: trapPiano('callresponse') },
+        ] },
+        drums: { label: '808 kit', voice: '808kit', styles: [
+          { id: 'bouncy', name: 'Bouncy', why: 'Two alternating kick patterns with a hat roll every other bar.', gen: trapDrums('bouncy') },
+          { id: 'rolling', name: 'Rolling hats', why: 'Sixteenth hats with a roll at the end of every bar.', gen: trapDrums('rolling') },
+          { id: 'sparse', name: 'Sparse', why: 'Minimal kick and clap; lets the 808 carry the low end.', gen: trapDrums('sparse') },
+          { id: 'boombap', name: 'Boom bap backbeat', clash: 'A clap on 2 and 4 doubles the half-time feel.', why: 'A classic hip-hop backbeat.', gen: trapDrums('boombap') },
+        ] },
+        bass: { label: '808 bass', voice: '808', range: [34, 60], styles: [
+          { id: 'kick', name: 'Follows the kick', why: 'An 808 note on every kick, gliding into the next chord.', gen: trap808('kick') },
+          { id: 'held', name: 'Long slides', why: 'One long 808 per bar that slides to the next root.', gen: trap808('held') },
+          { id: 'bounce', name: 'Octave bounce', why: 'Jumps between the root and its octave on the kicks.', gen: trap808('bounce') },
+        ] },
+        pad: { label: 'Strings', voice: 'strings', range: [50, 74], styles: [
+          { id: 'held', name: 'Held strings', why: 'Sustained chords with smooth voice leading.', gen: trapStrings('held') },
+          { id: 'swell', name: 'Swells', why: 'Each chord fades in slowly.', gen: trapStrings('swell') },
+          { id: 'stabs', name: 'Stabs', why: 'Short syncopated chord hits.', gen: trapStrings('stabs') },
+        ] },
+      },
+    },
+
+    pop: {
+      id: 'pop', name: 'Pop', blurb: 'Bright chords, a catchy synth hook',
+      key: 0, keyName: 'C', bpm: 112, tempo: [96, 128], swing: 0.2,
+      tint: [1.0, 0.45, 0.7], fog: [0.02, 0.01, 0.018], accent: '#ff6fae',
+      progressions: [
+        { roman: 'I - V - vi - IV', chords: [[0, 'maj'], [7, 'maj'], [9, 'min'], [5, 'maj']] },
+        { roman: 'vi - IV - I - V', chords: [[9, 'min'], [5, 'maj'], [0, 'maj'], [7, 'maj']] },
+        { roman: 'I - vi - IV - V', chords: [[0, 'maj'], [9, 'min'], [5, 'maj'], [7, 'maj']] },
+      ],
+      roles: {
+        lead: { label: 'Synth hook', voice: 'synthlead', range: [64, 86], styles: [
+          { id: 'hook', name: 'Catchy hook', why: 'A short hook restated over each chord.', gen: popLead('hook') },
+          { id: 'sparse', name: 'Sparse hook', why: 'A few long notes; room for a vocal.', gen: popLead('sparse') },
+          { id: 'busy', name: 'Busy topline', why: 'A quick, dense line.', gen: popLead('busy') },
+        ] },
+        drums: { label: 'Pop kit', voice: 'kit', styles: [
+          { id: 'backbeat', name: 'Pop backbeat', why: 'Kick on 1 and the and-of-2, snare on 2 and 4.', gen: popDrums('backbeat') },
+          { id: 'four', name: 'Four on the floor', why: 'A dance-pop kick on every beat with open hats.', gen: popDrums('four') },
+          { id: 'ballad', name: 'Half-time ballad', why: 'Big and slow, one snare per bar.', gen: popDrums('ballad') },
+          { id: 'shuffle', name: 'Shuffle', clash: 'Triplet hats fight straight pop eighths.', why: 'A swung groove.', gen: popDrums('shuffle') },
+        ] },
+        bass: { label: 'Electric bass', voice: 'bass', range: [28, 52], styles: [
+          { id: 'eighths', name: 'Root eighths', why: 'Driving eighth notes on the root, stepping into each chord.', gen: popBass('eighths') },
+          { id: 'octave', name: 'Octave pop', why: 'Bounces between the root and its octave.', gen: popBass('octave') },
+          { id: 'syncopated', name: 'Syncopated', why: 'Off-beat pushes that groove against the kick.', gen: popBass('syncopated') },
+        ] },
+        pad: { label: 'Piano chords', voice: 'piano', range: [52, 76], styles: [
+          { id: 'quarters', name: 'Block quarters', why: 'Chords on every beat, the pop-piano pulse.', gen: popPiano('quarters') },
+          { id: 'held', name: 'Held chords', why: 'Whole-bar chords with smooth voice leading.', gen: popPiano('held') },
+          { id: 'arp', name: 'Arpeggio', why: 'The chord broken into a rippling pattern.', gen: popPiano('arp') },
+        ] },
+      },
+    },
+
+    boombap: {
+      id: 'boombap', name: 'Classic hip hop', blurb: 'Boom bap swing, jazzy minor 7th chords',
+      key: 2, keyName: 'D minor', bpm: 90, tempo: [80, 100], swing: 0.7,
+      tint: [0.95, 0.75, 0.35], fog: [0.02, 0.016, 0.01], accent: '#e8c15a',
+      progressions: [
+        { roman: 'i7 - i7 - iv7 - iv7', chords: [[0, 'm7'], [0, 'm7'], [5, 'm7'], [5, 'm7']] },
+        { roman: 'i7 - VImaj7 - iv7 - v7', chords: [[0, 'm7'], [8, 'maj7'], [5, 'm7'], [7, 'm7']] },
+        { roman: 'i7 - VII7 - VImaj7 - v7', chords: [[0, 'm7'], [10, '7'], [8, 'maj7'], [7, 'm7']] },
+      ],
+      roles: {
+        lead: { label: 'String line', voice: 'strings', range: [60, 82], styles: [
+          { id: 'line', name: 'Sampled line', why: 'A swung phrase, like a chopped record.', gen: bbStrings('line') },
+          { id: 'long', name: 'Long notes', why: 'Slow, cinematic notes over the loop.', gen: bbStrings('long') },
+        ] },
+        drums: { label: 'Boom bap kit', voice: 'kit', styles: [
+          { id: 'classic', name: 'Classic boom bap', why: 'Swung hats, a hard snare on 2 and 4, kicks that nod.', gen: bbDrums('classic') },
+          { id: 'laidback', name: 'Laid back', why: 'Fewer kicks, behind-the-beat feel.', gen: bbDrums('laidback') },
+          { id: 'busy', name: 'Busy sixteenths', why: 'Swung sixteenth hats and ghost snares.', gen: bbDrums('busy') },
+          { id: 'halftime', name: 'Trap half-time', clash: 'A straight half-time snare drags against the head-nod swing.', why: 'A trap-style beat.', gen: bbDrums('halftime') },
+        ] },
+        bass: { label: 'Electric bass', voice: 'bass', range: [28, 50], styles: [
+          { id: 'kick', name: 'Follows the kick', why: 'Root notes locked to the kick drum.', gen: bbBass('kick') },
+          { id: 'walking', name: 'Jazz walk', why: 'One note per beat walking into each chord.', gen: bbBass('walking') },
+          { id: 'sparse', name: 'Sparse roots', why: 'Long roots with lots of space.', gen: bbBass('sparse') },
+        ] },
+        pad: { label: 'Piano chords', voice: 'piano', range: [50, 74], styles: [
+          { id: 'chops', name: 'Chopped chords', why: 'Short swung chord hits, like a sampled loop.', gen: bbPiano('chops') },
+          { id: 'held', name: 'Held chords', why: 'Rich minor 7th chords held for the bar.', gen: bbPiano('held') },
+          { id: 'stabs', name: 'Stabs on 2 and 4', why: 'Chords that hit with the snare.', gen: bbPiano('stabs') },
+        ] },
+      },
+    },
+  };
+
+  JT.ROLES = ['drums', 'bass', 'lead', 'pad'];
+  JT.SURFACE = { drums: 'floor', bass: 'right wall', lead: 'left wall', pad: 'ceiling' };
+
+  // ===================================================================
+  // SONGS AND SUGGESTIONS
+  // ===================================================================
+  function hash(...xs) {
+    let h = 2166136261;
+    xs.join('|').split('').forEach(ch => { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); });
+    return h >>> 0;
+  }
+
+  JT.newSong = function(genreId, seed) {
+    const g = JT.GENRES[genreId];
+    const r = T.rng(seed);
+    const progIndex = Math.floor(r() * g.progressions.length);
+    const song = { genre: genreId, seed, bpm: g.bpm, key: g.key, progIndex, layers: {} };
+    setProgression(song, progIndex);
+    return song;
+  };
+
+  function setProgression(song, progIndex) {
+    const g = JT.GENRES[song.genre];
+    song.progIndex = progIndex;
+    song.prog = g.progressions[progIndex];
+    song.chords = T.chordsOf(g.key, song.prog.chords);
+  }
+
+  // Regenerate a kept or previewed part from its recipe
+  JT.generate = function(song, role, styleId, seed, busy) {
+    const g = JT.GENRES[song.genre];
+    const style = g.roles[role].styles.find(s => s.id === styleId);
+    const ctx = { key: g.key, chords: song.chords, layers: song.layers };
+    return style.gen(ctx, T.rng(seed), busy).filter(n => n.b >= 0 && n.b < 16);
+  };
+
+  JT.changeChords = function(song) {
+    const g = JT.GENRES[song.genre];
+    setProgression(song, (song.progIndex + 1) % g.progressions.length);
+    // Kept parts are recipes, so they follow the new chords. Drums first, so parts that follow the kick see it.
+    JT.ROLES.forEach(role => {
+      const L = song.layers[role];
+      if (L) L.notes = JT.generate(song, role, L.styleId, L.seed, L.busy);
+    });
+  };
+
+  // Rank every style for a role against what is already in the song
+  JT.suggest = function(song, role, salt) {
+    const g = JT.GENRES[song.genre];
+    const kick = song.layers.drums ? song.layers.drums.notes.filter(n => n.p === 'kick').map(n => n.b) : null;
+    const bassOn = song.layers.bass ? song.layers.bass.notes.map(n => n.b) : null;
+    const density = notes => notes.length / 4;
+    const keptBusy = Object.entries(song.layers).filter(([r]) => r !== role && r !== 'drums').map(([, L]) => density(L.notes));
+    const lockFrac = (a, b) => a.length ? a.filter(x => b.some(y => Math.abs(x - y) < 0.06)).length / a.length : 0;
+
+    const options = g.roles[role].styles.map((style, i) => {
+      const seed = hash(song.seed, role, style.id, salt || 0);
+      const notes = JT.generate(song, role, style.id, seed, 1);
+      let score = 3 - i * 0.35;                         // the genre's most typical styles come first
+      let extra = '';
+      if (role === 'bass' && kick) {
+        const f = lockFrac(notes.map(n => n.b), kick);
+        score += f * 1.5;
+        if (f > 0.5) extra = ' Lands with your kick.';
+      }
+      if (role === 'drums' && bassOn) {
+        const f = lockFrac(bassOn, notes.filter(n => n.p === 'kick').map(n => n.b));
+        score += f;
+        if (f > 0.5) extra = ' The kick lines up with your bass.';
+      }
+      if (role !== 'drums' && keptBusy.some(d => d > 6) && density(notes) > 6) {
+        score -= 0.8;
+        extra = extra || ' Busy next to your other busy part.';
+      }
+      if (style.clash) score -= 10;
+      return { style, seed, busy: 1, notes, score, why: style.why + extra };
+    });
+    options.sort((a, b) => b.score - a.score);
+    const labels = ['Best match', 'Great match', 'Good match'];
+    let n = 0;
+    options.forEach(o => {
+      if (o.style.clash) { o.fit = 'clash'; o.fitText = 'Clashes'; o.why = o.style.clash; }
+      else { o.fit = ['best', 'great', 'good'][Math.min(n, 2)]; o.fitText = labels[Math.min(n, 2)]; n++; }
+    });
+    return options;
+  };
+})();

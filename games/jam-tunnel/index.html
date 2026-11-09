@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Jam Tunnel</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="tunnel" aria-label="The song as a tunnel you fly through. Drums run along the floor, bass on the right wall, the lead on the left wall and chords on the ceiling."></canvas>
+  <p class="nogl" id="nogl" hidden>The tunnel needs WebGL 2, which this browser doesn't have. You can still build a jam and hear it.</p>
+
+  <div class="ui">
+    <header class="bar">
+      <div class="song">
+        <a class="back" href="../../index.html">&larr; Back to games</a>
+        <div class="name">Jam Tunnel <span class="draft">Draft</span></div>
+        <div class="meta" id="meta"></div>
+        <div class="chords" id="chords"></div>
+      </div>
+      <div class="transport" id="transport" hidden>
+        <label class="tempo">Tempo <input type="range" id="tempo" min="60" max="180" step="1"> <span id="tempoVal"></span></label>
+        <button type="button" id="newChords">New chords</button>
+        <button type="button" id="pause">Pause</button>
+        <button type="button" id="sound" aria-pressed="true">Sound on</button>
+        <button type="button" id="newSong">New song</button>
+      </div>
+    </header>
+
+    <aside class="layers" id="layers" aria-label="Layers" hidden></aside>
+
+    <section class="tray" id="tray" aria-live="polite"></section>
+  </div>
+
+  <footer class="credit">Instrument samples: FluidR3_GM by Frank Wen, CC BY 3.0</footer>
+
+  <script src="samples.js"></script>
+  <script src="theory.js"></script>
+  <script src="genres.js"></script>
+  <script src="audio.js"></script>
+  <script src="tunnel.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

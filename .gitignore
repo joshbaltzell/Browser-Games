@@ -16,3 +16,6 @@ npm-debug.log*
 # AI planning artifacts (local only)
 .planning/
 .claude/
+
+# Jam Tunnel sample downloads (dev/build-samples.py)
+games/jam-tunnel/dev/.cache/
