@@ -20,8 +20,6 @@ window.JT = window.JT || {};
     synthbass: { inst: 'synthbass', level: 0.42 },
     organ: { inst: 'organ', level: 0.1, wet: 0.25, attack: 0.02 },
     piano: { inst: 'piano', level: 0.34, wet: 0.25, minDur: 0.5 },
-    // The trap piano: highs cut, drenched in reverb, left to ring
-    darkpiano: { inst: 'piano', level: 0.36, wet: 0.55, minDur: 0.9, lowpass: 1400 },
     epiano: { inst: 'epiano', level: 0.14, wet: 0.2, minDur: 0.5 },
     strings: { inst: 'strings', level: 0.15, wet: 0.35, attack: 0.03, leadBoost: 2.8 },
     warmpad: { inst: 'warmpad', level: 0.11, wet: 0.3, attack: 0.15, leadBoost: 2.5 },
@@ -31,7 +29,7 @@ window.JT = window.JT || {};
   };
   const KIT_LEVEL = { kick: 1.0, snare: 0.78, clap: 0.7, hat: 0.27, openhat: 0.27, tomlow: 0.68, tomhigh: 0.62, crash: 0.34 };
   // The sample set a voice needs, or null for synthesized voices
-  JT.instOf = voice => voice === 'kit' ? 'kit' : VOICES[voice] ? VOICES[voice].inst : null;
+  JT.instOf = voice => voice === 'kit' ? 'kit' : voice === 'darkpiano' ? 'grand' : VOICES[voice] ? VOICES[voice].inst : null;
 
   // Sample scripts already added to the page, shared by every audio context
   const scriptLoads = {};
@@ -72,6 +70,17 @@ window.JT = window.JT || {};
     const reverbOut = ctx.createGain();
     reverbOut.gain.value = 0.32;
     reverb.connect(reverbOut).connect(master);
+
+    // A dark, beat-synced echo (dotted eighth) for the trap piano
+    const echoIn = ctx.createGain();
+    const echo = ctx.createDelay(2);
+    const echoTone = ctx.createBiquadFilter();
+    echoTone.type = 'lowpass'; echoTone.frequency.value = 2200;
+    const echoBack = ctx.createGain(); echoBack.gain.value = 0.32;
+    const echoOut = ctx.createGain(); echoOut.gain.value = 0.55;
+    echoIn.connect(echo).connect(echoTone).connect(echoBack).connect(echo);
+    echoTone.connect(echoOut).connect(master);
+    echoOut.connect(reverb);
 
     const noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const nd = noiseBuf.getChannelData(0);
@@ -245,6 +254,49 @@ window.JT = window.JT || {};
       });
     }
 
+    // The trap piano, built the way producers dark-ify a real grand: an octave down for melodies,
+    // a soft attack (no hammer click), two slightly detuned layers with a slow tape-style wobble,
+    // low and high cut, gentle saturation, heavy reverb and a dotted-eighth echo.
+    const softClip = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) softClip[i] = Math.tanh((i / 1024 * 2 - 1) * 1.6) / Math.tanh(1.6);
+    function darkPiano(t, n, spb) {
+      const set = buffers.grand;
+      if (!set) return;
+      const pitch = n.lead ? n.p - 12 : n.p;
+      let best = null, bd = Infinity;
+      for (const k in set) { const d = Math.abs(+k - pitch); if (d < bd) { bd = d; best = k; } }
+      const { buf, norm } = set[best];
+      const dur = Math.max(0.9, n.len * spb);
+      const level = 0.2;
+
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 110;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1300; lp.Q.value = 0.6;
+      const sat = ctx.createWaveShaper(); sat.curve = softClip;
+      // Normalize before the saturation so every note is driven the same amount
+      const drive = ctx.createGain(); drive.gain.value = norm * 0.8 * n.v;
+      const g = out(t, 0.0001, 0.55);
+      g.gain.linearRampToValueAtTime(level, t + 0.02);
+      g.gain.setValueAtTime(level, t + dur);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.7);
+      hp.connect(lp).connect(drive).connect(sat).connect(g);
+      echo.delayTime.setValueAtTime(spb * 0.75, t);
+      const send = ctx.createGain(); send.gain.value = 0.28;
+      g.connect(send).connect(echoIn);
+
+      const span = dur + 0.75;
+      [-7, 7].forEach((cents, i) => {
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.playbackRate.value = Math.pow(2, (pitch - +best) / 12);
+        const wobble = new Float32Array(24);
+        for (let k = 0; k < wobble.length; k++) wobble[k] = cents + 9 * Math.sin(2 * Math.PI * 0.3 * (t + k / (wobble.length - 1) * span) + i * 1.7);
+        src.detune.setValueCurveAtTime(wobble, t, span);
+        src.connect(hp);
+        src.start(t + i * 0.007);
+        src.stop(t + span);
+      });
+    }
+
     // --- ONE NOTE ON ONE VOICE ---
     function play(voice, n, t, spb) {
       const dur = n.len * spb;
@@ -261,6 +313,7 @@ window.JT = window.JT || {};
           break;
         case '808': bass808(t, n, spb); break;
         case 'synthlead': synthLead(t, n, spb); break;
+        case 'darkpiano': darkPiano(t, n, spb); break;
         default: {
           const V = VOICES[voice];
           if (!V) break;
