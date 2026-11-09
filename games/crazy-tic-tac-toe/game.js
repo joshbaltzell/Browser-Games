@@ -256,7 +256,8 @@
 
     // Resize canvas to fit wrapper
     resizeCanvas();
-    
+    if (window.NightOcean) window.NightOcean.ignite();
+
     // Show navigation helper tooltips for infinite grid and mega boards
     if (mode === 'infinite' || (mode === 'mega' && boardSize > 12)) {
       canvasNavTooltip.style.display = 'flex';
@@ -312,8 +313,10 @@
     if (!wrapper) return;
     
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // With the night ocean on, the board leaves a strip of open water below it for its reflection
+    const boardFraction = window.NightOcean ? window.NightOcean.boardFraction : 1;
     canvasWidth = wrapper.clientWidth;
-    canvasHeight = wrapper.clientHeight;
+    canvasHeight = Math.round(wrapper.clientHeight * boardFraction);
     
     canvas.width = canvasWidth * dpr;
     canvas.height = canvasHeight * dpr;
@@ -1587,6 +1590,23 @@
     drawParticles();
 
     ctx.restore();
+
+    // Tell the night ocean where the board's bottom edge is, so the water line can sit just under it
+    if (window.NightOcean) window.NightOcean.boardBottom = boardBottomOnCanvas();
+  }
+
+  function boardBottomOnCanvas() {
+    let worldBottom;
+    if (mode === 'infinite') {
+      // The endless grid has no edge, so use the lowest piece in play
+      worldBottom = CELL_SIZE * 1.5;
+      placedSymbols.forEach(s => { worldBottom = Math.max(worldBottom, s.y + CELL_SIZE); });
+    } else {
+      const boardWidth = mode === 'ultimate' ? 3 * SUB_GRID_SIZE + 2 * ULTIMATE_SPACING : boardSize * CELL_SIZE;
+      worldBottom = boardWidth / 2;
+    }
+    const bottom = canvasHeight / 2 + (worldBottom + camY) * zoom;
+    return Math.max(0, Math.min(canvasHeight, bottom));
   }
 
   function drawCosmicDust() {

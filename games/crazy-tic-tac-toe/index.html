@@ -7,6 +7,9 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Night ocean backdrop (ocean.js); removed when WebGL 2 isn't available -->
+  <canvas id="ocean" aria-hidden="true"></canvas>
+
   <!-- Back button to arcade hub -->
   <a class="back-link" href="../../index.html">&larr; Back to games</a>
 
@@ -212,6 +215,7 @@
     </section>
   </div>
 
+  <script src="ocean.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
