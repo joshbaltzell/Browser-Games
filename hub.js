@@ -274,6 +274,28 @@ const GAMES = [
         <circle cx="95" cy="65" r="6" fill="#1a1a1a" />
       </svg>`,
   },
+  {
+    title: "Jam Tunnel",
+    description:
+      "Fly through your song in a glowing tunnel. Pick a genre, then add drums, bass, lead and chords from parts that music theory says fit together.",
+    path: "games/jam-tunnel/index.html",
+    tags: ["Music", "Creative", "3D"],
+    accent: "#ff8a3d",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="20" y="10" width="80" height="60" fill="none" stroke="#ff8a3d" stroke-width="2" opacity="0.8" />
+        <rect x="44" y="28" width="32" height="24" fill="none" stroke="#ff8a3d" stroke-width="1" opacity="0.5" />
+        <line x1="20" y1="10" x2="44" y2="28" stroke="#ff8a3d" opacity="0.35" />
+        <line x1="100" y1="10" x2="76" y2="28" stroke="#ff8a3d" opacity="0.35" />
+        <line x1="20" y1="70" x2="44" y2="52" stroke="#ff8a3d" opacity="0.35" />
+        <line x1="100" y1="70" x2="76" y2="52" stroke="#ff8a3d" opacity="0.35" />
+        <rect x="40" y="60" width="12" height="4" rx="1" fill="#7cc7ff" />
+        <rect x="64" y="56" width="10" height="3" rx="1" fill="#7cc7ff" />
+        <rect x="24" y="30" width="4" height="10" rx="1" fill="#ff8a3d" />
+        <rect x="92" y="38" width="4" height="12" rx="1" fill="#c58cff" />
+        <rect x="52" y="14" width="16" height="3" rx="1" fill="#6bf3b8" />
+      </svg>`,
+  },
 ];
 
 function buildCard(game) {
