@@ -94,7 +94,9 @@ window.JT = window.JT || {};
         const L = song.layers[role];
         if (!L || !sec.layers[role]) return;
         const busy = Math.max(0, Math.min(2, L.busy + sec.energy));
-        let notes = JT.generate(song, role, L.styleId, L.seed, busy, { chords, layers: local });
+        // Hand-edited parts play exactly as written in every section
+        let notes = L.edited ? L.notes.map(n => Object.assign({}, n))
+          : JT.generate(song, role, L.styleId, L.seed, busy, { chords, layers: local });
         if (sec.type === 'intro' && role === 'drums') notes = notes.filter(n => n.p === 'hat' || n.p === 'openhat');
         local[role] = { notes };
       });

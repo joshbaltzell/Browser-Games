@@ -12,7 +12,8 @@ window.JT = window.JT || {};
   const GATE = 3.0;               // distance from the camera where notes sound
   const FAR = 46;
   const MAXL = 24;                // note lights that reach the tunnel surfaces
-  const LANES = { hat: -1.15, openhat: -1.15, snare: -0.4, clap: -0.4, kick: 0.4, tomhigh: 1.15, tomlow: 1.15, crash: 1.15 };
+  const LANES = { hat: -1.15, snare: -0.4, clap: -0.4, kick: 0.4, tomhigh: 1.15, tomlow: 1.15, crash: 1.15, openhat: 1.15 };
+  JT.DRUM_LANES = LANES;
   const NORMALS = { drums: [0, 1, 0], lead: [1, 0, 0], bass: [-1, 0, 0], pad: [0, -1, 0] };
   const ROLE_COLOR = { lead: [1.0, 0.42, 0.12], drums: [0.32, 0.72, 1.0], bass: [0.72, 0.42, 1.0], pad: [0.35, 1.0, 0.72] };
   // Long sustained notes (pads, 808s) would swamp the scene at full brightness
@@ -334,11 +335,18 @@ void main() {
 
       // The camera sways gently with the groove
       const sw = view.reduced ? 0 : view.swing;
-      const eye = [Math.sin(p * Math.PI * 0.5) * 0.07 * sw, 0.12 - (view.reduced ? 0 : 0.025 * pulse), 0];
-      const at = [eye[0] * 0.4, -0.12, -10];
+      // In run mode the camera rolls until the edited surface is underfoot and drops toward it.
+      // roll: 0 floor, +PI/2 right wall, PI ceiling, -PI/2 left wall
+      const roll = view.roll || 0, amt = view.runAmt || 0;
+      const down = [Math.sin(roll), -Math.cos(roll), 0];
+      const up = [-Math.sin(roll) + Math.sin(p * Math.PI * 0.25) * 0.012 * sw * (1 - amt), Math.cos(roll), 0];
+      const base = [Math.sin(p * Math.PI * 0.5) * 0.07 * sw * (1 - amt), (0.12 - (view.reduced ? 0 : 0.025 * pulse)) * (1 - amt), 0];
+      const eye = [base[0] + down[0] * 0.42 * amt, base[1] + down[1] * 0.42 * amt, 0];
+      const at = [eye[0] * 0.4 + down[0] * (0.12 + 0.75 * amt), -0.12 * (1 - amt) + down[1] * 0.75 * amt, -10];
       const aspect = canvas.width / canvas.height;
       const fovy = Math.max(62 * Math.PI / 180, 2 * Math.atan(Math.tan(36 * Math.PI / 180) / aspect));
-      const VP = mul(perspective(fovy, aspect, 0.05, 80), lookAt(eye, at, [Math.sin(p * Math.PI * 0.25) * 0.012 * sw, 1, 0]));
+      const VP = mul(perspective(fovy, aspect, 0.05, 80), lookAt(eye, at, up));
+      lastVP = VP;
 
       // Note instances and the brightest note lights
       let ni = 0;
@@ -357,14 +365,15 @@ void main() {
             if (zHead > 1 + len || zHead < -FAR || ni >= MAX_INST - 8) return;
             const playing = rel <= 0 && rel + n.len > 0;
             const since = -rel * S;
-            let intensity = (0.45 + 0.4 * n.v) * gain;
-            if (playing) intensity += (0.35 + 1.6 * Math.exp(-since * 7)) * gain;
+            const dim = part.dim ? 0.3 : 1;   // other parts fade back while one is being edited
+            let intensity = (0.45 + 0.4 * n.v) * gain * dim;
+            if (playing) intensity += (0.35 + 1.6 * Math.exp(-since * 7)) * gain * dim;
             const [c, s] = placeNote(role, n, zHead, len, part.range);
             instData.set([c[0], c[1], c[2], s[0], s[1], s[2], color[0], color[1], color[2], intensity, ghost, idx * 0.37], ni * INST);
             ni++;
             const lit = (playing
               ? (0.5 + 1.6 * Math.exp(-since * 6)) * (ghost ? 0.4 : 1)
-              : (rel > 0 && rel < 5 ? 0.12 * (1 - rel / 5) : 0)) * gain;
+              : (rel > 0 && rel < 5 ? 0.12 * (1 - rel / 5) : 0)) * gain * dim;
             if (lit > 0.02) lights.push({ pos: [c[0] * 0.9, c[1] * 0.9, zHead - 0.1], col: color, k: lit });
           });
           // Sparks when a note crosses the gate
@@ -380,6 +389,23 @@ void main() {
       [[[0, HH, -GATE], [2 * HW, th, th]], [[0, -HH, -GATE], [2 * HW, th, th]], [[-HW, 0, -GATE], [th, 2 * HH, th]], [[HW, 0, -GATE], [th, 2 * HH, th]]]
         .forEach(([c, s]) => { instData.set([...c, ...s, ...gc, gateI, 0, 0], ni * INST); ni++; });
       lights.push({ pos: [0, HH * 0.9, -GATE], col: gc, k: pulse * 0.5 }, { pos: [0, -HH * 0.9, -GATE], col: gc, k: pulse * 0.5 });
+      // Run mode: faint lanes down the edited surface, and the runner at the gate
+      if (view.edit && view.runAmt > 0.05) {
+        const E = view.edit, color = ROLE_COLOR[E.role];
+        const guideLen = FAR - GATE + 1;
+        E.lanes.forEach((lane, i) => {
+          const n = E.role === 'drums' ? { p: lane, v: 0.5 } : { p: lane, v: 0.5 };
+          const [c] = placeNote(E.role, n, -GATE + 1, guideLen, E.range);
+          const thin = E.role === 'drums' ? [0.02, 0.012, guideLen] : E.role === 'pad' ? [0.012, 0.012, guideLen] : [0.012, 0.012, guideLen];
+          const k = (i === E.cursor ? 0.9 : E.role === 'drums' ? 0.4 : 0.22) * view.runAmt;
+          if (ni < MAX_INST) { instData.set([c[0], c[1], c[2], ...thin, ...color, k, 0, 0], ni * INST); ni++; }
+        });
+        const lane = E.lanes[E.cursor];
+        const [c, sz] = placeNote(E.role, { p: lane, v: 1 }, -GATE + 0.2, 0.4, E.range);
+        const glow = (1.6 + Math.sin(view.time * 8) * 0.4) * view.runAmt;
+        if (ni < MAX_INST) { instData.set([c[0], c[1], c[2], sz[0] * 1.25, sz[1] * 1.6, 0.4, 1, 0.95, 0.85, glow, 0, 0], ni * INST); ni++; }
+        lights.push({ pos: [c[0], c[1], -GATE], col: color, k: 1.2 * view.runAmt });
+      }
       // Section starts pass by as bright frames in the section's color
       (view.marks || []).forEach(m => {
         const rel = (((m.beat - p) % loop) + loop) % loop;
@@ -496,6 +522,62 @@ void main() {
       }
     }
 
-    return { render, reportFrame };
+    // --- PICKING (run mode) ---
+    let lastVP = null;
+    function invert(m) {
+      const inv = new Array(16);
+      inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] + m[9] * m[7] * m[14] + m[13] * m[6] * m[11] - m[13] * m[7] * m[10];
+      inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] - m[8] * m[7] * m[14] - m[12] * m[6] * m[11] + m[12] * m[7] * m[10];
+      inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] + m[8] * m[7] * m[13] + m[12] * m[5] * m[11] - m[12] * m[7] * m[9];
+      inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14] - m[8] * m[6] * m[13] - m[12] * m[5] * m[10] + m[12] * m[6] * m[9];
+      inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15] - m[9] * m[3] * m[14] - m[13] * m[2] * m[11] + m[13] * m[3] * m[10];
+      inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15] + m[8] * m[3] * m[14] + m[12] * m[2] * m[11] - m[12] * m[3] * m[10];
+      inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15] - m[8] * m[3] * m[13] - m[12] * m[1] * m[11] + m[12] * m[3] * m[9];
+      inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14] + m[8] * m[2] * m[13] + m[12] * m[1] * m[10] - m[12] * m[2] * m[9];
+      inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15] + m[5] * m[3] * m[14] + m[13] * m[2] * m[7] - m[13] * m[3] * m[6];
+      inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15] - m[4] * m[3] * m[14] - m[12] * m[2] * m[7] + m[12] * m[3] * m[6];
+      inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15] + m[4] * m[3] * m[13] + m[12] * m[1] * m[7] - m[12] * m[3] * m[5];
+      inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14] - m[4] * m[2] * m[13] - m[12] * m[1] * m[6] + m[12] * m[2] * m[5];
+      inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11] - m[5] * m[3] * m[10] - m[9] * m[2] * m[7] + m[9] * m[3] * m[6];
+      inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] + m[4] * m[3] * m[10] + m[8] * m[2] * m[7] - m[8] * m[3] * m[6];
+      inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] - m[4] * m[3] * m[9] - m[8] * m[1] * m[7] + m[8] * m[3] * m[5];
+      inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] + m[4] * m[2] * m[9] + m[8] * m[1] * m[6] - m[8] * m[2] * m[5];
+      const det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+      return det ? inv.map(v => v / det) : null;
+    }
+    // Where a click lands on a role's surface: { x, y, z, rel: beats ahead of the gate } or null
+    function pick(clientX, clientY, role) {
+      if (!lastVP) return null;
+      const inv = invert(lastVP);
+      if (!inv) return null;
+      const r = canvas.getBoundingClientRect();
+      const nx = (clientX - r.left) / r.width * 2 - 1, ny = 1 - (clientY - r.top) / r.height * 2;
+      const un = (x, y, z) => {
+        const o = [0, 1, 2, 3].map(i => inv[i] * x + inv[4 + i] * y + inv[8 + i] * z + inv[12 + i]);
+        return [o[0] / o[3], o[1] / o[3], o[2] / o[3]];
+      };
+      const a = un(nx, ny, -1), b = un(nx, ny, 1);
+      const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      const plane = { drums: [1, -HH + 0.06], pad: [1, HH - 0.06], bass: [0, HW - 0.06], lead: [0, -HW + 0.06] }[role];
+      const axis = plane[0];
+      if (Math.abs(d[axis]) < 1e-6) return null;
+      const t = (plane[1] - a[axis]) / d[axis];
+      if (t < 0) return null;
+      const P = [a[0] + d[0] * t, a[1] + d[1] * t, a[2] + d[2] * t];
+      if (P[2] > -0.3) return null;
+      return { x: P[0], y: P[1], z: P[2], rel: (-P[2] - GATE) / DEPTH };
+    }
+    // The pitch (or drum) a surface coordinate falls on, matching placeNote
+    function laneAt(role, point, lanes, range) {
+      let best = 0, bd = Infinity;
+      lanes.forEach((lane, i) => {
+        const [c] = placeNote(role, { p: lane, v: 1 }, -GATE, 0, range);
+        const dist = role === 'drums' || role === 'pad' ? Math.abs(c[0] - point.x) : Math.abs(c[1] - point.y);
+        if (dist < bd) { bd = dist; best = i; }
+      });
+      return best;
+    }
+
+    return { render, reportFrame, pick, laneAt };
   };
 })();

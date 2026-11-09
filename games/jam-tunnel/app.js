@@ -38,6 +38,7 @@
     track: null,
     selected: null,         // selected section id
     exporting: false,
+    edit: null,             // run mode: { role, lanes, cursor, undo }
   };
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -152,7 +153,7 @@
   function regenerateOthers(changed) {
     JT.ROLES.forEach(role => {
       const L = state.song.layers[role];
-      if (!L || role === changed) return;
+      if (!L || role === changed || L.edited) return;
       L.notes = JT.generate(state.song, role, L.styleId, L.seed, L.busy);
     });
   }
@@ -216,6 +217,92 @@
     }
   }
 
+  // --- RUN MODE (editing one layer) ---
+  // The tunnel rolls so the layer's surface is underfoot. Lanes across it are the notes of the
+  // song's scale (or the drums); the runner sits at the gate where notes sound.
+  const ROLL = { drums: 0, bass: Math.PI / 2, pad: Math.PI, lead: -Math.PI / 2 };
+  // Which way a lane step moves on screen once the surface is underfoot
+  const SCREEN_SIGN = { drums: 1, bass: 1, pad: -1, lead: -1 };
+  const DRUM_NAMES = { hat: 'Hi-hat', snare: 'Snare', clap: 'Clap', kick: 'Kick', tomhigh: 'Tom', openhat: 'Open hat' };
+
+  function editLanes(role) {
+    const g = JT.GENRES[state.song.genre];
+    if (role === 'drums') return g.roles.drums.voice === '808kit' ? ['hat', 'clap', 'kick', 'openhat'] : ['hat', 'snare', 'kick', 'tomhigh'];
+    const [lo, hi] = rangeOf(role);
+    const pcs = g.editScale.map(i => (g.key + i) % 12);
+    const lanes = [];
+    for (let p = lo; p <= hi; p++) if (pcs.includes(T.mod12(p))) lanes.push(p);
+    return lanes;
+  }
+  // The lane a note sits in (drum pieces that share a spot share a lane)
+  function laneOf(n) {
+    const E = state.edit;
+    if (E.role === 'drums') return E.lanes.findIndex(l => JT.DRUM_LANES[l] === JT.DRUM_LANES[n.p]);
+    let best = 0;
+    E.lanes.forEach((l, i) => { if (Math.abs(l - n.p) < Math.abs(E.lanes[best] - n.p)) best = i; });
+    return best;
+  }
+  const laneName = (role, lane) => role === 'drums' ? DRUM_NAMES[lane] : T.NAMES[T.mod12(lane)] + (Math.floor(lane / 12) - 1);
+
+  function enterEdit(role) {
+    if (state.mode !== 'loop' || !state.song.layers[role]) return;
+    const lanes = editLanes(role);
+    state.role = null;
+    state.edit = { role, lanes, cursor: 0, undo: [] };
+    // Start the runner on the lane the part uses most
+    const counts = lanes.map(() => 0);
+    state.song.layers[role].notes.forEach(n => { const i = laneOf(n); if (i >= 0) counts[i]++; });
+    state.edit.cursor = counts.indexOf(Math.max(...counts));
+    state.tray = 'edit';
+    render();
+  }
+  function exitEdit() {
+    state.edit = null;
+    state.tray = nextStep() ? 'add' : 'ready';
+    render();
+  }
+
+  // Add a note where the runner is, or remove the note that's already there
+  function toggleAt(beat, laneIdx) {
+    const E = state.edit, L = state.song.layers[E.role];
+    const g = JT.GENRES[state.song.genre];
+    const grid = g.grid;
+    const q = ((Math.round(beat / grid) * grid) % LOOP + LOOP) % LOOP;
+    const near = n => { const d = Math.abs(n.b - q); return Math.min(d, LOOP - d) < grid * 0.5 - 1e-6; };
+    E.undo.push(L.notes.map(n => Object.assign({}, n)));
+    const hits = L.notes.filter(n => near(n) && laneOf(n) === laneIdx);
+    if (hits.length) {
+      L.notes = L.notes.filter(n => !hits.includes(n));
+    } else {
+      const lane = E.lanes[laneIdx];
+      const len = E.role === 'drums' ? 0.18 : E.role === 'pad' ? 1 : grid * 2;
+      const note = { b: q, len, p: lane, v: 0.9 };
+      L.notes = L.notes.concat([note]).sort((a, b) => a.b - b.b);
+      if (audio && audioReady && soundOn) audio.playNow(voiceOf(E.role), Object.assign({ lead: E.role === 'lead' }, note), spb());
+    }
+    L.edited = true;
+    renderLayers();
+    renderTray();
+  }
+  function undoEdit() {
+    const E = state.edit;
+    if (!E || !E.undo.length) return;
+    state.song.layers[E.role].notes = E.undo.pop();
+    renderTray();
+  }
+  function moveLane(dir) {
+    const E = state.edit;
+    E.cursor = Math.max(0, Math.min(E.lanes.length - 1, E.cursor + dir * SCREEN_SIGN[E.role]));
+    // Let the lane be heard when moving across pitches
+    if (E.role !== 'drums' && audio && audioReady && soundOn) audio.playNow(voiceOf(E.role), { b: 0, len: 0.25, p: E.lanes[E.cursor], v: 0.5, lead: E.role === 'lead' }, spb());
+    renderTray();
+  }
+  function stepTime(dir) {
+    const grid = JT.GENRES[state.song.genre].grid;
+    const now = position(performance.now());
+    jumpTo(Math.round(now / grid) * grid + dir * grid);
+  }
+
   // --- RENDERING THE UI ---
   const $ = id => document.getElementById(id);
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -275,10 +362,11 @@
       return `<div class="layer ${state.muted[role] ? 'muted' : ''}">${sw}<span class="ln">${esc(label)}</span>
         <span class="acts">
           <button type="button" data-act="mute" data-role="${role}" aria-pressed="${state.muted[role]}">${state.muted[role] ? 'Unmute' : 'Mute'}</button>
-          ${state.mode === 'loop' ? `<button type="button" data-act="change" data-role="${role}">Change</button>
+          ${state.mode === 'loop' ? `<button type="button" data-act="edit" data-role="${role}" aria-pressed="${!!(state.edit && state.edit.role === role)}">Edit</button>
+          <button type="button" data-act="change" data-role="${role}">Change</button>
           <button type="button" data-act="remove" data-role="${role}" aria-label="Remove ${esc(label)}">✕</button>` : ''}
         </span>
-        <span class="ld">${JT.SURFACE[role]} · ${esc(L.name)}</span></div>`;
+        <span class="ld">${JT.SURFACE[role]} · ${esc(L.name)}${L.edited ? ' · edited by you' : ''}</span></div>`;
     });
     $('layers').innerHTML = `<h2>${state.mode === 'song' ? 'Instruments' : 'Your loop'}</h2>${rows.join('')}`;
   }
@@ -428,6 +516,31 @@
       return;
     }
 
+    if (state.tray === 'edit') {
+      const E = state.edit;
+      const L = song.layers[E.role];
+      tray.style.setProperty('--accent', ROLE_HEX[E.role]);
+      const scaleName = E.role === 'drums' ? '' : ` Each lane is a note of the ${esc(g.keyName)} scale.`;
+      tray.innerHTML = `
+        <div class="tray-head"><h3>Running on the ${ROLE_NAME[E.role].toLowerCase()} <span class="inst">${esc(g.roles[E.role].label)} · ${JT.SURFACE[E.role]}</span></h3>
+          <p>Lane: <strong>${esc(laneName(E.role, E.lanes[E.cursor]))}</strong> · ${L.notes.length} notes</p></div>
+        <p class="lead">Notes sound when they reach the glowing gate, where your runner is.${scaleName}</p>
+        <div class="keys">
+          <span><kbd>←</kbd><kbd>→</kbd> switch lanes</span>
+          <span><kbd>Space</kbd> add a note where you are, or remove the one that's there</span>
+          <span><kbd>P</kbd> pause, then <kbd>↑</kbd><kbd>↓</kbd> step through time</span>
+          <span>Or click a spot on the surface</span>
+        </div>
+        <div class="actions">
+          <button type="button" class="primary" data-act="done">Done</button>
+          <button type="button" data-act="undo" ${E.undo.length ? '' : 'disabled'}>Undo</button>
+          <button type="button" data-act="clear">Clear all notes</button>
+          <button type="button" data-act="restore" ${L.edited ? '' : 'disabled'}>Go back to the suggested part</button>
+        </div>
+        <p class="hint">Notes snap to the beat. A part you edit stays exactly as you wrote it, even if you change chords.</p>`;
+      return;
+    }
+
     // Full-song arranger
     const track = state.track;
     const idx = selectedIndex();
@@ -522,6 +635,17 @@
     }
     switch (d.act) {
       case 'keep': keepPick(); break;
+      case 'done': exitEdit(); break;
+      case 'undo': undoEdit(); break;
+      case 'clear': { const L = state.song.layers[state.edit.role]; state.edit.undo.push(L.notes); L.notes = []; L.edited = true; render(); break; }
+      case 'restore': {
+        const L = state.song.layers[state.edit.role];
+        state.edit.undo.push(L.notes);
+        L.edited = false;
+        L.notes = JT.generate(state.song, state.edit.role, L.styleId, L.seed, L.busy);
+        render();
+        break;
+      }
       case 'adjust': state.adjust = !state.adjust; state.escape = false; render(); break;
       case 'escape': state.escape = !state.escape; state.adjust = false; render(); break;
       case 'others': state.others = !state.others; render(); break;
@@ -571,6 +695,8 @@
     const b = e.target.closest('button[data-act]');
     if (!b) return;
     const role = b.dataset.role;
+    if (b.dataset.act === 'edit') { if (state.edit && state.edit.role === role) exitEdit(); else enterEdit(role); return; }
+    if (state.edit) state.edit = null;
     if (b.dataset.act === 'add') openSuggestions(role);
     else if (b.dataset.act === 'change') openSuggestions(role, state.song.layers[role].styleId);
     else if (b.dataset.act === 'mute') { state.muted[role] = !state.muted[role]; render(); }
@@ -611,6 +737,15 @@
     render();
   });
   window.addEventListener('keydown', e => {
+    if (state.edit && !['INPUT'].includes(e.target.tagName)) {
+      const k = e.key;
+      if (k === 'ArrowLeft' || k === 'ArrowRight') { e.preventDefault(); moveLane(k === 'ArrowRight' ? 1 : -1); return; }
+      if ((k === 'ArrowUp' || k === 'ArrowDown') && paused) { e.preventDefault(); stepTime(k === 'ArrowUp' ? 1 : -1); return; }
+      if (e.code === 'Space' || k === 'Enter') { e.preventDefault(); toggleAt(position(performance.now()), state.edit.cursor); return; }
+      if (k === 'p' || k === 'P') { togglePause(); return; }
+      if ((k === 'z' || k === 'Z') && (e.metaKey || e.ctrlKey)) { e.preventDefault(); undoEdit(); return; }
+      if (k === 'Escape') { exitEdit(); return; }
+    }
     if (e.code === 'Space' && state.song && !['INPUT', 'BUTTON'].includes(e.target.tagName)) { e.preventDefault(); togglePause(); }
     if (e.key === 'Escape' && state.tray === 'suggest') { state.role = null; state.tray = nextStep() ? 'add' : 'ready'; render(); }
   });
@@ -618,8 +753,17 @@
   // --- FRAME LOOP ---
   const tunnel = JT.createTunnel($('tunnel'));
   if (!tunnel) $('nogl').hidden = false;
+  $('tunnel').addEventListener('click', e => {
+    if (!state.edit || !tunnel) return;
+    const hit = tunnel.pick(e.clientX, e.clientY, state.edit.role);
+    if (!hit) return;
+    const lane = tunnel.laneAt(state.edit.role, hit, state.edit.lanes, rangeOf(state.edit.role));
+    state.edit.cursor = lane;
+    toggleAt(position(performance.now()) + hit.rel, lane);
+  });
   const IDLE = { tint: [1.0, 0.5, 0.22], fog: [0.02, 0.012, 0.012], swing: 0.5 };
   let prevPos = 0, lastNow = performance.now();
+  let roll = 0, runAmt = 0;
   const t0 = performance.now();
 
   function frame(now) {
@@ -628,6 +772,11 @@
     lastNow = now;
     const p = position(now);
     const songMode = state.mode === 'song' && state.track;
+    // Ease the camera into (and out of) run mode
+    const E = state.edit;
+    const ease = Math.min(1, dt * (reduced ? 30 : 5));
+    roll += ((E ? ROLL[E.role] : 0) - roll) * ease;
+    runAmt += ((E ? 1 : 0) - runAmt) * ease;
     if (tunnel) {
       const g = state.song ? JT.GENRES[state.song.genre] : IDLE;
       tunnel.render({
@@ -636,7 +785,9 @@
         fade: reduced ? 1 : Math.min(1, (now - t0) / 1500),
         loop: loopLength(),
         marks: songMode ? state.track.sections.map(s => ({ beat: s.start, color: toRgb(JT.SECTION_TYPES[s.type].color) })) : [],
-        parts: currentParts().map(part => ({ role: part.role, notes: part.notes, ghost: part.ghost || part.muted, range: part.range })),
+        roll, runAmt,
+        edit: E ? { role: E.role, lanes: E.lanes, cursor: E.cursor, range: rangeOf(E.role) } : null,
+        parts: currentParts().map(part => ({ role: part.role, notes: part.notes, ghost: part.ghost || part.muted, range: part.range, dim: !!E && part.role !== E.role })),
       });
     }
     if (songMode) {

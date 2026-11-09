@@ -225,6 +225,9 @@ window.JT = window.JT || {};
       }));
     }
 
-    return { ctx, ready, schedule, master };
+    // Play one note right now (feedback while editing)
+    const playNow = (voice, n, spb) => play(voice, n, ctx.currentTime + 0.005, spb);
+
+    return { ctx, ready, schedule, master, playNow };
   };
 })();

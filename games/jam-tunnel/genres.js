@@ -401,7 +401,7 @@ window.JT = window.JT || {};
   // ===================================================================
   JT.GENRES = {
     rock: {
-      id: 'rock', name: 'Southern rock', blurb: 'Blues shuffle, overdriven guitar and organ',
+      id: 'rock', name: 'Southern rock', grid: 1 / 3, editScale: [0, 2, 3, 4, 5, 7, 9, 10],  blurb: 'Blues shuffle, overdriven guitar and organ',
       key: 4, keyName: 'E', bpm: 96, tempo: [80, 120], swing: 1.0,
       tint: [1.0, 0.5, 0.22], fog: [0.022, 0.012, 0.008], accent: '#ff8a3d',
       progressions: [
@@ -439,7 +439,7 @@ window.JT = window.JT || {};
     },
 
     trap: {
-      id: 'trap', name: 'Trap', blurb: '808s, hi-hat rolls and a dark piano',
+      id: 'trap', name: 'Trap', grid: 0.25, editScale: [0, 2, 3, 5, 7, 8, 10, 11],  blurb: '808s, hi-hat rolls and a dark piano',
       key: 5, keyName: 'F minor', minor: true, verseKeepsChords: true, bpm: 140, tempo: [120, 160], swing: 0.3,
       tint: [0.62, 0.28, 1.0], fog: [0.012, 0.007, 0.026], accent: '#9d6bff',
       progressions: [
@@ -473,7 +473,7 @@ window.JT = window.JT || {};
     },
 
     pop: {
-      id: 'pop', name: 'Pop', blurb: 'Bright chords, a catchy synth hook',
+      id: 'pop', name: 'Pop', grid: 0.25, editScale: [0, 2, 4, 5, 7, 9, 11],  blurb: 'Bright chords, a catchy synth hook',
       key: 0, keyName: 'C', bpm: 112, tempo: [96, 128], swing: 0.2,
       tint: [1.0, 0.45, 0.7], fog: [0.02, 0.01, 0.018], accent: '#ff6fae',
       progressions: [
@@ -507,7 +507,7 @@ window.JT = window.JT || {};
     },
 
     boombap: {
-      id: 'boombap', name: 'Classic hip hop', blurb: 'Boom bap swing, jazzy minor 7th chords',
+      id: 'boombap', name: 'Classic hip hop', grid: 0.25, editScale: [0, 2, 3, 5, 7, 9, 10],  blurb: 'Boom bap swing, jazzy minor 7th chords',
       key: 2, keyName: 'D minor', minor: true, verseKeepsChords: true, bpm: 90, tempo: [80, 100], swing: 0.7,
       tint: [0.95, 0.75, 0.35], fog: [0.02, 0.016, 0.01], accent: '#e8c15a',
       progressions: [
@@ -587,7 +587,7 @@ window.JT = window.JT || {};
     // Kept parts are recipes, so they follow the new chords. Drums first, so parts that follow the kick see it.
     JT.ROLES.forEach(role => {
       const L = song.layers[role];
-      if (L) L.notes = JT.generate(song, role, L.styleId, L.seed, L.busy);
+      if (L && !L.edited) L.notes = JT.generate(song, role, L.styleId, L.seed, L.busy);   // hand-edited parts stay as written
     });
   };
 
