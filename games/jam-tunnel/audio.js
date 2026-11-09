@@ -8,16 +8,50 @@ window.JT = window.JT || {};
 (function() {
   const hz = m => 440 * Math.pow(2, (m - 69) / 12);
 
-  // Per-note loudness after every sample has been normalized to the same peak.
-  // Chord voices are quieter per note because several sound at once.
-  const LEVEL = {
-    guitar: 0.38, bass: 0.55, organ: 0.1, piano: 0.34, strings: 0.12,
-    kit: { kick: 1.0, snare: 0.78, clap: 0.7, hat: 0.27, openhat: 0.27, tomlow: 0.68, tomhigh: 0.62, crash: 0.34 },
+  // Recorded voices: which sample set each uses and how it is played.
+  // level is per note after every sample is normalized to the same peak; wet is the reverb send;
+  // minDur lets plucked and struck sounds ring; lowpass darkens a sound; leadBoost lifts a pad
+  // sound when it carries the melody.
+  const VOICES = {
+    guitar: { inst: 'guitar', level: 0.38, wet: 0.1 },
+    distguitar: { inst: 'distguitar', level: 0.3, wet: 0.1 },
+    bass: { inst: 'bass', level: 0.55 },
+    upright: { inst: 'upright', level: 0.5, wet: 0.05 },
+    synthbass: { inst: 'synthbass', level: 0.42 },
+    organ: { inst: 'organ', level: 0.1, wet: 0.25, attack: 0.02 },
+    piano: { inst: 'piano', level: 0.34, wet: 0.25, minDur: 0.5 },
+    // The trap piano: highs cut, drenched in reverb, left to ring
+    darkpiano: { inst: 'piano', level: 0.36, wet: 0.55, minDur: 0.9, lowpass: 1400 },
+    epiano: { inst: 'epiano', level: 0.14, wet: 0.2, minDur: 0.5 },
+    strings: { inst: 'strings', level: 0.15, wet: 0.35, attack: 0.03, leadBoost: 2.8 },
+    warmpad: { inst: 'warmpad', level: 0.11, wet: 0.3, attack: 0.15, leadBoost: 2.5 },
+    musicbox: { inst: 'musicbox', level: 0.3, wet: 0.45, minDur: 0.9 },
+    flute: { inst: 'flute', level: 0.3, wet: 0.3, attack: 0.03 },
+    vibes: { inst: 'vibes', level: 0.32, wet: 0.3, minDur: 0.9 },
   };
-  // How much of each voice goes to the reverb
-  const WET = { guitar: 0.1, bass: 0, organ: 0.25, piano: 0.25, strings: 0.35, synthlead: 0.25 };
+  const KIT_LEVEL = { kick: 1.0, snare: 0.78, clap: 0.7, hat: 0.27, openhat: 0.27, tomlow: 0.68, tomhigh: 0.62, crash: 0.34 };
+  // The sample set a voice needs, or null for synthesized voices
+  JT.instOf = voice => voice === 'kit' ? 'kit' : VOICES[voice] ? VOICES[voice].inst : null;
 
-  JT.createAudio = function(ctx) {
+  // Sample scripts already added to the page, shared by every audio context
+  const scriptLoads = {};
+  function loadScript(name, base) {
+    if (window.JT_SAMPLES && window.JT_SAMPLES[name]) return Promise.resolve();
+    if (!scriptLoads[name]) {
+      scriptLoads[name] = new Promise(res => {
+        const el = document.createElement('script');
+        el.src = base + name + '.js';
+        el.onload = () => res();
+        el.onerror = () => res();
+        document.head.appendChild(el);
+      });
+    }
+    return scriptLoads[name];
+  }
+
+  // opts.samplesBase: where the samples/ scripts live relative to the page
+  JT.createAudio = function(ctx, opts) {
+    const base = (opts && opts.samplesBase) || 'samples/';
     // --- MASTER CHAIN: glue compressor, then a fast limiter so nothing clips ---
     const master = ctx.createGain();
     master.gain.value = 0.85;
@@ -45,13 +79,15 @@ window.JT = window.JT || {};
     const driveCurve = new Float32Array(1024);
     for (let i = 0; i < 1024; i++) driveCurve[i] = Math.tanh((i / 1024 * 2 - 1) * 2.2);
 
-    // --- SAMPLES: decode once, normalize each note to the same peak ---
+    // --- SAMPLES: load an instrument's script when first needed, decode once, normalize ---
     const buffers = {};
-    const ready = (function() {
-      const S = window.JT_SAMPLES || {};
+    const decoding = {};
+    function decodeInst(inst) {
+      const S = (window.JT_SAMPLES || {})[inst];
+      if (!S) return Promise.resolve();
       const jobs = [];
-      for (const inst in S) for (const k in S[inst]) {
-        const bin = atob(S[inst][k]);
+      for (const k in S) {
+        const bin = atob(S[k]);
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         jobs.push(new Promise(res => ctx.decodeAudioData(bytes.buffer, buf => {
@@ -64,8 +100,16 @@ window.JT = window.JT || {};
           res();
         }, () => res())));
       }
-      return Promise.all(jobs).then(() => Object.keys(buffers).length);
-    })();
+      return Promise.all(jobs);
+    }
+    // Make sure these sample sets are loaded and decoded
+    function load(insts) {
+      return Promise.all(insts.filter(Boolean).map(inst => {
+        if (!decoding[inst]) decoding[inst] = loadScript(inst, base).then(() => decodeInst(inst));
+        return decoding[inst];
+      }));
+    }
+    const ready = Promise.resolve();
 
     // A gain node feeding the master bus and, optionally, the reverb
     function out(t, value, wet) {
@@ -96,7 +140,13 @@ window.JT = window.JT || {};
       const attack = (opts && opts.attack) || 0.004;
       const g = out(t, 0.0001, opts && opts.wet);
       g.gain.linearRampToValueAtTime(level, t + attack);
-      src.connect(g);
+      if (opts && opts.lowpass) {
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass'; lp.frequency.value = opts.lowpass; lp.Q.value = 0.5;
+        src.connect(lp).connect(g);
+      } else {
+        src.connect(g);
+      }
       if (dur) {
         const end = t + Math.max(dur, attack + 0.02);
         g.gain.setValueAtTime(level, end);
@@ -132,19 +182,26 @@ window.JT = window.JT || {};
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
       o.connect(g); o.start(t); o.stop(t + 0.3);
     }
-    // Six detuned square waves through a band-pass, like the original circuit
+    // Six detuned square waves through a band-pass, like the original circuit. The squares are summed
+    // once into a buffer and replayed, which is far cheaper than six oscillators per hit.
+    const hatTone = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.35), ctx.sampleRate);
+    (d => {
+      const ratios = [2, 3, 4.16, 5.43, 6.79, 8.21];
+      for (let i = 0; i < d.length; i++) {
+        let x = 0;
+        ratios.forEach(r => { x += ((i / ctx.sampleRate) * 40 * r) % 1 < 0.5 ? 1 : -1; });
+        d[i] = x;   // the six squares summed at full level, as the oscillators were
+      }
+    })(hatTone.getChannelData(0));
     function hat808(t, v, decay) {
+      const src = ctx.createBufferSource(); src.buffer = hatTone;
       const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 10000;
       const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7000;
       const g = out(t, 0.0001, decay > 0.1 ? 0.15 : 0);
       g.gain.exponentialRampToValueAtTime(0.2 * v, t + 0.002);
       g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
-      bp.connect(hp).connect(g);
-      [2, 3, 4.16, 5.43, 6.79, 8.21].forEach(ratio => {
-        const o = ctx.createOscillator();
-        o.type = 'square'; o.frequency.value = 40 * ratio;
-        o.connect(bp); o.start(t); o.stop(t + decay + 0.02);
-      });
+      src.connect(bp).connect(hp).connect(g);
+      src.start(t); src.stop(t + decay + 0.02);
     }
     function clap808(t, v) {
       [0, 0.010, 0.021].forEach(d => noise(t + d, 0.03, 'bandpass', 1100, 0.5 * v, 1.4));
@@ -176,7 +233,7 @@ window.JT = window.JT || {};
       f.type = 'lowpass'; f.Q.value = 4;
       f.frequency.setValueAtTime(5000, t);
       f.frequency.exponentialRampToValueAtTime(900, t + 0.25);
-      const g = out(t, 0.0001, WET.synthlead);
+      const g = out(t, 0.0001, 0.25);
       g.gain.exponentialRampToValueAtTime(0.11 * n.v, t + 0.005);
       g.gain.setValueAtTime(0.09 * n.v, t + dur);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.12);
@@ -194,7 +251,7 @@ window.JT = window.JT || {};
       switch (voice) {
         case 'kit': {
           const piece = n.p === 'clap' ? 'snare' : n.p;
-          playSample('kit', piece, t, (LEVEL.kit[n.p] || 0.5) * n.v, 0, { wet: n.p === 'snare' || n.p === 'clap' ? 0.18 : 0.05 });
+          playSample('kit', piece, t, (KIT_LEVEL[n.p] || 0.5) * n.v, 0, { wet: n.p === 'snare' || n.p === 'clap' ? 0.18 : 0.05 });
           break;
         }
         case '808kit':
@@ -204,9 +261,14 @@ window.JT = window.JT || {};
           break;
         case '808': bass808(t, n, spb); break;
         case 'synthlead': synthLead(t, n, spb); break;
-        case 'piano': playSample('piano', n.p, t, LEVEL.piano * n.v, Math.max(0.5, dur), { wet: WET.piano }); break;
-        case 'strings': playSample('strings', n.p, t, LEVEL.strings * n.v * (n.lead ? 2.8 : 1), dur, { wet: WET.strings, attack: n.swell ? dur * 0.6 : 0.03 }); break;
-        default: playSample(voice, n.p, t, LEVEL[voice] * n.v, dur, { wet: WET[voice], attack: voice === 'organ' ? 0.02 : 0.004 });
+        default: {
+          const V = VOICES[voice];
+          if (!V) break;
+          const level = V.level * n.v * (n.lead && V.leadBoost ? V.leadBoost : 1);
+          playSample(V.inst, n.p, t, level, Math.max(V.minDur || 0, dur), {
+            wet: V.wet, lowpass: V.lowpass, attack: n.swell ? dur * 0.6 : V.attack,
+          });
+        }
       }
     }
 
@@ -228,6 +290,6 @@ window.JT = window.JT || {};
     // Play one note right now (feedback while editing)
     const playNow = (voice, n, spb) => play(voice, n, ctx.currentTime + 0.005, spb);
 
-    return { ctx, ready, schedule, master, playNow };
+    return { ctx, ready, load, schedule, master, playNow };
   };
 })();

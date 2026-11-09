@@ -29,6 +29,7 @@
     options: [],
     pick: 0,
     busy: 1,
+    sound: null,            // sound being auditioned for the role being chosen
     salt: 0,
     adjust: false,
     escape: false,          // the "none of these?" choices are open
@@ -73,12 +74,29 @@
     audio.ready.then(() => {
       freeze();
       audioReady = true;
+      loadSounds();
       rebase(performance.now());
       renderTransport();
     });
   }
 
-  const voiceOf = role => JT.GENRES[state.song.genre].roles[role].voice;
+  // The sound a role plays: the one being auditioned, the one kept with the layer, or the genre's default
+  function voiceOf(role) {
+    if (state.tray === 'suggest' && state.role === role && state.sound) return state.sound;
+    const L = state.song.layers[role];
+    return (L && L.sound) || JT.GENRES[state.song.genre].roles[role].voice;
+  }
+  function soundName(role, id) {
+    const r = JT.GENRES[state.song.genre].roles[role];
+    const s = (r.sounds || []).find(x => x.id === (id || voiceOf(role)));
+    return s ? s.name : r.label;
+  }
+  // Load the sample sets the current song needs (each instrument's script is added once)
+  function loadSounds() {
+    if (!audio || !state.song) return;
+    const need = JT.ROLES.filter(r => state.song.layers[r] || (state.tray === 'suggest' && state.role === r)).map(r => JT.instOf(voiceOf(r)));
+    audio.load(need);
+  }
   const rangeOf = role => JT.GENRES[state.song.genre].roles[role].range || [36, 72];
 
   // Everything that should sound right now
@@ -128,6 +146,7 @@
     state.escape = false;
     state.others = false;
     state.busy = state.song.layers[role] ? state.song.layers[role].busy : 1;
+    state.sound = (state.song.layers[role] && state.song.layers[role].sound) || JT.GENRES[state.song.genre].roles[role].voice;
     // Suggestions are judged against the other layers, so leave this one out while choosing
     const kept = state.song.layers[role];
     delete state.song.layers[role];
@@ -140,7 +159,7 @@
 
   function keepPick() {
     const o = state.options[state.pick];
-    state.song.layers[state.role] = { styleId: o.style.id, name: o.style.name, seed: o.seed, busy: state.busy, notes: previewNotes() };
+    state.song.layers[state.role] = { styleId: o.style.id, name: o.style.name, seed: o.seed, busy: state.busy, sound: state.sound, notes: previewNotes() };
     regenerateOthers(state.role);
     state.role = null;
     state.tray = nextStep() ? 'add' : 'ready';
@@ -311,6 +330,7 @@
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   function render() {
+    loadSounds();
     renderSong();
     renderLayers();
     renderTray();
@@ -352,7 +372,7 @@
     const g = JT.GENRES[song.genre];
     const rows = STEPS.map(role => {
       const L = song.layers[role];
-      const label = `${ROLE_NAME[role]} · ${g.roles[role].label}`;
+      const label = `${ROLE_NAME[role]} · ${soundName(role)}`;
       const sw = `<span class="sw" style="background:${L && !state.muted[role] ? ROLE_HEX[role] : 'transparent'};border-color:${ROLE_HEX[role]}"></span>`;
       if (state.tray === 'suggest' && state.role === role) {
         return `<div class="layer">${sw}<span class="ln">${esc(label)}</span><span class="acts"></span><span class="ld">${JT.SURFACE[role]} · choosing…</span></div>`;
@@ -442,13 +462,13 @@
           <p>${count ? 'Each new part is matched to the chords and to the parts you already kept.' : 'Everything you add later is matched to these drums and the chords.'}</p></div>
         <div class="cards next">
           <button type="button" class="card big" data-add="${next}" style="--accent:${ROLE_HEX[next]}">
-            <span class="top"><span class="nm">Choose your ${ROLE_NAME[next].toLowerCase()}</span><span class="sub">${esc(g.roles[next].label)} · ${JT.SURFACE[next]}</span></span>
+            <span class="top"><span class="nm">Choose your ${ROLE_NAME[next].toLowerCase()}</span><span class="sub">${esc(soundName(next))} · ${JT.SURFACE[next]}</span></span>
             <span class="why">${ROLE_ABOUT[next]}</span>
           </button>
           ${rest.map(r => `
           <button type="button" class="card" data-add="${r}" style="--accent:${ROLE_HEX[r]}">
             <span class="top"><span class="nm">${ROLE_NAME[r]}</span></span>
-            <span class="sub">${esc(g.roles[r].label)} · ${JT.SURFACE[r]}</span>
+            <span class="sub">${esc(soundName(r))} · ${JT.SURFACE[r]}</span>
             <span class="why">${ROLE_ABOUT[r]}</span>
           </button>`).join('')}
         </div>
@@ -479,8 +499,10 @@
       const current = state.options[state.pick];
       tray.innerHTML = `
         ${loopProgress()}
-        <div class="tray-head"><h3>Choose your ${ROLE_NAME[role].toLowerCase()} <span class="inst">${esc(g.roles[role].label)}</span></h3>
+        <div class="tray-head"><h3>Choose your ${ROLE_NAME[role].toLowerCase()} <span class="inst">${esc(soundName(role))}</span></h3>
           <p>Ranked by how well each fits your chords${Object.keys(song.layers).filter(r => r !== role).length ? ' and the parts you kept' : ''}. Click one to hear it.</p></div>
+        ${(g.roles[role].sounds || []).length > 1 ? `<div class="row sound-row"><span class="lbl">Sound</span><span class="chips">${g.roles[role].sounds.map(x => `
+          <button type="button" class="chip" data-sound="${x.id}" aria-pressed="${state.sound === x.id}">${esc(x.name)}</button>`).join('')}</span></div>` : ''}
         <div class="cards">${top.map(o => {
           const i = state.options.indexOf(o);
           return `
@@ -525,7 +547,7 @@
       tray.style.setProperty('--accent', ROLE_HEX[E.role]);
       const scaleName = E.role === 'drums' ? '' : ` Each lane is a note of the ${esc(g.keyName)} scale.`;
       tray.innerHTML = `
-        <div class="tray-head"><h3>Running on the ${ROLE_NAME[E.role].toLowerCase()} <span class="inst">${esc(g.roles[E.role].label)} · ${JT.SURFACE[E.role]}</span></h3>
+        <div class="tray-head"><h3>Running on the ${ROLE_NAME[E.role].toLowerCase()} <span class="inst">${esc(soundName(E.role))} · ${JT.SURFACE[E.role]}</span></h3>
           <p>Lane: <strong>${esc(laneName(E.role, E.lanes[E.cursor]))}</strong> · ${L.notes.length} notes</p></div>
         <p class="lead">Notes sound when they reach the glowing gate, where your runner is.${scaleName}</p>
         <div class="keys">
@@ -618,6 +640,7 @@
     if (d.add) { openSuggestions(d.add); return; }
     if (d.pick !== undefined) { state.pick = +d.pick; render(); return; }
     if (d.busy !== undefined) { state.busy = +d.busy; render(); return; }
+    if (d.sound) { state.sound = d.sound; render(); return; }
     if (d.sec) {
       state.selected = +d.sec;
       jumpTo(state.track.sections.find(s => s.id === +d.sec).start);

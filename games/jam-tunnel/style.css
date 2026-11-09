@@ -208,3 +208,4 @@ button:disabled { opacity: 0.45; cursor: default; }
 kbd { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink); background: rgba(255, 255, 255, 0.08);
   border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; margin-right: 3px; }
 .layer .acts button[aria-pressed="true"] { border-color: var(--ember); color: var(--ember); }
+.sound-row .chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }

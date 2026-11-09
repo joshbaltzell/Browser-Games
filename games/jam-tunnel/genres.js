@@ -410,7 +410,7 @@ window.JT = window.JT || {};
         { roman: 'I7 - I7 - IV7 - V7', mood: 'Sits at home, then builds tension at the end', chords: [[0, '7'], [0, '7'], [5, '7'], [7, '7']] },
       ],
       roles: {
-        lead: { label: 'Overdriven guitar', voice: 'guitar', range: [38, 68], styles: [
+        lead: { label: 'Overdriven guitar', voice: 'guitar', sounds: [{ id: 'guitar', name: 'Overdriven guitar' }, { id: 'distguitar', name: 'Distortion guitar' }], range: [38, 68], styles: [
           { id: 'boogie', name: 'Boogie riff', why: 'Rocks between the fifth and sixth of each chord, the classic shuffle riff.', gen: rockGuitar('boogie') },
           { id: 'chug', name: 'Power chug', why: 'Steady power chords on every swung eighth.', gen: rockGuitar('chug') },
           { id: 'stabs', name: 'Chord stabs', why: 'Three accented hits per bar leave room for the other parts.', gen: rockGuitar('stabs') },
@@ -430,7 +430,7 @@ window.JT = window.JT || {};
           { id: 'long', name: 'Long roots', why: 'Held notes that leave lots of space.', gen: rockBass('long') },
           { id: 'funk', name: 'Funk sixteenths', clash: 'Straight sixteenths pull against the shuffle.', why: 'Busy funk bass.', gen: rockBass('funk') },
         ] },
-        pad: { label: 'Organ', voice: 'organ', range: [48, 76], styles: [
+        pad: { label: 'Organ', voice: 'organ', sounds: [{ id: 'organ', name: 'Organ' }, { id: 'piano', name: 'Piano' }, { id: 'epiano', name: 'Electric piano' }], range: [48, 76], styles: [
           { id: 'held', name: 'Held chords', why: 'Sustained chords that glue the band together.', gen: rockOrgan('held') },
           { id: 'pushed', name: 'Pushed chords', why: 'Re-hits on the swung eighth before beat 4.', gen: rockOrgan('pushed') },
           { id: 'backbeat', name: 'Backbeat stabs', why: 'Short chords on 2 and 4 with the snare.', gen: rockOrgan('backbeat') },
@@ -448,7 +448,7 @@ window.JT = window.JT || {};
         { roman: 'i - VI - iv - V', mood: 'Moody, ending on a cliffhanger', chords: [[0, 'min'], [8, 'maj'], [5, 'min'], [7, 'maj']] },
       ],
       roles: {
-        lead: { label: 'Piano melody', voice: 'piano', range: [60, 82], styles: [
+        lead: { label: 'Dark piano', voice: 'darkpiano', sounds: [{ id: 'darkpiano', name: 'Dark piano' }, { id: 'musicbox', name: 'Bells' }, { id: 'flute', name: 'Flute' }, { id: 'synthlead', name: 'Synth pluck' }], range: [60, 82], styles: [
           { id: 'motif', name: 'Dark motif', why: 'A short phrase repeated over each chord, resolving at the end.', gen: trapPiano('motif') },
           { id: 'sparse', name: 'Sparse motif', why: 'Fewer, longer notes that leave space for vocals.', gen: trapPiano('sparse') },
           { id: 'callresponse', name: 'Call and response', why: 'A phrase, a gap, then an answer.', gen: trapPiano('callresponse') },
@@ -464,7 +464,7 @@ window.JT = window.JT || {};
           { id: 'held', name: 'Long slides', why: 'One long 808 per bar that slides to the next root.', gen: trap808('held') },
           { id: 'bounce', name: 'Octave bounce', why: 'Jumps between the root and its octave on the kicks.', gen: trap808('bounce') },
         ] },
-        pad: { label: 'Strings', voice: 'strings', range: [50, 74], styles: [
+        pad: { label: 'Strings', voice: 'strings', sounds: [{ id: 'strings', name: 'Strings' }, { id: 'warmpad', name: 'Warm pad' }, { id: 'darkpiano', name: 'Dark piano chords' }], range: [50, 74], styles: [
           { id: 'held', name: 'Held strings', why: 'Sustained chords with smooth voice leading.', gen: trapStrings('held') },
           { id: 'swell', name: 'Swells', why: 'Each chord fades in slowly.', gen: trapStrings('swell') },
           { id: 'stabs', name: 'Stabs', why: 'Short syncopated chord hits.', gen: trapStrings('stabs') },
@@ -482,7 +482,7 @@ window.JT = window.JT || {};
         { roman: 'I - vi - IV - V', mood: 'Warm and nostalgic, classic doo-wop pop', chords: [[0, 'maj'], [9, 'min'], [5, 'maj'], [7, 'maj']] },
       ],
       roles: {
-        lead: { label: 'Synth hook', voice: 'synthlead', range: [64, 86], styles: [
+        lead: { label: 'Synth hook', voice: 'synthlead', sounds: [{ id: 'synthlead', name: 'Synth hook' }, { id: 'piano', name: 'Piano' }, { id: 'musicbox', name: 'Bells' }, { id: 'flute', name: 'Flute' }], range: [64, 86], styles: [
           { id: 'hook', name: 'Catchy hook', why: 'A short hook restated over each chord.', gen: popLead('hook') },
           { id: 'sparse', name: 'Sparse hook', why: 'A few long notes; room for a vocal.', gen: popLead('sparse') },
           { id: 'busy', name: 'Busy topline', why: 'A quick, dense line.', gen: popLead('busy') },
@@ -493,12 +493,12 @@ window.JT = window.JT || {};
           { id: 'ballad', name: 'Half-time ballad', why: 'Big and slow, one snare per bar.', gen: popDrums('ballad') },
           { id: 'shuffle', name: 'Shuffle', clash: 'Triplet hats fight straight pop eighths.', why: 'A swung groove.', gen: popDrums('shuffle') },
         ] },
-        bass: { label: 'Electric bass', voice: 'bass', range: [28, 52], styles: [
+        bass: { label: 'Electric bass', voice: 'bass', range: [28, 52], sounds: [{ id: 'bass', name: 'Electric bass' }, { id: 'synthbass', name: 'Synth bass' }], styles: [
           { id: 'eighths', name: 'Root eighths', why: 'Driving eighth notes on the root, stepping into each chord.', gen: popBass('eighths') },
           { id: 'octave', name: 'Octave pop', why: 'Bounces between the root and its octave.', gen: popBass('octave') },
           { id: 'syncopated', name: 'Syncopated', why: 'Off-beat pushes that groove against the kick.', gen: popBass('syncopated') },
         ] },
-        pad: { label: 'Piano chords', voice: 'piano', range: [52, 76], styles: [
+        pad: { label: 'Piano chords', voice: 'piano', range: [52, 76], sounds: [{ id: 'piano', name: 'Piano chords' }, { id: 'epiano', name: 'Electric piano' }, { id: 'warmpad', name: 'Warm pad' }, { id: 'strings', name: 'Strings' }], styles: [
           { id: 'quarters', name: 'Block quarters', why: 'Chords on every beat, the pop-piano pulse.', gen: popPiano('quarters') },
           { id: 'held', name: 'Held chords', why: 'Whole-bar chords with smooth voice leading.', gen: popPiano('held') },
           { id: 'arp', name: 'Arpeggio', why: 'The chord broken into a rippling pattern.', gen: popPiano('arp') },
@@ -516,7 +516,7 @@ window.JT = window.JT || {};
         { roman: 'i7 - VII7 - VImaj7 - v7', mood: 'Soulful, stepping down', chords: [[0, 'm7'], [10, '7'], [8, 'maj7'], [7, 'm7']] },
       ],
       roles: {
-        lead: { label: 'String line', voice: 'strings', range: [60, 82], styles: [
+        lead: { label: 'String line', voice: 'strings', sounds: [{ id: 'strings', name: 'String line' }, { id: 'flute', name: 'Flute' }, { id: 'vibes', name: 'Vibraphone' }, { id: 'darkpiano', name: 'Dark piano' }], range: [60, 82], styles: [
           { id: 'line', name: 'Sampled line', why: 'A swung phrase, like a chopped record.', gen: bbStrings('line') },
           { id: 'long', name: 'Long notes', why: 'Slow, cinematic notes over the loop.', gen: bbStrings('long') },
         ] },
@@ -526,12 +526,12 @@ window.JT = window.JT || {};
           { id: 'busy', name: 'Busy sixteenths', why: 'Swung sixteenth hats and ghost snares.', gen: bbDrums('busy') },
           { id: 'halftime', name: 'Trap half-time', clash: 'A straight half-time snare drags against the head-nod swing.', why: 'A trap-style beat.', gen: bbDrums('halftime') },
         ] },
-        bass: { label: 'Electric bass', voice: 'bass', range: [28, 50], styles: [
+        bass: { label: 'Electric bass', voice: 'bass', range: [28, 50], sounds: [{ id: 'bass', name: 'Electric bass' }, { id: 'upright', name: 'Upright bass' }], styles: [
           { id: 'kick', name: 'Follows the kick', why: 'Root notes locked to the kick drum.', gen: bbBass('kick') },
           { id: 'walking', name: 'Jazz walk', why: 'One note per beat walking into each chord.', gen: bbBass('walking') },
           { id: 'sparse', name: 'Sparse roots', why: 'Long roots with lots of space.', gen: bbBass('sparse') },
         ] },
-        pad: { label: 'Piano chords', voice: 'piano', range: [50, 74], styles: [
+        pad: { label: 'Piano chords', voice: 'piano', range: [50, 74], sounds: [{ id: 'piano', name: 'Piano chords' }, { id: 'epiano', name: 'Electric piano' }, { id: 'organ', name: 'Organ' }], styles: [
           { id: 'chops', name: 'Chopped chords', why: 'Short swung chord hits, like a sampled loop.', gen: bbPiano('chops') },
           { id: 'held', name: 'Held chords', why: 'Rich minor 7th chords held for the bar.', gen: bbPiano('held') },
           { id: 'stabs', name: 'Stabs on 2 and 4', why: 'Chords that hit with the snare.', gen: bbPiano('stabs') },

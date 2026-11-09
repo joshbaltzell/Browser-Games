@@ -153,6 +153,7 @@ window.JT = window.JT || {};
     const ctx = new OfflineAudioContext(2, Math.ceil(seconds * rate), rate);
     const audio = JT.createAudio(ctx);
     await audio.ready;
+    await audio.load(Object.values(voices).map(JT.instOf));
     const parts = JT.ROLES.filter(r => track.parts[r].length).map(r => ({ voice: voices[r], notes: track.parts[r], lead: r === 'lead' }));
     // Create notes a couple of seconds ahead of the renderer instead of all at once: thousands of
     // waiting audio nodes slow offline rendering down about four times.
