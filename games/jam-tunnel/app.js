@@ -1,36 +1,55 @@
-// Jam Tunnel — app: song state, the suggestion flow, the transport and the UI
+// Jam Tunnel — app: song state, the guided flow, the full-song arranger, transport and UI
 
 (function() {
   const T = JT.theory;
   const LOOP = 16;
+  const toHex = c => '#' + c.map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+  const toRgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
   const ROLE_HEX = {};
-  Object.entries(JT.ROLE_COLOR).forEach(([role, c]) => {
-    ROLE_HEX[role] = '#' + c.map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
-  });
+  Object.entries(JT.ROLE_COLOR).forEach(([role, c]) => { ROLE_HEX[role] = toHex(c); });
+
+  // The order producers usually build a loop in, and what each part does
+  const STEPS = ['drums', 'bass', 'pad', 'lead'];
+  const ROLE_NAME = { drums: 'Drums', bass: 'Bass', pad: 'Chords', lead: 'Melody' };
+  const ROLE_ABOUT = {
+    drums: 'The beat everything else sits on. Start here.',
+    bass: 'Locks to the kick drum and outlines the chords.',
+    pad: 'Sets the mood of the song.',
+    lead: 'The part people hum.',
+  };
+  const NOTES_LABEL = ['Fewer notes', 'As suggested', 'More notes'];
+  const ENERGY_LABEL = { '-1': 'Calmer', '0': 'Normal', '1': 'Bigger' };
 
   // --- STATE ---
   const state = {
     song: null,
-    tray: 'start',          // start | add | suggest
-    role: null,             // role being added or changed
-    options: [],            // ranked suggestions for that role
+    mode: 'loop',           // loop | song
+    tray: 'start',          // start | add | suggest | ready | song
+    role: null,             // role being chosen
+    options: [],
     pick: 0,
     busy: 1,
     salt: 0,
-    customize: false,
+    adjust: false,
+    escape: false,          // the "none of these?" choices are open
     others: false,
     muted: { drums: false, bass: false, lead: false, pad: false },
+    arrangement: null,
+    track: null,
+    selected: null,         // selected section id
+    exporting: false,
   };
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // --- AUDIO AND TRANSPORT ---
   // The song position (in beats) follows the audio clock once audio is running,
-  // and a visual clock before that or when sound is off.
+  // and a visual clock before that or when the sound is off.
   let ac = null, audio = null, audioReady = false;
   let paused = false, soundOn = true;
   let pos = 0, visOrigin = performance.now(), audioOrigin = 0, scheduledUntil = 0;
   const spb = () => 60 / (state.song ? state.song.bpm : 100);
   const audioClock = () => audioReady && soundOn && ac.state === 'running';
+  const loopLength = () => (state.mode === 'song' && state.track ? state.track.length : LOOP);
 
   function position(now) {
     if (paused) return pos;
@@ -43,6 +62,7 @@
     scheduledUntil = pos;
   }
   function freeze() { pos = position(performance.now()); }
+  function jumpTo(beat) { pos = beat; rebase(performance.now()); prevPos = beat; }
 
   function startAudio() {
     if (ac) { ac.resume(); return; }
@@ -57,17 +77,25 @@
     });
   }
 
-  // Everything that should sound right now: kept layers plus the suggestion being previewed
+  const voiceOf = role => JT.GENRES[state.song.genre].roles[role].voice;
+  const rangeOf = role => JT.GENRES[state.song.genre].roles[role].range || [36, 72];
+
+  // Everything that should sound right now
   function currentParts() {
     const song = state.song;
     if (!song) return [];
-    const g = JT.GENRES[song.genre];
+    if (state.mode === 'song' && state.track) {
+      return JT.ROLES.filter(r => state.track.parts[r].length).map(role => ({
+        role, voice: voiceOf(role), notes: state.track.parts[role], lead: role === 'lead',
+        ghost: false, muted: state.muted[role], range: rangeOf(role),
+      }));
+    }
     const parts = [];
     JT.ROLES.forEach(role => {
       const previewing = state.tray === 'suggest' && state.role === role;
       const notes = previewing ? previewNotes() : song.layers[role] && song.layers[role].notes;
       if (!notes) return;
-      parts.push({ role, voice: g.roles[role].voice, notes, lead: role === 'lead', ghost: previewing, muted: state.muted[role] && !previewing, range: g.roles[role].range || [36, 72] });
+      parts.push({ role, voice: voiceOf(role), notes, lead: role === 'lead', ghost: previewing, muted: state.muted[role] && !previewing, range: rangeOf(role) });
     });
     return parts;
   }
@@ -76,11 +104,11 @@
     if (!audioClock() || paused) return;
     const target = (ac.currentTime + 0.15 - audioOrigin) / spb();
     if (target <= scheduledUntil) return;
-    audio.schedule(currentParts().filter(p => !p.muted), scheduledUntil, target, audioOrigin, spb(), LOOP);
+    audio.schedule(currentParts().filter(p => !p.muted), scheduledUntil, target, audioOrigin, spb(), loopLength());
     scheduledUntil = target;
   }, 25);
 
-  // --- SUGGESTIONS ---
+  // --- BUILDING THE LOOP ---
   let previewCache = null;
   function previewNotes() {
     const o = state.options[state.pick];
@@ -95,7 +123,8 @@
   function openSuggestions(role, keepStyleId) {
     state.tray = 'suggest';
     state.role = role;
-    state.customize = false;
+    state.adjust = false;
+    state.escape = false;
     state.others = false;
     state.busy = state.song.layers[role] ? state.song.layers[role].busy : 1;
     // Suggestions are judged against the other layers, so leave this one out while choosing
@@ -112,18 +141,79 @@
     const o = state.options[state.pick];
     state.song.layers[state.role] = { styleId: o.style.id, name: o.style.name, seed: o.seed, busy: state.busy, notes: previewNotes() };
     regenerateOthers(state.role);
-    state.tray = 'add';
     state.role = null;
+    state.tray = nextStep() ? 'add' : 'ready';
     render();
   }
 
-  // Parts that follow another part (an 808 following the kick) are rebuilt when that part changes
+  const nextStep = () => STEPS.find(r => !state.song.layers[r]);
+
+  // Parts that follow another part (a bass following the kick) are rebuilt when that part changes
   function regenerateOthers(changed) {
     JT.ROLES.forEach(role => {
       const L = state.song.layers[role];
       if (!L || role === changed) return;
       L.notes = JT.generate(state.song, role, L.styleId, L.seed, L.busy);
     });
+  }
+
+  function tryDifferentChords() {
+    JT.changeChords(state.song);
+    previewCache = null;
+    if (state.tray === 'suggest') { openSuggestions(state.role, state.options[state.pick].style.id); return; }
+    if (state.mode === 'song') rebuildTrack();
+    render();
+  }
+
+  // --- THE FULL SONG ---
+  function rebuildTrack() {
+    freeze();
+    const before = state.track ? state.track.length : null;
+    state.track = JT.buildTrack(state.song, state.arrangement);
+    if (before && pos >= state.track.length) pos = pos % state.track.length;
+    rebase(performance.now());
+  }
+  function enterSong() {
+    if (!state.arrangement) state.arrangement = JT.defaultArrangement();
+    state.mode = 'song';
+    state.tray = 'song';
+    state.role = null;
+    state.track = JT.buildTrack(state.song, state.arrangement);
+    state.selected = state.arrangement[0].id;
+    jumpTo(0);
+    render();
+  }
+  function leaveSong() {
+    state.mode = 'loop';
+    state.tray = nextStep() ? 'add' : 'ready';
+    jumpTo(0);
+    render();
+  }
+  const sectionAt = beat => state.track.sections.find(s => beat >= s.start && beat < s.end);
+  const selectedIndex = () => state.arrangement.findIndex(s => s.id === state.selected);
+  const fmtTime = beats => { const s = Math.round(beats * spb()); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+
+  async function exportWav() {
+    if (state.exporting) return;
+    state.exporting = true;
+    renderTray();
+    try {
+      const voices = {};
+      JT.ROLES.forEach(r => { voices[r] = voiceOf(r); });
+      const muted = JSON.parse(JSON.stringify(state.track));
+      JT.ROLES.forEach(r => { if (state.muted[r]) muted.parts[r] = []; });
+      const blob = await JT.renderWav(state.song, muted, voices);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `jam-tunnel-${state.song.genre}.wav`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    } finally {
+      state.exporting = false;
+      renderTray();
+    }
   }
 
   // --- RENDERING THE UI ---
@@ -139,14 +229,30 @@
 
   function renderSong() {
     const song = state.song;
+    $('chordsRow').hidden = !song;
     if (!song) {
       $('meta').textContent = 'Fly through your song. Add instruments from parts that fit.';
-      $('chords').textContent = '';
       return;
     }
     const g = JT.GENRES[song.genre];
-    $('meta').textContent = `${g.name} · ${g.keyName} · ${song.prog.roman} · ${song.bpm} BPM`;
-    $('chords').textContent = song.chords.map(T.chordName).join('   ');
+    $('meta').textContent = `${g.name} · ${g.keyName} · ${song.bpm} BPM`;
+    renderChords();
+  }
+  // The chords line shows the loop's chords, or the playing section's chords in song mode
+  let chordsKey = '';
+  function renderChords() {
+    let prog = state.song.prog;
+    let label = 'Chords';
+    if (state.mode === 'song' && state.track) {
+      const sec = sectionAt(((position(performance.now()) % state.track.length) + state.track.length) % state.track.length);
+      if (sec) { prog = sec.prog; label = sec.name; }
+    }
+    const key = label + prog.roman;
+    if (key === chordsKey) return;
+    chordsKey = key;
+    const g = JT.GENRES[state.song.genre];
+    const names = T.chordsOf(g.key, prog.chords).map(T.chordName).join('  ');
+    $('chords').innerHTML = `<span class="lbl">${esc(label)}</span> <strong>${esc(names)}</strong> <span class="mood">${esc(prog.mood || '')}</span>`;
   }
 
   function renderLayers() {
@@ -154,9 +260,9 @@
     $('layers').hidden = !song;
     if (!song) return;
     const g = JT.GENRES[song.genre];
-    const rows = JT.ROLES.map(role => {
+    const rows = STEPS.map(role => {
       const L = song.layers[role];
-      const label = g.roles[role].label;
+      const label = `${ROLE_NAME[role]} · ${g.roles[role].label}`;
       const sw = `<span class="sw" style="background:${L && !state.muted[role] ? ROLE_HEX[role] : 'transparent'};border-color:${ROLE_HEX[role]}"></span>`;
       if (state.tray === 'suggest' && state.role === role) {
         return `<div class="layer">${sw}<span class="ln">${esc(label)}</span><span class="acts"></span><span class="ld">${JT.SURFACE[role]} · choosing…</span></div>`;
@@ -169,12 +275,12 @@
       return `<div class="layer ${state.muted[role] ? 'muted' : ''}">${sw}<span class="ln">${esc(label)}</span>
         <span class="acts">
           <button type="button" data-act="mute" data-role="${role}" aria-pressed="${state.muted[role]}">${state.muted[role] ? 'Unmute' : 'Mute'}</button>
-          <button type="button" data-act="change" data-role="${role}">Change</button>
-          <button type="button" data-act="remove" data-role="${role}" aria-label="Remove ${esc(label)}">✕</button>
+          ${state.mode === 'loop' ? `<button type="button" data-act="change" data-role="${role}">Change</button>
+          <button type="button" data-act="remove" data-role="${role}" aria-label="Remove ${esc(label)}">✕</button>` : ''}
         </span>
         <span class="ld">${JT.SURFACE[role]} · ${esc(L.name)}</span></div>`;
     });
-    $('layers').innerHTML = `<h2>Layers</h2>${rows.join('')}`;
+    $('layers').innerHTML = `<h2>${state.mode === 'song' ? 'Instruments' : 'Your loop'}</h2>${rows.join('')}`;
   }
 
   // One bar of a part as a thumbnail: drums as dots in rows, everything else as a pitch contour
@@ -195,14 +301,33 @@
     return `<svg class="mini" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${s}</svg>`;
   }
 
+  function stepsStrip(active) {
+    const items = ['Pick a genre', 'Build a 4-bar loop', 'Make it a full song'];
+    return `<ol class="steps">${items.map((t, i) => `<li class="${i < active ? 'done' : i === active ? 'now' : ''}"><span>${i + 1}</span>${t}</li>`).join('')}</ol>`;
+  }
+  function loopProgress() {
+    return `<div class="progress">${STEPS.map(r => {
+      const done = !!state.song.layers[r];
+      const now = state.role === r || (!state.role && nextStep() === r);
+      return `<span class="pstep ${done ? 'done' : ''} ${now ? 'now' : ''}" style="--c:${ROLE_HEX[r]}">${done ? '✓ ' : ''}${ROLE_NAME[r]}</span>`;
+    }).join('<span class="arrow">›</span>')}</div>`;
+  }
+
   function renderTray() {
     const tray = $('tray');
     const song = state.song;
+    tray.style.setProperty('--accent', '#ff8a3d');
 
     if (state.tray === 'start') {
-      tray.style.setProperty('--accent', '#ff8a3d');
       tray.innerHTML = `
-        <div class="tray-head"><h3>Pick a genre to start a jam</h3><p>Each one sets the key, tempo, chords and instruments.</p></div>
+        <div class="welcome">
+          <h3>Make a song in a few minutes</h3>
+          <p>Jam Tunnel builds a song with you. At each step you pick from a few parts that already fit together
+             (music theory does the hard part), then it arranges your loop into a full track.</p>
+          ${stepsStrip(0)}
+          <p class="hint">Your song flies toward you: drums on the floor, bass on the right wall, melody on the left wall, chords on the ceiling.</p>
+        </div>
+        <div class="tray-head"><h3 class="small">Pick a genre to begin</h3><p>It sets the key, tempo, chords and instruments.</p></div>
         <div class="cards four">${Object.values(JT.GENRES).map(g => `
           <button type="button" class="card" data-genre="${g.id}" style="--accent:${g.accent}">
             <span class="top"><span class="nm">${esc(g.name)}</span></span>
@@ -214,64 +339,133 @@
     }
 
     const g = JT.GENRES[song.genre];
+
     if (state.tray === 'add') {
-      const empty = JT.ROLES.filter(r => !song.layers[r]);
-      tray.style.setProperty('--accent', '#ff8a3d');
-      tray.innerHTML = empty.length ? `
-        <div class="tray-head"><h3>${Object.keys(song.layers).length ? 'Add another instrument' : 'Add your first instrument'}</h3>
-          <p>Suggestions fit the chords${Object.keys(song.layers).length ? ' and the parts you already have' : ''}.</p></div>
-        <div class="cards four">${empty.map(role => `
-          <button type="button" class="card" data-add="${role}" style="--accent:${ROLE_HEX[role]}">
-            <span class="top"><span class="nm">${esc(g.roles[role].label)}</span></span>
-            <span class="sub">${JT.SURFACE[role]}</span>
+      const next = nextStep();
+      const count = Object.keys(song.layers).length;
+      const rest = STEPS.filter(r => !song.layers[r] && r !== next);
+      tray.innerHTML = `
+        ${stepsStrip(1)}
+        ${loopProgress()}
+        <div class="tray-head"><h3>${count ? 'Next up: ' : 'First up: '}${ROLE_NAME[next]}</h3>
+          <p>${count ? 'Each new part is matched to the chords and to the parts you already kept.' : 'Everything you add later is matched to these drums and the chords.'}</p></div>
+        <div class="cards next">
+          <button type="button" class="card big" data-add="${next}" style="--accent:${ROLE_HEX[next]}">
+            <span class="top"><span class="nm">Choose your ${ROLE_NAME[next].toLowerCase()}</span><span class="sub">${esc(g.roles[next].label)} · ${JT.SURFACE[next]}</span></span>
+            <span class="why">${ROLE_ABOUT[next]}</span>
+          </button>
+          ${rest.map(r => `
+          <button type="button" class="card" data-add="${r}" style="--accent:${ROLE_HEX[r]}">
+            <span class="top"><span class="nm">${ROLE_NAME[r]}</span></span>
+            <span class="sub">${esc(g.roles[r].label)} · ${JT.SURFACE[r]}</span>
+            <span class="why">${ROLE_ABOUT[r]}</span>
           </button>`).join('')}
-        </div>` : `
-        <div class="tray-head"><h3>All four layers are in</h3>
-          <p>Change any layer from the list, try new chords, or change the tempo.</p></div>`;
+        </div>
+        ${count >= 2 ? `<div class="actions"><button type="button" data-act="song">My loop is done: make it a full song</button></div>` : ''}`;
       return;
     }
 
-    // Suggestions for one role
-    const role = state.role;
-    const accent = ROLE_HEX[role];
-    const range = g.roles[role].range || [36, 72];
-    tray.style.setProperty('--accent', accent);
-    const top = state.options.filter(o => o.fit !== 'clash').slice(0, 3);
-    const current = state.options[state.pick];
-    const others = Object.keys(song.layers).filter(r => r !== role).map(r => g.roles[r].label.toLowerCase());
-    tray.innerHTML = `
-      <div class="tray-head"><h3>${esc(g.roles[role].label)} parts that fit</h3>
-        <p>Matched to ${esc(song.chords.map(T.chordName).join(' '))}${others.length ? ' and your ' + esc(others.join(', ')) : ''}.</p></div>
-      <div class="cards">${top.map(o => {
-        const i = state.options.indexOf(o);
-        return `
-        <button type="button" class="card" data-pick="${i}" aria-pressed="${state.pick === i}" style="--accent:${accent}">
-          <span class="top"><span class="nm">${esc(o.style.name)}</span><span class="fit ${o.fit}">${o.fitText}</span></span>
-          ${miniSvg(o.notes, role, range)}
-          <span class="why">${esc(o.why)}</span>
-        </button>`;
-      }).join('')}
-      </div>
-      ${top.includes(current) ? '' : `<p class="hint">Previewing <strong>${esc(current.style.name)}</strong>: ${esc(current.why)}</p>`}
-      <div class="actions">
-        <button type="button" class="primary" data-act="keep">Keep ${esc(current.style.name)}</button>
-        <button type="button" data-act="customize" aria-expanded="${state.customize}">Customize</button>
-        <button type="button" data-act="others" aria-expanded="${state.others}">Other styles</button>
-        <button type="button" data-act="cancel">Cancel</button>
-      </div>
-      <div class="panel" ${state.customize ? '' : 'hidden'}>
-        <div class="row"><label for="busy">How busy</label>
-          <input type="range" id="busy" min="0" max="2" step="1" value="${state.busy}">
-          <span class="val" id="busyVal">${['Sparser', 'As suggested', 'Busier'][state.busy]}</span></div>
-        <div class="row"><button type="button" data-act="take">New take of ${esc(current.style.name)}</button>
-          <span class="hint">Same style, different notes.</span></div>
-      </div>
-      <div class="panel" ${state.others ? '' : 'hidden'}>
-        <div class="chips">${state.options.map((o, i) => `
-          <button type="button" class="chip" data-pick="${i}" aria-pressed="${state.pick === i}"><span class="dot ${o.fit === 'clash' ? 'clash' : ''}"></span>${esc(o.style.name)}</button>`).join('')}
+    if (state.tray === 'ready') {
+      tray.innerHTML = `
+        ${stepsStrip(2)}
+        <div class="tray-head"><h3>Your loop is ready</h3>
+          <p>Listen to it in the tunnel. Change any part from the list, or try other chords.</p></div>
+        <p class="lead">Next, Jam Tunnel turns this loop into a full song. Your loop becomes the <strong>chorus</strong>,
+          and it writes an intro, verses, a break and an outro around it by changing which instruments play and how busy they are.</p>
+        <div class="actions">
+          <button type="button" class="primary" data-act="song">Make it a full song</button>
+          <button type="button" data-act="chords">Try different chords</button>
+        </div>`;
+      return;
+    }
+
+    if (state.tray === 'suggest') {
+      const role = state.role;
+      const accent = ROLE_HEX[role];
+      const range = rangeOf(role);
+      tray.style.setProperty('--accent', accent);
+      const top = state.options.filter(o => o.fit !== 'clash').slice(0, 3);
+      const current = state.options[state.pick];
+      tray.innerHTML = `
+        ${loopProgress()}
+        <div class="tray-head"><h3>Choose your ${ROLE_NAME[role].toLowerCase()} <span class="inst">${esc(g.roles[role].label)}</span></h3>
+          <p>Ranked by how well each fits your chords${Object.keys(song.layers).filter(r => r !== role).length ? ' and the parts you kept' : ''}. Click one to hear it.</p></div>
+        <div class="cards">${top.map(o => {
+          const i = state.options.indexOf(o);
+          return `
+          <button type="button" class="card" data-pick="${i}" aria-pressed="${state.pick === i}" style="--accent:${accent}">
+            <span class="top"><span class="nm">${esc(o.style.name)}</span><span class="fit ${o.fit}">${o.fitText}</span></span>
+            ${miniSvg(o.notes, role, range)}
+            <span class="why">${esc(o.why)}</span>
+            ${o.reasons.length ? `<span class="reasons">${o.reasons.map(r => `<span>✓ ${esc(r)}</span>`).join('')}</span>` : ''}
+          </button>`;
+        }).join('')}
         </div>
-        <p class="hint">Green fits what you have. Orange works against it.</p>
-      </div>`;
+        ${top.includes(current) ? '' : `<p class="hint">Hearing <strong>${esc(current.style.name)}</strong>: ${esc(current.fit === 'clash' ? current.reasons[0] : current.why)}</p>`}
+        <div class="actions">
+          <button type="button" class="primary" data-act="keep">Keep ${esc(current.style.name)}</button>
+          <button type="button" data-act="adjust" aria-expanded="${state.adjust}">Adjust it</button>
+          <button type="button" data-act="escape" aria-expanded="${state.escape}">None of these?</button>
+          ${song.layers[role] ? `<button type="button" data-act="cancel">Keep what I had</button>` : ''}
+        </div>
+        <div class="panel" ${state.adjust ? '' : 'hidden'}>
+          <div class="row"><span class="lbl">Notes</span>
+            <span class="seg">${NOTES_LABEL.map((t, b) => `<button type="button" data-busy="${b}" aria-pressed="${state.busy === b}">${t}</button>`).join('')}</span></div>
+          <div class="row"><span class="lbl">Variation</span><button type="button" data-act="take">Same style, new notes</button></div>
+          <p class="hint">Changes play right away. Keep it when it sounds right.</p>
+        </div>
+        <div class="panel" ${state.escape ? '' : 'hidden'}>
+          <div class="actions">
+            <button type="button" data-act="takes">Show 3 new takes</button>
+            <button type="button" data-act="others" aria-expanded="${state.others}">See every style</button>
+            <button type="button" data-act="skip">Skip the ${ROLE_NAME[role].toLowerCase()} for now</button>
+          </div>
+          <div class="chips" ${state.others ? '' : 'hidden'}>${state.options.map((o, i) => `
+            <button type="button" class="chip" data-pick="${i}" aria-pressed="${state.pick === i}"><span class="dot ${o.fit === 'clash' ? 'clash' : ''}"></span>${esc(o.style.name)}</button>`).join('')}
+          </div>
+          <p class="hint" ${state.others ? '' : 'hidden'}>Green styles fit what you have. Orange ones work against it; try them anyway if you like.</p>
+        </div>`;
+      return;
+    }
+
+    // Full-song arranger
+    const track = state.track;
+    const idx = selectedIndex();
+    const sec = state.arrangement[idx];
+    const info = track.sections[idx];
+    const type = JT.SECTION_TYPES[sec.type];
+    tray.innerHTML = `
+      ${stepsStrip(2)}
+      <div class="tray-head"><h3>Your full song <span class="inst">${fmtTime(track.length - 4)}</span></h3>
+        <p>Click a section to jump there and change it.</p></div>
+      <div class="actions">
+        <button type="button" class="primary" data-act="export" ${state.exporting ? 'disabled' : ''}>${state.exporting ? 'Rendering your song…' : 'Download as WAV'}</button>
+        <button type="button" data-act="chords">Try different chords</button>
+        <button type="button" data-act="reset">Reset the arrangement</button>
+        <button type="button" data-act="loop">Back to the loop</button>
+      </div>
+      <div class="timeline" id="timeline">
+        ${track.sections.map(s => `<button type="button" class="sec ${s.id === state.selected ? 'sel' : ''}" data-sec="${s.id}"
+            style="flex-grow:${s.bars};--c:${JT.SECTION_TYPES[s.type].color}">${esc(s.name)}<span>${s.bars}</span></button>`).join('')}
+        <span class="playhead" id="playhead"></span>
+      </div>
+      <div class="panel section-panel" style="--c:${type.color}">
+        <div class="sec-head"><strong>${type.name}</strong> <span class="hint">bars ${info.start / 4 + 1}–${info.end / 4} · chords ${esc(T.chordsOf(g.key, info.prog.chords).map(T.chordName).join(' '))}</span></div>
+        <p class="hint">${esc(type.about)}</p>
+        <div class="controls">
+        <div class="row"><span class="lbl">Plays</span><span class="chips">${STEPS.filter(r => state.song.layers[r]).map(r => `
+          <button type="button" class="chip" data-layer="${r}" aria-pressed="${!!sec.layers[r]}" style="--c:${ROLE_HEX[r]}"><span class="dot" style="background:${sec.layers[r] ? ROLE_HEX[r] : 'transparent'};border:1px solid ${ROLE_HEX[r]}"></span>${ROLE_NAME[r]}</button>`).join('')}</span></div>
+        <div class="row"><span class="lbl">Energy</span><span class="seg">${[-1, 0, 1].map(e => `<button type="button" data-energy="${e}" aria-pressed="${sec.energy === e}">${ENERGY_LABEL[e]}</button>`).join('')}</span></div>
+        <div class="row"><span class="lbl">Length</span><span class="seg">${[4, 8].map(b => `<button type="button" data-bars="${b}" aria-pressed="${sec.bars === b}">${b} bars</button>`).join('')}</span></div>
+        <div class="row"><span class="lbl">Section</span>
+          <button type="button" data-act="left" ${idx === 0 ? 'disabled' : ''}>Move earlier</button>
+          <button type="button" data-act="right" ${idx === state.arrangement.length - 1 ? 'disabled' : ''}>Move later</button>
+          <button type="button" data-act="del" ${state.arrangement.length < 2 ? 'disabled' : ''}>Remove</button></div>
+        <div class="row"><span class="lbl">Add after</span><span class="chips">${Object.entries(JT.SECTION_TYPES).map(([id, t]) => `
+          <button type="button" class="chip" data-addsec="${id}"><span class="dot" style="background:${t.color}"></span>${t.name}</button>`).join('')}</span></div>
+        </div>
+      </div>
+`;
   }
 
   function renderTransport() {
@@ -290,40 +484,88 @@
   // --- EVENTS ---
   $('tray').addEventListener('click', e => {
     const b = e.target.closest('button');
-    if (!b) return;
-    if (b.dataset.genre) {
+    if (!b || b.disabled) return;
+    const d = b.dataset;
+    if (d.genre) {
       startAudio();
-      freeze();
-      state.song = JT.newSong(b.dataset.genre, (Math.random() * 1e9) | 0);
+      state.song = JT.newSong(d.genre, (Math.random() * 1e9) | 0);
       state.salt = 0;
+      state.mode = 'loop';
+      state.arrangement = null;
+      state.track = null;
       state.muted = { drums: false, bass: false, lead: false, pad: false };
-      pos = 0;
-      rebase(performance.now());
+      jumpTo(0);
       state.tray = 'add';
       render();
       return;
     }
-    if (b.dataset.add) { openSuggestions(b.dataset.add); return; }
-    if (b.dataset.pick !== undefined) { state.pick = +b.dataset.pick; render(); return; }
-    switch (b.dataset.act) {
+    if (d.add) { openSuggestions(d.add); return; }
+    if (d.pick !== undefined) { state.pick = +d.pick; render(); return; }
+    if (d.busy !== undefined) { state.busy = +d.busy; render(); return; }
+    if (d.sec) {
+      state.selected = +d.sec;
+      jumpTo(state.track.sections.find(s => s.id === +d.sec).start);
+      render();
+      return;
+    }
+    const sec = state.arrangement && state.arrangement[selectedIndex()];
+    if (d.layer) { sec.layers[d.layer] = !sec.layers[d.layer]; rebuildTrack(); render(); return; }
+    if (d.energy !== undefined) { sec.energy = +d.energy; rebuildTrack(); render(); return; }
+    if (d.bars) { sec.bars = +d.bars; rebuildTrack(); render(); return; }
+    if (d.addsec) {
+      const s = JT.makeSection(d.addsec);
+      state.arrangement.splice(selectedIndex() + 1, 0, s);
+      state.selected = s.id;
+      rebuildTrack();
+      render();
+      return;
+    }
+    switch (d.act) {
       case 'keep': keepPick(); break;
-      case 'customize': state.customize = !state.customize; render(); break;
+      case 'adjust': state.adjust = !state.adjust; state.escape = false; render(); break;
+      case 'escape': state.escape = !state.escape; state.adjust = false; render(); break;
       case 'others': state.others = !state.others; render(); break;
-      case 'cancel': state.tray = 'add'; state.role = null; render(); break;
+      case 'cancel': state.role = null; state.tray = nextStep() ? 'add' : 'ready'; render(); break;
+      case 'skip': {
+        const skipped = state.role;
+        state.role = null;
+        const remaining = STEPS.filter(r => !state.song.layers[r] && r !== skipped);
+        state.tray = remaining.length ? 'add' : 'ready';
+        render();
+        break;
+      }
       case 'take': {
         const id = state.options[state.pick].style.id;
+        const busy = state.busy;
         state.salt++;
         openSuggestions(state.role, id);
-        state.customize = true;
+        state.busy = busy;
+        state.adjust = true;
+        render();
+        break;
+      }
+      case 'takes': state.salt++; openSuggestions(state.role); state.escape = true; render(); break;
+      case 'chords': tryDifferentChords(); break;
+      case 'song': enterSong(); break;
+      case 'loop': leaveSong(); break;
+      case 'reset': state.arrangement = JT.defaultArrangement(); state.selected = state.arrangement[0].id; rebuildTrack(); jumpTo(0); render(); break;
+      case 'export': exportWav(); break;
+      case 'left': case 'right': {
+        const i = selectedIndex(), j = d.act === 'left' ? i - 1 : i + 1;
+        [state.arrangement[i], state.arrangement[j]] = [state.arrangement[j], state.arrangement[i]];
+        rebuildTrack();
+        render();
+        break;
+      }
+      case 'del': {
+        const i = selectedIndex();
+        state.arrangement.splice(i, 1);
+        state.selected = state.arrangement[Math.min(i, state.arrangement.length - 1)].id;
+        rebuildTrack();
         render();
         break;
       }
     }
-  });
-  $('tray').addEventListener('input', e => {
-    if (e.target.id !== 'busy') return;
-    state.busy = +e.target.value;
-    $('busyVal').textContent = ['Sparser', 'As suggested', 'Busier'][state.busy];
   });
   $('layers').addEventListener('click', e => {
     const b = e.target.closest('button[data-act]');
@@ -335,16 +577,12 @@
     else if (b.dataset.act === 'remove') {
       delete state.song.layers[role];
       regenerateOthers(role);
-      if (state.tray === 'suggest' && state.role === role) state.tray = 'add';
+      if (state.tray === 'suggest' && state.role === role) state.role = null;
+      state.tray = 'add';
       render();
     }
   });
-  $('newChords').addEventListener('click', () => {
-    JT.changeChords(state.song);
-    previewCache = null;
-    if (state.tray === 'suggest') openSuggestions(state.role, state.options[state.pick].style.id);
-    else render();
-  });
+  $('chordsBtn').addEventListener('click', tryDifferentChords);
   $('tempo').addEventListener('input', e => {
     freeze();
     state.song.bpm = +e.target.value;
@@ -368,10 +606,13 @@
     rebase(performance.now());
     renderTransport();
   });
-  $('newSong').addEventListener('click', () => { state.song = null; state.tray = 'start'; state.role = null; render(); });
+  $('newSong').addEventListener('click', () => {
+    state.song = null; state.mode = 'loop'; state.tray = 'start'; state.role = null; state.arrangement = null; state.track = null;
+    render();
+  });
   window.addEventListener('keydown', e => {
     if (e.code === 'Space' && state.song && !['INPUT', 'BUTTON'].includes(e.target.tagName)) { e.preventDefault(); togglePause(); }
-    if (e.key === 'Escape' && state.tray === 'suggest') { state.tray = 'add'; state.role = null; render(); }
+    if (e.key === 'Escape' && state.tray === 'suggest') { state.role = null; state.tray = nextStep() ? 'add' : 'ready'; render(); }
   });
 
   // --- FRAME LOOP ---
@@ -386,14 +627,24 @@
     if (tunnel) tunnel.reportFrame(now - lastNow);
     lastNow = now;
     const p = position(now);
+    const songMode = state.mode === 'song' && state.track;
     if (tunnel) {
       const g = state.song ? JT.GENRES[state.song.genre] : IDLE;
       tunnel.render({
         pos: p, prevPos, spb: spb(), swing: g.swing, tint: g.tint, fog: g.fog,
         paused, reduced, time: (now - t0) / 1000, dt,
         fade: reduced ? 1 : Math.min(1, (now - t0) / 1500),
+        loop: loopLength(),
+        marks: songMode ? state.track.sections.map(s => ({ beat: s.start, color: toRgb(JT.SECTION_TYPES[s.type].color) })) : [],
         parts: currentParts().map(part => ({ role: part.role, notes: part.notes, ghost: part.ghost || part.muted, range: part.range })),
       });
+    }
+    if (songMode) {
+      const L = state.track.length;
+      const at = ((p % L) + L) % L;
+      const ph = $('playhead');
+      if (ph) ph.style.left = (at / L * 100) + '%';
+      renderChords();
     }
     prevPos = p;
     requestAnimationFrame(frame);

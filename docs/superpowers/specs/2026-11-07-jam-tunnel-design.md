@@ -138,6 +138,31 @@ construction instead of by luck.
 - **Ears are the test.** Claude can't listen to audio, so the plan includes listening checkpoints
   where the user judges each genre before it is called done.
 
+## Guidance and the full song (added 2026-11-09, after the user tried the draft)
+
+The user tried the pop draft and found it unclear what to do next, why one option was a better
+match, what to do when no option appealed, what New Chords did, and what Customize meant, with no
+intro on opening. They asked for more guidance and for the loop to become a full track (intro,
+verse, chorus, break, outro). They then delegated the design ("You decide"). Claude's calls:
+
+- A welcome screen states the purpose and three steps: pick a genre, build a 4-bar loop, make it a
+  full song. A step strip and a loop progress row (drums, bass, chords, melody) show where you are.
+- The loop is built in producer order (drums, bass, chords, melody), with the next step offered as
+  the main card; other instruments can still be added out of order.
+- Each suggestion lists concrete reasons tied to the kept parts (for example, "Hits with all 3 of
+  your kicks each bar, so bass and kick punch together").
+- "None of these?" offers three new takes, every style (with fit colors), or skipping that part.
+- "Try different chords" sits next to the chord names and a one-line mood for each progression.
+- Customize became "Adjust it": Fewer notes / As suggested / More notes, plus "Same style, new notes".
+- After the loop, "Make it a full song" builds an arrangement in which the loop is the chorus:
+  Intro 4, Verse 8, Chorus 8, Verse 8, Chorus 8, Break 4, Chorus 8, Outro 4. Sections reuse the
+  kept parts' recipes with different instruments and energy; pop and rock verses use another
+  progression from the genre, loop-based genres keep the chords. Drum fills (or a snare roll out of
+  the break) lead into each chorus; each chorus starts with a crash; the outro ends on a held home chord.
+- A timeline shows the sections; clicking one jumps there. Each section can change which
+  instruments play, its energy, its length (4 or 8 bars), its position, or be removed; sections
+  can be added. The whole song downloads as a WAV.
+
 ## Genres
 
 Required: classic hip hop (boom bap), trap, pop. Proposed to make about 20 (Claude's list; the

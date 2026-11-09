@@ -17,11 +17,13 @@
         <a class="back" href="../../index.html">&larr; Back to games</a>
         <div class="name">Jam Tunnel <span class="draft">Draft</span></div>
         <div class="meta" id="meta"></div>
-        <div class="chords" id="chords"></div>
+        <div class="chords-row" id="chordsRow" hidden>
+          <span class="chords" id="chords"></span>
+          <button type="button" id="chordsBtn" title="Swap in another chord progression from this genre. Every part follows the new chords.">Try different chords</button>
+        </div>
       </div>
       <div class="transport" id="transport" hidden>
         <label class="tempo">Tempo <input type="range" id="tempo" min="60" max="180" step="1"> <span id="tempoVal"></span></label>
-        <button type="button" id="newChords">New chords</button>
         <button type="button" id="pause">Pause</button>
         <button type="button" id="sound" aria-pressed="true">Sound on</button>
         <button type="button" id="newSong">New song</button>
@@ -38,6 +40,7 @@
   <script src="samples.js"></script>
   <script src="theory.js"></script>
   <script src="genres.js"></script>
+  <script src="arrange.js"></script>
   <script src="audio.js"></script>
   <script src="tunnel.js"></script>
   <script src="app.js"></script>

@@ -322,11 +322,12 @@ void main() {
     }
 
     // --- FRAME ---
-    // view: { pos, prevPos, spb, swing, tint, fog, paused, reduced, time, dt, fade,
-    //         parts: [{ role, notes, ghost, range }] }
+    // view: { pos, prevPos, spb, swing, tint, fog, paused, reduced, time, dt, fade, loop (beats),
+    //         marks: [beat] (section starts), parts: [{ role, notes, ghost, range }] }
     function render(view) {
       resize();
       const p = view.pos, S = view.spb;
+      const loop = view.loop || LOOP;
       const beatPhase = p - Math.floor(p);
       const barStart = ((Math.floor(p) % 4) + 4) % 4 === 0;
       const pulse = (view.paused ? 0.3 : Math.exp(-beatPhase * S * 7)) * (barStart ? 1.8 : 1);
@@ -349,8 +350,8 @@ void main() {
         const gain = ROLE_GAIN[role];
         const ghost = part.ghost ? 1 : 0;
         part.notes.forEach((n, idx) => {
-          const rel0 = (((n.b - p) % LOOP) + LOOP) % LOOP;
-          [rel0, rel0 - LOOP].forEach(rel => {
+          const rel0 = (((n.b - p) % loop) + loop) % loop;
+          [rel0, rel0 - loop].forEach(rel => {
             const zHead = -(GATE + rel * DEPTH);
             const len = Math.max(0.12, n.len * DEPTH * 0.92);
             if (zHead > 1 + len || zHead < -FAR || ni >= MAX_INST - 8) return;
@@ -367,7 +368,7 @@ void main() {
             if (lit > 0.02) lights.push({ pos: [c[0] * 0.9, c[1] * 0.9, zHead - 0.1], col: color, k: lit });
           });
           // Sparks when a note crosses the gate
-          if (crossed && Math.floor((p - n.b) / LOOP) > Math.floor((view.prevPos - n.b) / LOOP)) {
+          if (crossed && Math.floor((p - n.b) / loop) > Math.floor((view.prevPos - n.b) / loop)) {
             const [c] = placeNote(role, n, -GATE, 0, part.range);
             spawnSparks(role, c, color, ghost ? n.v * 0.3 : n.v);
           }
@@ -379,6 +380,15 @@ void main() {
       [[[0, HH, -GATE], [2 * HW, th, th]], [[0, -HH, -GATE], [2 * HW, th, th]], [[-HW, 0, -GATE], [th, 2 * HH, th]], [[HW, 0, -GATE], [th, 2 * HH, th]]]
         .forEach(([c, s]) => { instData.set([...c, ...s, ...gc, gateI, 0, 0], ni * INST); ni++; });
       lights.push({ pos: [0, HH * 0.9, -GATE], col: gc, k: pulse * 0.5 }, { pos: [0, -HH * 0.9, -GATE], col: gc, k: pulse * 0.5 });
+      // Section starts pass by as bright frames in the section's color
+      (view.marks || []).forEach(m => {
+        const rel = (((m.beat - p) % loop) + loop) % loop;
+        const z = -(GATE + rel * DEPTH);
+        if (z < -FAR || rel <= 0.05) return;
+        const mc = m.color, mi = 0.9, t2 = 0.05;
+        [[[0, HH, z], [2 * HW, t2, t2]], [[0, -HH, z], [2 * HW, t2, t2]], [[-HW, 0, z], [t2, 2 * HH, t2]], [[HW, 0, z], [t2, 2 * HH, t2]]]
+          .forEach(([c, s2]) => { if (ni < MAX_INST) { instData.set([...c, ...s2, ...mc, mi, 0, 0], ni * INST); ni++; } });
+      });
       lights.sort((a, b) => b.k - a.k);
       const LP = new Float32Array(MAXL * 4), LC = new Float32Array(MAXL * 4);
       const nl = Math.min(MAXL, lights.length);

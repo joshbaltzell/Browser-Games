@@ -405,9 +405,9 @@ window.JT = window.JT || {};
       key: 4, keyName: 'E', bpm: 96, tempo: [80, 120], swing: 1.0,
       tint: [1.0, 0.5, 0.22], fog: [0.022, 0.012, 0.008], accent: '#ff8a3d',
       progressions: [
-        { roman: 'I7 - IV7 - I7 - V7', chords: [[0, '7'], [5, '7'], [0, '7'], [7, '7']] },
-        { roman: 'I - bVII - IV - I', chords: [[0, 'maj'], [10, 'maj'], [5, 'maj'], [0, 'maj']] },
-        { roman: 'I7 - I7 - IV7 - V7', chords: [[0, '7'], [0, '7'], [5, '7'], [7, '7']] },
+        { roman: 'I7 - IV7 - I7 - V7', mood: 'Classic blues: home, away, home, then a push back', chords: [[0, '7'], [5, '7'], [0, '7'], [7, '7']] },
+        { roman: 'I - bVII - IV - I', mood: 'Big and open, the southern rock anthem sound', chords: [[0, 'maj'], [10, 'maj'], [5, 'maj'], [0, 'maj']] },
+        { roman: 'I7 - I7 - IV7 - V7', mood: 'Sits at home, then builds tension at the end', chords: [[0, '7'], [0, '7'], [5, '7'], [7, '7']] },
       ],
       roles: {
         lead: { label: 'Overdriven guitar', voice: 'guitar', range: [38, 68], styles: [
@@ -440,12 +440,12 @@ window.JT = window.JT || {};
 
     trap: {
       id: 'trap', name: 'Trap', blurb: '808s, hi-hat rolls and a dark piano',
-      key: 5, keyName: 'F minor', bpm: 140, tempo: [120, 160], swing: 0.3,
+      key: 5, keyName: 'F minor', minor: true, verseKeepsChords: true, bpm: 140, tempo: [120, 160], swing: 0.3,
       tint: [0.62, 0.28, 1.0], fog: [0.012, 0.007, 0.026], accent: '#9d6bff',
       progressions: [
-        { roman: 'i - VI - III - VII', chords: [[0, 'min'], [8, 'maj'], [3, 'maj'], [10, 'maj']] },
-        { roman: 'i - iv - VI - V', chords: [[0, 'min'], [5, 'min'], [8, 'maj'], [7, 'maj']] },
-        { roman: 'i - VI - iv - V', chords: [[0, 'min'], [8, 'maj'], [5, 'min'], [7, 'maj']] },
+        { roman: 'i - VI - III - VII', mood: 'Dark and epic', chords: [[0, 'min'], [8, 'maj'], [3, 'maj'], [10, 'maj']] },
+        { roman: 'i - iv - VI - V', mood: 'Tense, with a dramatic pull back home', chords: [[0, 'min'], [5, 'min'], [8, 'maj'], [7, 'maj']] },
+        { roman: 'i - VI - iv - V', mood: 'Moody, ending on a cliffhanger', chords: [[0, 'min'], [8, 'maj'], [5, 'min'], [7, 'maj']] },
       ],
       roles: {
         lead: { label: 'Piano melody', voice: 'piano', range: [60, 82], styles: [
@@ -477,9 +477,9 @@ window.JT = window.JT || {};
       key: 0, keyName: 'C', bpm: 112, tempo: [96, 128], swing: 0.2,
       tint: [1.0, 0.45, 0.7], fog: [0.02, 0.01, 0.018], accent: '#ff6fae',
       progressions: [
-        { roman: 'I - V - vi - IV', chords: [[0, 'maj'], [7, 'maj'], [9, 'min'], [5, 'maj']] },
-        { roman: 'vi - IV - I - V', chords: [[9, 'min'], [5, 'maj'], [0, 'maj'], [7, 'maj']] },
-        { roman: 'I - vi - IV - V', chords: [[0, 'maj'], [9, 'min'], [5, 'maj'], [7, 'maj']] },
+        { roman: 'I - V - vi - IV', mood: 'Bright and uplifting, the most-used pop progression', chords: [[0, 'maj'], [7, 'maj'], [9, 'min'], [5, 'maj']] },
+        { roman: 'vi - IV - I - V', mood: 'Emotional and bittersweet', chords: [[9, 'min'], [5, 'maj'], [0, 'maj'], [7, 'maj']] },
+        { roman: 'I - vi - IV - V', mood: 'Warm and nostalgic, classic doo-wop pop', chords: [[0, 'maj'], [9, 'min'], [5, 'maj'], [7, 'maj']] },
       ],
       roles: {
         lead: { label: 'Synth hook', voice: 'synthlead', range: [64, 86], styles: [
@@ -508,12 +508,12 @@ window.JT = window.JT || {};
 
     boombap: {
       id: 'boombap', name: 'Classic hip hop', blurb: 'Boom bap swing, jazzy minor 7th chords',
-      key: 2, keyName: 'D minor', bpm: 90, tempo: [80, 100], swing: 0.7,
+      key: 2, keyName: 'D minor', minor: true, verseKeepsChords: true, bpm: 90, tempo: [80, 100], swing: 0.7,
       tint: [0.95, 0.75, 0.35], fog: [0.02, 0.016, 0.01], accent: '#e8c15a',
       progressions: [
-        { roman: 'i7 - i7 - iv7 - iv7', chords: [[0, 'm7'], [0, 'm7'], [5, 'm7'], [5, 'm7']] },
-        { roman: 'i7 - VImaj7 - iv7 - v7', chords: [[0, 'm7'], [8, 'maj7'], [5, 'm7'], [7, 'm7']] },
-        { roman: 'i7 - VII7 - VImaj7 - v7', chords: [[0, 'm7'], [10, '7'], [8, 'maj7'], [7, 'm7']] },
+        { roman: 'i7 - i7 - iv7 - iv7', mood: 'A hypnotic two-chord loop', chords: [[0, 'm7'], [0, 'm7'], [5, 'm7'], [5, 'm7']] },
+        { roman: 'i7 - VImaj7 - iv7 - v7', mood: 'Jazzy and smooth', chords: [[0, 'm7'], [8, 'maj7'], [5, 'm7'], [7, 'm7']] },
+        { roman: 'i7 - VII7 - VImaj7 - v7', mood: 'Soulful, stepping down', chords: [[0, 'm7'], [10, '7'], [8, 'maj7'], [7, 'm7']] },
       ],
       roles: {
         lead: { label: 'String line', voice: 'strings', range: [60, 82], styles: [
@@ -569,10 +569,15 @@ window.JT = window.JT || {};
   }
 
   // Regenerate a kept or previewed part from its recipe
-  JT.generate = function(song, role, styleId, seed, busy) {
+  // override: { chords, layers } to write the part over other chords or against other parts (song sections)
+  JT.generate = function(song, role, styleId, seed, busy, override) {
     const g = JT.GENRES[song.genre];
     const style = g.roles[role].styles.find(s => s.id === styleId);
-    const ctx = { key: g.key, chords: song.chords, layers: song.layers };
+    const ctx = {
+      key: g.key,
+      chords: (override && override.chords) || song.chords,
+      layers: (override && override.layers) || song.layers,
+    };
     return style.gen(ctx, T.rng(seed), busy).filter(n => n.b >= 0 && n.b < 16);
   };
 
@@ -586,42 +591,61 @@ window.JT = window.JT || {};
     });
   };
 
-  // Rank every style for a role against what is already in the song
+  // Rank every style for a role against what is already in the song.
+  // Each option gets plain-language reasons that point at the actual parts it was compared with.
+  const ROLE_WORD = { drums: 'drums', bass: 'bass', lead: 'melody', pad: 'chords' };
   JT.suggest = function(song, role, salt) {
     const g = JT.GENRES[song.genre];
-    const kick = song.layers.drums ? song.layers.drums.notes.filter(n => n.p === 'kick').map(n => n.b) : null;
-    const bassOn = song.layers.bass ? song.layers.bass.notes.map(n => n.b) : null;
-    const density = notes => notes.length / 4;
-    const keptBusy = Object.entries(song.layers).filter(([r]) => r !== role && r !== 'drums').map(([, L]) => density(L.notes));
-    const lockFrac = (a, b) => a.length ? a.filter(x => b.some(y => Math.abs(x - y) < 0.06)).length / a.length : 0;
+    const chordText = song.chords.map(T.chordName).join(' ');
+    const kept = song.layers;
+    const kicks = kept.drums ? kept.drums.notes.filter(n => n.p === 'kick' && n.b < 4).map(n => n.b) : null;
+    const bassOn = kept.bass ? kept.bass.notes.filter(n => n.b < 4).map(n => n.b) : null;
+    const perBar = notes => notes.length / 4;
+    const near = (x, list) => list.some(y => Math.abs(x - y) < 0.06);
 
     const options = g.roles[role].styles.map((style, i) => {
       const seed = hash(song.seed, role, style.id, salt || 0);
       const notes = JT.generate(song, role, style.id, seed, 1);
+      const bar1 = notes.filter(n => n.b < 4);
+      const reasons = [];
       let score = 3 - i * 0.35;                         // the genre's most typical styles come first
-      let extra = '';
-      if (role === 'bass' && kick) {
-        const f = lockFrac(notes.map(n => n.b), kick);
-        score += f * 1.5;
-        if (f > 0.5) extra = ' Lands with your kick.';
+
+      if (role === 'bass' && kicks && kicks.length) {
+        const hits = kicks.filter(k => bar1.some(n => Math.abs(n.b - k) < 0.06)).length;
+        score += (hits / kicks.length) * 1.5;
+        const which = hits === kicks.length ? `all ${hits} of your kicks` : `${hits} of your ${kicks.length} kicks`;
+        if (hits >= kicks.length * 0.6) reasons.push(`Hits with ${which} each bar, so bass and kick punch together.`);
+        else if (hits <= 1) reasons.push('Mostly plays between your kicks, so the low end bounces instead of doubling.');
       }
-      if (role === 'drums' && bassOn) {
-        const f = lockFrac(bassOn, notes.filter(n => n.p === 'kick').map(n => n.b));
-        score += f;
-        if (f > 0.5) extra = ' The kick lines up with your bass.';
+      if (role === 'drums' && bassOn && bassOn.length) {
+        const k = bar1.filter(n => n.p === 'kick').map(n => n.b);
+        const hits = bassOn.filter(b => near(b, k)).length;
+        score += (hits / bassOn.length);
+        if (hits >= 2) reasons.push(`Its kick lands with ${hits} of your bass notes each bar.`);
       }
-      if (role !== 'drums' && keptBusy.some(d => d > 6) && density(notes) > 6) {
-        score -= 0.8;
-        extra = extra || ' Busy next to your other busy part.';
+      if (role === 'pad' || role === 'lead') {
+        reasons.push(`Built from your chords (${chordText}), so every strong beat is a chord note and nothing clashes.`);
+      }
+      if (role === 'bass' && !kicks) reasons.push(`Follows the roots of ${chordText}, so it outlines the chords.`);
+      // Busyness against the other melodic parts
+      const others = Object.entries(kept).filter(([r]) => r !== role && r !== 'drums');
+      const busiest = others.sort((x, y) => perBar(y[1].notes) - perBar(x[1].notes))[0];
+      if (role !== 'drums' && busiest) {
+        if (perBar(busiest[1].notes) > 6 && perBar(notes) > 6) {
+          score -= 0.8;
+          reasons.push(`Busy, like your ${ROLE_WORD[busiest[0]]}, so the two may crowd each other.`);
+        } else if (perBar(notes) < perBar(busiest[1].notes) / 2) {
+          reasons.push(`Lighter than your ${ROLE_WORD[busiest[0]]}, so it leaves room.`);
+        }
       }
       if (style.clash) score -= 10;
-      return { style, seed, busy: 1, notes, score, why: style.why + extra };
+      return { style, seed, busy: 1, notes, score, why: style.why, reasons };
     });
     options.sort((a, b) => b.score - a.score);
     const labels = ['Best match', 'Great match', 'Good match'];
     let n = 0;
     options.forEach(o => {
-      if (o.style.clash) { o.fit = 'clash'; o.fitText = 'Clashes'; o.why = o.style.clash; }
+      if (o.style.clash) { o.fit = 'clash'; o.fitText = 'Clashes'; o.reasons = [o.style.clash]; }
       else { o.fit = ['best', 'great', 'good'][Math.min(n, 2)]; o.fitText = labels[Math.min(n, 2)]; n++; }
     });
     return options;
