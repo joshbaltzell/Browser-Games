@@ -26,6 +26,11 @@ window.JT = window.JT || {};
     musicbox: { inst: 'musicbox', level: 0.3, wet: 0.45, minDur: 0.9 },
     flute: { inst: 'flute', level: 0.3, wet: 0.3, attack: 0.03 },
     vibes: { inst: 'vibes', level: 0.32, wet: 0.3, minDur: 0.9 },
+    acoustic: { inst: 'acoustic', level: 0.16, wet: 0.15, minDur: 0.4 },
+    fiddle: { inst: 'fiddle', level: 0.38, wet: 0.25, attack: 0.04 },
+    banjo: { inst: 'banjo', level: 0.26, wet: 0.12, minDur: 0.35, leadBoost: 2 },
+    cleanguitar: { inst: 'cleanguitar', level: 0.36, wet: 0.2, minDur: 0.35 },
+    harmonica: { inst: 'harmonica', level: 0.3, wet: 0.2, attack: 0.03 },
   };
   const KIT_LEVEL = { kick: 1.0, snare: 0.78, clap: 0.7, hat: 0.27, openhat: 0.27, tomlow: 0.68, tomhigh: 0.62, crash: 0.34 };
   // The sample set a voice needs, or null for synthesized voices

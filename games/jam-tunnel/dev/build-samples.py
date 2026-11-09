@@ -38,6 +38,11 @@ MELODIC = {
     'musicbox': ('music_box', 58, 88),
     'flute': ('flute', 58, 88),
     'vibes': ('vibraphone', 53, 86),
+    'acoustic': ('acoustic_guitar_steel', 40, 76),
+    'fiddle': ('fiddle', 55, 88),
+    'banjo': ('banjo', 48, 84),
+    'cleanguitar': ('electric_guitar_clean', 40, 80),
+    'harmonica': ('harmonica', 55, 86),
 }
 # name in the game -> General MIDI drum note
 KIT = {'kick': 36, 'snare': 38, 'hat': 42, 'openhat': 46, 'tomlow': 45, 'tomhigh': 48, 'crash': 49}
