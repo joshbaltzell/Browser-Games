@@ -76,6 +76,7 @@ button.primary:hover { filter: brightness(1.08); }
 .layers {
   grid-row: 2;
   align-self: start; justify-self: start;
+  max-height: 100%; overflow-y: auto;   /* seven parts can outgrow the space above the tray */
   width: 270px; max-width: 100%;
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px;
   display: grid; gap: 10px;
@@ -108,6 +109,7 @@ button.primary:hover { filter: brightness(1.08); }
 
 .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .cards.four { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.cards.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .card { text-align: left; display: grid; gap: 8px; padding: 12px; background: rgba(255, 255, 255, 0.03); border-radius: 10px; align-content: start; }
 .card[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: rgba(255, 255, 255, 0.07); }
 .card .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -304,14 +306,14 @@ button.link { background: none; border: 0; padding: 0; color: var(--ember); text
   .tray-head p, .lead { font-size: 0.78rem; }
   .steps li { font-size: 0.72rem; padding: 3px 8px 3px 3px; }
   /* Suggestions and genres become a swipeable row */
-  .cards, .cards.four, .cards.next {
+  .cards, .cards.four, .cards.next, .cards.three {
     display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 8px; padding-bottom: 4px;
     grid-template-columns: none;
   }
   /* A scrolling row inside the grid would otherwise be squashed to fit; let the tray scroll instead */
-  .cards, .cards.four, .cards.next { min-height: max-content; }
+  .cards, .cards.four, .cards.next, .cards.three { min-height: max-content; }
   .cards > .card { flex: 0 0 78%; scroll-snap-align: start; align-self: flex-start; min-height: max-content; }
-  .cards.four > .card, .cards.next > .card { flex-basis: 46%; }
+  .cards.four > .card, .cards.next > .card, .cards.three > .card { flex-basis: 46%; }
   .card .why, .reasons { font-size: 0.74rem; }
   .actions button { padding: 7px 11px; font-size: 0.82rem; }
   .section-panel .controls { grid-template-columns: 1fr; }

@@ -18,7 +18,7 @@ window.JT = window.JT || {};
     bass: { inst: 'bass', level: 0.55 },
     upright: { inst: 'upright', level: 0.5, wet: 0.05 },
     synthbass: { inst: 'synthbass', level: 0.42 },
-    organ: { inst: 'organ', level: 0.1, wet: 0.25, attack: 0.02 },
+    organ: { inst: 'organ', level: 0.1, wet: 0.25, attack: 0.02, leadBoost: 3 },
     piano: { inst: 'piano', level: 0.34, wet: 0.25, minDur: 0.5 },
     epiano: { inst: 'epiano', level: 0.14, wet: 0.2, minDur: 0.5 },
     strings: { inst: 'strings', level: 0.15, wet: 0.35, attack: 0.03, leadBoost: 2.8 },
@@ -31,10 +31,13 @@ window.JT = window.JT || {};
     banjo: { inst: 'banjo', level: 0.26, wet: 0.12, minDur: 0.35, leadBoost: 2 },
     cleanguitar: { inst: 'cleanguitar', level: 0.36, wet: 0.2, minDur: 0.35 },
     harmonica: { inst: 'harmonica', level: 0.3, wet: 0.2, attack: 0.03 },
+    brass: { inst: 'brass', level: 0.3, wet: 0.25, attack: 0.02 },
   };
   const KIT_LEVEL = { kick: 1.0, snare: 0.78, clap: 0.7, hat: 0.27, openhat: 0.27, tomlow: 0.68, tomhigh: 0.62, crash: 0.34 };
   // The sample set a voice needs, or null for synthesized voices
-  JT.instOf = voice => voice === 'kit' ? 'kit' : voice === 'darkpiano' ? 'grand' : VOICES[voice] ? VOICES[voice].inst : null;
+  const PERC_LEVEL = { shaker: 1.4, tambourine: 1.0, rim: 1.1, congahi: 1.2, congalo: 1.3, cowbell: 0.8 };
+  JT.instOf = voice => voice === 'kit' ? 'kit' : voice === 'perc' ? 'perc' : voice === 'fx' ? 'kit'   // the reverse cymbal is the kit's crash
+    : voice === 'darkpiano' ? 'grand' : VOICES[voice] ? VOICES[voice].inst : null;
 
   // Sample scripts already added to the page, shared by every audio context
   const scriptLoads = {};
@@ -136,11 +139,14 @@ window.JT = window.JT || {};
       duckBus.gain.linearRampToValueAtTime(1, t + 0.22);
     }
     const DRUM_PAN = { hat: 0.25, openhat: 0.25, tomhigh: -0.25, tomlow: 0.3, crash: -0.2 };
+    const PERC_PAN = { shaker: 0.45, tambourine: -0.4, rim: 0.2, congahi: -0.3, congalo: 0.3, cowbell: 0.35 };
     let place = null;   // set by play() for the note being built
     function placement(role, n) {
       if (role === 'drums') return { pan: DRUM_PAN[n.p] || 0 };
       if (role === 'pad') return { pan: (((n.p % 3) + 3) % 3 - 1) * 0.35, bus: duckBus };   // fan chord notes left and right
       if (role === 'lead') return { pan: 0.18 };
+      if (role === 'perc') return { pan: PERC_PAN[n.p] || 0 };
+      if (role === 'counter') return { pan: -0.3, bus: duckBus };   // opposite the melody
       return null;
     }
 
@@ -329,8 +335,97 @@ window.JT = window.JT || {};
       });
     }
 
+    // --- TRANSITIONS AND TEXTURES ---
+    // A rising noise sweep with a climbing tone, building into the next downbeat
+    function riser(t, n, spb) {
+      const dur = n.len * spb;
+      const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 3;
+      bp.frequency.setValueAtTime(300, t); bp.frequency.exponentialRampToValueAtTime(7000, t + dur);
+      const g = out(t, 0.0001, 0.4);
+      g.gain.exponentialRampToValueAtTime(0.22 * n.v, t + dur * 0.97);
+      g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.02);
+      src.connect(bp).connect(g);
+      src.start(t); src.stop(t + dur + 0.05);
+      const o = ctx.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(880, t + dur);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
+      const og = out(t, 0.0001, 0.3);
+      og.gain.exponentialRampToValueAtTime(0.03 * n.v, t + dur * 0.97);
+      og.gain.linearRampToValueAtTime(0.0001, t + dur + 0.02);
+      o.connect(lp).connect(og); o.start(t); o.stop(t + dur + 0.05);
+    }
+    // The kit's crash played backwards, swelling into the downbeat
+    let reversed = null;
+    function reverseCymbal(t, n, spb) {
+      const set = buffers.kit;
+      if (!set || !set.crash) return;
+      if (!reversed) {
+        const b = set.crash.buf;
+        reversed = ctx.createBuffer(b.numberOfChannels, b.length, b.sampleRate);
+        for (let ch = 0; ch < b.numberOfChannels; ch++) reversed.getChannelData(ch).set(Array.from(b.getChannelData(ch)).reverse());
+      }
+      const dur = Math.min(reversed.duration, Math.max(0.4, n.len * spb));
+      const src = ctx.createBufferSource(); src.buffer = reversed;
+      const g = out(t, 0.45 * n.v * set.crash.norm, 0.3);
+      src.connect(g);
+      src.start(t, reversed.duration - dur);   // start partway so the swell peaks on the beat
+      src.stop(t + dur);
+    }
+    // A deep hit: a falling sine with a burst of low noise
+    function impact(t, n) {
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(80, t); o.frequency.exponentialRampToValueAtTime(32, t + 1.2);
+      const g = out(t, 0.0001, 0.35);
+      g.gain.exponentialRampToValueAtTime(0.55 * n.v, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+      o.connect(g); o.start(t); o.stop(t + 1.7);
+      noise(t, 0.5, 'lowpass', 500, 0.3 * n.v, 0.7, 0.4);
+    }
+    // Textures under the whole loop: vinyl crackle, a soft noise wash, or amp hum and hiss
+    let crackleBuf = null;
+    function texture(t, n, spb) {
+      const dur = n.len * spb;
+      const g = out(t, 0.0001, 0.2);
+      g.gain.linearRampToValueAtTime(1, t + 0.4);
+      g.gain.setValueAtTime(1, t + Math.max(0.5, dur - 0.4));
+      g.gain.linearRampToValueAtTime(0.0001, t + dur);
+      if (n.flavor === 'crackle') {
+        if (!crackleBuf) {
+          crackleBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+          const d = crackleBuf.getChannelData(0);
+          for (let i = 0; i < d.length; i++) {
+            d[i] = (Math.random() * 2 - 1) * 0.012;                                    // surface hiss
+            if (Math.random() < 0.0009) d[i] += (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 0.6);   // pops
+          }
+        }
+        const src = ctx.createBufferSource(); src.buffer = crackleBuf; src.loop = true;
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
+        const lvl = ctx.createGain(); lvl.gain.value = 0.55 * n.v;
+        src.connect(hp).connect(lvl).connect(g); src.start(t); src.stop(t + dur + 0.05);
+      } else if (n.flavor === 'hum') {
+        [60, 120, 180].forEach((f, i) => {
+          const o = ctx.createOscillator(); o.frequency.value = f;
+          const lvl = ctx.createGain(); lvl.gain.value = [0.03, 0.015, 0.008][i] * n.v;
+          o.connect(lvl).connect(g); o.start(t); o.stop(t + dur + 0.05);
+        });
+        const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 4000;
+        const lvl = ctx.createGain(); lvl.gain.value = 0.01 * n.v;
+        src.connect(hp).connect(lvl).connect(g); src.start(t); src.stop(t + dur + 0.05);
+      } else {
+        const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700; lp.Q.value = 2;
+        lp.frequency.setValueAtTime(500, t); lp.frequency.linearRampToValueAtTime(1200, t + dur / 2); lp.frequency.linearRampToValueAtTime(500, t + dur);
+        const lvl = ctx.createGain(); lvl.gain.value = 0.05 * n.v;
+        src.connect(lp).connect(lvl).connect(g); src.start(t); src.stop(t + dur + 0.05);
+      }
+    }
+
     // --- ONE NOTE ON ONE VOICE ---
     function play(voice, n, t, spb, role) {
+      // A second melody is a single line too, so chord sounds get the same lift a melody does
+      if (role === 'counter' && !n.lead) n = Object.assign({ lead: true }, n);
       place = placement(role, n);
       if (n.p === 'kick' && (voice === 'kit' || voice === '808kit')) duck(t);
       playVoice(voice, n, t, spb);
@@ -352,6 +447,13 @@ window.JT = window.JT || {};
         case '808': bass808(t, n, spb); break;
         case 'synthlead': synthLead(t, n, spb); break;
         case 'darkpiano': darkPiano(t, n, spb); break;
+        case 'perc': playSample('perc', n.p, t, (PERC_LEVEL[n.p] || 0.35) * n.v, 0, { wet: 0.12 }); break;
+        case 'fx':
+          if (n.p === 'riser') riser(t, n, spb);
+          else if (n.p === 'reverse') reverseCymbal(t, n, spb);
+          else if (n.p === 'impact') impact(t, n);
+          else texture(t, n, spb);
+          break;
         default: {
           const V = VOICES[voice];
           if (!V) break;

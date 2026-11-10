@@ -7,19 +7,48 @@ window.JT = window.JT || {};
 
 (function() {
   const LOOP = 16;
-  const HW = 1.6, HH = 1.0;       // tunnel half width and half height
   const DEPTH = 1.35;             // world units per beat
   const GATE = 3.0;               // distance from the camera where notes sound
   const FAR = 46;
   const MAXL = 24;                // note lights that reach the tunnel surfaces
   const LANES = { hat: -1.15, snare: -0.4, clap: -0.4, kick: 0.4, tomhigh: 1.15, tomlow: 1.15, crash: 1.15, openhat: 1.15 };
   JT.DRUM_LANES = LANES;
-  const NORMALS = { drums: [0, 1, 0], lead: [1, 0, 0], bass: [-1, 0, 0], pad: [0, -1, 0] };
-  const ROLE_COLOR = { lead: [1.0, 0.42, 0.12], drums: [0.32, 0.72, 1.0], bass: [0.72, 0.42, 1.0], pad: [0.35, 1.0, 0.72] };
-  // Long sustained notes (pads, 808s) would swamp the scene at full brightness
-  const ROLE_GAIN = { lead: 1, drums: 1, bass: 0.75, pad: 0.45 };
+  const ROLE_COLOR = {
+    lead: [1.0, 0.42, 0.12], drums: [0.32, 0.72, 1.0], bass: [0.72, 0.42, 1.0], pad: [0.35, 1.0, 0.72],
+    perc: [1.0, 0.84, 0.3], counter: [1.0, 0.45, 0.75], fx: [0.78, 0.84, 1.0],
+  };
+  // Long sustained notes (pads, 808s, washes) would swamp the scene at full brightness
+  const ROLE_GAIN = { lead: 1, drums: 1, bass: 0.75, pad: 0.45, perc: 0.85, counter: 0.9, fx: 0.5 };
 
   JT.ROLE_COLOR = ROLE_COLOR;
+
+  // --- THE TUNNEL'S CROSS-SECTION: one flat side per part ---
+  // Corners sit on an ellipse sized so four sides give the original 3.2 x 2.0 rectangle. Side 0 is
+  // always the floor; the rest go counter-clockwise (4 sides: floor, right wall, ceiling, left wall).
+  // Each side: c (center), t (unit vector along it, counter-clockwise), n (inward normal),
+  // d (the direction notes rise in: up or right), half (half its width), rot (angle of t).
+  const RX = 1.6 / Math.SQRT1_2, RY = 1.0 / Math.SQRT1_2;
+  JT.buildFaces = function(count) {
+    const v = [];
+    for (let i = 0; i < count; i++) {
+      const a = -Math.PI / 2 - Math.PI / count + 2 * Math.PI * i / count;
+      v.push([RX * Math.cos(a), RY * Math.sin(a)]);
+    }
+    return v.map((A, i) => {
+      const B = v[(i + 1) % count];
+      const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+      const t = [(B[0] - A[0]) / len, (B[1] - A[1]) / len];
+      const up = t[1] > 0.3 || (Math.abs(t[1]) <= 0.3 && t[0] > 0);
+      const c = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
+      const ang = -90 + 360 * i / count;   // where the side sits around the circle (the ellipse would skew it)
+      const NAMES = ['right wall', 'upper right', 'ceiling', 'upper left', 'left wall', 'lower left', 'floor', 'lower right'];
+      return {
+        a: A, b: B, c, t, n: [-t[1], t[0]], d: up ? t : [-t[0], -t[1]], flip: up ? 1 : -1,
+        half: len / 2, len, rot: Math.atan2(t[1], t[0]),
+        name: i === 0 ? 'floor' : NAMES[(Math.round(ang / 45) + 8) % 8],
+      };
+    });
+  };
 
   JT.createTunnel = function(canvas) {
     const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
@@ -105,12 +134,12 @@ in vec2 aPos; out vec2 vUv;
 void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
     const tunnelProg = program(`#version 300 es
-in vec3 aPos; in vec3 aNormal; in float aKind;
+in vec3 aPos; in vec3 aNormal; in float aKind; in float aU; in float aFace;
 uniform mat4 uVP;
-out vec3 vW; out vec3 vN; out float vKind;
-void main() { vW = aPos; vN = aNormal; vKind = aKind; gl_Position = uVP * vec4(aPos, 1.0); }`, `#version 300 es
+out vec3 vW; out vec3 vN; out float vKind; out float vU; out float vFace;
+void main() { vW = aPos; vN = aNormal; vKind = aKind; vU = aU; vFace = aFace; gl_Position = uVP * vec4(aPos, 1.0); }`, `#version 300 es
 precision highp float;
-in vec3 vW; in vec3 vN; in float vKind;
+in vec3 vW; in vec3 vN; in float vKind; in float vU; in float vFace;
 out vec4 o;
 uniform vec3 uCam, uTint, uFog;
 uniform float uPos, uPulse;
@@ -131,9 +160,8 @@ void main() {
   float near = smoothstep(0.0, 1.5, -vW.z);
   vec3 col = uTint * 0.02;
   col += uTint * (lineAA(beat, 1.2) * 0.09 + lineAA(beat / 4.0, 1.6) * 0.36) * near;   // beat and bar lines
-  if (N.y > 0.5) col += vec3(0.32, 0.72, 1.0) * lineAA((vW.x + 1.55) / 0.775, 1.0) * 0.035;   // drum lanes
-  else if (abs(N.x) > 0.5) col += uTint * lineAA(vW.y * 4.0, 1.0) * 0.018;                   // pitch rows
-  else col += uTint * lineAA(vW.x * 2.5, 1.0) * 0.018;                                        // pitch columns
+  if (vFace < 0.5) col += vec3(0.32, 0.72, 1.0) * lineAA((vU * 1.6 + 1.55) / 0.775, 1.0) * 0.035;   // drum lanes on the floor
+  else col += uTint * lineAA(vU * 4.0, 1.0) * 0.018;                                                // pitch rows on the other sides
   vec3 R = reflect(-V, N);
   for (int i = 0; i < ${MAXL}; i++) {
     if (i >= uNL) break;
@@ -152,12 +180,15 @@ void main() {
 
     const noteProg = program(`#version 300 es
 in vec3 aPos;
-in vec3 iOff; in vec3 iScale; in vec3 iColor; in vec3 iParam;
+in vec3 iOff; in vec3 iScale; in vec3 iColor; in vec3 iParam; in float iRot;
 uniform mat4 uVP;
 out vec3 vLocal; out vec3 vW; out vec3 vColor; out vec3 vParam;
 void main() {
   vLocal = aPos; vColor = iColor; vParam = iParam;
-  vW = iOff + aPos * iScale;
+  vec3 p = aPos * iScale;
+  float c = cos(iRot), s = sin(iRot);
+  p.xy = vec2(c * p.x - s * p.y, s * p.x + c * p.y);   // lie flat on a slanted side
+  vW = iOff + p;
   gl_Position = uVP * vec4(vW, 1.0);
 }`, `#version 300 es
 precision highp float;
@@ -221,23 +252,40 @@ void main() {
       [brightProg, blurProg, compProg].forEach(pr => attrib(pr, 'aPos', 2, 2, 0));
     });
 
-    // Floor, ceiling, two walls and the far end cap: [x y z  nx ny nz  kind]
-    const tunnelData = [];
-    const quad = (a, b, c, d, n, kind) => [a, b, c, a, c, d].forEach(p => tunnelData.push(...p, ...n, kind));
-    const Z0 = 1, Z1 = -FAR;
-    quad([-HW, -HH, Z0], [HW, -HH, Z0], [HW, -HH, Z1], [-HW, -HH, Z1], [0, 1, 0], 0);
-    quad([-HW, HH, Z0], [HW, HH, Z0], [HW, HH, Z1], [-HW, HH, Z1], [0, -1, 0], 0);
-    quad([-HW, -HH, Z0], [-HW, HH, Z0], [-HW, HH, Z1], [-HW, -HH, Z1], [1, 0, 0], 0);
-    quad([HW, -HH, Z0], [HW, HH, Z0], [HW, HH, Z1], [HW, -HH, Z1], [-1, 0, 0], 0);
-    quad([-HW, -HH, Z1 + 0.01], [HW, -HH, Z1 + 0.01], [HW, HH, Z1 + 0.01], [-HW, HH, Z1 + 0.01], [0, 0, 1], 1);
-    const tunnelCount = tunnelData.length / 7;
+    // The sides and the far end cap: [x y z  nx ny nz  kind  u (across the side, -1..1)  side index]
+    const tunnelBuf = gl.createBuffer();
     const tunnelVao = vao(() => {
-      gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(tunnelData), gl.STATIC_DRAW);
-      attrib(tunnelProg, 'aPos', 3, 7, 0);
-      attrib(tunnelProg, 'aNormal', 3, 7, 3);
-      attrib(tunnelProg, 'aKind', 1, 7, 6);
+      gl.bindBuffer(gl.ARRAY_BUFFER, tunnelBuf);
+      attrib(tunnelProg, 'aPos', 3, 9, 0);
+      attrib(tunnelProg, 'aNormal', 3, 9, 3);
+      attrib(tunnelProg, 'aKind', 1, 9, 6);
+      attrib(tunnelProg, 'aU', 1, 9, 7);
+      attrib(tunnelProg, 'aFace', 1, 9, 8);
     });
+    let faces = null, sides = null, sidesKey = '', tunnelCount = 0;
+    function setSides(list) {
+      const key = list.join(',');
+      if (key === sidesKey) return;
+      sidesKey = key;
+      sides = list;
+      faces = JT.buildFaces(list.length);
+      const data = [];
+      const Z0 = 1, Z1 = -FAR;
+      faces.forEach((F, i) => {
+        const n = [F.n[0], F.n[1], 0];
+        const ua = -F.flip, ub = F.flip;   // u runs the way notes rise
+        const P = (pt, z, u) => data.push(pt[0], pt[1], z, ...n, 0, u, i);
+        P(F.a, Z0, ua); P(F.b, Z0, ub); P(F.b, Z1, ub);
+        P(F.a, Z0, ua); P(F.b, Z1, ub); P(F.a, Z1, ua);
+      });
+      faces.forEach(F => {
+        [[0, 0], F.a, F.b].forEach(pt => data.push(pt[0], pt[1], Z1 + 0.01, 0, 0, 1, 1, 0, 0));
+      });
+      tunnelCount = data.length / 9;
+      gl.bindBuffer(gl.ARRAY_BUFFER, tunnelBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+    }
+    setSides(['drums', 'bass', 'pad', 'lead']);
 
     // Unit cube, counter-clockwise from outside: [normal, u, v] per face with u x v = normal
     const cube = [];
@@ -246,7 +294,7 @@ void main() {
       const P = (su, sv) => [0, 1, 2].map(i => 0.5 * n[i] + 0.5 * su * u[i] + 0.5 * sv * v[i]);
       [P(-1, -1), P(1, -1), P(1, 1), P(-1, -1), P(1, 1), P(-1, 1)].forEach(p => cube.push(...p));
     });
-    const MAX_INST = 3072, INST = 12;
+    const MAX_INST = 3072, INST = 13;
     const instData = new Float32Array(MAX_INST * INST);
     const instBuf = gl.createBuffer();
     const noteVao = vao(() => {
@@ -259,6 +307,7 @@ void main() {
       attrib(noteProg, 'iScale', 3, INST, 3, 1);
       attrib(noteProg, 'iColor', 3, INST, 6, 1);
       attrib(noteProg, 'iParam', 3, INST, 9, 1);
+      attrib(noteProg, 'iRot', 1, INST, 12, 1);
     });
 
     const MAX_SPARKS = 900;
@@ -298,21 +347,42 @@ void main() {
     }
 
     // --- NOTE PLACEMENT ---
-    // Returns [center, size] for a note slab on its surface
-    function placeNote(role, n, zHead, len, range) {
+    // Returns [center, size, rotation] for a note slab lying on its part's side.
+    // spec: { range: [low, high] } for pitched parts, { pieces: [...] } for percussion and effects.
+    function placeNote(role, n, zHead, len, spec) {
+      const F = faces[Math.max(0, sides.indexOf(role))];
       const zc = zHead - len / 2;
+      const scale = F.half / 1.6;   // the original floor's half width
+      let u, across;
       if (role === 'drums') {
-        const w = 0.5 + n.v * 0.08;
-        return [[LANES[n.p] || 0, -HH + 0.06, zc], [w, 0.1, len]];
+        u = (LANES[n.p] || 0) / 1.6;
+        across = (0.5 + n.v * 0.08) * scale;
+      } else if (spec && spec.pieces) {
+        const i = Math.max(0, spec.pieces.indexOf(n.p)), k = spec.pieces.length;
+        u = k > 1 ? -0.8 + 1.6 * i / (k - 1) : 0;
+        across = Math.min(0.42, F.len / k * 0.8);
+      } else {
+        const range = (spec && spec.range) || [36, 72];
+        const t = Math.min(1, Math.max(0, (n.p - range[0]) / (range[1] - range[0])));
+        u = (2 * t - 1) * 0.85;
+        across = role === 'pad' ? 0.22 : 0.14;
       }
-      const t = Math.min(1, Math.max(0, (n.p - range[0]) / (range[1] - range[0])));
-      if (role === 'pad') return [[-HW + 0.25 + t * (2 * HW - 0.5), HH - 0.06, zc], [0.22, 0.1, len]];
-      const x = role === 'lead' ? -HW + 0.06 : HW - 0.06;
-      return [[x, -HH + 0.15 + t * (2 * HH - 0.3), zc], [0.1, 0.13, len]];
+      const lift = 0.06;
+      return [[F.c[0] + F.d[0] * u * F.half + F.n[0] * lift, F.c[1] + F.d[1] * u * F.half + F.n[1] * lift, zc], [across, 0.1, len], F.rot];
+    }
+    // An instance: center, size, color, intensity, ghost flag, seed, rotation
+    function inst(ni, c, s, col, k, ghost, seed, rot) {
+      instData.set([c[0], c[1], c[2], s[0], s[1], s[2], col[0], col[1], col[2], k, ghost, seed, rot], ni * INST);
+    }
+    // The tunnel's outline at depth z, as thin bars (the gate, section starts)
+    function frameAt(ni, z, col, k, th) {
+      faces.forEach(F => { if (ni < MAX_INST) { inst(ni, [F.c[0], F.c[1], z], [F.len + th, th, th], col, k, 0, 0, F.rot); ni++; } });
+      return ni;
     }
 
     function spawnSparks(role, at, color, v) {
-      const n = NORMALS[role];
+      const F = faces[Math.max(0, sides.indexOf(role))];
+      const n = F.n;
       const count = Math.round(8 + v * 10);
       for (let i = 0; i < count && sparks.length < MAX_SPARKS; i++) {
         const sp = 1.2 + Math.random() * 1.8;
@@ -329,6 +399,7 @@ void main() {
     //         marks: [beat] (section starts), parts: [{ role, notes, ghost, range }] }
     function render(view) {
       resize();
+      setSides(view.sides || ['drums', 'bass', 'pad', 'lead']);
       const p = view.pos, S = view.spb;
       const loop = view.loop || LOOP;
       const beatPhase = p - Math.floor(p);
@@ -370,8 +441,8 @@ void main() {
             const dim = part.dim ? 0.3 : 1;   // other parts fade back while one is being edited
             let intensity = (0.45 + 0.4 * n.v) * gain * dim;
             if (playing) intensity += (0.35 + 1.6 * Math.exp(-since * 7)) * gain * dim;
-            const [c, s] = placeNote(role, n, zHead, len, part.range);
-            instData.set([c[0], c[1], c[2], s[0], s[1], s[2], color[0], color[1], color[2], intensity, ghost, idx * 0.37], ni * INST);
+            const [c, s, rot] = placeNote(role, n, zHead, len, part);
+            inst(ni, c, s, color, intensity, ghost, idx * 0.37, rot);
             ni++;
             const lit = (playing
               ? (0.5 + 1.6 * Math.exp(-since * 6)) * (ghost ? 0.4 : 1)
@@ -380,7 +451,7 @@ void main() {
           });
           // Sparks when a note crosses the gate
           if (crossed && Math.floor((p - n.b) / loop) > Math.floor((view.prevPos - n.b) / loop)) {
-            const [c] = placeNote(role, n, -GATE, 0, part.range);
+            const [c] = placeNote(role, n, -GATE, 0, part);
             spawnSparks(role, c, color, ghost ? n.v * 0.3 : n.v);
           }
         });
@@ -388,24 +459,22 @@ void main() {
 
       // The gate frame pulses on every beat, harder on the first beat of a bar
       const gateI = 0.8 + pulse * 1.4, gc = [1.0, 0.5, 0.2], th = 0.035;
-      [[[0, HH, -GATE], [2 * HW, th, th]], [[0, -HH, -GATE], [2 * HW, th, th]], [[-HW, 0, -GATE], [th, 2 * HH, th]], [[HW, 0, -GATE], [th, 2 * HH, th]]]
-        .forEach(([c, s]) => { instData.set([...c, ...s, ...gc, gateI, 0, 0], ni * INST); ni++; });
-      lights.push({ pos: [0, HH * 0.9, -GATE], col: gc, k: pulse * 0.5 }, { pos: [0, -HH * 0.9, -GATE], col: gc, k: pulse * 0.5 });
+      ni = frameAt(ni, -GATE, gc, gateI, th);
+      lights.push({ pos: [0, 0.9, -GATE], col: gc, k: pulse * 0.5 }, { pos: [0, -0.9, -GATE], col: gc, k: pulse * 0.5 });
       // Run mode: faint lanes down the edited surface, and the runner at the gate
       if (view.edit && view.runAmt > 0.05) {
         const E = view.edit, color = ROLE_COLOR[E.role];
         const guideLen = FAR - GATE + 1;
+        const pitched = E.role !== 'drums' && !E.pieces;
         E.lanes.forEach((lane, i) => {
-          const n = E.role === 'drums' ? { p: lane, v: 0.5 } : { p: lane, v: 0.5 };
-          const [c] = placeNote(E.role, n, -GATE + 1, guideLen, E.range);
-          const thin = E.role === 'drums' ? [0.02, 0.012, guideLen] : E.role === 'pad' ? [0.012, 0.012, guideLen] : [0.012, 0.012, guideLen];
-          const k = (i === E.cursor ? 0.9 : E.role === 'drums' ? 0.4 : 0.22) * view.runAmt;
-          if (ni < MAX_INST) { instData.set([c[0], c[1], c[2], ...thin, ...color, k, 0, 0], ni * INST); ni++; }
+          const [c, , rot] = placeNote(E.role, { p: lane, v: 0.5 }, -GATE + 1, guideLen, E);
+          const k = (i === E.cursor ? 0.9 : pitched ? 0.22 : 0.4) * view.runAmt;
+          if (ni < MAX_INST) { inst(ni, c, [pitched ? 0.012 : 0.02, 0.012, guideLen], color, k, 0, 0, rot); ni++; }
         });
         const lane = E.lanes[E.cursor];
-        const [c, sz] = placeNote(E.role, { p: lane, v: 1 }, -GATE + 0.2, 0.4, E.range);
+        const [c, sz, rot] = placeNote(E.role, { p: lane, v: 1 }, -GATE + 0.2, 0.4, E);
         const glow = (1.6 + Math.sin(view.time * 8) * 0.4) * view.runAmt;
-        if (ni < MAX_INST) { instData.set([c[0], c[1], c[2], sz[0] * 1.25, sz[1] * 1.6, 0.4, 1, 0.95, 0.85, glow, 0, 0], ni * INST); ni++; }
+        if (ni < MAX_INST) { inst(ni, c, [sz[0] * 1.25, sz[1] * 1.6, 0.4], [1, 0.95, 0.85], glow, 0, 0, rot); ni++; }
         lights.push({ pos: [c[0], c[1], -GATE], col: color, k: 1.2 * view.runAmt });
       }
       // Section starts pass by as bright frames in the section's color
@@ -413,9 +482,7 @@ void main() {
         const rel = (((m.beat - p) % loop) + loop) % loop;
         const z = -(GATE + rel * DEPTH);
         if (z < -FAR || rel <= 0.05) return;
-        const mc = m.color, mi = 0.9, t2 = 0.05;
-        [[[0, HH, z], [2 * HW, t2, t2]], [[0, -HH, z], [2 * HW, t2, t2]], [[-HW, 0, z], [t2, 2 * HH, t2]], [[HW, 0, z], [t2, 2 * HH, t2]]]
-          .forEach(([c, s2]) => { if (ni < MAX_INST) { instData.set([...c, ...s2, ...mc, mi, 0, 0], ni * INST); ni++; } });
+        ni = frameAt(ni, z, m.color, 0.9, 0.05);
       });
       lights.sort((a, b) => b.k - a.k);
       const LP = new Float32Array(MAXL * 4), LC = new Float32Array(MAXL * 4);
@@ -433,8 +500,9 @@ void main() {
         if (s.life > s.max) { sparks.splice(i, 1); continue; }
         s.v[1] -= 2.4 * view.dt;
         s.p[0] += s.v[0] * view.dt; s.p[1] += s.v[1] * view.dt; s.p[2] += s.v[2] * view.dt;
-        if (Math.abs(s.p[0]) > HW) { s.p[0] = Math.sign(s.p[0]) * HW; s.v[0] *= -0.4; }
-        if (Math.abs(s.p[1]) > HH) { s.p[1] = Math.sign(s.p[1]) * HH; s.v[1] *= -0.4; }
+        // keep sparks inside the tunnel (its corners lie on an ellipse)
+        const e = Math.hypot(s.p[0] / RX, s.p[1] / RY);
+        if (e > 0.72) { s.p[0] *= 0.72 / e; s.p[1] *= 0.72 / e; s.v[0] *= -0.4; s.v[1] *= -0.4; }
       }
       sparks.forEach((s, i) => sparkData.set([s.p[0], s.p[1], s.p[2], s.c[0], s.c[1], s.c[2], 1 - s.life / s.max], i * 7));
 
@@ -560,21 +628,24 @@ void main() {
       };
       const a = un(nx, ny, -1), b = un(nx, ny, 1);
       const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-      const plane = { drums: [1, -HH + 0.06], pad: [1, HH - 0.06], bass: [0, HW - 0.06], lead: [0, -HW + 0.06] }[role];
-      const axis = plane[0];
-      if (Math.abs(d[axis]) < 1e-6) return null;
-      const t = (plane[1] - a[axis]) / d[axis];
+      const F = faces[sides.indexOf(role)];
+      if (!F) return null;
+      // The side's plane, lifted to where notes sit: (P - Q) . n = 0
+      const Q = [F.c[0] + F.n[0] * 0.06, F.c[1] + F.n[1] * 0.06];
+      const denom = d[0] * F.n[0] + d[1] * F.n[1];
+      if (Math.abs(denom) < 1e-6) return null;
+      const t = ((Q[0] - a[0]) * F.n[0] + (Q[1] - a[1]) * F.n[1]) / denom;
       if (t < 0) return null;
       const P = [a[0] + d[0] * t, a[1] + d[1] * t, a[2] + d[2] * t];
       if (P[2] > -0.3) return null;
       return { x: P[0], y: P[1], z: P[2], rel: (-P[2] - GATE) / DEPTH };
     }
     // The pitch (or drum) a surface coordinate falls on, matching placeNote
-    function laneAt(role, point, lanes, range) {
+    function laneAt(role, point, lanes, spec) {
       let best = 0, bd = Infinity;
       lanes.forEach((lane, i) => {
-        const [c] = placeNote(role, { p: lane, v: 1 }, -GATE, 0, range);
-        const dist = role === 'drums' || role === 'pad' ? Math.abs(c[0] - point.x) : Math.abs(c[1] - point.y);
+        const [c] = placeNote(role, { p: lane, v: 1 }, -GATE, 0, spec);
+        const dist = Math.hypot(c[0] - point.x, c[1] - point.y);
         if (dist < bd) { bd = dist; best = i; }
       });
       return best;
