@@ -1,9 +1,29 @@
 # Notary of the Damned: UI Revamp Plan
 
-Date: 2026-11-10. Status: proposal, no game files changed.
+Date: 2026-11-10. Status: implemented (phases 1 to 5); see Decisions and Implementation status below.
 Mockup of the proposed main desk: `docs/superpowers/plans/2026-11-10-notary-of-the-damned-ui-mockup.html` (static, opens from disk).
 
-## Summary
+## Decisions
+
+The user delegated every open question; the goal is "a fun game that's easy to understand". Answers to the open questions at the bottom of this plan:
+
+1. **DOM, not canvas.** The desk is rebuilt in DOM/CSS so text is real and readable. Two canvases remain: one behind the desk for candle, motes and the pile, one in front for ink spatter.
+2. **Soft per-soul timer: yes, off by default.** An option on the start screen (30 seconds per soul; each lapse costs half a reprimand).
+3. **One web font: yes.** Special Elite via a Google Fonts `<link>`, with a Courier New fallback.
+4. **Rules reworded for clarity; duplicate R6 deleted.** Rule logic is unchanged (R1 still means death date >= issue date; it is now worded "DIED may not be earlier than ISSUED"). Dark humor stays.
+5. **Ink smears are wipeable:** rub them with the pointer, or press B to wipe one. They are translucent and capped at one per field.
+6. **A wrong call always shows which rule failed and why.** A hard mode that hides this is a possible future addition; not built.
+7. **Warm walnut, oxblood and paper palette: yes.**
+
+Other decisions made while building: phases 1 to 3 were implemented as one coherent rebuild (the Phase 1 canvas fixes would have been thrown away by the DOM move), keeping each phase's scope; the game was split into `data.js`, `audio.js` and `game.js`; the verdict beat is about 1.1s for a right call and about 3.6s for a wrong one (any key or click skips); a memo is shown before every case that adds a rule; on touch, tapping a rule pins its field highlight.
+
+- Order 1 follows real life (changed after the user asked): ISSUED may not be earlier than DIED, because a death certificate is issued after the death. Every case's two dates were swapped, so all 16 verdicts are unchanged (A D D D A D D A D A D D D D A D). The certificate lists DIED above ISSUED.
+
+## Implementation status
+
+Built in `games/notary-of-the-damned/` as `index.html`, `style.css`, `data.js`, `audio.js`, `game.js` (plain scripts). Verified by playing full nights in a browser at 1280x800, 1024x640 and 844x390. Not verified: real touch hardware, a screen reader, opening from disk by double-click, and the sounds by ear.
+
+
 
 Notary of the Damned already has a strong idea (a bureaucrat's desk, a rulebook that turns cruel, a self-judgment ending) and a decent mood, but the screen undersells it. The whole game is drawn in 10-13px Courier on a 960x640 canvas, so it is hard to read on a laptop and unreadable on a phone. The core loop (read rules, compare, decide, stamp) has no help for the comparing step, the stamp is a generic drag handle that leaves no mark, and the most interesting events (a new rule appearing, the player being wrong) are not announced or explained. This plan keeps the canvas-free-of-dependencies approach and the file layout, but moves the UI to a bigger, warmer "paper desk" look; adds a rule-to-field link so comparing is fast; makes the stamp a physical object with an imprint and a reason for every verdict; and announces rule changes as a memo before the soul arrives. It is split into five phases that each ship alone, with the first two being mostly layout and copy fixes.
 
