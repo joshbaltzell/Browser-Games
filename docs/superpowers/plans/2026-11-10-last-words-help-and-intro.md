@@ -254,3 +254,19 @@ Small changes, ordered by value.
 2. **Content note.** The twist turns the Note into a suicide note (game.js:1427, "To whoever reads this", and the boss) and the win line is "- and then I chose to stay." The plan keeps this out of the intro and Help to protect the surprise. Do you want a short content note on the title or in Help (for example "contains themes of suicide and self-harm")? This is a product and care decision, and it affects the Help text.
 3. **Existing players.** Should the first-page intro show once to everyone (new key, recommended), or only to people who have never played (reuse `lastWords.seen`)?
 4. **Heal-only hands.** Is the "no damage verb" hand (see What a new player hits #7) a bug to fix as part of this work (my recommendation, one line in `dealHand`), or intended luck?
+
+## Nouns rework (2026-11-10)
+
+GUARD, BEAST, DOOR, WOUND and NIGHT all did the same thing (hit whoever you are fighting), so DOOR meant nothing and "BURN the BEAST" hit THE GUARD. They are replaced by one foe card plus four body parts.
+
+- **Foe card.** One `POOL` entry (`foe: true`, weight 5) whose `word` is the current foe's `short` name (GUARD, BEAST, WARDEN, NIGHT; MEANING for the final boss). It is a getter, so cards already in hand rename themselves when the foe changes. `defOf` maps any foe name to this card. In the intro the dummy is THE GUARD, so the scripted hands are unchanged.
+- **Body parts** (all `target: "enemy"`, only act with a damage verb; a heal just heals the foe). `PARTS` in game.js holds the copy and numbers, and the help tabs, tooltips and card faces read from it.
+  - HEART (weight 1): +3 to the amount, before adjectives.
+  - HANDS (weight 2): the foe's next reply is halved, rounded up.
+  - EYES (weight 2): the foe's next reply misses entirely; this cast's per-hit amount is 2 lower (min 0).
+  - MOUTH (weight 1): silences thorns, armor or ward for this cast. On the plain Guard the log says there is nothing to silence.
+- **Repeats** repeat the amount; the status applies once. A blinded foe stays blinded if HANDS lands after EYES.
+- **Status timing.** The foe replies right after your cast, so the status is spent on that reply. The enemy panel shows a HALVED / BLINDED pill after the reply, until the next cast.
+- **Content care.** Only HEART, HANDS, EYES and MOUTH. No wrists, throat, neck or veins. No twist copy was added.
+- **Meaning-boss.** `meaningFromNote` now skips articles, repeats and the foe's own name, and counts a body part double, so "BREAK the HEART" can name the ending THE HEART. The boss's foe card reads MEANING so it never clashes with a body part.
+- **dealHand.** Guarantees kept (a damage verb and a foe-targeting noun, body parts count); the noun guarantee now has a fallback like the verb one. 20,000 dealt hands: 0 failures. Per hand: foe card 1.35, EYES 0.54, HANDS 0.54, HEART 0.27, MOUTH 0.27.

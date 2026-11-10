@@ -254,11 +254,15 @@
     { word: "SAVAGE",  pos: "ADJ", add: 3, weight: 1 },
     { word: "QUIET",   pos: "ADJ", add: 0, weight: 1 },   // flavor; no magnitude
     // Nouns (NOUN). target decides who the effect lands on when this is the OBJECT.
-    { word: "GUARD",   pos: "NOUN", target: "enemy", weight: 2 },
-    { word: "BEAST",   pos: "NOUN", target: "enemy", weight: 2 },
-    { word: "DOOR",    pos: "NOUN", target: "enemy", weight: 1 },
-    { word: "WOUND",   pos: "NOUN", target: "enemy", weight: 2 },
-    { word: "NIGHT",   pos: "NOUN", target: "enemy", weight: 1 },
+    // The foe card: one card whose word is the current foe's short name (GUARD,
+    // BEAST, WARDEN, NIGHT). `word` is a getter, so cards already in hand (and on
+    // the platen) rename themselves when the foe changes. The plain, common hit.
+    { get word() { return foeName(); }, pos: "NOUN", target: "enemy", foe: true, weight: 5 },
+    // Body parts: they aim at a spot on the foe (see PARTS). Same target, a tradeoff each.
+    { word: "HEART",   pos: "NOUN", target: "enemy", part: "heart", weight: 1 },
+    { word: "HANDS",   pos: "NOUN", target: "enemy", part: "hands", weight: 2 },
+    { word: "EYES",    pos: "NOUN", target: "enemy", part: "eyes",  weight: 2 },
+    { word: "MOUTH",   pos: "NOUN", target: "enemy", part: "mouth", weight: 1 },
     { word: "YOU",     pos: "NOUN", target: "player", weight: 1 },
     { word: "I",       pos: "NOUN", target: "player", weight: 1 },
     { word: "ME",      pos: "NOUN", target: "player", weight: 1 },
@@ -280,9 +284,30 @@
     { word: "3",       pos: "NUM", rep: 3, weight: 1 },
   ];
 
+  // Body parts. Each aims the effect at a spot on the foe and adds one rule, but
+  // only when the verb does damage: healing a body part just heals the foe.
+  const HEART_BONUS = 3;   // HEART: weak point, +3 to the amount (before adjectives)
+  const EYES_COST = 2;     // EYES: this cast's amount is 2 lower (min 0)...
+  //                          ...but the foe's next reply misses you entirely.
+  //                       HANDS: the foe's next reply is halved (rounded up).
+  //                       MOUTH: silences the foe's wrinkle for this cast.
+  const PARTS = {
+    heart: { value: "weak +" + HEART_BONUS, tail: "weak point +" + HEART_BONUS, row: "A weak point: +" + HEART_BONUS + " to the number, before adjectives.",
+             tip: "The foe's weak point. Damage here gets +" + HEART_BONUS + " before adjectives." },
+    hands: { value: "reply half", row: "Halves the foe's next reply to you.", tail: "its next reply is halved", land: "Its hands are hurt: next reply halved",
+             tip: "The foe's hands. Damage here also halves its next reply to you." },
+    eyes:  { value: "blind -" + EYES_COST, row: "Its next reply misses you, but this hit is " + EYES_COST + " weaker.", tail: "its next reply misses, this hit -" + EYES_COST, land: "Its eyes are blinded: next reply misses",
+             tip: "The foe's eyes. Damage here is " + EYES_COST + " weaker, but its next reply misses you completely." },
+    mouth: { value: "silence",    row: "Silences its trick (thorns, armor or ward) for this cast.", tail: "silences its trick for this cast", land: "Its mouth is shut: trick silenced",
+             tip: "The foe's mouth. Damage here silences its trick (thorns, armor or ward) for this cast." },
+  };
+
   let _uid = 0;
   function makeCard(def) {
-    return Object.assign({ id: ++_uid }, def);
+    const c = Object.assign({ id: ++_uid }, def);
+    // The foe card keeps following the current foe's name.
+    if (def.foe) Object.defineProperty(c, "word", { get: foeName, enumerable: true, configurable: true });
+    return c;
   }
 
   // ---- Grammar engine --------------------------------------------------
@@ -456,6 +481,11 @@
 
     const eff = p.verb.effect;            // fire | phys | heal
     let amount = p.verb.base || 0;
+    const part = p.obj.part || null;
+    const dmgVerb = eff !== "heal";
+
+    // HEART is a weak point: a base bonus, so adjectives act on it too.
+    if (part === "heart" && dmgVerb) amount += HEART_BONUS;
 
     // Object adjectives modify the magnitude.
     for (const a of p.objAdjs) {
@@ -463,6 +493,8 @@
       if (a.add != null) amount += a.add;
     }
     amount = Math.max(0, amount);
+    // EYES: a blinded foe misses you, but a blind swing is weaker.
+    if (part === "eyes" && dmgVerb) amount = Math.max(0, amount - EYES_COST);
 
     const reps = p.mod ? (p.mod.rep || 1) : 1;
 
@@ -477,10 +509,15 @@
       total,
       target,
       heal: eff === "heal",
+      part,
+      // Status effects only ride on damage, and apply once however many repeats.
+      status: dmgVerb && part === "hands" ? "halved" : dmgVerb && part === "eyes" ? "blind" : null,
+      silence: dmgVerb && part === "mouth",
+      tail: dmgVerb && part ? PARTS[part].tail : "",
       summary:
         (eff === "heal" ? "heal " : eff === "fire" ? "fire " : "hit ") +
         amount + (reps > 1 ? " x" + reps : "") +
-        " -> " + (target === "player" ? "YOU" : (enemy ? enemy.name : "THE GUARD")) +
+        " -> " + (target === "player" ? "YOU" : (enemy ? enemy.name : "THE GUARD") + (part && !(enemy && enemy.kind === "meaning") ? "'s " + p.obj.word.toLowerCase() : "")) +
         " = " + total,
     };
   }
@@ -594,12 +631,16 @@
   // data) and applied in castChain.
   const THORNS_PER_REPEAT = 2;  // thorns: self-damage for each repeat past the first
   const WARD_BLUNT = 1;         // ward: points lost from every blow
+  // `short` is what the foe card says.
   const ENEMY_ROSTER = [
-    { name: "THE GUARD",   hp: 16, max: 16, reply: 2, kind: "plain" },
-    { name: "THE BEAST",   hp: 22, max: 22, reply: 3, kind: "thorns" },
-    { name: "THE WARDEN",  hp: 26, max: 26, reply: 3, kind: "reflect" },
-    { name: "THE NIGHT",   hp: 30, max: 30, reply: 4, kind: "ward" },
+    { name: "THE GUARD",   short: "GUARD",  hp: 16, max: 16, reply: 2, kind: "plain" },
+    { name: "THE BEAST",   short: "BEAST",  hp: 22, max: 22, reply: 3, kind: "thorns" },
+    { name: "THE WARDEN",  short: "WARDEN", hp: 26, max: 26, reply: 3, kind: "reflect" },
+    { name: "THE NIGHT",   short: "NIGHT",  hp: 30, max: 30, reply: 4, kind: "ward" },
   ];
+  // The word on the foe card: the current foe's short name (the meaning-boss is
+  // just MEANING, so it never clashes with a body part).
+  function foeName() { return enemy && enemy.short ? enemy.short : "GUARD"; }
   // One-line subtitle under the enemy bar, built from the data.
   function enemySub(e) {
     const base = {
@@ -618,11 +659,11 @@
                        : "A slow sentinel. Nothing tricky: learn the ropes here.";
       case "thorns":
         return "Thorns: every repeat after the first lashes back at YOU for " + THORNS_PER_REPEAT +
-               ". 'twice' costs you " + THORNS_PER_REPEAT + ", 'thrice' costs you " + (2 * THORNS_PER_REPEAT) + ".";
+               ". 'twice' costs you " + THORNS_PER_REPEAT + ", 'thrice' costs you " + (2 * THORNS_PER_REPEAT) + ". Hit its MOUTH to silence that.";
       case "reflect":
-        return "Armored: hit sentences land at half (rounded up). Fire (BURN) goes straight through.";
+        return "Armored: hit sentences land at half (rounded up). Fire (BURN) goes straight through. Hit its MOUTH to silence that.";
       case "ward":
-        return "Warded: every cast loses " + WARD_BLUNT + " point, so bigger sentences waste less.";
+        return "Warded: every cast loses " + WARD_BLUNT + " point, so bigger sentences waste less. Hit its MOUTH to silence that.";
       case "meaning":
         return "Clean sentences feed it. Break the words: place cards in any order, then CAST.";
     }
@@ -631,7 +672,7 @@
   let encIndex = 0; // which roster entry we're on
   function newEnemy() {
     const e = ENEMY_ROSTER[Math.min(encIndex, ENEMY_ROSTER.length - 1)];
-    return Object.assign({}, e);
+    return Object.assign({ status: null, badge: null }, e);
   }
   function totalEncounters() { return ENEMY_ROSTER.length + 1; } // +1 = meaning-boss
 
@@ -641,13 +682,16 @@
   // hurt by mis-grammared sentences — clean ones feed it.
   function meaningFromNote() {
     // Tally significant words (skip articles/short connectors) across the note.
+    // Glue, repeats and the foe's own name carry no meaning; a body part counts
+    // double, so "BREAK the HEART" can name the ending (THE HEART).
     const tally = {};
     for (const line of note) {
-      for (const w of line.split(/\s+/)) {
+      for (const w of line.replace(/\u0335/g, "").split(/\s+/)) {
         const k = w.toUpperCase();
         if (k.length < 2) continue;
-        if (k === "THE" || k === "A") continue;
-        tally[k] = (tally[k] || 0) + 1;
+        const d = defOf(w);
+        if (d && (d.pos === "ART" || d.pos === "ADV" || d.pos === "NUM" || d.foe)) continue;
+        tally[k] = (tally[k] || 0) + (d && d.part ? 2 : 1);
       }
     }
     const ranked = Object.keys(tally).sort((a, b) => tally[b] - tally[a]);
@@ -664,6 +708,7 @@
       name: "THE " + m.word,        // the meaning you wrote, as a being
       hp, max: hp, reply: 4,
       kind: "meaning",
+      short: "MEANING",
       derivedWord: m.word,
     };
   }
@@ -727,8 +772,11 @@
   }
 
   // ---- Word lookups + card text (generated from POOL, so numbers can't drift) --
+  const FOE_DEF = POOL.filter((d) => d.foe)[0];
   function defOf(word) {
-    for (const d of POOL) if (d.word === word) return d;
+    for (const d of POOL) if (!d.foe && d.word === word) return d;
+    // Any foe's short name resolves to the one foe card.
+    if (word === "MEANING" || ENEMY_ROSTER.some((e) => e.short === word)) return FOE_DEF;
     return null;
   }
   function chainOf(words) { return words.map((w) => makeCard(defOf(w))); }
@@ -740,7 +788,7 @@
       case "ADJ":  return def.mult != null ? (def.mult === 0.5 ? "half" : "x" + def.mult) : SIGNED(def.add || 0);
       case "ADV":
       case "NUM":  return "x" + def.rep;
-      case "NOUN": return def.target === "player" ? "you" : "foe";
+      case "NOUN": return def.target === "player" ? "you" : def.part ? PARTS[def.part].value : "foe";
       case "ART":  return "glue";
     }
     return "";
@@ -753,9 +801,9 @@
         if (def.effect === "fire") return { head: def.word + " · verb", text: "Fire " + def.base + " damage to the last noun. Fire goes straight through armor." };
         return { head: def.word + " · verb", text: "Hits for " + def.base + " damage to the last noun." };
       case "NOUN":
-        return def.target === "player"
-          ? { head: def.word + " · noun", text: "That's YOU. If this is the last noun in the sentence, the effect lands on you." }
-          : { head: def.word + " · noun", text: "A foe. The LAST noun in the sentence takes the effect." };
+        if (def.target === "player") return { head: def.word + " · noun", text: "That's YOU. If this is the last noun in the sentence, the effect lands on you." };
+        if (def.part) return { head: def.word + " · body part", text: PARTS[def.part].tip + " Only damage does this; a heal just heals the foe." };
+        return { head: def.word + " · noun", text: "The foe in front of you" + (enemy && !enemy.dummy ? " (" + enemy.name + ")" : "") + ". The LAST noun in the sentence takes the effect." };
       case "ADJ":
         return { head: def.word + " · adjective", text: def.mult != null
           ? "Goes before the noun. Halves the number (rounded)."
@@ -770,6 +818,7 @@
   }
 
   function isDamageVerb(c) { return c.pos === "VERB" && c.effect !== "heal"; }
+  function isFoeNoun(c) { return c.pos === "NOUN" && c.target === "enemy"; }
 
   // Hand cards each own a fixed slot, so nothing slides under the cursor when
   // a card is placed or taken back.
@@ -800,14 +849,17 @@
         hand.push(makeCard(bag.pop()));
       }
       guard++;
-      // Ensure the hand is "playable": a NOUN, an enemy-target NOUN, and at least
-      // one DAMAGE verb (a heal-only hand has no way to attack).
+      // Ensure the hand is "playable": at least one DAMAGE verb (a heal-only hand
+      // has no way to attack) and a foe-targeting NOUN (the foe card or a body part).
     } while (guard < 40 && !(
-      hand.some(c => c.pos === "NOUN") &&
       hand.some(isDamageVerb) &&
-      hand.some(c => c.pos === "NOUN" && c.target === "enemy")
+      hand.some(isFoeNoun)
     ));
-    // Belt and braces: never ship a hand without a damage verb.
+    // Belt and braces: never ship a hand without a foe noun or a damage verb.
+    if (!hand.some(isFoeNoun)) {
+      const at = hand.findIndex((c) => c.pos !== "VERB" && c.pos !== "NOUN");
+      hand[at >= 0 ? at : 0] = makeCard(FOE_DEF);
+    }
     if (!hand.some(isDamageVerb)) {
       const dmg = POOL.filter((d) => d.pos === "VERB" && d.effect !== "heal");
       const at = hand.findIndex((c) => c.pos === "ART" || c.pos === "ADV" || c.pos === "NUM");
@@ -882,7 +934,7 @@
   function startPractice() {
     practice = { beat: 0, coachFull: "", coachShown: 0, result: "" };
     player = { hp: PLAYER_MAX, max: PLAYER_MAX };
-    enemy = { name: "THE GUARD", hp: PRACTICE_HP, max: PRACTICE_HP, reply: 0, kind: "plain", dummy: true };
+    enemy = { name: "THE GUARD", short: "GUARD", status: null, badge: null, hp: PRACTICE_HP, max: PRACTICE_HP, reply: 0, kind: "plain", dummy: true };
     encIndex = 0; chain = []; turnNo = 1;
     lastLog = ""; lastDelta = ""; noticeUntil = 0; subjectHints = 0;
     note = []; noteRevealed = false; revealAnim = 0; bossPending = false;
@@ -930,7 +982,7 @@
         return "Careful: sentences are literal. Build: the GUARD STRIKES YOU.";
       case 6:
         return (practice.result ? practice.result + " " : "") +
-               "A real page deals 12 random words. Use any you like; the rest are discarded when you cast. Finish the guard.";
+               "A real page deals 12 random words, including body parts like HEART that aim at a spot on the foe. Hover one to see its trick. Finish the guard.";
     }
     return "";
   }
@@ -1065,6 +1117,8 @@
 
     let dmgEnemy = 0, dmgPlayer = 0, healEnemy = 0, healPlayer = 0;
     let thornsBack = 0; // self-damage from THE BEAST's thorns wrinkle
+    let statusNote = "";  // what a body part did to the foe, for the log
+    enemy.badge = null;   // last cast's status badge is spent
     const againstMeaning = enemy.kind === "meaning";
     const ENEMY_FX_X = W - 160, ENEMY_FX_Y = 180;
 
@@ -1108,23 +1162,32 @@
         // Clean damage to an ordinary enemy — apply the encounter wrinkle (CONTENT-03).
         let dmg = fx.total;
         let wrinkleNote = "";
-        if (enemy.kind === "reflect" && fx.effect === "phys") {
+        // MOUTH silences the wrinkle for this cast (thorns, armor, ward).
+        const silenced = fx.silence && enemy.kind !== "plain";
+        if (silenced) wrinkleNote = " (its trick is silenced)";
+        if (!silenced && enemy.kind === "reflect" && fx.effect === "phys") {
           // Armored: clean physical blows land at half. Fire bypasses.
           dmg = Math.ceil(dmg / 2);
           wrinkleNote = " (armor halves STRIKES)";
         }
-        if (enemy.kind === "ward") {
+        if (!silenced && enemy.kind === "ward") {
           // Warded: blunts the first point of every blow.
           dmg = Math.max(0, dmg - WARD_BLUNT);
           wrinkleNote = " (ward blunts " + WARD_BLUNT + ")";
         }
-        if (enemy.kind === "thorns" && fx.reps > 1) {
+        if (!silenced && enemy.kind === "thorns" && fx.reps > 1) {
           // Thorns: every repeat past the first lashes back at YOU.
           thornsBack = (fx.reps - 1) * THORNS_PER_REPEAT;
           wrinkleNote = " (thorns! repeats lash YOU -" + thornsBack + ")";
         }
         dmgEnemy = dmg; enemy.hp -= dmg; runDamage += dmg;
-        lastLog = '"' + sentence + '"  ->  ' + fx.summary + wrinkleNote;
+        // HANDS / EYES: a status for the foe's very next reply (it survived to give it).
+        if (fx.status && enemy.hp > 0) {
+          // A blinded foe stays blinded: HANDS never downgrades it.
+          if (!(enemy.status === "blind" && fx.status === "halved")) enemy.status = fx.status;
+          statusNote = "  " + PARTS[fx.part].land;
+        } else if (fx.silence && enemy.kind === "plain") statusNote = "  (nothing to silence)";
+        lastLog = '"' + sentence + '"  ->  ' + fx.summary + wrinkleNote + statusNote;
         flashScreen(COLORS.bleed, 0.22); kick(6);
       }
       if (fx.target === "player") spawnInk(120, H - 120, COLORS.bleed, 14);
@@ -1199,12 +1262,19 @@
 
     // CORE-08: enemy reply, then end the turn (carriage return ding) + redraw.
     enemy.hp = Math.max(0, enemy.hp);
-    player.hp -= enemy.reply;
-    sfx.hurt();
-    spawnInk(120, H - 120, COLORS.bleed, 10);
-    spawnFloater(150, H - 150, "-" + enemy.reply, COLORS.bleed);
-    kick(4);
-    lastDelta += (lastDelta ? "   " : "") + enemy.name + " replies: YOU -" + enemy.reply;
+    // A status from HANDS / EYES is spent on this reply.
+    let reply = enemy.reply, replyNote = "";
+    if (enemy.status === "blind") { reply = 0; replyNote = " (blinded: it misses)"; enemy.badge = "blinded"; }
+    else if (enemy.status === "halved") { reply = Math.ceil(reply / 2); replyNote = " (hands hurt: halved)"; enemy.badge = "halved"; }
+    enemy.status = null;
+    if (reply > 0) {
+      player.hp -= reply;
+      sfx.hurt();
+      spawnInk(120, H - 120, COLORS.bleed, 10);
+      spawnFloater(150, H - 150, "-" + reply, COLORS.bleed);
+      kick(4);
+    }
+    lastDelta += (lastDelta ? "   " : "") + enemy.name + " replies: YOU -" + reply + replyNote;
 
     sfx.ding();
     pageShift = 26;   // STYLE-02: the page advances a line on carriage return
@@ -1302,12 +1372,16 @@
     if (!fx) return "";
     const p = parseChain(ch);
     const bits = [(fx.heal ? "heal " : fx.effect === "fire" ? "fire " : "hit ") + p.verb.base];
+    if (fx.part === "heart" && !fx.heal) bits.push("HEART " + SIGNED(HEART_BONUS));
     p.objAdjs.forEach((a) => {
       if (a.mult != null) bits.push(a.word + " halves it");
       else if (a.add) bits.push(a.word + " " + SIGNED(a.add));
     });
+    if (fx.part === "eyes" && !fx.heal) bits.push("EYES " + SIGNED(-EYES_COST));
     if (fx.reps > 1) bits.push(p.mod.word + " x" + fx.reps);
-    return bits.join(" · ") + " = " + fx.total + (fx.target === "player" ? " on YOU" : " on a foe");
+    const rule = fx.part && !fx.heal && fx.part !== "heart" ? PARTS[fx.part].tail : "";
+    return bits.join(" · ") + " = " + fx.total + (fx.target === "player" ? " on YOU" : " on a foe") +
+      (fx.part === "eyes" ? ", and its next reply misses you" : rule ? ", and " + rule : "");
   }
 
   function helpHow() {
@@ -1315,11 +1389,14 @@
     f.appendChild(el("h3", "", "Write it, and it happens."));
     f.appendChild(para("Each page deals you 12 random word cards. Click them to chain a sentence on the typewriter, then press ENTER or CAST. The sentence happens exactly as written. Words you don't use are discarded, and the next page deals 12 fresh ones."));
     f.appendChild(el("h3", "", "A sentence needs a verb and a noun to land on."));
-    f.appendChild(para("The shortest is a verb and a noun: ", sentenceEl(["BURN", "the", "GUARD"]), ". You can also open with a subject: ", sentenceEl(["the", "GUARD", "STRIKES", "the", "BEAST"]), ". The dotted slot shows what fits next. Greyed cards don't fit, and if you try one the game tells you why."));
+    const F = foeName();
+    f.appendChild(para("The shortest is a verb and a noun: ", sentenceEl(["BURN", "the", F]), ". You can also open with a subject: ", sentenceEl(["the", "HANDS", "STRIKE", "the", F]), ". The dotted slot shows what fits next. Greyed cards don't fit, and if you try one the game tells you why."));
     f.appendChild(el("h3", "", "The LAST noun takes the effect."));
-    f.appendChild(para("The first noun is just for show. ", sentenceEl(["the", "GUARD", "STRIKES", "YOU"]), " hits YOU. ", sentenceEl(["BURN", "the", "GUARD"]), " burns the guard. Read the last word before you cast."));
+    f.appendChild(para("The first noun is just for show. ", sentenceEl(["the", F, "STRIKES", "YOU"]), " hits YOU. ", sentenceEl(["BURN", "the", F]), " burns the foe. The foe card always carries the name of the foe in front of you. Read the last word before you cast."));
+    f.appendChild(el("h3", "", "Aim at a body part."));
+    f.appendChild(para("HEART, HANDS, EYES and MOUTH are spots on the foe. Each has a tradeoff, e.g. ", sentenceEl(["STRIKE", "the", "HANDS"]), ": " + explainChain(["STRIKE", "the", "HANDS"]) + ". The Words tab lists them all."));
     f.appendChild(el("h3", "", "Stack words to change the number."));
-    f.appendChild(para("Adjectives go before the noun and add to the number (or shrink it). A number or adverb at the very end repeats the whole effect. ", sentenceEl(["BURN", "the", "GUARD", "twice"]), ": " + explainChain(["BURN", "the", "GUARD", "twice"]) + "."));
+    f.appendChild(para("Adjectives go before the noun and add to the number (or shrink it). A number or adverb at the very end repeats the whole effect. ", sentenceEl(["BURN", "the", F, "twice"]), ": " + explainChain(["BURN", "the", F, "twice"]) + "."));
     f.appendChild(el("h3", "", "Then the foe answers."));
     f.appendChild(para("After you cast, the foe hits you back for its reply, and you get 12 fresh words. Empty the foe's bar to win the page; empty yours and you lose. Four foes, then one more. You recover a little between fights."));
     f.appendChild(el("h3", "", "Controls"));
@@ -1331,7 +1408,7 @@
     const f = document.createDocumentFragment();
     const groups = [
       { title: "Verbs", blurb: "Start the effect. They set the number and the kind.", pos: ["VERB"] },
-      { title: "Nouns", blurb: "The LAST noun is who it lands on.", pos: ["NOUN"] },
+      { title: "Nouns", blurb: "The LAST noun is who it lands on. The foe card shows the name of the foe in front of you.", pos: ["NOUN"] },
       { title: "Adjectives", blurb: "Go before a noun and change the number.", pos: ["ADJ"] },
       { title: "Repeats", blurb: "Adverbs and numbers go at the very end and repeat the effect.", pos: ["ADV", "NUM"] },
       { title: "Articles", blurb: "Glue. They open a noun phrase and do nothing else.", pos: ["ART"] },
@@ -1341,9 +1418,9 @@
       f.appendChild(el("p", "blurb", g.blurb));
       const rows = [], byVal = {};
       POOL.forEach((d) => {
-        if (g.pos.indexOf(d.pos) < 0) return;
+        if (g.pos.indexOf(d.pos) < 0 || d.part) return;   // body parts get their own lines below
         let val = cardValueText(d);
-        if (d.pos === "NOUN") val = d.target === "player" ? "lands on YOU" : "lands on a foe";
+        if (d.pos === "NOUN") val = d.target === "player" ? "lands on YOU" : "the foe, a plain hit";
         if (!byVal[val]) { byVal[val] = { val, words: [] }; rows.push(byVal[val]); }
         byVal[val].words.push(d.word);
       });
@@ -1357,32 +1434,54 @@
         list.appendChild(row);
       });
       f.appendChild(list);
+      if (g.pos[0] === "NOUN") {
+        // Body parts: one line each, straight from PARTS so the numbers can't drift.
+        POOL.forEach((d) => {
+          if (!d.part) return;
+          const row = el("div", "row");
+          const v = el("span", "val"); v.appendChild(chipFor(d.word));
+          row.appendChild(v);
+          row.appendChild(el("span", "words", PARTS[d.part].row));
+          list.appendChild(row);
+        });
+        f.appendChild(para("Body parts only do their trick with a damage verb. Healing one just heals the foe, and repeats (twice, 3...) repeat the number but apply the trick once."));
+      }
     });
     f.appendChild(el("h3", "", "Key words"));
-    f.appendChild(para("Hit and fire are damage. Fire goes straight through armor. Heal restores HP to the last noun: SAVE ME heals you, SAVE the GUARD heals the guard. Repeat means the whole effect happens that many times."));
+    f.appendChild(para("Hit and fire are damage. Fire goes straight through armor. Heal restores HP to the last noun: SAVE ME heals you, SAVE the foe heals the foe. Repeat means the whole effect happens that many times."));
     return f;
   }
 
-  const HELP_EXAMPLES = [
-    { words: ["BURN", "the", "GUARD"] },
-    { words: ["BURN", "the", "GUARD", "twice"] },
-    { words: ["STRIKES", "the", "CRUEL", "BEAST"] },
-    { words: ["BREAK", "the", "WEAK", "GUARD"], note: "WEAK halves the number, rounded." },
-    { words: ["ENDS", "the", "SAVAGE", "GUARD", "thrice"] },
-    { words: ["SAVE", "ME", "twice"], note: "Healing yourself is fine. Aim a heal at a foe and you heal the foe." },
-    { words: ["the", "GUARD", "STRIKES", "YOU"], note: "The LAST noun takes it. This one hits YOU, not the guard." },
-    { words: ["a", "BEAST", "STRIKE", "the", "GUARD"], note: "The first noun is just for show. The guard takes the hit." },
-  ];
-  const HELP_NOT_LEGAL = [
-    ["the", "the"],
-    ["BURN", "CRUEL", "SAVAGE"],
-    ["BURN", "GUARD", "BURN"],
-    ["twice"],
-  ];
+  // Built on demand: the foe card's word is whichever foe you are facing.
+  function helpExampleList() {
+    const F = foeName();
+    return [
+      { words: ["BURN", "the", F] },
+      { words: ["BURN", "the", F, "twice"] },
+      { words: ["STRIKES", "the", "CRUEL", F] },
+      { words: ["BREAK", "the", "WEAK", F], note: "WEAK halves the number, rounded." },
+      { words: ["ENDS", "the", "SAVAGE", F, "thrice"] },
+      { words: ["BREAK", "the", "HEART"], note: "A weak point: +" + HEART_BONUS + " before adjectives." },
+      { words: ["STRIKE", "the", "HANDS"], note: "Its next reply to you is halved." },
+      { words: ["STRIKE", "the", "EYES"], note: "Its next reply misses you, but this hit is 2 weaker." },
+      { words: ["BURN", "the", "MOUTH"], note: "Silences its trick (thorns, armor or ward) for this cast." },
+      { words: ["SAVE", "ME", "twice"], note: "Healing yourself is fine. Aim a heal at a foe or a body part and you heal the foe." },
+      { words: ["the", F, "STRIKES", "YOU"], note: "The LAST noun takes it. This one hits YOU, not the foe." },
+      { words: ["the", "HANDS", "STRIKE", "the", F], note: "The first noun is just for show. The foe takes the hit." },
+    ];
+  }
+  function helpNotLegal() {
+    return [
+      ["the", "the"],
+      ["BURN", "CRUEL", "SAVAGE"],
+      ["BURN", foeName(), "BURN"],
+      ["twice"],
+    ];
+  }
   function helpExamples() {
     const f = document.createDocumentFragment();
     f.appendChild(el("h3", "", "Sentences that work"));
-    HELP_EXAMPLES.forEach((ex) => {
+    helpExampleList().forEach((ex) => {
       const line = explainChain(ex.words);
       if (!line) return;
       const box = el("div", "ex");
@@ -1392,7 +1491,7 @@
       f.appendChild(box);
     });
     f.appendChild(el("h3", "", "Sentences that don't"));
-    HELP_NOT_LEGAL.forEach((words) => {
+    helpNotLegal().forEach((words) => {
       // Build the prefix with the real grammar, then confirm the last card is refused.
       const ch = [];
       for (let i = 0; i < words.length - 1; i++) ch.push(makeCard(defOf(words[i])));
@@ -2247,6 +2346,18 @@
     ctx.beginPath(); ctx.arc(NOTE_X + NOTE_W - 7, 90, 7, 0, Math.PI * 2); ctx.stroke();
     ctx.font = serif(10, true); ctx.textAlign = "center";
     ctx.fillText("i", NOTE_X + NOTE_W - 7, 94);
+    // Status badge: HANDS / EYES leave the foe "halved" or "blinded" for its next
+    // reply. The reply lands right after the cast, so the badge stays until the next cast.
+    if (enemy.badge) {
+      const bt = enemy.badge.toUpperCase();
+      ctx.font = serif(11, true);
+      const bw = ctx.measureText(bt).width + 14;
+      ctx.fillStyle = COLORS.ribbon;
+      roundRect(NOTE_X + NOTE_W - bw, 46, bw, 16, 8); ctx.fill();
+      ctx.fillStyle = "#f6efdd"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(bt, NOTE_X + NOTE_W - bw / 2, 54.5);
+      ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
+    }
     // Encounter progress dots (CONTENT-02) — how deep into the run you are.
     if (!practice) {
       const dotN = totalEncounters();
@@ -2346,8 +2457,11 @@
         if (fx.target === "player") tail = "   (heals you)";
         else { col = COLORS.ribbon; tail = "   (!! heals the enemy)"; }
       } else if (fx.target === "player") { col = COLORS.ribbon; tail = "   (!! hits YOU)"; }
+      else if (fx.tail) tail = "   (" + fx.tail + ")";
       ctx.fillStyle = col;
-      ctx.fillText("EFFECT:  " + fx.summary + tail, 28, previewY + 26);
+      const effLine = "EFFECT:  " + fx.summary + tail;
+      fitFont(effLine, 670, Math.min(19, fsz(14)), false, 10);
+      ctx.fillText(effLine, 28, previewY + 26);
     } else {
       ctx.fillStyle = COLORS.faded;
       ctx.fillText("EFFECT:  (add a verb and a noun for it to land on)", 28, previewY + 26);
@@ -2398,7 +2512,7 @@
     if (logText) { fitFont(logText, 670, Math.min(17, fsz(13)), false, 10); ctx.fillText(logText, 28, by + 58); }
     if (lastDelta) {
       ctx.fillStyle = COLORS.ribbon;
-      ctx.font = serif(Math.min(16, fsz(13)), false);
+      fitFont(lastDelta, 670, Math.min(16, fsz(13)), false, 10);
       ctx.fillText(lastDelta, 28, by + 80);
     }
 
@@ -2632,6 +2746,10 @@
       startPractice, openHelp, closeHelp, dealHand, practiceCoach, describeCard, whyRefused,
       STATE,
       startRun, castChain, tryPlaceCard, clearChain,
+      POOL, ENEMY_ROSTER, chainOf, computeEffect, parseChain, makeCard, defOf, foeName, meaningFromNote,
+      setChain(words) { chain = chainOf(words); },
+      setEnemy(i) { encIndex = i; enemy = newEnemy(); },
+      setNote(lines) { note = lines; },
       canAttach, isCastable, chainPhase,
       forceReveal() { while (bossPending || !noteRevealed) { /* no-op */ break; } },
       finishReveal() { revealAnim = 1; updateReveal(10); },
