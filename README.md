@@ -58,7 +58,6 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 | --- | --- |
 | **[Tic-Tac-Toe Infinity](games/crazy-tic-tac-toe/)** | Tic-tac-toe on mega grids, infinite voids, nested dimensions, or with gravity, against an AI. |
 | **[Neon Four](games/neon-four/)** | A neon Connect Four. |
-| **[Connect 4 AI](games/neon-connect-four-local/)** | Connect Four against a computer opponent. |
 
 ### Music
 

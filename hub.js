@@ -137,27 +137,6 @@ const GAMES = [
       </svg>`,
   },
   {
-    title: "Connect 4 AI",
-    description:
-      "Classic Connect Four against a computer opponent. Click a column to drop your disc and try to outthink the AI.",
-    path: "games/neon-connect-four-local/index.html",
-    tags: ["Board", "Strategy", "Classic"],
-    accent: "#e53935",
-    art: `
-      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect x="26" y="14" width="68" height="56" rx="5" fill="#1e4fb8" />
-        <g fill="#0d1b3d">
-          <circle cx="37" cy="25" r="4.5" /><circle cx="49" cy="25" r="4.5" /><circle cx="61" cy="25" r="4.5" /><circle cx="73" cy="25" r="4.5" /><circle cx="85" cy="25" r="4.5" />
-          <circle cx="37" cy="37" r="4.5" /><circle cx="49" cy="37" r="4.5" /><circle cx="73" cy="37" r="4.5" /><circle cx="85" cy="37" r="4.5" />
-          <circle cx="37" cy="49" r="4.5" /><circle cx="85" cy="49" r="4.5" />
-        </g>
-        <circle cx="61" cy="37" r="4.5" fill="#e53935" />
-        <circle cx="49" cy="49" r="4.5" fill="#64b5f6" /><circle cx="61" cy="49" r="4.5" fill="#e53935" /><circle cx="73" cy="49" r="4.5" fill="#64b5f6" />
-        <circle cx="37" cy="61" r="4.5" fill="#e53935" /><circle cx="49" cy="61" r="4.5" fill="#64b5f6" /><circle cx="61" cy="61" r="4.5" fill="#e53935" />
-        <circle cx="73" cy="61" r="4.5" fill="#64b5f6" /><circle cx="85" cy="61" r="4.5" fill="#e53935" />
-      </svg>`,
-  },
-  {
     title: "Hush",
     description:
       "Silence is a budget. A single noise meter glows hotter with every footstep and slammed door — and the guards hear the meter, not you. Bank quiet, then blow it all on a thrown stone to lure the guard off your route and slip past.",
