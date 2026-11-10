@@ -31,8 +31,9 @@
       <div class="transport" id="transport" hidden>
         <label class="tempo">Tempo <input type="range" id="tempo" min="60" max="180" step="1"> <span id="tempoVal"></span></label>
         <button type="button" id="jamBtn" hidden title="Perform with your song, hear it in other genres, play along">Jam on it</button>
-        <button type="button" id="pause">Pause</button>
+        <button type="button" id="pause" class="icon">Pause</button>
         <button type="button" id="sound" aria-pressed="true">Sound on</button>
+        <button type="button" id="watchBtn" class="icon" title="Just watch: hide the controls (H)" aria-label="Just watch: hide the controls"></button>
         <button type="button" id="newSong">New song</button>
       </div>
     </header>
@@ -40,6 +41,7 @@
     <aside class="layers" id="layers" aria-label="Layers" hidden></aside>
 
     <section class="tray" id="tray" aria-live="polite"></section>
+    <button type="button" class="show-controls" id="showBtn" hidden>Show controls</button>
   </div>
 
   <footer class="credit">Instrument samples: FluidR3_GM by Frank Wen, Salamander Grand Piano by Alexander Holm and Wurlitzer EP200 by Greg Sullivan, all CC BY 3.0; drums, basses and guitars by Karoryfer Samples and D. Smolken, CC0. Drum grooves: Groove MIDI Dataset by Google, CC BY 4.0</footer>

@@ -85,7 +85,8 @@ window.JT = window.JT || {};
     }
     clipper.curve = clipCurve;   // no oversampling: its filter rings past the ceiling
     // A DJ-style filter the player sweeps live (open by default): low-pass one way, high-pass the other
-    const djLow = ctx.createBiquadFilter(); djLow.type = 'lowpass'; djLow.frequency.value = 22000; djLow.Q.value = 0.9;
+    const TOP = ctx.sampleRate * 0.45;   // the highest a filter can sit at this sample rate
+    const djLow = ctx.createBiquadFilter(); djLow.type = 'lowpass'; djLow.frequency.value = TOP; djLow.Q.value = 0.9;
     const djHigh = ctx.createBiquadFilter(); djHigh.type = 'highpass'; djHigh.frequency.value = 10; djHigh.Q.value = 0.9;
     master.connect(djLow).connect(djHigh).connect(air).connect(glue).connect(limiter).connect(preClip).connect(clipper).connect(ctx.destination);
     // Each genre is trimmed to the same loudness (measured with dev/level-check.html)
@@ -368,7 +369,7 @@ window.JT = window.JT || {};
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass'; lp.Q.value = 0.5;
       const bright = 0.35 + 0.65 * Math.min(1, v127 / 110);
-      lp.frequency.value = Math.min((opts && opts.lowpass) || 20000, 1800 + bright * bright * 16000);
+      lp.frequency.value = Math.min((opts && opts.lowpass) || TOP, 1800 + bright * bright * 16000, TOP);
       src.connect(lp).connect(g);
       const release = (opts && opts.release) || 0.15;
       if (dur) {
@@ -716,7 +717,7 @@ window.JT = window.JT || {};
       // -1 (dark, low-pass) .. 0 (open) .. 1 (thin, high-pass)
       filter(x) {
         const t = ctx.currentTime;
-        const lowHz = x < 0 ? 22000 * Math.pow(180 / 22000, -x) : 22000;
+        const lowHz = x < 0 ? TOP * Math.pow(180 / TOP, -x) : TOP;
         const highHz = x > 0 ? 10 * Math.pow(2500 / 10, x) : 10;
         djLow.frequency.setTargetAtTime(lowHz, t, 0.02);
         djHigh.frequency.setTargetAtTime(highHz, t, 0.02);

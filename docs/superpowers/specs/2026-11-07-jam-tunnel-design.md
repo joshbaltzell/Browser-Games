@@ -230,6 +230,43 @@ share link). Claude decided where each lives:
 - Prompt cards on the start screen ("A breakup song at a truck stop"), each with a genre, pace and
   mood, and an optional 3-minute clock. The prompt becomes the song's title in saved jams.
 
+## The look (added 2026-11-10)
+
+The user asked for design ideas and approved all six of Claude's:
+
+- The tunnel reacts: kicks pulse the walls and thump the camera, snares flash, Stop freezes the
+  flight, Half-time slows the decorative motion, the filter thickens or thins the fog, Key up shifts the
+  hue with a glow sweep. Reduced motion keeps only calm, eased changes.
+- The tunnel gets the screen: "Just watch" (eye button or H) slides every panel away; while a song
+  plays untouched for 7 seconds, the panels fade back until you move.
+- Notes look like their sound: drum pads that flash and spark (kicks bigger, hats smaller), thick
+  throbbing bass slabs, stacked chord bars, melodies drawn as a glowing ribbon with note heads and
+  bends for slides and glides.
+- Genre worlds, procedural in the shader: rusted panels and amp grilles (rock), dark chrome, neon and
+  rain (trap), candy pastels kept dim enough for the notes (pop), brick and vinyl grooves (hip hop),
+  wood planks, string lights and a sunset (country).
+- The full song is a journey: verses narrower and dimmer, choruses wider and brighter, the break a
+  starfield. The width scale applies to the note planes too, so picking and editing stay exact.
+- Calmer panels: parts are colored rows matching their walls, with icon buttons that stay quiet until
+  you reach for them; shorter copy.
+
+## First-impression pass (added 2026-11-10)
+
+The user asked for a UI/UX pass on ease of use, clear messaging and first impressions. Claude's calls:
+- The start screen's tunnel plays a silent demo loop in a genre's world, cycling through the genres;
+  pointing at a genre card (or drawing a prompt) switches to that world.
+- Less text before the first choice; "Surprise me" and "Give me a song idea" are real buttons under
+  the genre cards, and the prompt card opens right below them.
+- A guided flow without dead ends: "Start building" and each newly kept core part open the next
+  part's choices directly, and a toast says where the part lives ("Drums kept: on the floor. Next:
+  bass"). The overview of remaining parts is still there after skipping or cancelling.
+- Nothing empty on screen: the parts list appears with the first part; the mood screen shows the
+  chords once.
+- The sound toggle is a speaker icon; header text has a shadow over bright worlds; kick flashes are
+  softer.
+- Fixed: the chords line kept the previous genre's chords when two genres' progressions had the same
+  shape.
+
 ## Genres
 
 Required: classic hip hop (boom bap), trap, pop. Proposed to make about 20 (Claude's list; the
