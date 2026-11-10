@@ -203,6 +203,33 @@ all five recommendations:
   the reverbs are computed: early reflections from a model of a room's walls and a tail that loses
   its highs faster than its lows. Drums and percussion use a small room; everything else a hall.
 
+## Messing with it (added 2026-11-10)
+
+The user asked for ideas to make it more fun to mess with, then picked six of Claude's seven (not the
+share link). Claude decided where each lives:
+
+- **Jam on it** (a button in the top bar once the loop has two parts, and in the ready and song
+  screens) opens a jam tray. Nothing in it changes the song except recording and keeping a genre.
+  - Perform: hold Drums only, Echo (an echo throw that rings on after release) and Half-time (the
+    drums read their own part at half speed); tap Stop (the band cuts out, the reverb rings, and
+    everything slams back on the next downbeat); toggle Key up (a whole step); drag the filter pad
+    (darker one way, thinner the other; springs back). Keys 1-5, Z/X for the filter.
+  - Tap a wall of the tunnel to mute or bring back that part.
+  - Hear it as: the song in any other genre. Chords and the melody keep their scale degrees and move
+    into that genre's key and scale (a major song turns minor in trap; boom bap gets seventh chords);
+    drums, bass and chords are rewritten in the genre's most typical styles; the tempo keeps its place
+    in the genre's range. Every flip starts from the song as made, so flipping back is exact; any
+    change to a flipped version makes it the new original.
+  - Play along: ten notes of the song's scale around the melody (home row A to ;), the current
+    chord's notes lit. Record a melody: it starts at the top of the next loop, lasts one loop, snaps to
+    the genre's grid and replaces the melody as "Played by you".
+- Each part in the list gets Shake (same style, new notes) and a fewer/more notes control.
+- Big moments in the full song, per section: Key change up (from that section on), Half-time drums,
+  or Stop before it (two beats of silence, then a crash). These go into WAV and MIDI exports; the live
+  versions in the jam tray don't.
+- Prompt cards on the start screen ("A breakup song at a truck stop"), each with a genre, pace and
+  mood, and an optional 3-minute clock. The prompt becomes the song's title in saved jams.
+
 ## Genres
 
 Required: classic hip hop (boom bap), trap, pop. Proposed to make about 20 (Claude's list; the

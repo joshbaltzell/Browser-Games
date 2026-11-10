@@ -84,7 +84,10 @@ window.JT = window.JT || {};
       clipCurve[i] = a < 0.8 ? y : Math.sign(y) * (0.8 + 0.17 * Math.tanh((a - 0.8) / 0.17));
     }
     clipper.curve = clipCurve;   // no oversampling: its filter rings past the ceiling
-    master.connect(air).connect(glue).connect(limiter).connect(preClip).connect(clipper).connect(ctx.destination);
+    // A DJ-style filter the player sweeps live (open by default): low-pass one way, high-pass the other
+    const djLow = ctx.createBiquadFilter(); djLow.type = 'lowpass'; djLow.frequency.value = 22000; djLow.Q.value = 0.9;
+    const djHigh = ctx.createBiquadFilter(); djHigh.type = 'highpass'; djHigh.frequency.value = 10; djHigh.Q.value = 0.9;
+    master.connect(djLow).connect(djHigh).connect(air).connect(glue).connect(limiter).connect(preClip).connect(clipper).connect(ctx.destination);
     // Each genre is trimmed to the same loudness (measured with dev/level-check.html)
     function setTrim(db) { master.gain.value = 0.85 * Math.pow(10, (db || 0) / 20); }
 
@@ -182,7 +185,10 @@ window.JT = window.JT || {};
         const crushGain = ctx.createGain(); crushGain.gain.value = 0.45;
         node.connect(crush).connect(crushGain).connect(outGain);
       }
-      strips[role] = { input, out: outGain, verb: S.verb === 'room' ? room : hall };
+      // Gates the player opens and closes live: one before the strip, one before its reverb send
+      const gate = ctx.createGain(); gate.connect(input);
+      const wetGate = ctx.createGain(); wetGate.connect(S.verb === 'room' ? room : hall);
+      strips[role] = { input, gate, wetGate, out: outGain, verb: wetGate };
     });
 
     // A dark, beat-synced echo (dotted eighth) for the trap piano
@@ -261,9 +267,11 @@ window.JT = window.JT || {};
     // A gain node feeding the master bus and, optionally, the reverb
     // --- MIX: where each note sits in the stereo field, and which bus it feeds ---
     // Chords go through a bus that ducks briefly on every kick (the "pumping" of trap and pop).
+    const bandBus = ctx.createGain();   // every part, dry: a "stop" cuts this and leaves the reverb ringing
+    bandBus.connect(master);
     const duckBus = ctx.createGain();
-    duckBus.connect(master);
-    Object.entries(strips).forEach(([role, S]) => S.out.connect(role === 'pad' || role === 'counter' ? duckBus : master));
+    duckBus.connect(bandBus);
+    Object.entries(strips).forEach(([role, S]) => S.out.connect(role === 'pad' || role === 'counter' ? duckBus : bandBus));
     function duck(t) {
       duckBus.gain.setValueAtTime(1, t);
       duckBus.gain.linearRampToValueAtTime(0.6, t + 0.012);
@@ -275,7 +283,7 @@ window.JT = window.JT || {};
     let openHat = null;   // the last open hi-hat, so a closed one can choke it
     function placement(role, n) {
       const strip = strips[role];
-      const at = (pan) => ({ pan, bus: strip ? strip.input : master, verb: strip ? strip.verb : hall });
+      const at = (pan) => ({ pan, bus: strip ? strip.gate : master, verb: strip ? strip.verb : hall });
       if (role === 'drums') return at(DRUM_PAN[n.p] || 0);
       if (role === 'pad') return at((((n.p % 3) + 3) % 3 - 1) * 0.35);   // fan chord notes left and right
       if (role === 'lead') return at(0.18);
@@ -656,7 +664,9 @@ window.JT = window.JT || {};
           if (abs < fromBeat || abs >= toBeat) continue;
           const jitter = part.voice === 'kit' || part.voice === '808kit' ? 0 : (Math.random() - 0.5) * 0.006;
           const t = Math.max(ctx.currentTime, origin + abs * spb + jitter);
-          play(part.voice, part.lead ? Object.assign({ lead: true }, n) : n, t, spb, part.role);
+          let note = part.lead ? Object.assign({ lead: true }, n) : n;
+          if (part.shift && typeof n.p === 'number') note = Object.assign({}, note, { p: n.p + part.shift, glideTo: n.glideTo && n.glideTo + part.shift });
+          play(part.voice, note, t, spb, part.role);
         }
       }));
     }
@@ -664,6 +674,48 @@ window.JT = window.JT || {};
     // Play one note right now (feedback while editing)
     const playNow = (voice, n, spb, role) => play(voice, n, ctx.currentTime + 0.005, spb, role);
 
-    return { ctx, ready, load, schedule, master, playNow, setTrim };
+    // --- PLAYING THE MIX LIVE ---
+    // An echo throw: while held, the whole mix feeds a dotted-eighth echo that keeps ringing after
+    const throwSend = ctx.createGain(); throwSend.gain.value = 0;
+    const throwDelay = ctx.createDelay(2);
+    const throwBack = ctx.createGain(); throwBack.gain.value = 0.55;
+    const throwTone = ctx.createBiquadFilter(); throwTone.type = 'bandpass'; throwTone.frequency.value = 1400; throwTone.Q.value = 0.6;
+    master.connect(throwSend).connect(throwDelay).connect(throwTone).connect(throwBack).connect(throwDelay);
+    throwTone.connect(air);
+    const ramp = (param, v, t, len) => { param.cancelScheduledValues(t); param.setValueAtTime(param.value, t); param.linearRampToValueAtTime(v, t + len); };
+    const perform = {
+      // Only these parts play (null: everyone). Gates close fast and open fast, like hitting mute buttons.
+      solo(roles) {
+        const t = ctx.currentTime;
+        Object.entries(strips).forEach(([role, S]) => {
+          const v = !roles || roles.includes(role) ? 1 : 0;
+          ramp(S.gate.gain, v, t, 0.012);
+          ramp(S.wetGate.gain, v, t, 0.012);
+        });
+      },
+      // -1 (dark, low-pass) .. 0 (open) .. 1 (thin, high-pass)
+      filter(x) {
+        const t = ctx.currentTime;
+        const lowHz = x < 0 ? 22000 * Math.pow(180 / 22000, -x) : 22000;
+        const highHz = x > 0 ? 10 * Math.pow(2500 / 10, x) : 10;
+        djLow.frequency.setTargetAtTime(lowHz, t, 0.02);
+        djHigh.frequency.setTargetAtTime(highHz, t, 0.02);
+      },
+      echo(on, spb) {
+        const t = ctx.currentTime;
+        throwDelay.delayTime.setValueAtTime(Math.min(1.9, spb * 0.75), t);
+        ramp(throwSend.gain, on ? 0.75 : 0, t, on ? 0.02 : 0.08);
+      },
+      // The band cuts out from t0 and slams back in at t1; the reverb keeps ringing through the gap
+      stop(t0, t1) {
+        bandBus.gain.cancelScheduledValues(ctx.currentTime);
+        bandBus.gain.setValueAtTime(1, t0);
+        bandBus.gain.linearRampToValueAtTime(0, t0 + 0.01);
+        bandBus.gain.setValueAtTime(0, t1 - 0.004);
+        bandBus.gain.linearRampToValueAtTime(1, t1);
+      },
+    };
+
+    return { ctx, ready, load, schedule, master, playNow, setTrim, perform };
   };
 })();

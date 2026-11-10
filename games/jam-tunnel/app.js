@@ -21,6 +21,39 @@
     fx: 'Risers and swells that launch each chorus, or a texture under the song.',
   };
   const NOTES_LABEL = ['Fewer notes', 'As suggested', 'More notes'];
+  const SHARP_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  // Play-along keys: the home row, low to high
+  const PAD_CODES = ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon'];
+  const PAD_KEYS = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';'];
+  // Prompt cards: an idea to make a song about, with a genre, pace and mood to start from
+  const PROMPTS = [
+    ['A breakup song at a truck stop', 'country', 'medium', 'bittersweet'],
+    ['Tailgate, bonfire, everybody\u2019s here', 'country', 'fast', 'bright'],
+    ['Your dog is the only one who gets you', 'country', 'slow', 'bittersweet'],
+    ['Friday night lights in a small town', 'country', 'medium', 'bright'],
+    ['Whiskey, rain and a long drive home', 'country', 'slow', 'somber'],
+    ['A cowboy in outer space', 'country', 'medium', 'bright'],
+    ['Driving all night with the windows down', 'rock', 'fast', 'bright'],
+    ['The bar band\u2019s last show', 'rock', 'medium', 'bittersweet'],
+    ['A swamp, a pickup and a bad decision', 'rock', 'slow', 'somber'],
+    ['Grocery shopping like it\u2019s a heist', 'rock', 'fast', 'bright'],
+    ['Villain entrance music', 'trap', 'medium', 'somber'],
+    ['3 a.m. in an empty parking garage', 'trap', 'slow', 'somber'],
+    ['The final boss has a second phase', 'trap', 'fast', 'somber'],
+    ['Counting money you don\u2019t have yet', 'trap', 'medium', 'bittersweet'],
+    ['A pirate ship with a sound system', 'trap', 'fast', 'bright'],
+    ['The first day of summer', 'pop', 'fast', 'bright'],
+    ['Texting someone you shouldn\u2019t', 'pop', 'medium', 'bittersweet'],
+    ['A training montage', 'pop', 'fast', 'bright'],
+    ['Dancing alone in your kitchen', 'pop', 'medium', 'bright'],
+    ['Leaving your hometown', 'pop', 'slow', 'bittersweet'],
+    ['Theme song for your cat\u2019s reality show', 'pop', 'fast', 'bright'],
+    ['A rainy afternoon in a record store', 'boombap', 'slow', 'bittersweet'],
+    ['Rolling up to the block party', 'boombap', 'medium', 'bright'],
+    ['A detective walking through the city at night', 'boombap', 'slow', 'somber'],
+    ['Your grandma\u2019s old photo albums', 'boombap', 'slow', 'bittersweet'],
+    ['Elevator music for a haunted hotel', 'boombap', 'slow', 'somber'],
+  ].map(([text, genre, pace, mood]) => ({ text, genre, pace, mood }));
   const ENERGY_LABEL = { '-1': 'Calmer', '0': 'Normal', '1': 'Bigger' };
 
   // --- STATE ---
@@ -46,7 +79,13 @@
     selected: null,         // selected section id
     exporting: false,
     edit: null,             // run mode: { role, lanes, cursor, undo }
+    original: null,         // the song as you made it, while you hear it flipped into other genres
+    rec: null,              // recording a melody: { phase: armed | rec, start, notes, open }
+    prompt: null,           // the prompt card on the start screen
+    clock: null,            // racing the clock: { end, done }
   };
+  // Live performance (the jam tray): nothing here changes the song
+  const perf = { holds: new Set(), half: null, keyUp: 0, filter: 0, filterKey: 0 };
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // --- AUDIO AND TRANSPORT ---
@@ -142,7 +181,8 @@
     const parts = [];
     JT.ROLES.forEach(role => {
       const previewing = state.tray === 'suggest' && state.role === role;
-      const notes = previewing ? previewNotes() : song.layers[role] && song.layers[role].notes;
+      let notes = previewing ? previewNotes() : song.layers[role] && song.layers[role].notes;
+      if (role === 'lead' && state.rec && state.rec.phase === 'rec') notes = state.rec.notes;   // your take, as you play it
       if (!notes) return;
       parts.push({ role, voice: voiceOf(role), notes, lead: role === 'lead', ghost: previewing, muted: state.muted[role] && !previewing, range: rangeOf(role), pieces: piecesOf(role) });
     });
@@ -153,7 +193,22 @@
     if (!audioClock() || paused) return;
     const target = (ac.currentTime + 0.15 - audioOrigin) / spb();
     if (target <= scheduledUntil) return;
-    audio.schedule(currentParts().filter(p => !p.muted), scheduledUntil, target, audioOrigin, spb(), loopLength());
+    const parts = currentParts().filter(p => !p.muted)
+      .map(p => perf.keyUp && !['drums', 'perc', 'fx'].includes(p.role) ? Object.assign({}, p, { shift: perf.keyUp }) : p);
+    const from = scheduledUntil, loop = loopLength(), H = perf.half;
+    if (!H) {
+      audio.schedule(parts, from, target, audioOrigin, spb(), loop);
+    } else {
+      // Half-time: from beat a the drums read their own part at half speed (source beat a + (x - a) / 2)
+      const beat = parts.filter(p => p.role === 'drums' || p.role === 'perc');
+      audio.schedule(parts.filter(p => !beat.includes(p)), from, target, audioOrigin, spb(), loop);
+      const a = H.from, b = H.to == null ? Infinity : H.to;
+      if (Math.min(target, a) > from) audio.schedule(beat, from, Math.min(target, a), audioOrigin, spb(), loop);
+      const lo = Math.max(from, a), hi = Math.min(target, b);
+      if (hi > lo) audio.schedule(beat, a + (lo - a) / 2, a + (hi - a) / 2, audioOrigin - a * spb(), 2 * spb(), loop);
+      if (target > Math.max(from, b)) audio.schedule(beat, Math.max(from, b), target, audioOrigin, spb(), loop);
+      if (from >= b) perf.half = null;
+    }
     scheduledUntil = target;
   }, 25);
 
@@ -192,6 +247,7 @@
     const o = state.options[state.pick];
     state.song.layers[state.role] = { styleId: o.style.id, name: o.style.name, seed: o.seed, busy: state.busy, sound: state.sound, notes: previewNotes() };
     regenerateOthers(state.role);
+    touched();
     state.role = null;
     state.tray = nextStep() ? 'add' : 'ready';
     render();
@@ -210,6 +266,7 @@
 
   function tryDifferentChords() {
     JT.changeChords(state.song);
+    touched();
     previewCache = null;
     if (state.tray === 'suggest') { openSuggestions(state.role, state.options[state.pick].style.id); return; }
     if (state.mode === 'song') rebuildTrack();
@@ -218,6 +275,8 @@
 
   function pickGenre(id) {
     startAudio();
+    state.original = null;
+    state.clock = null;
     state.song = JT.newSong(id, (Math.random() * 1e9) | 0);
     state.song.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     state.salt = 0;
@@ -292,6 +351,7 @@
     return {
       id: song.id, genre: song.genre, seed: song.seed, bpm: song.bpm, pace: song.pace, bright: song.bright,
       progIndex: song.progIndex, layers, arrangement: state.arrangement, savedAt: Date.now(),
+      chords: song.prog.custom ? song.prog.chords : undefined, title: song.title,
     };
   }
   let saveTimer = null;
@@ -313,8 +373,10 @@
     song.id = j.id;
     song.pace = j.pace;
     song.bright = j.bright;
-    JT.setProgression(song, Math.min(j.progIndex, JT.GENRES[j.genre].progressions.length - 1));
+    if (j.chords) JT.setCustomProgression(song, j.chords, 'Your chords');
+    else JT.setProgression(song, Math.max(0, Math.min(j.progIndex, JT.GENRES[j.genre].progressions.length - 1)));
     song.bpm = j.bpm;
+    song.title = j.title;
     JT.ROLES.forEach(role => {
       const L = j.layers[role];
       if (!L) return;
@@ -327,6 +389,8 @@
     state.track = null;
     state.mode = 'loop';
     state.role = null;
+    state.original = null;
+    state.clock = null;
     state.muted = { drums: false, bass: false, lead: false, pad: false };
     state.tray = nextStep() ? 'add' : 'ready';
     jumpTo(0);
@@ -491,6 +555,7 @@
       if (audio && audioReady && soundOn) audio.playNow(voiceOf(E.role), Object.assign({ lead: E.role === 'lead' }, note), spb(), E.role);
     }
     L.edited = true;
+    touched();
     renderLayers();
     renderTray();
     scheduleSave();
@@ -514,11 +579,233 @@
     jumpTo(Math.round(now / grid) * grid + dir * grid);
   }
 
+  // --- MESSING WITH IT ---
+  // Any change you make to a flipped song makes that version yours
+  function touched() { state.original = null; }
+
+  // Shake: same style, new notes
+  function shakePart(role) {
+    const L = state.song.layers[role];
+    if (!L) return;
+    const styles = JT.GENRES[state.song.genre].roles[role].styles;
+    const style = styles.find(st => st.id === L.styleId) || styles[0];
+    Object.assign(L, { styleId: style.id, name: style.name, seed: (Math.random() * 1e9) | 0, edited: false });
+    L.notes = JT.generate(state.song, role, L.styleId, L.seed, L.busy);
+    partChanged(role);
+  }
+  // Fewer or more notes: normal, more, fewer, normal...
+  function busierPart(role) {
+    const L = state.song.layers[role];
+    if (!L || L.edited) return;
+    L.busy = { 0: 1, 1: 2, 2: 0 }[L.busy];
+    L.notes = JT.generate(state.song, role, L.styleId, L.seed, L.busy);
+    partChanged(role);
+  }
+  function partChanged(role) {
+    regenerateOthers(role);
+    touched();
+    if (state.mode === 'song') rebuildTrack();
+    render();
+  }
+
+  // Hear it as another genre. Every flip starts from the song as you made it, so flipping back is exact.
+  function flipGenre(id) {
+    if (!state.original) state.original = state.song;
+    const base = state.original;
+    freeze();
+    state.song = id === base.genre ? base : JT.remix(base, id);
+    previewCache = null;
+    if (state.mode === 'song') {
+      state.track = JT.buildTrack(state.song, state.arrangement);
+      pos = ((pos % state.track.length) + state.track.length) % state.track.length;
+    }
+    rebase(performance.now());   // same beat, new tempo
+    render();
+    toast(id === base.genre ? 'Back to your song' : `Your song as ${JT.GENRES[id].name.toLowerCase()}`);
+  }
+
+  // --- THE JAM TRAY: performing, flipping genres, playing along ---
+  function enterJam() {
+    state.edit = null;
+    state.role = null;
+    state.tray = 'jam';
+    render();
+  }
+  function exitJam() {
+    state.tray = state.mode === 'song' ? 'song' : nextStep() ? 'add' : 'ready';
+    render();
+  }
+  function resetPerform() {
+    perf.holds.clear();
+    perf.half = null;
+    perf.keyUp = 0;
+    perf.filter = 0;
+    perf.filterKey = 0;
+    state.rec = null;
+    if (audio) { audio.perform.solo(null); audio.perform.echo(false, spb()); audio.perform.filter(0); }
+  }
+  function holdStart(name) {
+    if (!audio || perf.holds.has(name)) return;
+    perf.holds.add(name);
+    document.querySelectorAll(`[data-hold="${name}"]`).forEach(b => b.classList.add('held'));
+    if (name === 'solo') audio.perform.solo(['drums', 'perc']);
+    if (name === 'echo') audio.perform.echo(true, spb());
+    if (name === 'half') perf.half = { from: Math.ceil(scheduledUntil * 2) / 2, to: null };
+  }
+  function holdEnd(name) {
+    if (!perf.holds.delete(name)) return;
+    document.querySelectorAll(`[data-hold="${name}"]`).forEach(b => b.classList.remove('held'));
+    if (name === 'solo') audio.perform.solo(null);
+    if (name === 'echo') audio.perform.echo(false, spb());
+    if (name === 'half' && perf.half) {
+      perf.half.to = Math.ceil(scheduledUntil * 2) / 2;
+      if (perf.half.to <= perf.half.from) perf.half = null;
+    }
+  }
+  // Stop: the band cuts out now and slams back in on the next downbeat (at least a beat away)
+  function stopNow() {
+    if (!audio || !audioClock()) return;
+    const p = position(performance.now());
+    const back = Math.ceil((p + 1) / 4) * 4;
+    audio.perform.stop(ac.currentTime + 0.005, audioOrigin + back * spb());
+  }
+  function toggleKeyUp() {
+    perf.keyUp = perf.keyUp ? 0 : 2;
+    chordsKey = '';
+    renderChords();
+    renderTray();
+  }
+  function setFilter(x) {
+    perf.filter = Math.abs(x) < 0.06 ? 0 : Math.max(-1, Math.min(1, x));
+    if (audio) audio.perform.filter(perf.filter);
+    const knob = $('filterKnob');
+    if (knob) knob.style.left = (50 + perf.filter * 50) + '%';
+  }
+
+  // Play along: ten notes of the song's scale around where the melody sits. You can't hit a wrong note.
+  function jamPads() {
+    const lanes = editLanes('lead');
+    const L = state.song.layers.lead;
+    const ps = L && L.notes.length ? L.notes.map(n => n.p).sort((a, b) => a - b) : null;
+    const mid = ps ? ps[ps.length >> 1] : (lanes[0] + lanes[lanes.length - 1]) / 2;
+    let i = 0;
+    lanes.forEach((l, k) => { if (Math.abs(l - mid) < Math.abs(lanes[i] - mid)) i = k; });
+    const start = Math.max(0, Math.min(lanes.length - 10, i - 4));
+    return lanes.slice(start, start + 10);
+  }
+  // The chord playing at beat p (the song's own chords, before any key change) and the key change in effect
+  function chordNow(p) {
+    const g = JT.GENRES[state.song.genre];
+    if (state.mode === 'song' && state.track) {
+      const at = ((p % state.track.length) + state.track.length) % state.track.length;
+      const sec = sectionAt(at);
+      if (!sec) return { chord: null, shift: perf.keyUp };
+      const chords = T.chordsOf(g.key, sec.prog.chords, g.sharps);
+      return { chord: chords[Math.floor((at - sec.start) / 4) % chords.length], shift: (sec.shift || 0) + perf.keyUp };
+    }
+    const at = ((p % LOOP) + LOOP) % LOOP;
+    return { chord: state.song.chords[Math.floor(at / 4)], shift: perf.keyUp };
+  }
+  let padNotes = [];
+  const padOpen = {};
+  function padDown(i) {
+    const pitch = padNotes[i];
+    if (pitch == null || padOpen[i]) return;
+    startAudio();
+    const p = position(performance.now());
+    padOpen[i] = { pitch, at: p };
+    document.querySelectorAll(`[data-note="${i}"]`).forEach(b => b.classList.add('held'));
+    if (audio && audioReady && soundOn) audio.playNow(voiceOf('lead'), { b: 0, len: 1, p: pitch + chordNow(p).shift, v: 0.9, lead: true }, spb(), 'lead');
+  }
+  function padUp(i) {
+    const o = padOpen[i];
+    if (!o) return;
+    delete padOpen[i];
+    document.querySelectorAll(`[data-note="${i}"]`).forEach(b => b.classList.remove('held'));
+    const R = state.rec;
+    if (!R || R.phase !== 'rec') return;
+    const b = Math.max(0, o.at - R.start);
+    const end = Math.min(16, position(performance.now()) - R.start);
+    if (b < 16) R.notes = R.notes.concat([{ b, len: Math.max(0.1, end - b), p: o.pitch, v: 0.9 }]);
+  }
+
+  // Recording a melody: it starts at the top of the next loop and lasts one time around
+  function toggleRecord() {
+    if (state.rec) { state.rec = null; renderTray(); return; }
+    startAudio();
+    const p = position(performance.now());
+    state.rec = { phase: 'armed', start: Math.ceil((p + 1) / LOOP) * LOOP, notes: [] };
+    renderTray();
+  }
+  function finishRecord() {
+    const R = state.rec;
+    state.rec = null;
+    Object.keys(padOpen).forEach(i => padUp(+i));
+    const grid = JT.GENRES[state.song.genre].grid;
+    const seen = new Set();
+    const notes = R.notes.map(n => {
+      const b = Math.round(n.b / grid) * grid;
+      return { b, len: Math.min(LOOP - b, Math.max(grid, Math.round(n.len / grid) * grid)), p: n.p, v: n.v };
+    }).filter(n => n.b < LOOP && !seen.has(n.b + '|' + n.p) && seen.add(n.b + '|' + n.p)).sort((a, c) => a.b - c.b);
+    if (!notes.length) { toast('Nothing recorded. Press a note key while it records.'); renderTray(); return; }
+    const old = state.song.layers.lead;
+    const styles = JT.GENRES[state.song.genre].roles.lead.styles;
+    state.song.layers.lead = { styleId: old ? old.styleId : styles[0].id, name: 'Played by you', seed: old ? old.seed : 1, busy: 1, sound: old && old.sound, edited: true, notes };
+    regenerateOthers('lead');
+    touched();
+    toast(`Your melody is in: ${notes.length} notes`);
+    render();
+  }
+  function recStatus(p) {
+    const R = state.rec;
+    if (!R) return '';
+    if (R.phase === 'armed') return `Starts in ${Math.max(1, Math.ceil(R.start - p))}\u2026 play the note keys when it starts`;
+    return `Recording: bar ${Math.max(1, Math.min(4, Math.floor((p - R.start) / 4) + 1))} of 4`;
+  }
+
+  // Prompt cards
+  function drawPrompt() {
+    const last = state.prompt;
+    let next;
+    do { next = PROMPTS[Math.floor(Math.random() * PROMPTS.length)]; } while (PROMPTS.length > 1 && next === last);
+    state.prompt = next;
+    renderTray();
+  }
+  function startPrompt(timed) {
+    const pr = state.prompt;
+    state.prompt = null;
+    pickGenre(pr.genre);
+    state.pace = pr.pace;
+    state.mood = pr.mood;
+    state.moodPicked = true;
+    applyMood();
+    state.song.title = pr.text;
+    state.clock = timed ? { end: performance.now() + 180000, done: false } : null;
+    state.tray = 'add';
+    render();
+  }
+
+  // A short message over the tunnel
+  const toastEl = document.createElement('div');
+  toastEl.className = 'toast';
+  toastEl.setAttribute('role', 'status');
+  document.body.appendChild(toastEl);
+  let toastTimer = null;
+  function toast(text) {
+    toastEl.textContent = text;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
+  }
+
   // --- RENDERING THE UI ---
   const $ = id => document.getElementById(id);
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+  let lastTray = null;
   function render() {
+    if (lastTray === 'jam' && state.tray !== 'jam') resetPerform();
+    lastTray = state.tray;
     document.body.dataset.tray = state.tray;   // the phone layout hides the layers list on some screens
     loadSounds();
     scheduleSave();
@@ -536,7 +823,8 @@
       return;
     }
     const g = JT.GENRES[song.genre];
-    $('meta').textContent = `${g.name} · ${g.keyName} · ${song.bpm} BPM`;
+    $('meta').innerHTML = `${song.title ? `<span class="title">\u201c${esc(song.title)}\u201d</span> · ` : ''}${esc(g.name)} · ${esc(g.keyName)} · ${song.bpm} BPM <span class="clock" id="clock"></span>`;
+    clockText = '';
     renderChords();
   }
   // The chords line shows the loop's chords, or the playing section's chords in song mode
@@ -544,15 +832,16 @@
   function renderChords() {
     let prog = state.song.prog;
     let label = 'Chords';
+    let shift = perf.keyUp;
     if (state.mode === 'song' && state.track) {
       const sec = sectionAt(((position(performance.now()) % state.track.length) + state.track.length) % state.track.length);
-      if (sec) { prog = sec.prog; label = sec.name; }
+      if (sec) { prog = sec.prog; label = sec.name; shift += sec.shift || 0; }
     }
-    const key = label + prog.roman;
+    const key = label + prog.chords.join() + shift;
     if (key === chordsKey) return;
     chordsKey = key;
     const g = JT.GENRES[state.song.genre];
-    const names = T.chordsOf(g.key, prog.chords, g.sharps).map(T.chordName).join('  ');
+    const names = T.chordsOf(g.key + shift, prog.chords, g.sharps).map(T.chordName).join('  ');
     $('chords').innerHTML = `<span class="lbl">${esc(label)}</span> <strong>${esc(names)}</strong> <span class="mood">${esc(prog.mood || '')}</span>`;
   }
 
@@ -578,8 +867,10 @@
         <span class="acts">
           <button type="button" data-act="mute" data-role="${role}" aria-pressed="${state.muted[role]}">${state.muted[role] ? 'Unmute' : 'Mute'}</button>
           ${state.mode === 'loop' ? `<button type="button" data-act="edit" data-role="${role}" aria-pressed="${!!(state.edit && state.edit.role === role)}">Edit</button>
-          <button type="button" data-act="change" data-role="${role}">Change</button>
-          <button type="button" data-act="remove" data-role="${role}" aria-label="Remove ${esc(label)}">✕</button>` : ''}
+          <button type="button" data-act="change" data-role="${role}">Change</button>` : ''}
+          <button type="button" class="icon" data-act="shake" data-role="${role}" title="Shake: new notes, same style" aria-label="Shake the ${esc(ROLE_NAME[role].toLowerCase())}: new notes, same style">\u{1F3B2}</button>
+          <button type="button" class="icon busy" data-act="busier" data-role="${role}" ${L.edited ? 'disabled title="Edited by hand"' : `title="${NOTES_LABEL[L.busy]}: click for ${L.busy === 1 ? 'more' : L.busy === 2 ? 'fewer' : 'the usual amount of'} notes"`} aria-label="Notes: ${NOTES_LABEL[L.busy].toLowerCase()}"><span class="bars" data-n="${L.busy}"><i></i><i></i><i></i></span></button>
+          ${state.mode === 'loop' ? `<button type="button" data-act="remove" data-role="${role}" aria-label="Remove ${esc(label)}">✕</button>` : ''}
         </span>
         <span class="ld">${surfaceOf(role)} · ${esc(L.name)}${L.edited ? ' · edited by you' : ''}</span></div>`;
     });
@@ -619,10 +910,10 @@
     return `<div class="tray-head"><h3 class="small">Your jams</h3><p>Saved in this browser as you work.</p></div>
       <div class="jams">${jams.slice(0, 6).map(j => {
         const jg = JT.GENRES[j.genre];
-        const prog = jg.progressions[Math.min(j.progIndex, jg.progressions.length - 1)];
+        const prog = j.chords ? { chords: j.chords } : jg.progressions[Math.max(0, Math.min(j.progIndex, jg.progressions.length - 1))];
         const chords = T.chordsOf(jg.key, prog.chords, jg.sharps).map(T.chordName).join(' ');
         return `<div class="jam" style="--accent:${jg.accent}">
-          <span class="nm">${esc(jg.name)}</span>
+          <span class="nm">${j.title ? `\u201c${esc(j.title)}\u201d \u00b7 ` : ''}${esc(jg.name)}</span>
           <span class="sub">${esc(chords)} · ${j.bpm} BPM · ${Object.keys(j.layers).length} parts${j.arrangement ? ' · full song' : ''} · ${ago(j.savedAt)}</span>
           <span class="acts"><button type="button" data-jam="${esc(j.id)}">Open</button><button type="button" data-deljam="${esc(j.id)}" aria-label="Delete this jam">✕</button></span>
         </div>`;
@@ -671,7 +962,20 @@
           <p class="hint">Your song flies toward you: drums on the floor, bass on the right wall, melody on the left wall, chords on the ceiling.</p>
         </div>
         ${jamsList()}
-        <div class="tray-head"><h3 class="small">Pick a genre to begin</h3><p>It sets the key, tempo, chords and instruments. <button type="button" class="link" data-act="surpriseall">Or surprise me</button></p></div>
+        ${state.prompt ? (() => {
+          const pr = state.prompt, pg = JT.GENRES[pr.genre];
+          return `<div class="prompt-card" style="--accent:${pg.accent}">
+            <span class="lbl">Make a song about</span>
+            <p class="ptext">\u201c${esc(pr.text)}\u201d</p>
+            <span class="sub">${esc(pg.name)} · ${esc(JT.PACE.find(x => x.id === pr.pace).name.toLowerCase())} · ${esc(JT.MOOD.find(x => x.id === pr.mood).name.toLowerCase())}</span>
+            <div class="actions">
+              <button type="button" class="primary" data-act="promptGo">Let\u2019s make it</button>
+              <button type="button" data-act="promptClock">Race the clock: 3 minutes</button>
+              <button type="button" data-act="prompt">Another one</button>
+            </div>
+          </div>`;
+        })() : ''}
+        <div class="tray-head"><h3 class="small">Pick a genre to begin</h3><p>It sets the key, tempo, chords and instruments. <button type="button" class="link" data-act="surpriseall">Or surprise me</button> · <button type="button" class="link" data-act="prompt">Give me something to make a song about</button></p></div>
         <p class="phone-credit">Instrument samples: FluidR3_GM by Frank Wen, Salamander Grand Piano by Alexander Holm and Wurlitzer EP200 by Greg Sullivan, all CC BY 3.0; drums, basses and guitars by Karoryfer Samples and D. Smolken, CC0. Drum grooves: Groove MIDI Dataset by Google, CC BY 4.0</p>
         <div class="cards four">${Object.values(JT.GENRES).map(g => `
           <button type="button" class="card" data-genre="${g.id}" style="--accent:${g.accent}">
@@ -745,6 +1049,7 @@
           and it writes an intro, verses, a break and an outro around it by changing which instruments play and how busy they are.</p>
         <div class="actions">
           <button type="button" class="primary" data-act="song">Make it a full song</button>
+          <button type="button" data-act="jam">Jam on it</button>
           <button type="button" data-act="chords">Try different chords</button>
         </div>
         ${extrasOffer()}`;
@@ -838,6 +1143,54 @@
       return;
     }
 
+    if (state.tray === 'jam') {
+      const songMode = state.mode === 'song';
+      padNotes = jamPads();
+      const names = g.sharps ? SHARP_NAMES : T.NAMES;
+      const yours = (state.original || song).genre;
+      const p = position(performance.now());
+      tray.style.setProperty('--accent', g.accent);
+      tray.innerHTML = `
+        <div class="tray-head"><h3>Jam on it</h3>
+          <p>Hold a button to play with the mix. Nothing here changes your song unless you record a melody or keep a genre.</p></div>
+        <div class="jam-grid">
+          <div class="jam-block">
+            <span class="lbl">Perform</span>
+            <div class="perf">
+              <button type="button" data-hold="solo" class="${perf.holds.has('solo') ? 'held' : ''}"><kbd>1</kbd>Drums only</button>
+              <button type="button" data-hold="echo" class="${perf.holds.has('echo') ? 'held' : ''}"><kbd>2</kbd>Echo</button>
+              <button type="button" data-hold="half" class="${perf.holds.has('half') ? 'held' : ''}"><kbd>3</kbd>Half-time</button>
+              <button type="button" data-act="stop"><kbd>4</kbd>Stop</button>
+              <button type="button" data-act="keyup" aria-pressed="${!!perf.keyUp}"><kbd>5</kbd>Key up</button>
+            </div>
+            <div class="filter" id="filterPad" role="slider" tabindex="0" aria-label="Filter: drag left for a darker sound, right for a thinner one" aria-valuemin="-100" aria-valuemax="100" aria-valuenow="${Math.round(perf.filter * 100)}">
+              <span>\u25c0 Darker</span><span class="knob" id="filterKnob" style="left:${50 + perf.filter * 50}%"></span><span>Thinner \u25b6</span>
+            </div>
+          </div>
+          <div class="jam-block">
+            <span class="lbl">Hear it as</span>
+            <div class="chips">${Object.values(JT.GENRES).map(x => `
+              <button type="button" class="chip" data-flip="${x.id}" aria-pressed="${song.genre === x.id}">${esc(x.name)}${x.id === yours ? ' <span class="yours">yours</span>' : ''}</button>`).join('')}
+            </div>
+            <p class="hint">Your chords and melody, in another genre\u2019s key, beat and instruments. Change anything and that version becomes yours.</p>
+          </div>
+          <div class="jam-block">
+            <span class="lbl">Play along</span>
+            <div class="notes-row">${padNotes.map((pitch, i) => `<button type="button" class="note" data-note="${i}" data-pc="${T.mod12(pitch)}"><kbd>${PAD_KEYS[i]}</kbd>${names[T.mod12(pitch)]}</button>`).join('')}</div>
+            <div class="actions">
+              ${songMode ? '<span class="hint">Recording works on the loop. Go back to the loop to record a melody.</span>'
+                : `<button type="button" data-act="record" class="${state.rec ? 'rec-on' : ''}">${state.rec ? 'Cancel recording' : '\u25cf Record a melody'}</button>`}
+              <span class="hint" id="recStatus">${state.rec ? recStatus(p) : 'Lit notes belong to the chord playing now.'}</span>
+            </div>
+          </div>
+        </div>
+        <p class="hint">Tap a wall of the tunnel to mute or bring back that part.</p>
+        <div class="keys"><span><kbd>1</kbd>\u2013<kbd>5</kbd> perform</span><span><kbd>Z</kbd> <kbd>X</kbd> sweep the filter</span><span><kbd>A</kbd>\u2013<kbd>;</kbd> play notes</span>${songMode ? '' : '<span><kbd>R</kbd> record</span>'}</div>
+        <div class="actions"><button type="button" class="primary" data-act="jamDone">Done</button></div>`;
+      padChord = '';
+      return;
+    }
+
     // Full-song arranger
     const track = state.track;
     const idx = selectedIndex();
@@ -851,6 +1204,7 @@
       <div class="actions">
         <button type="button" class="primary" data-act="export" ${state.exporting ? 'disabled' : ''}>${state.exporting ? 'Rendering your song…' : 'Download as WAV'}</button>
         <button type="button" data-act="midi" title="Notes for FL Studio, Ableton, Logic, GarageBand and other music apps">Download MIDI</button>
+        <button type="button" data-act="jam">Jam on it</button>
         <button type="button" data-act="chords">Try different chords</button>
         <button type="button" data-act="reset">Reset the arrangement</button>
         <button type="button" data-act="loop">Back to the loop</button>
@@ -861,12 +1215,13 @@
         <span class="playhead" id="playhead"></span>
       </div>
       <div class="panel section-panel" style="--c:${type.color}">
-        <div class="sec-head"><strong>${type.name}</strong> <span class="hint">bars ${info.start / 4 + 1}–${info.end / 4} · chords ${esc(T.chordsOf(g.key, info.prog.chords, g.sharps).map(T.chordName).join(' '))}</span></div>
-        <p class="hint">${esc(type.about)}</p>
+        <div class="sec-head"><strong>${type.name}</strong> <span class="hint">bars ${info.start / 4 + 1}–${info.end / 4} · chords ${esc(T.chordsOf(g.key + (info.shift || 0), info.prog.chords, g.sharps).map(T.chordName).join(' '))}</span></div>
+        <p class="hint">${esc(type.about)}${sec.moment ? ' ' + esc(JT.MOMENTS.find(m => m.id === sec.moment).about) : ''}</p>
         <div class="controls">
         <div class="row"><span class="lbl">Plays</span><span class="chips">${JT.ROLES.filter(r => state.song.layers[r]).map(r => `
           <button type="button" class="chip" data-layer="${r}" aria-pressed="${!!sec.layers[r]}" style="--c:${ROLE_HEX[r]}"><span class="dot" style="background:${sec.layers[r] ? ROLE_HEX[r] : 'transparent'};border:1px solid ${ROLE_HEX[r]}"></span>${ROLE_NAME[r]}</button>`).join('')}</span></div>
         <div class="row"><span class="lbl">Energy</span><span class="seg">${[-1, 0, 1].map(e => `<button type="button" data-energy="${e}" aria-pressed="${sec.energy === e}">${ENERGY_LABEL[e]}</button>`).join('')}</span></div>
+        <div class="row"><span class="lbl">Big moment</span><span class="seg">${JT.MOMENTS.map(m => `<button type="button" data-moment="${m.id}" aria-pressed="${(sec.moment || '') === m.id}">${m.name}</button>`).join('')}</span></div>
         <div class="row"><span class="lbl">Length</span><span class="seg">${[4, 8].map(b => `<button type="button" data-bars="${b}" aria-pressed="${sec.bars === b}">${b} bars</button>`).join('')}</span></div>
         <div class="row"><span class="lbl">Section</span>
           <button type="button" data-act="left" ${idx === 0 ? 'disabled' : ''}>Move earlier</button>
@@ -890,6 +1245,9 @@
     const sound = $('sound');
     sound.textContent = !ac ? 'Sound off' : !audioReady ? 'Loading sounds…' : soundOn ? 'Sound on' : 'Sound off';
     sound.setAttribute('aria-pressed', String(soundOn && audioReady));
+    const jam = $('jamBtn');
+    jam.hidden = Object.keys(state.song.layers).length < 2 || ['suggest', 'edit', 'mood'].includes(state.tray);
+    jam.setAttribute('aria-pressed', String(state.tray === 'jam'));
   }
 
   // --- EVENTS ---
@@ -906,6 +1264,8 @@
     if (d.pick !== undefined) { state.pick = +d.pick; render(); return; }
     if (d.busy !== undefined) { state.busy = +d.busy; render(); return; }
     if (d.sound) { state.sound = d.sound; render(); return; }
+    if (d.flip) { flipGenre(d.flip); return; }
+    if (d.hold || d.note) return;   // handled on press and release
     if (d.sec) {
       state.selected = +d.sec;
       jumpTo(state.track.sections.find(s => s.id === +d.sec).start);
@@ -916,6 +1276,7 @@
     if (d.layer) { sec.layers[d.layer] = !sec.layers[d.layer]; rebuildTrack(); render(); return; }
     if (d.energy !== undefined) { sec.energy = +d.energy; rebuildTrack(); render(); return; }
     if (d.bars) { sec.bars = +d.bars; rebuildTrack(); render(); return; }
+    if (d.moment !== undefined) { sec.moment = d.moment || undefined; rebuildTrack(); render(); return; }
     if (d.addsec) {
       const s = JT.makeSection(d.addsec);
       state.arrangement.splice(selectedIndex() + 1, 0, s);
@@ -926,6 +1287,14 @@
     }
     switch (d.act) {
       case 'keep': keepPick(); break;
+      case 'jam': enterJam(); break;
+      case 'jamDone': exitJam(); break;
+      case 'stop': stopNow(); break;
+      case 'keyup': toggleKeyUp(); break;
+      case 'record': toggleRecord(); break;
+      case 'prompt': drawPrompt(); break;
+      case 'promptGo': startPrompt(false); break;
+      case 'promptClock': startPrompt(true); break;
       case 'build': state.tray = 'add'; render(); break;
       case 'surprise': surpriseFill(); break;
       case 'surpriseall': surpriseAll(); break;
@@ -993,11 +1362,51 @@
       }
     }
   });
+  const pointers = new Map();   // pointer id -> what it is holding
+  $('tray').addEventListener('pointerdown', e => {
+    const el = e.target.closest('[data-hold], [data-note], #filterPad');
+    if (!el) return;
+    e.preventDefault();
+    if (el.id === 'filterPad') {
+      pointers.set(e.pointerId, { filter: el.getBoundingClientRect() });
+      const r = pointers.get(e.pointerId).filter;
+      setFilter((e.clientX - r.left) / r.width * 2 - 1);
+    } else if (el.dataset.hold) {
+      pointers.set(e.pointerId, { hold: el.dataset.hold });
+      holdStart(el.dataset.hold);
+    } else {
+      pointers.set(e.pointerId, { note: +el.dataset.note });
+      padDown(+el.dataset.note);
+    }
+  });
+  window.addEventListener('pointermove', e => {
+    const h = pointers.get(e.pointerId);
+    if (h && h.filter) setFilter((e.clientX - h.filter.left) / h.filter.width * 2 - 1);
+  });
+  const release = e => {
+    const h = pointers.get(e.pointerId);
+    if (!h) return;
+    pointers.delete(e.pointerId);
+    if (h.hold) holdEnd(h.hold);
+    if (h.note != null) padUp(h.note);
+    if (h.filter) setFilter(0);   // springs back to an open sound
+  };
+  window.addEventListener('pointerup', release);
+  window.addEventListener('pointercancel', release);
+  window.addEventListener('blur', () => {
+    pointers.clear();
+    ['solo', 'echo', 'half'].forEach(holdEnd);
+    Object.keys(padOpen).forEach(i => padUp(+i));
+    perf.filterKey = 0;
+  });
+
   $('layers').addEventListener('click', e => {
     const b = e.target.closest('button[data-act]');
     if (!b) return;
     const role = b.dataset.role;
     if (b.dataset.act === 'edit') { if (state.edit && state.edit.role === role) exitEdit(); else enterEdit(role); return; }
+    if (b.dataset.act === 'shake') { shakePart(role); return; }
+    if (b.dataset.act === 'busier') { busierPart(role); return; }
     if (state.edit) state.edit = null;
     if (b.dataset.act === 'add') openSuggestions(role);
     else if (b.dataset.act === 'change') openSuggestions(role, state.song.layers[role].styleId);
@@ -1005,6 +1414,7 @@
     else if (b.dataset.act === 'remove') {
       delete state.song.layers[role];
       regenerateOthers(role);
+      touched();
       if (state.tray === 'suggest' && state.role === role) state.role = null;
       state.tray = nextStep() ? 'add' : 'ready';
       render();
@@ -1034,11 +1444,30 @@
     rebase(performance.now());
     renderTransport();
   });
+  $('jamBtn').addEventListener('click', () => { if (state.tray === 'jam') exitJam(); else enterJam(); });
   $('newSong').addEventListener('click', () => {
     state.song = null; state.mode = 'loop'; state.tray = 'start'; state.role = null; state.arrangement = null; state.track = null;
+    state.original = null; state.clock = null; state.edit = null;
     render();
   });
+  const HOLD_KEYS = { Digit1: 'solo', Digit2: 'echo', Digit3: 'half' };
   window.addEventListener('keydown', e => {
+    if (state.tray === 'jam' && !e.metaKey && !e.ctrlKey && !e.altKey && e.target.tagName !== 'INPUT') {
+      const c = e.code;
+      const pad = PAD_CODES.indexOf(c);
+      if (HOLD_KEYS[c] || pad >= 0 || ['Digit4', 'Digit5', 'KeyZ', 'KeyX', 'KeyR'].includes(c)) {
+        e.preventDefault();
+        if (e.repeat) return;
+        if (HOLD_KEYS[c]) holdStart(HOLD_KEYS[c]);
+        else if (pad >= 0) padDown(pad);
+        else if (c === 'Digit4') stopNow();
+        else if (c === 'Digit5') toggleKeyUp();
+        else if (c === 'KeyZ' || c === 'KeyX') perf.filterKey = c === 'KeyZ' ? -1 : 1;
+        else if (c === 'KeyR' && state.mode === 'loop') toggleRecord();
+        return;
+      }
+      if (e.key === 'Escape') { exitJam(); return; }
+    }
     if (state.edit && !['INPUT'].includes(e.target.tagName)) {
       const k = e.key;
       if (k === 'ArrowLeft' || k === 'ArrowRight') { e.preventDefault(); moveLane(k === 'ArrowRight' ? 1 : -1); return; }
@@ -1050,6 +1479,14 @@
     }
     if (e.code === 'Space' && state.song && !['INPUT', 'BUTTON'].includes(e.target.tagName)) { e.preventDefault(); togglePause(); }
     if (e.key === 'Escape' && state.tray === 'suggest') { state.role = null; state.tray = nextStep() ? 'add' : 'ready'; render(); }
+  });
+
+  window.addEventListener('keyup', e => {
+    const c = e.code;
+    if (HOLD_KEYS[c]) holdEnd(HOLD_KEYS[c]);
+    const pad = PAD_CODES.indexOf(c);
+    if (pad >= 0) padUp(pad);
+    if ((c === 'KeyZ' && perf.filterKey < 0) || (c === 'KeyX' && perf.filterKey > 0)) { perf.filterKey = 0; setFilter(0); }
   });
 
   // --- FRAME LOOP ---
@@ -1071,6 +1508,19 @@
   });
   $('tunnel').addEventListener('click', e => {
     if (swiped) { swiped = false; return; }
+    if (!state.edit && state.tray === 'jam' && tunnel) {
+      // The wall you tapped is the nearest side the tap's ray reaches
+      let best = null;
+      currentSides().forEach(role => {
+        const hit = tunnel.pick(e.clientX, e.clientY, role);
+        if (hit && (!best || hit.z > best.z)) best = { role, z: hit.z };
+      });
+      if (!best || !state.song.layers[best.role]) return;
+      state.muted[best.role] = !state.muted[best.role];
+      toast(`${ROLE_NAME[best.role]} ${state.muted[best.role] ? 'muted' : 'back in'}`);
+      renderLayers();
+      return;
+    }
     if (!state.edit || !tunnel) return;
     const hit = tunnel.pick(e.clientX, e.clientY, state.edit.role);
     if (!hit) return;
@@ -1079,6 +1529,7 @@
     toggleAt(position(performance.now()) + hit.rel, lane);
   });
   const IDLE = { tint: [1.0, 0.5, 0.22], fog: [0.02, 0.012, 0.012], swing: 0.5 };
+  let padChord = '', clockText = '';
   let prevPos = 0, lastNow = performance.now();
   let roll = 0, runAmt = 0;
   const t0 = performance.now();
@@ -1110,6 +1561,29 @@
         edit: E ? { role: E.role, lanes: E.lanes, cursor: E.cursor, range: rangeOf(E.role), pieces: piecesOf(E.role) } : null,
         parts: currentParts().map(part => ({ role: part.role, notes: part.notes, ghost: part.ghost || part.muted, range: part.range, pieces: part.pieces, dim: !!E && part.role !== E.role })),
       });
+    }
+    if (state.rec) {
+      const R = state.rec;
+      if (R.phase === 'armed' && p >= R.start - 0.02) { R.phase = 'rec'; R.notes = []; }
+      if (R.phase === 'rec' && p >= R.start + LOOP) finishRecord();
+      const st = $('recStatus');
+      const text = state.rec ? recStatus(p) : null;
+      if (st && text != null && st.textContent !== text) st.textContent = text;
+    }
+    if (state.tray === 'jam' && state.song) {
+      const { chord } = chordNow(p);
+      const key = chord ? chord.pcs.join() : '';
+      if (key !== padChord) {
+        padChord = key;
+        document.querySelectorAll('.note[data-pc]').forEach(b => b.classList.toggle('ct', !!chord && chord.pcs.includes(+b.dataset.pc)));
+      }
+      if (perf.filterKey) setFilter(perf.filter + perf.filterKey * dt * 0.9);
+    }
+    if (state.clock && !state.clock.done) {
+      const left = Math.max(0, state.clock.end - now);
+      const text = left > 0 ? `\u23f1 ${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, '0')}` : 'Time\u2019s up!';
+      if (text !== clockText && $('clock')) { clockText = text; $('clock').textContent = text; }
+      if (!left) { state.clock.done = true; toast('Time\u2019s up! Play it for someone.'); }
     }
     if (songMode) {
       const L = state.track.length;
