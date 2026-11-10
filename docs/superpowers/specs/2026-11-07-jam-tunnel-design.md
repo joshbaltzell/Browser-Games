@@ -179,6 +179,30 @@ after the loop is ready, each adding a side (a square tunnel grows to at most se
 - Full-song defaults: percussion in choruses and the outro, the second melody in choruses and the
   break. Transitions are sound effects and stay out of MIDI exports.
 
+## Sound quality pass (added 2026-11-10)
+
+The user asked how to make the instruments sound more realistic and better produced, then approved
+all five recommendations:
+
+- Mixing: every part has a channel strip (a low cut, a mud cut around 250 to 400 Hz, presence or
+  top-end shelves, gentle parallel saturation on bass and melody). The drums get parallel
+  compression. The master gets a small air shelf, glue compression, a limiter and a soft clipper, and
+  each genre has a loudness trim so all five play at about -14.5 dB RMS (measured with
+  dev/level-check.html).
+- Playback: soft notes sound darker than hard ones, no two hits are identical (level, a few cents of
+  pitch, a sliver of start offset), notes fade with per-instrument release tails, and a closed
+  hi-hat chokes a ringing open one.
+- Drum kit: Karoryfer Big Rusty Drums (CC0), three velocity layers and two round robins per drum
+  (1 MB, dev/build-drumkit.py).
+- Bass, guitars and keys: Karoryfer Swagbass, D. Smolken's double bass, Karoryfer's Gretsch clean
+  guitar and archtop acoustic (all CC0), and Greg Sullivan's Wurlitzer (CC BY 3.0), two layers each
+  (dev/build-melodic.py). The overdriven and distorted rock guitars and the drawbar organ stay on
+  FluidR3: the CC0 libraries have no drawbar organ (a pipe organ was built but left out) and an amp
+  simulation of a clean guitar wasn't judged better without listening.
+- Reverb: real room recordings (OpenAIR) were the plan, but their licenses couldn't be checked, so
+  the reverbs are computed: early reflections from a model of a room's walls and a tail that loses
+  its highs faster than its lows. Drums and percussion use a small room; everything else a hall.
+
 ## Genres
 
 Required: classic hip hop (boom bap), trap, pop. Proposed to make about 20 (Claude's list; the
@@ -194,6 +218,15 @@ The genres differ in more than patterns, and the engine has to support all of th
   half-time feels (trap at 140 BPM that feels like 70).
 - Sounds: an 808 bass with long pitch glides, claps, rim shots, synth leads and pads, organ,
   piano, plus the guitar and band kit from the mockup.
+
+**Country means today's country radio (the user, 2026-11-10).** The first country was traditional
+(boom-chick, fiddle tunes, honky-tonk); the user meant current pop country. It now defaults to a
+polished backbeat with a clap stacked on the snare (plus half-time, cross-stick verse, country trap
+and stomp-and-clap), bass locked to the kick, a syncopated sixteenth-note acoustic strum or a banjo
+loop, a talky syncopated hook on a twangy electric, and a steel guitar (the clean electric with a
+swell, a slide up into each note and a slow vibrato) for the second melody. Pop-country progressions
+(I-V-vi-IV and its rotations) replace I-IV-V. The boom-chick drums, walk-up bass and fiddle remain
+as options, and older saved jams fall back to each part's first style when theirs is gone.
 
 **Phasing (Claude's call):** the first release ships the engine, the full flow, and four genres
 tuned by ear: blues / southern rock (the mockup's example), classic hip hop, trap and pop. The

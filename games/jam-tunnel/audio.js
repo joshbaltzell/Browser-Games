@@ -1,6 +1,8 @@
 // Jam Tunnel — audio engine
 // Recorded instruments (samples.js, decoded and level-matched once) plus synthesized voices for the
 // sounds that are electronic in real music anyway: the TR-808 kit, the 808 bass, and a synth lead.
+// Every part runs through its own channel strip (EQ, saturation, a room or hall reverb computed from a
+// model of the space) into a glued, limited master, the way a mix engineer would set up a session.
 // createAudio(ctx) works with a live AudioContext or an OfflineAudioContext (see dev/level-check.html).
 
 window.JT = window.JT || {};
@@ -9,34 +11,39 @@ window.JT = window.JT || {};
   const hz = m => 440 * Math.pow(2, (m - 69) / 12);
 
   // Recorded voices: which sample set each uses and how it is played.
+  // The bass, electric guitar, acoustic, electric piano and drum kit are multi-sampled instruments
+  // with soft and hard layers (see dev/build-melodic.py, dev/build-drumkit.py); the rest are FluidR3.
   // level is per note after every sample is normalized to the same peak; wet is the reverb send;
-  // minDur lets plucked and struck sounds ring; lowpass darkens a sound; leadBoost lifts a pad
-  // sound when it carries the melody.
+  // minDur lets plucked and struck sounds ring; release is how long a note fades after it ends;
+  // lowpass darkens a sound; leadBoost lifts a pad sound when it carries the melody.
   const VOICES = {
-    guitar: { inst: 'guitar', level: 0.38, wet: 0.1 },
-    distguitar: { inst: 'distguitar', level: 0.3, wet: 0.1 },
-    bass: { inst: 'bass', level: 0.55 },
-    upright: { inst: 'upright', level: 0.5, wet: 0.05 },
-    synthbass: { inst: 'synthbass', level: 0.42 },
-    organ: { inst: 'organ', level: 0.1, wet: 0.25, attack: 0.02, leadBoost: 3 },
+    guitar: { inst: 'guitar', level: 0.3, wet: 0.1 },
+    distguitar: { inst: 'distguitar', level: 0.24, wet: 0.1 },
+    bass: { inst: 'ebass', level: 0.88, release: 0.08 },
+    upright: { inst: 'dbass', level: 0.56, wet: 0.05, minDur: 0.3, release: 0.12 },
+    synthbass: { inst: 'synthbass', level: 0.28 },
+    organ: { inst: 'organ', level: 0.13, wet: 0.25, attack: 0.02, leadBoost: 3 },
     piano: { inst: 'piano', level: 0.34, wet: 0.25, minDur: 0.5 },
-    epiano: { inst: 'epiano', level: 0.14, wet: 0.2, minDur: 0.5 },
+    epiano: { inst: 'epiano2', level: 0.35, wet: 0.2, minDur: 0.5, release: 0.3 },
     strings: { inst: 'strings', level: 0.15, wet: 0.35, attack: 0.03, leadBoost: 2.8 },
-    warmpad: { inst: 'warmpad', level: 0.11, wet: 0.3, attack: 0.15, leadBoost: 2.5 },
+    warmpad: { inst: 'warmpad', level: 0.2, wet: 0.3, attack: 0.15, leadBoost: 2.5 },
     musicbox: { inst: 'musicbox', level: 0.3, wet: 0.45, minDur: 0.9 },
     flute: { inst: 'flute', level: 0.3, wet: 0.3, attack: 0.03 },
     vibes: { inst: 'vibes', level: 0.32, wet: 0.3, minDur: 0.9 },
-    acoustic: { inst: 'acoustic', level: 0.16, wet: 0.15, minDur: 0.4 },
+    acoustic: { inst: 'agtr', level: 0.37, wet: 0.15, minDur: 0.4, release: 0.3 },
     fiddle: { inst: 'violin', level: 0.38, wet: 0.25, attack: 0.04 },   // a violin played country-style
     banjo: { inst: 'banjo', level: 0.26, wet: 0.12, minDur: 0.35, leadBoost: 2 },
-    cleanguitar: { inst: 'cleanguitar', level: 0.36, wet: 0.2, minDur: 0.35 },
+    cleanguitar: { inst: 'eguitar', level: 0.66, wet: 0.2, minDur: 0.35, release: 0.25, leadBoost: 1.35 },
+    bigguitar: { inst: 'guitar', level: 0.18, wet: 0.2, minDur: 0.3, release: 0.3 },   // the overdriven guitar strumming whole chords
+    // A pedal steel, played on the clean electric: notes swell in, slide up into pitch and shimmer
+    steel: { inst: 'eguitar', level: 0.6, wet: 0.4, attack: 0.07, minDur: 0.5, release: 0.6, slide: 1, vibrato: true, leadBoost: 1.35 },
     harmonica: { inst: 'harmonica', level: 0.3, wet: 0.2, attack: 0.03 },
     brass: { inst: 'brass', level: 0.3, wet: 0.25, attack: 0.02 },
   };
-  const KIT_LEVEL = { kick: 1.0, snare: 0.78, clap: 0.7, hat: 0.27, openhat: 0.27, tomlow: 0.68, tomhigh: 0.62, crash: 0.34 };
+  const KIT_LEVEL = { kick: 1.4, snare: 1.1, clap: 1.0, rim: 0.8, hat: 0.38, openhat: 0.38, tomlow: 0.95, tomhigh: 0.87, crash: 0.48 };
   // The sample set a voice needs, or null for synthesized voices
   const PERC_LEVEL = { shaker: 1.4, tambourine: 1.0, rim: 1.1, congahi: 1.2, congalo: 1.3, cowbell: 0.8 };
-  JT.instOf = voice => voice === 'kit' ? 'kit' : voice === 'perc' ? 'perc' : voice === 'fx' ? 'kit'   // the reverse cymbal is the kit's crash
+  JT.instOf = voice => voice === 'kit' ? 'drumkit' : voice === 'perc' ? 'perc' : voice === 'fx' ? 'drumkit'   // the reverse cymbal is the kit's crash
     : voice === 'darkpiano' ? 'grand' : VOICES[voice] ? VOICES[voice].inst : null;
 
   // Sample scripts already added to the page, shared by every audio context
@@ -61,23 +68,122 @@ window.JT = window.JT || {};
     // --- MASTER CHAIN: glue compressor, then a fast limiter so nothing clips ---
     const master = ctx.createGain();
     master.gain.value = 0.85;
+    const air = ctx.createBiquadFilter();
+    air.type = 'highshelf'; air.frequency.value = 10000; air.gain.value = 1.5;   // a little sheen on top
     const glue = ctx.createDynamicsCompressor();
     glue.threshold.value = -18; glue.ratio.value = 3; glue.attack.value = 0.01; glue.release.value = 0.2;
     const limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -3; limiter.ratio.value = 20; limiter.attack.value = 0.001; limiter.release.value = 0.1;
-    master.connect(glue).connect(limiter).connect(ctx.destination);
-
-    const reverb = ctx.createConvolver();
-    const irLen = Math.floor(ctx.sampleRate * 2.2);
-    const ir = ctx.createBuffer(2, irLen, ctx.sampleRate);
-    for (let ch = 0; ch < 2; ch++) {
-      const d = ir.getChannelData(ch);
-      for (let i = 0; i < irLen; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / irLen, 3);
+    // The limiter lets the first millisecond of a hard hit through; round those peaks off instead of
+    // letting them clip. Linear up to 0.8, then curving smoothly toward 0.97 (input scaled to fit ±2).
+    const preClip = ctx.createGain(); preClip.gain.value = 0.5;
+    const clipper = ctx.createWaveShaper();
+    const clipCurve = new Float32Array(4096);
+    for (let i = 0; i < 4096; i++) {
+      const y = (i / 4095 * 2 - 1) * 2, a = Math.abs(y);
+      clipCurve[i] = a < 0.8 ? y : Math.sign(y) * (0.8 + 0.17 * Math.tanh((a - 0.8) / 0.17));
     }
-    reverb.buffer = ir;
-    const reverbOut = ctx.createGain();
-    reverbOut.gain.value = 0.32;
-    reverb.connect(reverbOut).connect(master);
+    clipper.curve = clipCurve;   // no oversampling: its filter rings past the ceiling
+    master.connect(air).connect(glue).connect(limiter).connect(preClip).connect(clipper).connect(ctx.destination);
+    // Each genre is trimmed to the same loudness (measured with dev/level-check.html)
+    function setTrim(db) { master.gain.value = 0.85 * Math.pow(10, (db || 0) / 20); }
+
+    // --- REVERBS: impulse responses computed from a model of a room ---
+    // Early reflections come from the walls of a box-shaped room (first-order image sources); the
+    // tail decays faster in the highs than the lows, as air and soft surfaces do in real spaces.
+    function roomIR(sec, room, rtLow, rtHigh, preDelay) {
+      const sr = ctx.sampleRate, len = Math.floor(sr * sec);
+      const ir = ctx.createBuffer(2, len, sr);
+      const [L, W, H] = room, src = [L * 0.3, W * 0.45, 1.5], ear = [L * 0.7, W * 0.55, 1.6];
+      const taps = [];
+      for (let axis = 0; axis < 3; axis++) {
+        for (const wall of [0, 1]) {
+          const img = src.slice();
+          img[axis] = wall ? 2 * room[axis] - src[axis] : -src[axis];
+          const d = Math.hypot(img[0] - ear[0], img[1] - ear[1], img[2] - ear[2]);
+          taps.push({ t: preDelay + d / 343, a: 0.8 / d, side: axis === 1 ? (wall ? 1 : -1) : (Math.random() - 0.5) });
+        }
+      }
+      const erEnd = Math.max(...taps.map(x => x.t)) + 0.01;
+      for (let ch = 0; ch < 2; ch++) {
+        const d = ir.getChannelData(ch);
+        taps.forEach(tp => {
+          const gain = tp.a * (1 + (ch ? 1 : -1) * tp.side * 0.6);
+          const i0 = Math.floor(tp.t * sr);
+          for (let k = 0; k < 64 && i0 + k < len; k++) d[i0 + k] += gain * Math.exp(-k / 9) * (k % 2 ? -0.6 : 1);
+        });
+        // The diffuse tail: noise split into lows and highs that die away at different rates
+        let lpState = 0;
+        for (let i = Math.floor(preDelay * sr); i < len; i++) {
+          const t = i / sr;
+          const n = Math.random() * 2 - 1;
+          lpState += 0.08 * (n - lpState);                    // a gentle low-pass split around 600 Hz
+          const low = lpState, high = n - lpState;
+          const env = Math.min(1, (t - preDelay) / Math.max(0.005, erEnd - preDelay));   // build up after the early reflections
+          d[i] += env * 0.25 * (low * Math.exp(-6.9 * t / rtLow) * 2.2 + high * Math.exp(-6.9 * t / rtHigh));
+        }
+      }
+      return ir;
+    }
+    const room = ctx.createConvolver();
+    room.buffer = roomIR(1.4, [6, 4.5, 3], 0.9, 0.45, 0.004);
+    const hall = ctx.createConvolver();
+    hall.buffer = roomIR(3.2, [22, 15, 10], 2.6, 1.4, 0.025);
+    const returnLowCut = ctx.createBiquadFilter();                // keep the reverb out of the low end
+    returnLowCut.type = 'highpass'; returnLowCut.frequency.value = 220;
+    const roomOut = ctx.createGain(); roomOut.gain.value = 0.5;
+    const hallOut = ctx.createGain(); hallOut.gain.value = 0.4;
+    room.connect(roomOut).connect(returnLowCut);
+    hall.connect(hallOut).connect(returnLowCut);
+    returnLowCut.connect(master);
+    const reverb = hall;   // the default send
+
+    // --- CHANNEL STRIPS: one per part, like a mixing desk ---
+    // A low cut so parts don't pile up in the bass, a mud cut, tone shaping, saturation where it helps.
+    function softCurve(drive) {
+      const c = new Float32Array(2048);
+      for (let i = 0; i < 2048; i++) { const x = i / 2048 * 2 - 1; c[i] = Math.tanh(x * drive) / Math.tanh(drive); }
+      return c;
+    }
+    const STRIP = {
+      drums: { hp: 30, mud: [400, -2], shelf: [8000, 1.5], verb: 'room' },
+      perc: { hp: 200, mud: [500, -2], shelf: [8000, 2], verb: 'room' },
+      bass: { hp: 30, mud: [250, -2], lp: 6000, drive: 1.6 },
+      pad: { hp: 140, mud: [350, -3], shelf: [9000, 1] },
+      lead: { hp: 120, mud: [350, -1.5], presence: [3000, 2], drive: 1.2 },
+      counter: { hp: 160, mud: [400, -2.5], presence: [2500, 1] },
+      fx: { hp: 60 },
+    };
+    const strips = {};
+    Object.entries(STRIP).forEach(([role, S]) => {
+      const input = ctx.createGain();
+      let node = input;
+      const chain = f => { node.connect(f); node = f; };
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = S.hp; chain(hp);
+      if (S.mud) { const f = ctx.createBiquadFilter(); f.type = 'peaking'; f.frequency.value = S.mud[0]; f.Q.value = 1; f.gain.value = S.mud[1]; chain(f); }
+      if (S.presence) { const f = ctx.createBiquadFilter(); f.type = 'peaking'; f.frequency.value = S.presence[0]; f.Q.value = 0.8; f.gain.value = S.presence[1]; chain(f); }
+      if (S.shelf) { const f = ctx.createBiquadFilter(); f.type = 'highshelf'; f.frequency.value = S.shelf[0]; f.gain.value = S.shelf[1]; chain(f); }
+      if (S.lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = S.lp; chain(f); }
+      if (S.drive) {
+        // Blend a gently saturated copy under the clean signal: warmth without obvious distortion
+        const sat = ctx.createWaveShaper(); sat.curve = softCurve(S.drive * 2); sat.oversample = '2x';
+        const wet = ctx.createGain(); wet.gain.value = 0.35;
+        const sum = ctx.createGain();
+        node.connect(sum);
+        node.connect(sat).connect(wet).connect(sum);
+        node = sum;
+      }
+      const outGain = ctx.createGain();
+      node.connect(outGain);
+      if (role === 'drums') {
+        // Parallel compression: a hard-squashed copy blended under the natural drums for punch
+        const crush = ctx.createDynamicsCompressor();
+        crush.threshold.value = -32; crush.ratio.value = 8; crush.attack.value = 0.003; crush.release.value = 0.12; crush.knee.value = 6;
+        const crushGain = ctx.createGain(); crushGain.gain.value = 0.45;
+        node.connect(crush).connect(crushGain).connect(outGain);
+      }
+      strips[role] = { input, out: outGain, verb: S.verb === 'room' ? room : hall };
+    });
 
     // A dark, beat-synced echo (dotted eighth) for the trap piano
     const echoIn = ctx.createGain();
@@ -99,9 +205,33 @@ window.JT = window.JT || {};
     // --- SAMPLES: load an instrument's script when first needed, decode once, normalize ---
     const buffers = {};
     const decoding = {};
+    function decodeOne(b64) {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new Promise(res => ctx.decodeAudioData(bytes.buffer, res, () => res(null)));
+    }
+    const peakOf = buf => {
+      let peak = 0;
+      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+        const d = buf.getChannelData(ch);
+        for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]));
+      }
+      return peak;
+    };
     function decodeInst(inst) {
       const S = (window.JT_SAMPLES || {})[inst];
       if (!S) return Promise.resolve();
+      if (S.format === 2) {
+        // Velocity layers and round robins. One gain per note, from its loudest layer, so soft layers stay soft.
+        return Promise.all(Object.entries(S.notes).map(([k, layers]) =>
+          Promise.all(layers.map(L => Promise.all(L.rr.map(decodeOne)).then(bufs => ({ v: L.v, rr: bufs.filter(Boolean) })))).then(decoded => {
+            const ok = decoded.filter(L => L.rr.length);
+            if (!ok.length) return;
+            const peak = Math.max(...ok.map(L => Math.max(...L.rr.map(peakOf))));
+            (buffers[inst] = buffers[inst] || {})[k] = { layers: ok, norm: peak > 0 ? 0.9 / peak : 1 };
+          })));
+      }
       const jobs = [];
       for (const k in S) {
         const bin = atob(S[k]);
@@ -133,21 +263,25 @@ window.JT = window.JT || {};
     // Chords go through a bus that ducks briefly on every kick (the "pumping" of trap and pop).
     const duckBus = ctx.createGain();
     duckBus.connect(master);
+    Object.entries(strips).forEach(([role, S]) => S.out.connect(role === 'pad' || role === 'counter' ? duckBus : master));
     function duck(t) {
       duckBus.gain.setValueAtTime(1, t);
       duckBus.gain.linearRampToValueAtTime(0.6, t + 0.012);
       duckBus.gain.linearRampToValueAtTime(1, t + 0.22);
     }
-    const DRUM_PAN = { hat: 0.25, openhat: 0.25, tomhigh: -0.25, tomlow: 0.3, crash: -0.2 };
+    const DRUM_PAN = { rim: 0.05, clap: -0.08, hat: 0.25, openhat: 0.25, tomhigh: -0.25, tomlow: 0.3, crash: -0.2 };
     const PERC_PAN = { shaker: 0.45, tambourine: -0.4, rim: 0.2, congahi: -0.3, congalo: 0.3, cowbell: 0.35 };
     let place = null;   // set by play() for the note being built
+    let openHat = null;   // the last open hi-hat, so a closed one can choke it
     function placement(role, n) {
-      if (role === 'drums') return { pan: DRUM_PAN[n.p] || 0 };
-      if (role === 'pad') return { pan: (((n.p % 3) + 3) % 3 - 1) * 0.35, bus: duckBus };   // fan chord notes left and right
-      if (role === 'lead') return { pan: 0.18 };
-      if (role === 'perc') return { pan: PERC_PAN[n.p] || 0 };
-      if (role === 'counter') return { pan: -0.3, bus: duckBus };   // opposite the melody
-      return null;
+      const strip = strips[role];
+      const at = (pan) => ({ pan, bus: strip ? strip.input : master, verb: strip ? strip.verb : hall });
+      if (role === 'drums') return at(DRUM_PAN[n.p] || 0);
+      if (role === 'pad') return at((((n.p % 3) + 3) % 3 - 1) * 0.35);   // fan chord notes left and right
+      if (role === 'lead') return at(0.18);
+      if (role === 'perc') return at(PERC_PAN[n.p] || 0);
+      if (role === 'counter') return at(-0.3);   // opposite the melody
+      return at(0);
     }
 
     function out(t, value, wet) {
@@ -164,7 +298,7 @@ window.JT = window.JT || {};
       if (wet) {
         const s = ctx.createGain();
         s.gain.value = wet;
-        g.connect(s).connect(reverb);
+        g.connect(s).connect((place && place.verb) || reverb);
       }
       return g;
     }
@@ -178,30 +312,67 @@ window.JT = window.JT || {};
         for (const k in set) { const d = Math.abs(+k - key); if (d < bd) { bd = d; best = k; } }
       }
       if (best === null || !set[best]) return;   // still decoding this instrument (common on phones)
-      const { buf, norm } = set[best];
+      const entry = set[best];
+      const full = (opts && opts.level) || vel;   // the level of a full-strength note
+      const v127 = Math.max(1, Math.min(127, vel / Math.max(0.001, full) * 127));
+      let buf, gain = vel, layered = false;
+      if (entry.layers) {
+        // The layer for this velocity, cycling its round robins. The recordings already get quieter
+        // layer by layer, so velocity only shades the level within a layer (as samplers do).
+        const i = entry.layers.findIndex(L => v127 <= L.v);
+        const layer = entry.layers[i < 0 ? entry.layers.length - 1 : i];
+        const below = i > 0 ? entry.layers[i - 1].v : 0;
+        const frac = Math.min(1, (v127 - below) / (layer.v - below));
+        gain = full * (below ? 0.6 + 0.4 * frac : frac);
+        layer.next = ((layer.next || 0) + 1) % layer.rr.length;
+        buf = layer.rr[layer.next];
+        layered = layer.rr.length > 1;
+      } else {
+        buf = entry.buf;
+      }
       const src = ctx.createBufferSource();
       src.buffer = buf;
-      if (typeof key === 'number') src.playbackRate.value = Math.pow(2, (key - +best) / 12);
-      const level = vel * norm;
+      const shift = typeof key === 'number' ? key - +best : 0;
+      src.playbackRate.value = Math.pow(2, shift / 12);
+      // No two hits identical: a few cents of pitch, a little level, a sliver of start offset
+      if (!layered) src.detune.value = (Math.random() - 0.5) * 10;
+      const level = gain * entry.norm * (1 + (Math.random() - 0.5) * 0.12);
+      const startAt = layered ? 0 : Math.random() * 0.002;
+      if (opts && opts.slide) {
+        // Slide up into the note from below
+        const rate = src.playbackRate.value;
+        src.playbackRate.setValueAtTime(rate * Math.pow(2, -opts.slide / 12), t);
+        src.playbackRate.exponentialRampToValueAtTime(rate, t + 0.14);
+      }
+      if (opts && opts.vibrato) {
+        // A slow shimmer that fades in once the note has settled
+        const lfo = ctx.createOscillator(); lfo.frequency.value = 5.2;
+        const depth = ctx.createGain();
+        depth.gain.setValueAtTime(0, t);
+        depth.gain.linearRampToValueAtTime(src.playbackRate.value * 0.004, t + 0.45);
+        lfo.connect(depth).connect(src.playbackRate);
+        lfo.start(t); lfo.stop(t + dur + 0.8);
+      }
       const attack = (opts && opts.attack) || 0.004;
       const g = out(t, 0.0001, opts && opts.wet);
       g.gain.linearRampToValueAtTime(level, t + attack);
-      if (opts && opts.lowpass) {
-        const lp = ctx.createBiquadFilter();
-        lp.type = 'lowpass'; lp.frequency.value = opts.lowpass; lp.Q.value = 0.5;
-        src.connect(lp).connect(g);
-      } else {
-        src.connect(g);
-      }
+      // Harder hits sound brighter (real instruments do; this also stands in for missing velocity layers)
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.Q.value = 0.5;
+      const bright = 0.35 + 0.65 * Math.min(1, v127 / 110);
+      lp.frequency.value = Math.min((opts && opts.lowpass) || 20000, 1800 + bright * bright * 16000);
+      src.connect(lp).connect(g);
+      const release = (opts && opts.release) || 0.15;
       if (dur) {
         const end = t + Math.max(dur, attack + 0.02);
         g.gain.setValueAtTime(level, end);
-        g.gain.exponentialRampToValueAtTime(0.0001, end + 0.15);
-        src.start(t);
-        src.stop(end + 0.2);
+        g.gain.exponentialRampToValueAtTime(0.0001, end + release);
+        src.start(t, startAt);
+        src.stop(end + release + 0.05);
       } else {
-        src.start(t);
+        src.start(t, startAt);
       }
+      return g;
     }
 
     function noise(t, dur, type, freq, peak, q, wet) {
@@ -266,8 +437,8 @@ window.JT = window.JT || {};
       }
       const sh = ctx.createWaveShaper(); sh.curve = driveCurve;
       const g = out(t, 0.0001);
-      g.gain.exponentialRampToValueAtTime(0.22, t + 0.005);
-      g.gain.setValueAtTime(0.22, t + Math.max(0.01, dur - 0.07));
+      g.gain.exponentialRampToValueAtTime(0.16, t + 0.005);
+      g.gain.setValueAtTime(0.16, t + Math.max(0.01, dur - 0.07));
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(sh).connect(g);
       o.start(t); o.stop(t + dur + 0.05);
@@ -358,10 +529,11 @@ window.JT = window.JT || {};
     // The kit's crash played backwards, swelling into the downbeat
     let reversed = null;
     function reverseCymbal(t, n, spb) {
-      const set = buffers.kit;
+      const set = buffers.drumkit;
       if (!set || !set.crash) return;
       if (!reversed) {
-        const b = set.crash.buf;
+        const layers = set.crash.layers;
+        const b = layers[layers.length - 1].rr[0];
         reversed = ctx.createBuffer(b.numberOfChannels, b.length, b.sampleRate);
         for (let ch = 0; ch < b.numberOfChannels; ch++) reversed.getChannelData(ch).set(Array.from(b.getChannelData(ch)).reverse());
       }
@@ -435,8 +607,15 @@ window.JT = window.JT || {};
       const dur = n.len * spb;
       switch (voice) {
         case 'kit': {
-          const piece = n.p === 'clap' ? 'snare' : n.p;
-          playSample('kit', piece, t, (KIT_LEVEL[n.p] || 0.5) * n.v, 0, { wet: n.p === 'snare' || n.p === 'clap' ? 0.18 : 0.05 });
+          if (n.p === 'clap') { clap808(t, n.v * 0.75); break; }   // a real hand clap, often stacked on the snare
+          const piece = n.p;
+          if (n.p === 'hat' && openHat && openHat.t < t) {
+            openHat.g.gain.cancelScheduledValues(t);
+            openHat.g.gain.setTargetAtTime(0.0001, t, 0.012);   // the closing hat chokes the ringing open one
+            openHat = null;
+          }
+          const g = playSample('drumkit', piece, t, (KIT_LEVEL[n.p] || 0.5) * n.v, 0, { wet: n.p === 'snare' || n.p === 'clap' ? 0.18 : 0.05, level: KIT_LEVEL[n.p] || 0.5 });
+          if (n.p === 'openhat' && g) openHat = { g, t };
           break;
         }
         case '808kit':
@@ -457,9 +636,11 @@ window.JT = window.JT || {};
         default: {
           const V = VOICES[voice];
           if (!V) break;
-          const level = V.level * n.v * (n.lead && V.leadBoost ? V.leadBoost : 1);
-          playSample(V.inst, n.p, t, level, Math.max(V.minDur || 0, dur), {
-            wet: V.wet, lowpass: V.lowpass, attack: n.swell ? dur * 0.6 : V.attack,
+          const boost = n.lead && V.leadBoost ? V.leadBoost : 1;
+          const held = Math.max(V.minDur || 0, dur);
+          playSample(V.inst, n.p, t, V.level * boost * n.v, held, {
+            wet: V.wet, lowpass: V.lowpass, attack: n.swell ? dur * 0.6 : V.attack, release: V.release, level: V.level * boost,
+            slide: V.slide && held > 0.3 ? V.slide * (Math.random() < 0.3 ? 2 : 1) : 0, vibrato: V.vibrato && held > 0.6,
           });
         }
       }
@@ -483,6 +664,6 @@ window.JT = window.JT || {};
     // Play one note right now (feedback while editing)
     const playNow = (voice, n, spb, role) => play(voice, n, ctx.currentTime + 0.005, spb, role);
 
-    return { ctx, ready, load, schedule, master, playNow };
+    return { ctx, ready, load, schedule, master, playNow, setTrim };
   };
 })();

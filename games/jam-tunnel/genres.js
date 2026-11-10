@@ -397,15 +397,42 @@ window.JT = window.JT || {};
   }
 
   // ===================================================================
-  // COUNTRY — G major, 104 BPM: boom-chick, strummed acoustic, fiddle on the major pentatonic
+  // COUNTRY — today's country radio, G major, 92 BPM: big polished drums with claps, bass locked to the
+  // kick, syncopated acoustic strums and banjo loops, a twangy electric hook and steel guitar.
+  // The old-school boom-chick is still there as an option.
   // ===================================================================
   function countryDrums(kind) {
     return (ctx, r, busy) => {
       const out = [];
+      const hats = (o, v) => { for (let h = 0; h < 4; h += busy === 2 ? 0.25 : busy === 0 ? 1 : 0.5) hit(out, o + h, 'hat', (h % 1 ? v * 0.65 : v) * hum(r)); };
+      const backbeat = (o, beats) => beats.forEach(q => { hit(out, o + q, 'snare', 1); hit(out, o + q, 'clap', 0.7); });
       for (let bar = 0; bar < BARS; bar++) {
         const o = bar * 4;
         if (bar === 0) hit(out, 0, 'crash', 0.5, 0.5);
-        if (kind === 'boomchick') {
+        if (kind === 'radio') {
+          // Kick on 1, 3 and the and of 3, a snare-and-clap backbeat, an open hat lifting into each other bar
+          (bar === 3 ? [0, 2, 2.75] : [0, 2, 2.5]).forEach((k, i) => hit(out, o + k, 'kick', i ? 0.85 : 1));
+          if (busy === 2) hit(out, o + 1.5, 'kick', 0.6);
+          backbeat(o, [1, 3]);
+          hats(o, 0.55);
+          if (bar % 2 === 1) hit(out, o + 3.5, 'openhat', 0.5);
+        } else if (kind === 'halftime') {
+          // The snare only on 3: big, slow and anthemic
+          [0, 1.5].concat(busy > 0 ? [3.5] : []).forEach((k, i) => hit(out, o + k, 'kick', i ? 0.8 : 1));
+          backbeat(o, [2]);
+          hats(o, 0.5);
+          if (bar === 3) hit(out, o + 3.5, 'openhat', 0.55);
+        } else if (kind === 'stomp') {
+          // A kick on every beat and claps on 2 and 4, like a crowd stomping along
+          [0, 1, 2, 3].forEach(k => hit(out, o + k, 'kick', k % 2 ? 0.8 : 1));
+          [1, 3].forEach(q => hit(out, o + q, 'clap', 1));
+          if (busy > 0) [0.5, 1.5, 2.5, 3.5].forEach(q => hit(out, o + q, busy === 2 ? 'openhat' : 'hat', 0.45 * hum(r)));
+        } else if (kind === 'rimverse') {
+          // The hushed verse groove: a cross-stick on the rim instead of the full snare
+          [0, 2.5].concat(busy > 0 ? [1.5] : []).forEach((k, i) => hit(out, o + k, 'kick', i ? 0.75 : 0.95));
+          [1, 3].forEach(q => hit(out, o + q, 'rim', 0.9 * hum(r)));
+          hats(o, 0.4);
+        } else if (kind === 'boomchick') {
           [0, 2].forEach(k => hit(out, o + k, 'kick', 1));
           [1, 3].forEach(q => hit(out, o + q, 'snare', 0.85));
           for (let h = 0; h < 4; h += busy === 0 ? 1 : 0.5) hit(out, o + h, 'hat', (h % 1 ? 0.35 : 0.55) * hum(r));
@@ -422,9 +449,12 @@ window.JT = window.JT || {};
           }
           [0, 2].forEach(k => hit(out, o + k, 'kick', 1));
         } else {
-          [0, 1.75].forEach(k => hit(out, o + k, 'kick', 1));
-          hit(out, o + 2, 'snare', 1);
-          for (let h = 0; h < 4; h += 0.25) hit(out, o + h, 'hat', 0.45);
+          // Country trap: the backbeat stays, the hi-hats roll in sixteenths and triplets
+          (bar % 2 ? [0, 1.75, 2.5] : [0, 1.75]).forEach(k => hit(out, o + k, 'kick', 1));
+          backbeat(o, [1, 3]);
+          const rollAt = bar % 2 === 1 && busy > 0 ? 3 : 4;
+          for (let h = 0; h < rollAt; h += busy === 0 ? 0.5 : 0.25) hit(out, o + h, 'hat', (h % 0.5 ? 0.3 : 0.5) * hum(r));
+          for (let h = rollAt; h < 4; h += 1 / 6) hit(out, o + h, 'hat', 0.25 + (h - 3) * 0.3, 0.1);
         }
       }
       return out;
@@ -435,11 +465,43 @@ window.JT = window.JT || {};
     return (ctx, r, busy) => {
       const out = [];
       const major = scalePcs(ctx.key, 'major');
+      const kicks = keptKicks(ctx);
       ctx.chords.forEach((c, bar) => {
         const o = bar * 4;
         const next = ctx.chords[(bar + 1) % BARS];
         const br = above(c.root, 31);
         const fifth = br + 7 > 50 ? br - 5 : br + 7;
+        const nextRoot = above(next.root, 31);
+        if (kind === 'kick') {
+          // A root note on every kick, held until the next one, so bass and kick punch as one
+          let at = kicks ? kicks.filter(k => k >= o - 0.05 && k < o + 4 - 0.05).map(k => Math.max(0, k - o)) : [0, 2, 2.5];
+          if (!at.length || at[0] > 0.1) at = [0].concat(at);
+          at = at.filter((q, i) => i === 0 || q - at[i - 1] > 0.2);   // a flam or a double kick is one bass note
+          if (busy === 0) at = at.filter(q => q % 1 === 0);
+          at.forEach((q, i) => {
+            const end = i + 1 < at.length ? at[i + 1] : 4;
+            const last = i === at.length - 1 && i > 0 && next.root !== c.root && busy > 0;
+            out.push({ b: o + q, len: Math.max(0.2, Math.min(1.5, end - q) * 0.9), p: last ? nextRoot - (r() < 0.5 ? 2 : 1) : br, v: (i ? 0.85 : 1) * hum(r) });
+          });
+          return;
+        }
+        if (kind === 'pulse') {
+          // Steady eighths on the root, stepping into the next chord at the end of the bar
+          for (let q = 0; q < 4; q += busy === 0 ? 1 : 0.5) {
+            let p = br;
+            if (q === 3.5 && next.root !== c.root) p = nextRoot - (r() < 0.5 ? 2 : 1);
+            else if (busy === 2 && q === 3) p = br + 12;
+            out.push({ b: o + q, len: busy === 0 ? 0.9 : 0.42, p, v: (q % 1 ? 0.75 : 0.95) * hum(r) });
+          }
+          return;
+        }
+        if (kind === 'long') {
+          // One long root per chord, with a pickup into the next, leaving room for big drums
+          out.push({ b: o, len: busy === 0 ? 3.8 : 2.4, p: br, v: 1 });
+          if (busy > 0) out.push({ b: o + 2.5, len: 1.3, p: busy === 2 ? fifth : br, v: 0.8 * hum(r) });
+          if (busy > 0 && next.root !== c.root) out.push({ b: o + 3.75, len: 0.22, p: nextRoot - 1, v: 0.7 });
+          return;
+        }
         if (kind === 'eighths') {
           [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5].forEach((q, i) => {
             if (busy === 0 && q % 1) return;
@@ -470,10 +532,31 @@ window.JT = window.JT || {};
         const c = ctx.chords[bar], o = bar * 4;
         const shape = [above(c.root, 43)].concat(v);
         if (kind === 'rolls') {
-          // Banjo-style rolls through the chord
+          // A fingerpicked banjo-style loop through the chord, in sixteenths like recent country hits
           const seq = [shape[0], shape[2], shape[3], shape[1], shape[3], shape[2], shape[1], shape[3]];
-          const step = busy === 2 ? 0.25 : 0.5;
+          const step = busy === 0 ? 0.5 : 0.25;
           for (let q = 0, i = 0; q < 4; q += step, i++) out.push({ b: o + q, len: step * 1.8, p: seq[i % seq.length], v: 0.8 });
+          return;
+        }
+        if (kind === 'held') {
+          // One big ringing chord per bar (and a push on the and of 3 when busier)
+          [[0, 1]].concat(busy === 2 ? [[2.5, 0.8]] : []).forEach(([q, vel], k, all) => {
+            const len = (k + 1 < all.length ? all[k + 1][0] : 4) - q - 0.1;
+            shape.forEach((p, i) => out.push({ b: o + q + i * 0.03, len, p, v: vel * (0.9 + r() * 0.1) }));
+          });
+          return;
+        }
+        if (kind === 'sync') {
+          // A sixteenth-note strum that pushes ahead of the beat: down on the eighths, up on the
+          // sixteenths in between, accents on 1, the "a" of 1, the and of 2 and 3
+          let pattern = [[0, 'D', 1], [0.5, 'D', 0.5], [0.75, 'U', 0.75], [1.25, 'U', 0.45], [1.5, 'D', 0.85],
+            [2, 'D', 0.9], [2.5, 'D', 0.5], [2.75, 'U', 0.75], [3.25, 'U', 0.45], [3.5, 'D', 0.8]];
+          if (busy === 0) pattern = pattern.filter(([, , vel]) => vel >= 0.75);
+          if (busy === 2) pattern = pattern.concat([[1, 'D', 0.35], [1.75, 'U', 0.35], [3, 'D', 0.35], [3.75, 'U', 0.35]]);
+          pattern.forEach(([q, dir, vel]) => {
+            const notes = dir === 'D' ? shape : shape.slice(1).reverse();
+            notes.forEach((p, i) => out.push({ b: o + q + i * (dir === 'D' ? 0.022 : 0.016), len: 0.4, p, v: vel * (0.9 + r() * 0.15) }));
+          });
           return;
         }
         const pattern = kind === 'chick'
@@ -493,13 +576,20 @@ window.JT = window.JT || {};
 
   function countryLead(kind) {
     return (ctx, r, busy) => {
-      const rhythms = kind === 'sparse' ? [[0, 1, 2, 3], [0, 1.5, 2, 3]]
+      const rhythms = kind === 'sparse' ? [[0, 2], [0, 1.5, 3], [0, 2, 3]]
         : kind === 'licks' ? [[0, 0.25, 0.5, 1, 1.5, 2, 2.5, 3], [0, 0.5, 0.75, 1, 2, 2.25, 2.5, 3]]
+        : kind === 'hook' ? [[0, 0.5, 0.75, 1.5, 2, 2.75, 3.5], [0.5, 0.75, 1.25, 1.5, 2.5, 3], [0, 0.25, 0.5, 1.5, 2, 2.5, 3.25]]
         : [[0, 0.5, 1, 2, 2.5, 3], [0, 1, 1.5, 2, 3], [0.5, 1, 1.5, 2.5, 3]];
       // The full major scale, not just the pentatonic: five-note melodies on their own read as
       // East Asian. Strong beats are still chord notes.
       const scaleOf = () => scalePcs(ctx.key, 'major');
       const notes = melody(r, ctx.chords, { rhythms, scaleOf, lo: 62, hi: 81, busy });
+      if (kind === 'hook') {
+        // Talky, like a sung line: quick off-beat notes often repeat the note before them
+        for (let i = 1; i < notes.length; i++) {
+          if (notes[i].b % 1 > 0.01 && notes[i].b - notes[i - 1].b <= 0.5 && r() < 0.45) notes[i].p = notes[i - 1].p;
+        }
+      }
       // The country slide: a quick grace note a half step below, sliding up into the chord's third
       const slides = [];
       notes.forEach(n => {
@@ -659,7 +749,7 @@ window.JT = window.JT || {};
   JT.GENRES = {
     rock: {
       id: 'rock', name: 'Southern rock', sharps: true, grid: 1 / 3, editScale: [0, 2, 3, 4, 5, 7, 9, 10],  blurb: 'Blues shuffle, overdriven guitar and organ',
-      key: 4, keyName: 'E', bpm: 96, tempo: [70, 124], swing: 1.0,
+      key: 4, keyName: 'E', bpm: 96, tempo: [70, 124], swing: 1.0, trim: 0,
       tint: [1.0, 0.5, 0.22], fog: [0.022, 0.012, 0.008], accent: '#ff8a3d',
       progressions: [
         { roman: 'I7 - IV7 - I7 - V7', bright: 0.6, mood: 'Classic blues: home, away, home, then a push back', chords: [[0, '7'], [5, '7'], [0, '7'], [7, '7']] },
@@ -707,7 +797,7 @@ window.JT = window.JT || {};
 
     trap: {
       id: 'trap', name: 'Trap', grid: 0.25, editScale: [0, 2, 3, 5, 7, 8, 10, 11],  blurb: '808s, hi-hat rolls and a dark piano',
-      key: 5, keyName: 'F minor', minor: true, verseKeepsChords: true, bpm: 140, tempo: [120, 160], swing: 0.3,
+      key: 5, keyName: 'F minor', minor: true, verseKeepsChords: true, bpm: 140, tempo: [120, 160], swing: 0.3, trim: -1.2,
       tint: [0.62, 0.28, 1.0], fog: [0.012, 0.007, 0.026], accent: '#9d6bff',
       progressions: [
         { roman: 'i - VI - III - VII', bright: 0.55, mood: 'Dark and epic', chords: [[0, 'min'], [8, 'maj'], [3, 'maj'], [10, 'maj']] },
@@ -749,7 +839,7 @@ window.JT = window.JT || {};
 
     pop: {
       id: 'pop', name: 'Pop', grid: 0.25, editScale: [0, 2, 4, 5, 7, 9, 11],  blurb: 'Bright chords, a catchy synth hook',
-      key: 0, keyName: 'C', bpm: 112, tempo: [76, 128], swing: 0.2,
+      key: 0, keyName: 'C', bpm: 112, tempo: [76, 128], swing: 0.2, trim: 2.2,
       tint: [1.0, 0.45, 0.7], fog: [0.02, 0.01, 0.018], accent: '#ff6fae',
       progressions: [
         { roman: 'I - V - vi - IV', bright: 0.9, mood: 'Bright and uplifting, the most-used pop progression', chords: [[0, 'maj'], [7, 'maj'], [9, 'min'], [5, 'maj']] },
@@ -792,7 +882,7 @@ window.JT = window.JT || {};
 
     boombap: {
       id: 'boombap', name: 'Classic hip hop', grid: 0.25, editScale: [0, 2, 3, 5, 7, 9, 10],  blurb: 'Boom bap swing, jazzy minor 7th chords',
-      key: 2, keyName: 'D minor', minor: true, verseKeepsChords: true, bpm: 90, tempo: [80, 100], swing: 0.7,
+      key: 2, keyName: 'D minor', minor: true, verseKeepsChords: true, bpm: 90, tempo: [80, 100], swing: 0.7, trim: 1.0,
       tint: [0.95, 0.75, 0.35], fog: [0.02, 0.016, 0.01], accent: '#e8c15a',
       progressions: [
         { roman: 'i7 - i7 - iv7 - iv7', bright: 0.15, mood: 'A hypnotic two-chord loop', chords: [[0, 'm7'], [0, 'm7'], [5, 'm7'], [5, 'm7']] },
@@ -832,47 +922,51 @@ window.JT = window.JT || {};
       },
     },
     country: {
-      id: 'country', name: 'Country', sharps: true, blurb: 'Three chords and the truth: boom-chick bass, strummed acoustic, fiddle',
+      id: 'country', name: 'Country', sharps: true, blurb: 'Today\u2019s country radio: big drums, banjo loops, twangy hooks and steel guitar',
       grid: 0.25, editScale: [0, 2, 4, 5, 7, 9, 11],
-      key: 7, keyName: 'G', bpm: 104, tempo: [72, 124], swing: 0.4,
+      key: 7, keyName: 'G', bpm: 92, tempo: [68, 124], swing: 0.15, trim: 1.5,
       tint: [1.0, 0.7, 0.32], fog: [0.022, 0.016, 0.01], accent: '#d9a441',
       progressions: [
-        { roman: 'I - IV - V - I', bright: 0.8, mood: 'Three chords and the truth', chords: [[0, 'maj'], [5, 'maj'], [7, 'maj'], [0, 'maj']] },
-        { roman: 'I - V - vi - IV', bright: 0.7, mood: 'Modern country radio', chords: [[0, 'maj'], [7, 'maj'], [9, 'min'], [5, 'maj']] },
-        { roman: 'I - I - IV - V', bright: 0.9, mood: 'Honky-tonk: stay home, then head for the turnaround', chords: [[0, 'maj'], [0, 'maj'], [5, 'maj'], [7, 'maj']] },
-        { roman: 'vi - IV - I - V', bright: 0.3, mood: 'A heartbreak ballad', chords: [[9, 'min'], [5, 'maj'], [0, 'maj'], [7, 'maj']] },
-        { roman: 'I - iii - vi - IV', bright: 0.45, mood: 'Wistful, looking back', chords: [[0, 'maj'], [4, 'min'], [9, 'min'], [5, 'maj']] },
+        { roman: 'I - V - vi - IV', bright: 0.75, mood: 'Country radio: the four chords behind a lot of the hits', chords: [[0, 'maj'], [7, 'maj'], [9, 'min'], [5, 'maj']] },
+        { roman: 'IV - I - V - vi', bright: 0.6, mood: 'Starts away from home: the big singalong lift', chords: [[5, 'maj'], [0, 'maj'], [7, 'maj'], [9, 'min']] },
+        { roman: 'I - IV - vi - V', bright: 0.85, mood: 'Tailgate summer night', chords: [[0, 'maj'], [5, 'maj'], [9, 'min'], [7, 'maj']] },
+        { roman: 'vi - IV - I - V', bright: 0.3, mood: 'Heartbreak that still sounds like a hit', chords: [[9, 'min'], [5, 'maj'], [0, 'maj'], [7, 'maj']] },
+        { roman: 'I - iii - IV - V', bright: 0.5, mood: 'Wistful, looking back at a small town', chords: [[0, 'maj'], [4, 'min'], [5, 'maj'], [7, 'maj']] },
       ],
       roles: {
-        lead: { label: 'Fiddle', voice: 'fiddle', range: [60, 84], sounds: [{ id: 'fiddle', name: 'Fiddle' }, { id: 'cleanguitar', name: 'Twangy electric' }, { id: 'harmonica', name: 'Harmonica' }], styles: [
-          { id: 'tune', name: 'Fiddle tune', why: 'A singable phrase on the major pentatonic, the sound of country.', gen: countryLead('tune') },
-          { id: 'licks', name: 'Hot licks', why: 'Quick runs between the chord notes.', gen: countryLead('licks') },
-          { id: 'sparse', name: 'Sparse', why: 'A few long notes that leave room for a singer.', gen: countryLead('sparse') },
+        lead: { label: 'Twangy electric', voice: 'cleanguitar', range: [60, 84], sounds: [{ id: 'cleanguitar', name: 'Twangy electric' }, { id: 'steel', name: 'Steel guitar' }, { id: 'banjo', name: 'Banjo' }, { id: 'fiddle', name: 'Fiddle' }], styles: [
+          { id: 'hook', name: 'Radio hook', why: 'A syncopated, talky hook with repeated notes, the way a country singer phrases a line.', gen: countryLead('hook') },
+          { id: 'licks', name: 'Telecaster licks', why: 'Quick runs between the chord notes, sliding up into the third.', gen: countryLead('licks') },
+          { id: 'sparse', name: 'Long notes', why: 'A few long notes that swell in, like a steel guitar behind a singer.', gen: countryLead('sparse') },
         ] },
-        drums: { label: 'Band kit', voice: 'kit', styles: [
-          { id: 'live', name: 'Played by a drummer', live: true, why: 'A real drummer\u2019s groove: their timing, ghost notes and accents, not a programmed pattern.', gen: liveDrums() },
-          { id: 'boomchick', name: 'Boom-chick', why: 'Kick on 1 and 3, snare on 2 and 4: the backbone of country.', gen: countryDrums('boomchick') },
-          { id: 'twostep', name: 'Two-step', why: 'Hi-hat on the off-beats, made for dancing.', gen: countryDrums('twostep') },
-          { id: 'train', name: 'Train beat', why: 'Sixteenth-note snare that chugs like a locomotive.', gen: countryDrums('train') },
-          { id: 'trap', name: 'Trap hi-hats', clash: 'Rolling trap hats fight the boom-chick. Save it for country trap.', why: 'A trap beat.', gen: countryDrums('trap') },
+        drums: { label: 'Country kit', voice: 'kit', styles: [
+          { id: 'radio', name: 'Radio backbeat', why: 'Kick on 1 and 3, a snare stacked with a clap on 2 and 4: the polished backbeat of country radio.', gen: countryDrums('radio') },
+          { id: 'halftime', name: 'Stadium half-time', why: 'The snare only on 3, so the beat feels big and slow: made for choruses.', gen: countryDrums('halftime') },
+          { id: 'rimverse', name: 'Cross-stick verse', why: 'The drummer clicks the rim instead of hitting the snare: the hushed groove under a verse.', gen: countryDrums('rimverse') },
+          { id: 'trap', name: 'Country trap', programmed: true, why: 'The country backbeat with rolling trap hi-hats, as on a lot of recent hits.', gen: countryDrums('trap') },
+          { id: 'stomp', name: 'Stomp and clap', programmed: true, why: 'A kick on every beat and claps on 2 and 4, like a crowd stomping along.', gen: countryDrums('stomp') },
+          { id: 'live', name: 'Played by a drummer', live: true, why: 'A real drummer\u2019s country groove: their timing, ghost notes and accents, not a programmed pattern.', gen: liveDrums() },
+          { id: 'boomchick', name: 'Old-school boom-chick', why: 'Kick on 1 and 3, snare on 2 and 4: the backbeat of classic country.', gen: countryDrums('boomchick') },
         ] },
-        bass: { label: 'Electric bass', voice: 'bass', range: [28, 52], sounds: [{ id: 'bass', name: 'Electric bass' }, { id: 'upright', name: 'Upright bass' }], styles: [
-          { id: 'rootfive', name: 'Root-five', why: 'Root on 1, fifth on 3, the boom of boom-chick.', gen: countryBass('rootfive') },
-          { id: 'walkup', name: 'Walk-ups', why: 'Root-five with a two-note climb into every chord change.', gen: countryBass('walkup') },
-          { id: 'eighths', name: 'Driving eighths', why: 'Steady eighth notes for an up-tempo feel.', gen: countryBass('eighths') },
+        bass: { label: 'Electric bass', voice: 'bass', range: [28, 52], sounds: [{ id: 'bass', name: 'Electric bass' }, { id: 'synthbass', name: 'Synth bass' }, { id: 'upright', name: 'Upright bass' }], styles: [
+          { id: 'kick', name: 'Locked to the kick', why: 'A root note on every kick drum, so the low end hits as one.', gen: countryBass('kick') },
+          { id: 'pulse', name: 'Pulsing eighths', why: 'Steady eighth notes on the root: the engine under a modern country chorus.', gen: countryBass('pulse') },
+          { id: 'long', name: 'Long notes', why: 'One long note per chord with a pickup into the next, leaving room for big drums.', gen: countryBass('long') },
+          { id: 'walkup', name: 'Old-school walk-ups', why: 'Root and fifth, with a two-note climb into every chord change.', gen: countryBass('walkup') },
         ] },
-        pad: { label: 'Acoustic guitar', voice: 'acoustic', range: [40, 76], sounds: [{ id: 'acoustic', name: 'Acoustic guitar' }, { id: 'banjo', name: 'Banjo' }, { id: 'piano', name: 'Piano' }], styles: [
-          { id: 'strum', name: 'Strummed', why: 'A down-up strum, every string landing a hair after the last.', gen: countryStrum('strum') },
-          { id: 'chick', name: 'Boom-chick strums', why: 'Short chord chops on 2 and 4, the chick to the bass’s boom.', gen: countryStrum('chick') },
-          { id: 'rolls', name: 'Banjo rolls', why: 'Fingerpicked rolls through the chord.', gen: countryStrum('rolls') },
+        pad: { label: 'Acoustic guitar', voice: 'acoustic', range: [40, 76], sounds: [{ id: 'acoustic', name: 'Acoustic guitar' }, { id: 'banjo', name: 'Banjo' }, { id: 'bigguitar', name: 'Big electric guitars' }, { id: 'piano', name: 'Piano' }], styles: [
+          { id: 'sync', name: 'Syncopated strum', why: 'A sixteenth-note strum that pushes ahead of the beat, the bounce of modern country.', gen: countryStrum('sync') },
+          { id: 'rolls', name: 'Banjo loop', why: 'A fingerpicked roll through every chord, a sound all over recent country hits.', gen: countryStrum('rolls') },
+          { id: 'held', name: 'Big ringing chords', why: 'One chord per bar left to ring. Try it with the big electric guitars for a chorus.', gen: countryStrum('held') },
+          { id: 'strum', name: 'Down-up strum', why: 'A steady down-up strum, every string landing a hair after the last.', gen: countryStrum('strum') },
         ] },
         perc: PERC([
-          { id: 'tambourine', name: 'Tambourine', why: 'Tambourine on 2 and 4.', gen: percPart('tambourine') },
           { id: 'shaker', name: 'Shaker', why: 'A shaker riding the eighths.', gen: percPart('shaker') },
-          { id: 'cowbell', name: 'Cowbell', why: 'A honky-tonk cowbell.', gen: percPart('cowbell') },
+          { id: 'tambourine', name: 'Tambourine', why: 'Tambourine on 2 and 4.', gen: percPart('tambourine') },
+          { id: 'rim', name: 'Rim clicks', why: 'Rim clicks between the snare hits.', gen: percPart('rim') },
         ]),
-        counter: COUNTER('Twangy electric', 'cleanguitar', [55, 79], [{ id: 'cleanguitar', name: 'Twangy electric' }, { id: 'harmonica', name: 'Harmonica' }, { id: 'piano', name: 'Honky-tonk piano' }], 'answer'),
-        fx: FX('Porch-night wash'),
+        counter: COUNTER('Steel guitar', 'steel', [55, 79], [{ id: 'steel', name: 'Steel guitar' }, { id: 'cleanguitar', name: 'Twangy electric' }, { id: 'banjo', name: 'Banjo' }, { id: 'piano', name: 'Piano' }], 'answer'),
+        fx: FX('Night-drive wash'),
       },
     },
   };
@@ -935,7 +1029,7 @@ window.JT = window.JT || {};
   // override: { chords, layers } to write the part over other chords or against other parts (song sections)
   JT.generate = function(song, role, styleId, seed, busy, override) {
     const g = JT.GENRES[song.genre];
-    const style = g.roles[role].styles.find(s => s.id === styleId);
+    const style = g.roles[role].styles.find(s => s.id === styleId) || g.roles[role].styles[0];   // older saved jams
     const ctx = {
       key: g.key, grid: g.grid, genre: song.genre, bpm: song.bpm,
       scale: g.editScale.map(i => (g.key + i) % 12),
@@ -944,7 +1038,7 @@ window.JT = window.JT || {};
     };
     let notes = style.gen(ctx, T.rng(seed), busy);
     const meta = notes.meta;
-    if (role === 'drums' && !style.live && g.roles.drums.voice === 'kit') notes = humanize(notes, g, song, seed, busy);
+    if (role === 'drums' && !style.live && !style.programmed && g.roles.drums.voice === 'kit') notes = humanize(notes, g, song, seed, busy);
     notes = notes.filter(n => n.b >= 0 && n.b < 16);
     notes.meta = meta;
     return notes;
