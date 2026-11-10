@@ -171,6 +171,7 @@ window.JT = window.JT || {};
         let bd = Infinity;
         for (const k in set) { const d = Math.abs(+k - key); if (d < bd) { bd = d; best = k; } }
       }
+      if (best === null || !set[best]) return;   // still decoding this instrument (common on phones)
       const { buf, norm } = set[best];
       const src = ctx.createBufferSource();
       src.buffer = buf;
@@ -295,6 +296,7 @@ window.JT = window.JT || {};
       const pitch = n.lead ? n.p - 12 : n.p;
       let best = null, bd = Infinity;
       for (const k in set) { const d = Math.abs(+k - pitch); if (d < bd) { bd = d; best = k; } }
+      if (best === null) return;   // still decoding
       const { buf, norm } = set[best];
       const dur = Math.max(0.9, n.len * spb);
       const level = 0.2;
