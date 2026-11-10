@@ -1017,9 +1017,9 @@ void main() {
       } else { M.kick = M.snare = 0; }
 
       // The gate frame pulses on every beat, harder on the first beat of a bar, and on every kick
-      const gateI = 0.8 + pulse * 1.4 + M.kick * 1.6, gc = tint, th = 0.035;
+      const gateI = 0.8 + pulse * 1.4 + M.kick * 1.0, gc = tint, th = 0.035;
       ni = frameAt(ni, -GATE, gc, gateI, th);
-      lights.push({ pos: [0, 0.9, -GATE], col: gc, k: pulse * 0.5 + M.kick * 1.2 + M.snare * 0.6 }, { pos: [0, -0.9, -GATE], col: gc, k: pulse * 0.5 + M.kick * 1.2 + M.snare * 0.6 });
+      lights.push({ pos: [0, 0.9, -GATE], col: gc, k: pulse * 0.5 + M.kick * 0.7 + M.snare * 0.5 }, { pos: [0, -0.9, -GATE], col: gc, k: pulse * 0.5 + M.kick * 0.7 + M.snare * 0.5 });
       // The kick's shockwave runs away down the tunnel as a bright frame
       if (!reduced && M.kick > 0.05 && M.kickAge < 0.5) ni = frameAt(ni, -GATE - M.kickAge * 18, gc, M.kick * 1.3, 0.03);
       // The key lift sends a glow sweeping down the tunnel
@@ -1104,7 +1104,7 @@ void main() {
       gl.uniform1f(tu.uK, K);
       gl.uniform1f(tu.uPos, vp % 64);
       gl.uniform1f(tu.uPulse, pulse * (1 - M.stop));
-      gl.uniform1f(tu.uKick, M.kick);
+      gl.uniform1f(tu.uKick, M.kick * 0.6);   // felt, not blinding: bright worlds (country) washed out at full strength
       gl.uniform1f(tu.uKickAge, M.kickAge);
       gl.uniform1f(tu.uSnare, M.snare);
       gl.uniform1f(tu.uScroll, M.scroll);

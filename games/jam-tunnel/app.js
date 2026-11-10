@@ -25,6 +25,7 @@
   const svg = d => `<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">${d}</svg>`;
   const ICON = {
     mute: svg('<path d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5z"/><path d="M11 5.5a3.5 3.5 0 0 1 0 5M12.8 3.8a6 6 0 0 1 0 8.4"/>'),
+    sound: svg('<path d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5z"/><path d="M11 5.5a3.5 3.5 0 0 1 0 5M12.8 3.8a6 6 0 0 1 0 8.4"/>'),
     unmute: svg('<path d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5z"/><path d="M11 6l4 4M15 6l-4 4"/>'),
     edit: svg('<path d="M10.5 2.5l3 3L6 13H3v-3z"/><path d="M9 4l3 3"/>'),
     change: svg('<path d="M2.5 5h9l-2.5-2.5M13.5 11h-9l2.5 2.5"/>'),
@@ -258,11 +259,17 @@
 
   function keepPick() {
     const o = state.options[state.pick];
-    state.song.layers[state.role] = { styleId: o.style.id, name: o.style.name, seed: o.seed, busy: state.busy, sound: state.sound, notes: previewNotes() };
-    regenerateOthers(state.role);
+    const role = state.role, added = !state.song.layers[role];
+    state.song.layers[role] = { styleId: o.style.id, name: o.style.name, seed: o.seed, busy: state.busy, sound: state.sound, notes: previewNotes() };
+    regenerateOthers(role);
     touched();
     state.role = null;
-    state.tray = nextStep() ? 'add' : 'ready';
+    const next = nextStep();
+    // A new part teaches where it lives in the tunnel, then the next part's choices open right away
+    if (added && !next && STEPS.includes(role)) toast('Your loop is ready! Make it a full song, or jam on it.');
+    else if (added) toast(`${ROLE_NAME[role]} kept: on the ${surfaceOf(role)}${next ? `. Next: ${ROLE_NAME[next].toLowerCase()}` : ''}`);
+    if (added && next && STEPS.includes(role)) { openSuggestions(next); return; }
+    state.tray = next ? 'add' : 'ready';
     render();
   }
 
@@ -784,7 +791,10 @@
     let next;
     do { next = PROMPTS[Math.floor(Math.random() * PROMPTS.length)]; } while (PROMPTS.length > 1 && next === last);
     state.prompt = next;
+    demoPick = next.genre;   // the tunnel flies through the prompt's genre
     renderTray();
+    const card = document.querySelector('.prompt-card');
+    if (card) card.scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
   }
   function startPrompt(timed) {
     const pr = state.prompt;
@@ -796,8 +806,7 @@
     applyMood();
     state.song.title = pr.text;
     state.clock = timed ? { end: performance.now() + 180000, done: false } : null;
-    state.tray = 'add';
-    render();
+    openSuggestions(nextStep());
   }
 
   // Just watch: every panel slides away; tap the tunnel, press H or Esc to bring them back
@@ -847,9 +856,9 @@
 
   function renderSong() {
     const song = state.song;
-    $('chordsRow').hidden = !song;
+    $('chordsRow').hidden = !song || state.tray === 'mood';   // the mood screen shows the chords itself
     if (!song) {
-      $('meta').textContent = 'Fly through your song. Add instruments from parts that fit.';
+      $('meta').textContent = 'Build a song from parts that fit, then fly through it.';
       return;
     }
     const g = JT.GENRES[song.genre];
@@ -867,7 +876,7 @@
       const sec = sectionAt(((position(performance.now()) % state.track.length) + state.track.length) % state.track.length);
       if (sec) { prog = sec.prog; label = sec.name; shift += sec.shift || 0; }
     }
-    const key = label + prog.chords.join() + shift;
+    const key = [state.song.genre, label, prog.chords.join(), shift].join('|');   // same shapes recur across genres in different keys
     if (key === chordsKey) return;
     chordsKey = key;
     const g = JT.GENRES[state.song.genre];
@@ -877,8 +886,9 @@
 
   function renderLayers() {
     const song = state.song;
-    $('layers').hidden = !song;
-    if (!song) return;
+    // The parts list appears once there's a part to list
+    $('layers').hidden = !song || (state.mode === 'loop' && !Object.keys(song.layers).length);
+    if ($('layers').hidden) return;
     const g = JT.GENRES[song.genre];
     const sides = currentSides();
     const rows = STEPS.concat(JT.EXTRAS.filter(r => sides.includes(r))).map(role => {
@@ -989,12 +999,23 @@
       tray.innerHTML = `
         <div class="welcome">
           <h3>Make a song in a few minutes</h3>
-          <p>Jam Tunnel builds a song with you. At each step you pick from a few parts that already fit together
-             (music theory does the hard part), then it arranges your loop into a full track.</p>
+          <p>Pick a genre, then choose from parts that already fit together. Music theory does the hard part,
+             and your loop becomes a full song. No experience needed.</p>
           ${stepsStrip(0)}
-          <p class="hint">Your song flies toward you: drums on the floor, bass on the right wall, melody on the left wall, chords on the ceiling.</p>
         </div>
         ${jamsList()}
+        <div class="tray-head"><h3 class="small">Pick a genre</h3><p class="hover-hint">Point at one to fly through its world.</p></div>
+        <div class="cards four">${Object.values(JT.GENRES).map(g => `
+          <button type="button" class="card" data-genre="${g.id}" style="--accent:${g.accent}">
+            <span class="top"><span class="nm">${esc(g.name)}</span></span>
+            <span class="why">${esc(g.blurb)}</span>
+            <span class="sub">${esc(g.keyName)} · ${g.bpm} BPM</span>
+          </button>`).join('')}
+        </div>
+        <div class="actions start-alt">
+          <button type="button" data-act="surpriseall">Surprise me: build one for me</button>
+          <button type="button" data-act="prompt">Give me a song idea</button>
+        </div>
         ${state.prompt ? (() => {
           const pr = state.prompt, pg = JT.GENRES[pr.genre];
           return `<div class="prompt-card" style="--accent:${pg.accent}">
@@ -1008,15 +1029,7 @@
             </div>
           </div>`;
         })() : ''}
-        <div class="tray-head"><h3 class="small">Pick a genre to begin</h3><p>It sets the key, tempo, chords and instruments. <button type="button" class="link" data-act="surpriseall">Or surprise me</button> · <button type="button" class="link" data-act="prompt">Give me something to make a song about</button></p></div>
-        <p class="phone-credit">Instrument samples: FluidR3_GM by Frank Wen, Salamander Grand Piano by Alexander Holm and Wurlitzer EP200 by Greg Sullivan, all CC BY 3.0; drums, basses and guitars by Karoryfer Samples and D. Smolken, CC0. Drum grooves: Groove MIDI Dataset by Google, CC BY 4.0</p>
-        <div class="cards four">${Object.values(JT.GENRES).map(g => `
-          <button type="button" class="card" data-genre="${g.id}" style="--accent:${g.accent}">
-            <span class="top"><span class="nm">${esc(g.name)}</span></span>
-            <span class="why">${esc(g.blurb)}</span>
-            <span class="sub">${esc(g.keyName)} · ${g.bpm} BPM</span>
-          </button>`).join('')}
-        </div>`;
+        <p class="phone-credit">Instrument samples: FluidR3_GM by Frank Wen, Salamander Grand Piano by Alexander Holm and Wurlitzer EP200 by Greg Sullivan, all CC BY 3.0; drums, basses and guitars by Karoryfer Samples and D. Smolken, CC0. Drum grooves: Groove MIDI Dataset by Google, CC BY 4.0</p>`;
       return;
     }
 
@@ -1276,7 +1289,12 @@
     $('pause').setAttribute('aria-label', paused ? 'Play' : 'Pause');
     $('pause').title = paused ? 'Play (Space)' : 'Pause (Space)';
     const sound = $('sound');
-    sound.textContent = !ac ? 'Sound off' : !audioReady ? 'Loading sounds…' : soundOn ? 'Sound on' : 'Sound off';
+    const on = !!ac && soundOn;
+    if (ac && !audioReady) sound.textContent = 'Loading sounds\u2026';
+    else sound.innerHTML = on ? ICON.sound : ICON.unmute;
+    sound.classList.toggle('icon', !ac || audioReady);
+    sound.setAttribute('aria-label', on ? 'Sound is on. Click to mute everything' : 'Sound is off. Click to turn it on');
+    sound.title = on ? 'Mute all sound' : 'Turn the sound on';
     sound.setAttribute('aria-pressed', String(soundOn && audioReady));
     const jam = $('jamBtn');
     jam.hidden = Object.keys(state.song.layers).length < 2 || ['suggest', 'edit', 'mood'].includes(state.tray);
@@ -1328,7 +1346,7 @@
       case 'prompt': drawPrompt(); break;
       case 'promptGo': startPrompt(false); break;
       case 'promptClock': startPrompt(true); break;
-      case 'build': state.tray = 'add'; render(); break;
+      case 'build': openSuggestions(nextStep()); break;
       case 'surprise': surpriseFill(); break;
       case 'surpriseall': surpriseAll(); break;
       case 'midi': exportMidi(); break;
@@ -1569,6 +1587,34 @@
     toggleAt(position(performance.now()) + hit.rel, lane);
   });
   const IDLE = { tint: [1.0, 0.5, 0.22], fog: [0.02, 0.012, 0.012], swing: 0.5 };
+  // Before a song exists, the tunnel shows a silent demo loop in a genre's world: the card you point
+  // at, or each genre in turn
+  const GENRE_IDS = Object.keys(JT.GENRES);
+  const demos = {};
+  let demoPick = null, demoSince = performance.now();
+  function demoOf(id) {
+    if (!demos[id]) {
+      const g = JT.GENRES[id];
+      const song = JT.newSong(id, 20241);
+      JT.applyMood(song, 0.5, null);
+      JT.CORE.forEach(role => {
+        const st = g.roles[role].styles.find(x => !x.live) || g.roles[role].styles[0];
+        song.layers[role] = { styleId: st.id, seed: 7, busy: 1, notes: JT.generate(song, role, st.id, 7, 1) };
+      });
+      demos[id] = JT.CORE.map(role => ({ role, notes: song.layers[role].notes, ghost: false, range: g.roles[role].range || [36, 72], pieces: g.roles[role].pieces || null }));
+    }
+    return demos[id];
+  }
+  const demoGenre = now => demoPick || GENRE_IDS[Math.floor((now - demoSince) / 8000) % GENRE_IDS.length];
+  $('tray').addEventListener('pointerover', e => {
+    const c = e.target.closest('[data-genre]');
+    if (c && state.tray === 'start') demoPick = c.dataset.genre;
+  });
+  $('tray').addEventListener('focusin', e => {
+    const c = e.target.closest('[data-genre]');
+    if (c && state.tray === 'start') demoPick = c.dataset.genre;
+  });
+  $('tray').addEventListener('pointerleave', () => { if (demoPick && !state.prompt) { demoPick = null; demoSince = performance.now(); } });
   let padChord = '', clockText = '';
   let sectionsMemo = null;
   function sectionsView() {
@@ -1596,7 +1642,8 @@
     roll += (target - roll) * ease;
     runAmt += ((E ? 1 : 0) - runAmt) * ease;
     if (tunnel) {
-      const g = state.song ? JT.GENRES[state.song.genre] : IDLE;
+      const demo = !state.song && state.tray === 'start' ? demoGenre(now) : null;
+      const g = state.song ? JT.GENRES[state.song.genre] : demo ? JT.GENRES[demo] : IDLE;
       tunnel.render({
         pos: p, prevPos, spb: spb(), swing: g.swing, tint: g.tint, fog: g.fog,
         paused, reduced, time: (now - t0) / 1000, dt,
@@ -1605,7 +1652,7 @@
         marks: songMode ? state.track.sections.map(s => ({ beat: s.start, color: toRgb(JT.SECTION_TYPES[s.type].color) })) : [],
         roll, runAmt,
         sides: currentSides(),
-        genre: state.song ? state.song.genre : undefined,
+        genre: state.song ? state.song.genre : demo || undefined,
         perf: {
           stop: !!perf.stop && p >= perf.stop.from && p < perf.stop.to,
           half: !!perf.half && p >= perf.half.from && (perf.half.to == null || p < perf.half.to),
@@ -1613,7 +1660,7 @@
         },
         sections: songMode ? sectionsView() : null,
         edit: E ? { role: E.role, lanes: E.lanes, cursor: E.cursor, range: rangeOf(E.role), pieces: piecesOf(E.role) } : null,
-        parts: currentParts().map(part => ({ role: part.role, notes: part.notes, ghost: part.ghost || part.muted, range: part.range, pieces: part.pieces, dim: !!E && part.role !== E.role })),
+        parts: (demo ? demoOf(demo) : currentParts()).map(part => ({ role: part.role, notes: part.notes, ghost: part.ghost || part.muted, range: part.range, pieces: part.pieces, dim: !!E && part.role !== E.role })),
       });
     }
     if (state.rec) {

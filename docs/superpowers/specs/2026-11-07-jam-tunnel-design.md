@@ -250,6 +250,23 @@ The user asked for design ideas and approved all six of Claude's:
 - Calmer panels: parts are colored rows matching their walls, with icon buttons that stay quiet until
   you reach for them; shorter copy.
 
+## First-impression pass (added 2026-11-10)
+
+The user asked for a UI/UX pass on ease of use, clear messaging and first impressions. Claude's calls:
+- The start screen's tunnel plays a silent demo loop in a genre's world, cycling through the genres;
+  pointing at a genre card (or drawing a prompt) switches to that world.
+- Less text before the first choice; "Surprise me" and "Give me a song idea" are real buttons under
+  the genre cards, and the prompt card opens right below them.
+- A guided flow without dead ends: "Start building" and each newly kept core part open the next
+  part's choices directly, and a toast says where the part lives ("Drums kept: on the floor. Next:
+  bass"). The overview of remaining parts is still there after skipping or cancelling.
+- Nothing empty on screen: the parts list appears with the first part; the mood screen shows the
+  chords once.
+- The sound toggle is a speaker icon; header text has a shadow over bright worlds; kick flashes are
+  softer.
+- Fixed: the chords line kept the previous genre's chords when two genres' progressions had the same
+  shape.
+
 ## Genres
 
 Required: classic hip hop (boom bap), trap, pop. Proposed to make about 20 (Claude's list; the

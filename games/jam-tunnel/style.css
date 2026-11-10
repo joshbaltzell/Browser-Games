@@ -439,3 +439,13 @@ body.idle .tray:hover, body.idle .layers:hover { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) {
   body.watch .tray, body.watch .layers, body.idle .tray, body.idle .layers { transform: none; }
 }
+
+/* --- FIRST IMPRESSIONS --- */
+/* The header floats over bright worlds (country's wood, pop's pastels): keep it legible */
+.song .name, .song .meta, .chords, .back { text-shadow: 0 1px 10px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 0, 0, 0.7); }
+.start-alt { justify-content: center; }
+.start-alt button { padding: 9px 16px; }
+.welcome > p { color: var(--ink); }
+@media (pointer: coarse) { .hover-hint { display: none; } }
+#sound.icon { padding: 8px 10px; }
+.card[data-genre]:hover, .card[data-genre]:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset, 0 0 24px color-mix(in srgb, var(--accent) 25%, transparent); }
