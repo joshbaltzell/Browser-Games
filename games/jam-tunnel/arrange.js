@@ -38,6 +38,14 @@ window.JT = window.JT || {};
   };
   JT.SECTION_TYPES = SECTION_TYPES;
 
+  // Big moments a section can have
+  JT.MOMENTS = [
+    { id: '', name: 'None' },
+    { id: 'lift', name: 'Key change up', about: 'From here on the song moves up a whole step. The classic lift for a last chorus.' },
+    { id: 'half', name: 'Half-time', about: 'The drums play at half speed while everything else keeps going: suddenly heavy.' },
+    { id: 'stop', name: 'Stop before it', about: 'The whole band stops for the last two beats before this section, then slams back in.' },
+  ];
+
   let nextId = 1;
   JT.makeSection = function(type) {
     const t = SECTION_TYPES[type];
@@ -99,6 +107,7 @@ window.JT = window.JT || {};
     const sections = [];
     const verse = JT.verseChords(song);
     let beat = 0;
+    let shift = 0;   // semitones, after a key change
 
     arrangement.forEach((sec, i) => {
       const type = SECTION_TYPES[sec.type];
@@ -106,6 +115,12 @@ window.JT = window.JT || {};
       const start = beat, end = beat + sec.bars * 4;
       const next = arrangement[i + 1];
       const intoChorus = next && next.type === 'chorus';
+      if (sec.moment === 'lift') shift += 2;
+      if (sec.moment === 'stop') {
+        // Everything stops for two beats; the section lands with a crash
+        JT.ROLES.forEach(role => { parts[role] = parts[role].filter(n => !(n.b >= start - 2 && n.b < start)); });
+        if (song.layers.drums && sec.layers.drums) parts.drums.push({ b: start, len: 0.5, p: g.roles.drums.voice === 'kit' ? 'crash' : 'openhat', v: 1 });
+      }
 
       // Transitions lead into each chorus (when it has them on): a riser or a reverse swell, then an impact.
       // A texture instead plays under every section that has it on.
@@ -126,6 +141,9 @@ window.JT = window.JT || {};
         let notes = L.edited ? L.notes.map(n => Object.assign({}, n))
           : JT.generate(song, role, L.styleId, L.seed, busy, { chords, layers: local });
         if (sec.type === 'intro' && role === 'drums') notes = notes.filter(n => n.p === 'hat' || n.p === 'openhat');
+        // Half-time: the first two bars of the beat stretched over all four
+        if (sec.moment === 'half' && (role === 'drums' || role === 'perc')) notes = notes.filter(n => n.b < 8).map(n => Object.assign({}, n, { b: n.b * 2 }));
+        if (shift) notes = notes.map(n => typeof n.p === 'number' ? Object.assign({}, n, { p: n.p + shift, glideTo: n.glideTo && n.glideTo + shift }) : n);
         local[role] = { notes };
       });
 
@@ -152,7 +170,7 @@ window.JT = window.JT || {};
         const lastBar = end - 4;
         JT.ROLES.forEach(role => { parts[role] = parts[role].filter(n => !(n.b >= lastBar && n.b < end)); });
         const tonic = song.prog.chords.find(([deg]) => deg === 0);
-        const home = T.chordsOf(g.key, [[0, tonic ? tonic[1] : (g.minor ? 'min' : 'maj')]], g.sharps);
+        const home = T.chordsOf(g.key + shift, [[0, tonic ? tonic[1] : (g.minor ? 'min' : 'maj')]], g.sharps);
         if (song.layers.pad) {
           const range = g.roles.pad.range;
           T.voiceLead(home, range[0] + 4, range[1] - 2)[0].forEach(p => parts.pad.push({ b: lastBar, len: 3.8, p, v: 0.9 }));
@@ -164,7 +182,7 @@ window.JT = window.JT || {};
         }
       }
 
-      sections.push({ id: sec.id, type: sec.type, name: type.name, start, end, bars: sec.bars, prog: sec.type === 'verse' ? verse.prog : song.prog });
+      sections.push({ id: sec.id, type: sec.type, name: type.name, start, end, bars: sec.bars, shift, prog: sec.type === 'verse' ? verse.prog : song.prog });
       beat = end;
     });
 
@@ -180,9 +198,9 @@ window.JT = window.JT || {};
   // A type-1 Standard MIDI File: a tempo track, then one named track per instrument with a
   // General MIDI program, drums on channel 10 using the standard drum notes.
   const GM_PROGRAM = {
-    guitar: 29, distguitar: 30, bass: 33, upright: 32, synthbass: 38, '808': 38, organ: 16,
+    guitar: 29, distguitar: 30, bass: 33, upright: 32, subbass: 38, synthbass: 38, '808': 38, organ: 16,
     piano: 0, darkpiano: 0, epiano: 4, strings: 48, warmpad: 89, musicbox: 10, flute: 73, vibes: 11,
-    acoustic: 25, fiddle: 40, banjo: 105, cleanguitar: 27, harmonica: 22, synthlead: 81, brass: 61,
+    acoustic: 25, fiddle: 40, banjo: 105, cleanguitar: 27, steel: 27, bigguitar: 29, harmonica: 22, synthlead: 81, brass: 61,
   };
   const GM_DRUM = {
     kick: 36, snare: 38, clap: 39, hat: 42, openhat: 46, tomlow: 45, tomhigh: 48, crash: 49,
@@ -239,6 +257,7 @@ window.JT = window.JT || {};
     const rate = 44100;
     const ctx = new OfflineAudioContext(2, Math.ceil(seconds * rate), rate);
     const audio = JT.createAudio(ctx);
+    audio.setTrim(JT.GENRES[song.genre].trim);
     await audio.ready;
     await audio.load(Object.values(voices).map(JT.instOf));
     const parts = JT.ROLES.filter(r => track.parts[r].length).map(r => ({ role: r, voice: voices[r], notes: track.parts[r], lead: r === 'lead' }));

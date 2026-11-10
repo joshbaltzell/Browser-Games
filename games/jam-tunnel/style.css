@@ -77,21 +77,38 @@ button.primary:hover { filter: brightness(1.08); }
   grid-row: 2;
   align-self: start; justify-self: start;
   max-height: 100%; overflow-y: auto;   /* seven parts can outgrow the space above the tray */
-  width: 270px; max-width: 100%;
+  width: 300px; max-width: 100%;
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px;
   display: grid; gap: 10px;
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
 }
 .layers h2 { font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-dim); font-weight: 500; }
-.layer { display: grid; grid-template-columns: 10px 1fr; gap: 2px 10px; align-items: center; }
-.layer .sw { width: 10px; height: 10px; border-radius: 3px; align-self: start; margin-top: 5px; border: 1px solid; }
-.layer .ln { font-weight: 500; }
-.layer .ld { color: var(--ink-dim); font-size: 0.78rem; grid-column: 2; }
-.layer .acts { grid-column: 2; grid-row: 3; display: flex; gap: 4px; margin-top: 3px; }
+/* Each part wears its tunnel wall's color */
+.layer {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 8px; align-items: center;
+  padding: 6px 4px 6px 10px; border-radius: 8px; border-left: 3px solid var(--c);
+  background: color-mix(in srgb, var(--c) 10%, transparent);
+}
+.layer .ln { grid-column: 1 / -1; grid-row: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer .ld { grid-column: 1; grid-row: 2; color: var(--ink-dim); font-size: 0.74rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer .acts { grid-column: 2; grid-row: 2; display: flex; gap: 1px; align-items: center; margin: -2px 0; }
 .layer .acts:empty { display: none; }
-.layer .acts button { padding: 4px 7px; font-size: 0.75rem; }
+.layer .acts button { padding: 4px 8px; font-size: 0.75rem; }
+.layer .acts button.icon { padding: 5px; background: transparent; border-color: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.layer .acts button.icon:hover { background: rgba(255, 255, 255, 0.06); border-color: var(--line); }
+.layer.muted { background: transparent; border-left-style: dashed; }
 .layer.muted .ln { color: var(--ink-dim); text-decoration: line-through; }
+.layer.empty, .layer.choosing { background: transparent; border-left-color: color-mix(in srgb, var(--c) 45%, transparent); }
 .layer.empty .ln { color: var(--ink-dim); font-weight: 400; }
+.layer.choosing .ld { color: var(--c); }
+/* With a mouse the buttons stay quiet until you reach for them */
+@media (pointer: fine) {
+  .layer .acts { opacity: 0.5; transition: opacity 0.15s; }
+  .layer:hover .acts, .layer:focus-within .acts { opacity: 1; }
+}
+.ic { width: 15px; height: 15px; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.ic .dot { fill: currentColor; stroke: none; }
+.transport button.icon { padding: 8px 10px; }
 
 /* --- TRAY --- */
 .tray {
@@ -209,7 +226,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 .keys { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.8rem; color: var(--ink-dim); }
 kbd { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink); background: rgba(255, 255, 255, 0.08);
   border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; margin-right: 3px; }
-.layer .acts button[aria-pressed="true"] { border-color: var(--ember); color: var(--ember); }
+.layer .acts button[aria-pressed="true"], .layer .acts button.icon[aria-pressed="true"] { border-color: var(--ember); color: var(--ember); }
 .sound-row .chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 
 /* --- WHAT KIND OF SONG --- */
@@ -250,6 +267,7 @@ button.link { background: none; border: 0; padding: 0; color: var(--ember); text
 @media (pointer: coarse) {
   button, .chip { min-height: 40px; }
   .layer .acts button { min-height: 36px; padding: 6px 10px; }
+  .layer .acts button.icon { min-width: 34px; display: grid; place-items: center; }
   .keys { display: none; }
 }
 
@@ -278,9 +296,9 @@ button.link { background: none; border: 0; padding: 0; color: var(--ember); text
   .tempo { display: none; }
   .layers { grid-column: 2; grid-row: 2; width: auto; justify-self: stretch; padding: 8px 10px; gap: 6px; }
   .layers h2 { display: none; }
-  .layer { grid-template-columns: 10px 1fr auto; }
   .layer .ld { display: none; }
-  .layer .acts { grid-column: 3; grid-row: 1; margin-top: 0; }
+  .layer .ln { grid-column: 1; }
+  .layer .acts { grid-row: 1; margin: 0; }
   /* A plain column that scrolls: grid rows here would squash the swipeable card rows */
   .tray {
     grid-column: 2; grid-row: 3; align-self: stretch; max-height: none; max-width: none; width: auto;
@@ -339,3 +357,95 @@ button.link { background: none; border: 0; padding: 0; color: var(--ember); text
 
 .touch-hint { display: none; }
 @media (pointer: coarse) { .touch-hint { display: block; } }
+
+/* --- JAM ON IT --- */
+.jam-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.jam-block { display: grid; gap: 8px; align-content: start; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.jam-block .lbl { min-width: 0; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.perf { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.perf button, .note { display: grid; gap: 2px; justify-items: center; padding: 8px 4px; font-size: 0.8rem; touch-action: none; user-select: none; -webkit-user-select: none; }
+.perf kbd, .note kbd { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-dim); }
+.perf button.held, .note.held { background: var(--accent); color: #140d06; border-color: transparent; }
+.perf button.held kbd, .note.held kbd { color: #140d06; }
+.perf button[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.filter {
+  position: relative; display: flex; justify-content: space-between; align-items: center; height: 40px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 999px; font-size: 0.72rem; color: var(--ink-dim); cursor: ew-resize;
+  background: linear-gradient(90deg, rgba(80, 120, 255, 0.18), transparent 40%, transparent 60%, rgba(255, 220, 120, 0.18));
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.filter .knob { position: absolute; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 10px var(--accent); transition: left 0.12s ease-out; pointer-events: none; }
+.chip .yours { font-size: 0.65rem; color: var(--good); text-transform: uppercase; letter-spacing: 0.06em; }
+.notes-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.note { font-family: var(--font-mono); }
+.note.ct { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+button.rec-on { border-color: #ff5a5a; color: #ff8a8a; }
+.toast {
+  position: fixed; left: 50%; top: 38%; transform: translate(-50%, 8px); z-index: 20; pointer-events: none;
+  padding: 8px 14px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line);
+  font-family: var(--font-display); font-weight: 700; opacity: 0; transition: opacity 0.2s, transform 0.2s;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+#jamBtn[aria-pressed="true"] { border-color: var(--ember); color: var(--ember); }
+.meta .title { color: var(--ink); }
+.meta .clock { color: var(--ember); margin-left: 6px; }
+/* Shake and busier/calmer on each part */
+.layer .acts { flex-wrap: wrap; }
+.layer .acts button.icon { padding: 4px 6px; line-height: 1; }
+.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.bars i { display: block; width: 3px; border-radius: 1px; background: var(--ink-dim); opacity: 0.35; }
+.bars i:nth-child(1) { height: 5px; } .bars i:nth-child(2) { height: 8px; } .bars i:nth-child(3) { height: 12px; }
+.bars[data-n="0"] i:nth-child(1), .bars[data-n="1"] i:nth-child(-n+2), .bars[data-n="2"] i { opacity: 1; background: var(--ink); }
+button:disabled { opacity: 0.4; cursor: default; }
+/* Prompt cards */
+.prompt-card { display: grid; gap: 6px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.prompt-card .lbl { font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.prompt-card .ptext { font-family: var(--font-display); font-weight: 700; font-size: 1.35rem; }
+.prompt-card .sub { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-dim); }
+@media (max-width: 820px) { .jam-grid { grid-template-columns: 1fr; } }
+@media (orientation: landscape) and (max-height: 500px) {
+  body[data-tray="jam"] .layers { display: none; }
+  body[data-tray="jam"] .tray { grid-row: 2 / 4; }
+  .jam-grid { grid-template-columns: 1fr; gap: 8px; }
+  .jam-block { padding: 8px; }
+  .notes-row .note { min-height: 44px; }
+  .prompt-card .ptext { font-size: 1.05rem; }
+  body[data-tray="jam"] .tray-head p { display: none; }
+  .perf button { padding: 6px 4px; }
+}
+@media (pointer: coarse) { .perf kbd, .note kbd { display: none; } }
+
+/* --- GIVING THE TUNNEL THE SCREEN --- */
+.layers, .tray, .transport, .chords-row, .credit, .song .back { transition: opacity 0.4s ease, transform 0.4s ease; }
+/* Just watch: everything but the song's name slides away */
+body.watch .layers, body.watch .tray, body.watch .transport, body.watch .chords-row, body.watch .credit, body.watch .song .back {
+  opacity: 0; pointer-events: none;
+}
+body.watch .tray { transform: translateY(30px); }
+body.watch .layers { transform: translateX(-30px); }
+.show-controls {
+  position: fixed; z-index: 5; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  opacity: 0.55; transition: opacity 0.2s;
+}
+.show-controls:hover, .show-controls:focus-visible { opacity: 1; }
+/* Idle while a song plays: the panels fade back until you move */
+body.idle .tray, body.idle .layers { opacity: 0.12; }
+body.idle .tray { transform: translateY(12px); }
+body.idle .layers { transform: translateX(-12px); }
+body.idle .tray:hover, body.idle .layers:hover { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  body.watch .tray, body.watch .layers, body.idle .tray, body.idle .layers { transform: none; }
+}
+
+/* --- FIRST IMPRESSIONS --- */
+/* The header floats over bright worlds (country's wood, pop's pastels): keep it legible */
+.song .name, .song .meta, .chords, .back { text-shadow: 0 1px 10px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 0, 0, 0.7); }
+.start-alt { justify-content: center; }
+.start-alt button { padding: 9px 16px; }
+.welcome > p { color: var(--ink); }
+@media (pointer: coarse) { .hover-hint { display: none; } }
+#sound.icon { padding: 8px 10px; }
+.card[data-genre]:hover, .card[data-genre]:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset, 0 0 24px color-mix(in srgb, var(--accent) 25%, transparent); }

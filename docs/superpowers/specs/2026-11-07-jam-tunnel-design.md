@@ -179,6 +179,94 @@ after the loop is ready, each adding a side (a square tunnel grows to at most se
 - Full-song defaults: percussion in choruses and the outro, the second melody in choruses and the
   break. Transitions are sound effects and stay out of MIDI exports.
 
+## Sound quality pass (added 2026-11-10)
+
+The user asked how to make the instruments sound more realistic and better produced, then approved
+all five recommendations:
+
+- Mixing: every part has a channel strip (a low cut, a mud cut around 250 to 400 Hz, presence or
+  top-end shelves, gentle parallel saturation on bass and melody). The drums get parallel
+  compression. The master gets a small air shelf, glue compression, a limiter and a soft clipper, and
+  each genre has a loudness trim so all five play at about -14.5 dB RMS (measured with
+  dev/level-check.html).
+- Playback: soft notes sound darker than hard ones, no two hits are identical (level, a few cents of
+  pitch, a sliver of start offset), notes fade with per-instrument release tails, and a closed
+  hi-hat chokes a ringing open one.
+- Drum kit: Karoryfer Big Rusty Drums (CC0), three velocity layers and two round robins per drum
+  (1 MB, dev/build-drumkit.py).
+- Bass, guitars and keys: Karoryfer Swagbass, D. Smolken's double bass, Karoryfer's Gretsch clean
+  guitar and archtop acoustic (all CC0), and Greg Sullivan's Wurlitzer (CC BY 3.0), two layers each
+  (dev/build-melodic.py). The overdriven and distorted rock guitars and the drawbar organ stay on
+  FluidR3: the CC0 libraries have no drawbar organ (a pipe organ was built but left out) and an amp
+  simulation of a clean guitar wasn't judged better without listening.
+- Reverb: real room recordings (OpenAIR) were the plan, but their licenses couldn't be checked, so
+  the reverbs are computed: early reflections from a model of a room's walls and a tail that loses
+  its highs faster than its lows. Drums and percussion use a small room; everything else a hall.
+
+## Messing with it (added 2026-11-10)
+
+The user asked for ideas to make it more fun to mess with, then picked six of Claude's seven (not the
+share link). Claude decided where each lives:
+
+- **Jam on it** (a button in the top bar once the loop has two parts, and in the ready and song
+  screens) opens a jam tray. Nothing in it changes the song except recording and keeping a genre.
+  - Perform: hold Drums only, Echo (an echo throw that rings on after release) and Half-time (the
+    drums read their own part at half speed); tap Stop (the band cuts out, the reverb rings, and
+    everything slams back on the next downbeat); toggle Key up (a whole step); drag the filter pad
+    (darker one way, thinner the other; springs back). Keys 1-5, Z/X for the filter.
+  - Tap a wall of the tunnel to mute or bring back that part.
+  - Hear it as: the song in any other genre. Chords and the melody keep their scale degrees and move
+    into that genre's key and scale (a major song turns minor in trap; boom bap gets seventh chords);
+    drums, bass and chords are rewritten in the genre's most typical styles; the tempo keeps its place
+    in the genre's range. Every flip starts from the song as made, so flipping back is exact; any
+    change to a flipped version makes it the new original.
+  - Play along: ten notes of the song's scale around the melody (home row A to ;), the current
+    chord's notes lit. Record a melody: it starts at the top of the next loop, lasts one loop, snaps to
+    the genre's grid and replaces the melody as "Played by you".
+- Each part in the list gets Shake (same style, new notes) and a fewer/more notes control.
+- Big moments in the full song, per section: Key change up (from that section on), Half-time drums,
+  or Stop before it (two beats of silence, then a crash). These go into WAV and MIDI exports; the live
+  versions in the jam tray don't.
+- Prompt cards on the start screen ("A breakup song at a truck stop"), each with a genre, pace and
+  mood, and an optional 3-minute clock. The prompt becomes the song's title in saved jams.
+
+## The look (added 2026-11-10)
+
+The user asked for design ideas and approved all six of Claude's:
+
+- The tunnel reacts: kicks pulse the walls and thump the camera, snares flash, Stop freezes the
+  flight, Half-time slows the decorative motion, the filter thickens or thins the fog, Key up shifts the
+  hue with a glow sweep. Reduced motion keeps only calm, eased changes.
+- The tunnel gets the screen: "Just watch" (eye button or H) slides every panel away; while a song
+  plays untouched for 7 seconds, the panels fade back until you move.
+- Notes look like their sound: drum pads that flash and spark (kicks bigger, hats smaller), thick
+  throbbing bass slabs, stacked chord bars, melodies drawn as a glowing ribbon with note heads and
+  bends for slides and glides.
+- Genre worlds, procedural in the shader: rusted panels and amp grilles (rock), dark chrome, neon and
+  rain (trap), candy pastels kept dim enough for the notes (pop), brick and vinyl grooves (hip hop),
+  wood planks, string lights and a sunset (country).
+- The full song is a journey: verses narrower and dimmer, choruses wider and brighter, the break a
+  starfield. The width scale applies to the note planes too, so picking and editing stay exact.
+- Calmer panels: parts are colored rows matching their walls, with icon buttons that stay quiet until
+  you reach for them; shorter copy.
+
+## First-impression pass (added 2026-11-10)
+
+The user asked for a UI/UX pass on ease of use, clear messaging and first impressions. Claude's calls:
+- The start screen's tunnel plays a silent demo loop in a genre's world, cycling through the genres;
+  pointing at a genre card (or drawing a prompt) switches to that world.
+- Less text before the first choice; "Surprise me" and "Give me a song idea" are real buttons under
+  the genre cards, and the prompt card opens right below them.
+- A guided flow without dead ends: "Start building" and each newly kept core part open the next
+  part's choices directly, and a toast says where the part lives ("Drums kept: on the floor. Next:
+  bass"). The overview of remaining parts is still there after skipping or cancelling.
+- Nothing empty on screen: the parts list appears with the first part; the mood screen shows the
+  chords once.
+- The sound toggle is a speaker icon; header text has a shadow over bright worlds; kick flashes are
+  softer.
+- Fixed: the chords line kept the previous genre's chords when two genres' progressions had the same
+  shape.
+
 ## Genres
 
 Required: classic hip hop (boom bap), trap, pop. Proposed to make about 20 (Claude's list; the
@@ -194,6 +282,15 @@ The genres differ in more than patterns, and the engine has to support all of th
   half-time feels (trap at 140 BPM that feels like 70).
 - Sounds: an 808 bass with long pitch glides, claps, rim shots, synth leads and pads, organ,
   piano, plus the guitar and band kit from the mockup.
+
+**Country means today's country radio (the user, 2026-11-10).** The first country was traditional
+(boom-chick, fiddle tunes, honky-tonk); the user meant current pop country. It now defaults to a
+polished backbeat with a clap stacked on the snare (plus half-time, cross-stick verse, country trap
+and stomp-and-clap), bass locked to the kick, a syncopated sixteenth-note acoustic strum or a banjo
+loop, a talky syncopated hook on a twangy electric, and a steel guitar (the clean electric with a
+swell, a slide up into each note and a slow vibrato) for the second melody. Pop-country progressions
+(I-V-vi-IV and its rotations) replace I-IV-V. The boom-chick drums, walk-up bass and fiddle remain
+as options, and older saved jams fall back to each part's first style when theirs is gone.
 
 **Phasing (Claude's call):** the first release ships the engine, the full flow, and four genres
 tuned by ear: blues / southern rock (the mockup's example), classic hip hop, trap and pop. The
