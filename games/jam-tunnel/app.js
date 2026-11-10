@@ -671,7 +671,7 @@
         </div>
         ${jamsList()}
         <div class="tray-head"><h3 class="small">Pick a genre to begin</h3><p>It sets the key, tempo, chords and instruments. <button type="button" class="link" data-act="surpriseall">Or surprise me</button></p></div>
-        <p class="phone-credit">Instrument samples: FluidR3_GM by Frank Wen and Salamander Grand Piano by Alexander Holm, both CC BY 3.0</p>
+        <p class="phone-credit">Instrument samples: FluidR3_GM by Frank Wen and Salamander Grand Piano by Alexander Holm, both CC BY 3.0. Drum grooves: Groove MIDI Dataset by Google, CC BY 4.0</p>
         <div class="cards four">${Object.values(JT.GENRES).map(g => `
           <button type="button" class="card" data-genre="${g.id}" style="--accent:${g.accent}">
             <span class="top"><span class="nm">${esc(g.name)}</span></span>
