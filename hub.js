@@ -116,6 +116,48 @@ const GAMES = [
       </svg>`,
   },
   {
+    title: "Neon Four",
+    description:
+      "Connect Four in neon. Drop glowing discs and line up four in a row before the machine does.",
+    path: "games/neon-four/index.html",
+    tags: ["Board", "Strategy", "Arcade"],
+    accent: "#ff2bd6",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="24" y="12" width="72" height="58" rx="6" fill="none" stroke="#b9a6ff" stroke-width="1.5" opacity="0.6" />
+        <g fill="none" stroke="#b9a6ff" stroke-width="1" opacity="0.35">
+          <circle cx="36" cy="24" r="5" /><circle cx="48" cy="24" r="5" /><circle cx="60" cy="24" r="5" /><circle cx="72" cy="24" r="5" /><circle cx="84" cy="24" r="5" />
+          <circle cx="36" cy="36" r="5" /><circle cx="48" cy="36" r="5" /><circle cx="60" cy="36" r="5" /><circle cx="84" cy="36" r="5" />
+          <circle cx="36" cy="48" r="5" /><circle cx="84" cy="48" r="5" />
+        </g>
+        <circle cx="72" cy="36" r="5" fill="#ff2bd6" />
+        <circle cx="48" cy="48" r="5" fill="#fff6a8" /><circle cx="60" cy="48" r="5" fill="#ff2bd6" /><circle cx="72" cy="48" r="5" fill="#fff6a8" />
+        <circle cx="36" cy="60" r="5" fill="#ff2bd6" /><circle cx="48" cy="60" r="5" fill="#ff2bd6" /><circle cx="60" cy="60" r="5" fill="#fff6a8" />
+        <circle cx="72" cy="60" r="5" fill="#ff2bd6" /><circle cx="84" cy="60" r="5" fill="#fff6a8" />
+      </svg>`,
+  },
+  {
+    title: "Connect 4 AI",
+    description:
+      "Classic Connect Four against a computer opponent. Click a column to drop your disc and try to outthink the AI.",
+    path: "games/neon-connect-four-local/index.html",
+    tags: ["Board", "Strategy", "Classic"],
+    accent: "#e53935",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="26" y="14" width="68" height="56" rx="5" fill="#1e4fb8" />
+        <g fill="#0d1b3d">
+          <circle cx="37" cy="25" r="4.5" /><circle cx="49" cy="25" r="4.5" /><circle cx="61" cy="25" r="4.5" /><circle cx="73" cy="25" r="4.5" /><circle cx="85" cy="25" r="4.5" />
+          <circle cx="37" cy="37" r="4.5" /><circle cx="49" cy="37" r="4.5" /><circle cx="73" cy="37" r="4.5" /><circle cx="85" cy="37" r="4.5" />
+          <circle cx="37" cy="49" r="4.5" /><circle cx="85" cy="49" r="4.5" />
+        </g>
+        <circle cx="61" cy="37" r="4.5" fill="#e53935" />
+        <circle cx="49" cy="49" r="4.5" fill="#64b5f6" /><circle cx="61" cy="49" r="4.5" fill="#e53935" /><circle cx="73" cy="49" r="4.5" fill="#64b5f6" />
+        <circle cx="37" cy="61" r="4.5" fill="#e53935" /><circle cx="49" cy="61" r="4.5" fill="#64b5f6" /><circle cx="61" cy="61" r="4.5" fill="#e53935" />
+        <circle cx="73" cy="61" r="4.5" fill="#64b5f6" /><circle cx="85" cy="61" r="4.5" fill="#e53935" />
+      </svg>`,
+  },
+  {
     title: "Hush",
     description:
       "Silence is a budget. A single noise meter glows hotter with every footstep and slammed door — and the guards hear the meter, not you. Bank quiet, then blow it all on a thrown stone to lure the guard off your route and slip past.",
@@ -213,6 +255,25 @@ const GAMES = [
         <rect x="24" y="30" width="4" height="10" rx="1" fill="#ff8a3d" />
         <rect x="92" y="38" width="4" height="12" rx="1" fill="#c58cff" />
         <rect x="52" y="14" width="16" height="3" rx="1" fill="#6bf3b8" />
+      </svg>`,
+  },
+  {
+    title: "Don't Ask Again",
+    description:
+      "A satirical idle game about vibe coding. Approve everything the AI proposes without reading it, then automate the approving. In English, Spanish and Portuguese.",
+    path: "games/dont-ask-again/index.html",
+    tags: ["Idle", "Satire", "Clicker"],
+    accent: "#d97757",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="18" y="12" width="84" height="54" rx="6" fill="#fffaf3" />
+        <rect x="18" y="12" width="84" height="12" rx="6" fill="#ece8dc" />
+        <rect x="26" y="31" width="52" height="4" rx="2" fill="#8f4127" opacity="0.55" />
+        <rect x="26" y="39" width="40" height="4" rx="2" fill="#8f4127" opacity="0.35" />
+        <rect x="62" y="50" width="32" height="10" rx="3" fill="#d97757" />
+        <rect x="26" y="52" width="6" height="6" rx="1.5" fill="none" stroke="#8f4127" stroke-width="1.2" />
+        <path d="M27.5 55 l1.6 1.6 3-3.4" fill="none" stroke="#d97757" stroke-width="1.4" stroke-linecap="round" />
+        <path d="M84 56 l10 9 -4.5 0.6 2.4 5 -2.2 1 -2.4-5 -3.3 3z" fill="#1a1a1a" stroke="#fffaf3" stroke-width="0.8" />
       </svg>`,
   },
 ];
