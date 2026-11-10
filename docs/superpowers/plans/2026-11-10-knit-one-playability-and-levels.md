@@ -237,3 +237,72 @@ Also remove the dead `underToggle` pieces (or implement them) and re-grep so not
 4. **Phones.** Is phone landscape a real target? If yes, the four on-screen buttons and bigger text go in the first pass; if not, they can wait and it saves a medium chunk of work.
 5. **How many rooms.** Is 14 the right size, or should the first pass ship only the fixes plus rooms 3 to 7 and leave chapters 3 and 4 for later?
 6. **Finale.** Should the finale use your real first creation (needs saving a good shape, and Room 1's straight line is not interesting), or should it be reworded as "the old sample"?
+
+## Puzzles and yarn strength
+
+Date: 2026-11-10. The user said the ten rooms are fine as a tutorial and asked for twenty puzzles, some with balls too heavy for one strand. They are away and delegated every design call (goal: a fun game that is easy to understand). Decisions, as built in `games/knit-one/`:
+
+### Yarn strength
+
+- A ball has a `weight` (fourth number in its room entry; default 1, so every tutorial ball behaves as before). A ball of weight N needs N strands under it. Heavy balls are drawn darker and show a cream patch with `x2` / `x3`.
+- **What counts as a strand (`strandsUnder` in sim.js).** A strand is a span of yarn that is tied at both ends (the spool, or either side of a knot) and crosses the vertical line below the ball's centre. Rules:
+  - Two passes of the same span (a loose zigzag between two ties) are ONE strand. The only way to get more strands is to tie more spans: out to one post and back to another, or three posts in turn. This is what makes the count robust and un-cheesable (a loose zigzag with one knot does not hold a x3 ball; solve-check proves it).
+  - Twinned spans in one hammock both count even though the ball only touches the upper one. There is no depth limit: yarn that passes under the ball counts, because two spans with different slack hang at different depths and a player cannot control that.
+  - Yarn wound on a post (within a post's radius + 12 px of the line), a loose tail past the last knot and the old ghost yarn never count.
+  - A ball resting on yarn always has at least one strand, so weight-1 balls can never strain. Tutorial behaviour is unchanged (solve-check asserts that no weight-1 ball ever builds up strain).
+  - I chose this over counting raw contact segments because contact only sees the strand the ball touches, and index gaps in a deep U sling look like two strands.
+- **Strain and snap (`strainStep`).** After a Drop, while a ball rests on the yarn (speed under 160 px/s) with fewer strands than its weight, it accumulates strain. At `STRAIN_TIME` = 1.1 s the strands under it snap: every segment of those spans that crosses under the ball is cut (`world.cut`), the pieces fall under the test gravity, and the room counts a slip (`lost`, `fails`++, event `snap`). The existing flow then restores the yarn exactly as the player left it after 1.6 s, and Drop again works. Strain drains twice as fast as it builds when the count recovers, so flicker never snaps a correctly built sling. A ball cannot start its win hold while under-strength. Everything is on the fixed tick, so it is deterministic.
+- **What the player sees.** In the room: a `x2` patch on the ball (also visible while building). While straining: the strands under the ball glow mustard, shiver, sprout loose fibres and shift toward terracotta; the ball shakes; the coaching line reads "The yarn is straining: 1 of 2 strands hold this ball." and a small label over the ball shows "1 of 2 strands" with a ring on each counted strand (green when enough). On the snap: frayed ends, a "It snapped!" card, shake and flash. The old stretch tint (mustard above 1.05) moved up to 1.08 so a normally loaded strand does not look like it is straining.
+- Teaching: Room 15 (Too Heavy) says in its goal "Too heavy for one strand. Run the yarn under it twice.", has a build-time tip line and an in-world "x2 : needs two strands" label. Every heavy room's coach line says how many strands the ball needs, and after the first knot says to keep going until the knot count reaches the weight.
+
+### New small elements
+
+- **Baskets (`cups: [[fx, fy, r]]`).** A dotted basket on the board. The room is won only when every basket has a ball resting inside it (ball centre within r) with the usual hands-off hold. It turns green when filled. It makes "where does the ball end up" matter, which creates the slack puzzles (Basket Case: lay the yarn LOOSE; the lesson of Heavy Drop in reverse) and the tents (a post under the yarn props the middle so two balls roll apart into two baskets). One line to understand: land the ball in the basket.
+- **Old wool in any room (`ghost: true`, optional `ghostMin`).** The finale's trick (your first knot lies on the board as plum yarn you can unravel for yarn) now works in any room, so Spare Wool, Old Wool, Spool Run and Bound Off use it. The yarn you get back is the length of your first knot, never fewer than `ghostMin` (default 70) nodes, and the rooms are tuned to the minimum.
+- `room.learn` is a one-line tip shown while you build in rooms that introduce something. No new controls.
+
+### The 20 puzzle rooms (rooms 11 to 30)
+
+| # | Room | Chapter | Idea | Weights |
+|---|------|---------|------|---------|
+| 11 | Basket Case | Garter Stitch | Basket intro. Lay the yarn loose so it sags into the basket | 1 |
+| 12 | Slalom | Garter Stitch | Reach room, four posts, no yarn to waste | none |
+| 13 | Two Baskets | Garter Stitch | A post under the yarn props the middle; the balls roll apart into two baskets | 1, 1 |
+| 14 | Spare Wool | Garter Stitch | Basket plus old wool: you need the extra yarn for that much slack | 1 |
+| 15 | Too Heavy | Double Knit | Teaching room for strength: out to one post, back to the other | x2 |
+| 16 | Hanging Basket | Double Knit | Two strands, both slack, sinking into a basket | x2 |
+| 17 | Uphill | Double Knit | Slanted posts; the ball rolls downhill, put the strands where it ends up | x2 |
+| 18 | Heavy and Light | Double Knit | Three posts; a light ball rides on the heavy ball's strands | x2, x1 |
+| 19 | Two Heavies | Double Knit | Spool bottom right; one doubled sling under two heavy balls | x2, x2 |
+| 20 | Triple Play | Cable Knit | Three strands (three ties) | x3 |
+| 21 | Three and One | Cable Knit | Four ties; the x3 half needs three, the light half one | x3, x1 |
+| 22 | Hill Climb | Cable Knit | A x3 ball on a slope | x3 |
+| 23 | The Pillar | Cable Knit | The ball lands on a pillar and rolls off; follow it with two strands | x2 |
+| 24 | Old Wool | Tangles | Unravel your old work first to afford two strands | x2 |
+| 25 | Weighty Matters | Tangles | Spool at the top: its span counts for the left ball only; plan three vs two | x3, x2 |
+| 26 | Spool Run | Tangles | Reach room, four posts, only possible with the old wool | none |
+| 27 | Deep Pocket | Tangles | Three slack strands into a deep basket | x3 |
+| 28 | Heavy Tent | Bind Off | The tent again, with doubled yarn over the pillar, two heavy balls, two baskets | x2, x2 |
+| 29 | Three Weights | Bind Off | Balls of weight 1, 2 and 3: every span must be planned for how many balls it passes under | x1, x2, x3 |
+| 30 | Bound Off | Bind Off | The last room: old wool, three strands, two heavy balls | x3, x2 |
+
+Fifteen rooms are heavy (15 to 25, 27 to 30), seven have a x3 ball (20, 21, 22, 25, 27, 29, 30), and three mix heavy and light balls (18, 21, 29; room 25 mixes x3 with x2). The satisfying "aha" rooms are 11 (slack is the answer, the opposite of Heavy Drop), 13 and 28 (the prop post splits the balls), 25 (the spool's own span is a strand for one ball only), 29 (route planning by coverage) and 24 and 30 (spend the old work to build the new).
+
+Budgets are set to the recorded solution plus about 12 to 20 yarn. solve-check requires at most 30 spare yarn and proves that a wasteful detour of spare+10 fails.
+
+### Progress, grid and ending
+
+- Rooms are one list of 30. `K.PARTS` splits it into The Tutorial (chapters 0 to 3) and The Puzzles (chapters 4 to 8). The rooms grid shows both with a header each, a chapter header per group, a "done" count per part, and scrolls (wheel, drag, arrow keys, page keys). Opening it scrolls your next room into view. A card shows a short tag (heavy x3, basket, reach, old wool).
+- Unlocking is unchanged: a room opens when the room before it is done, so the puzzles open after room 10. Saved progress is the same list of finished room ids, so a current save with ten rooms done keeps working and Continue goes to room 11. Saves are read inside try/catch as before.
+- **Ending.** Room 10 stays the end of the tutorial: its win banner says "Tutorial done!" and its button says "Puzzles". The true ending ("Bound off!") plays after room 30, which is itself an old-wool finale. The room 10 finale keeps `finale: true`; room 30 has `ending: true`.
+
+### Proof (dev/solve-check.js)
+
+Every new room: the recorded solution wins with the smallest possible saved knot; spare yarn is at most 30 and a wasteful detour does not win; heavy rooms fail with a single strand and with one strand too few, and the failure is a snap that counts as a slip, restores the yarn and allows Drop again; variations in loop size and speed mostly still win. Global: at least 6 heavy rooms, a x3 ball, 2 mixed rooms, 20 puzzle rooms after 10 tutorial rooms; a loose zigzag with one knot does not hold a x3 ball; weight-1 balls never strain; runs are deterministic. All earlier checks still pass.
+
+### What I would still tune
+
+- Nobody has played these. The solutions are mine; the hardest rooms may be harder (or easier, through unintended routes) than they read. Rooms 25, 29 and 30 are the likeliest to need a nudge to the budget.
+- Several heavy rooms are variations on the same hammock. If more variety is wanted: a pre-strung line the player can add to, or a basket that needs two balls.
+- Baskets are forgiving (radius 48 to 64). Tighter radii would make the slack rooms more precise.
+- A heavy ball is sensitive to where it rolls (Uphill, Hill Climb, The Pillar): the preview does not show where it will end up, only Drop does.

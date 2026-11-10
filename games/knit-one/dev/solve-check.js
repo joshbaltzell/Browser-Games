@@ -33,7 +33,9 @@ for (const room of K.ROOMS) {
   check("recorded solution wins", w.status === "won",
     "t=" + fmt(r.frames / 60, 1) + "s knots=" + w.knots.length + " yarn used=" + used + "/" + w.yarnStart +
     (w.balls.length ? " resting=" + w.balls.map(b => Math.round(b.y)).join(",") : ""));
-  check("yarn stretch stays under 1.12", r.log.maxStretch < 1.12, "max " + fmt(r.log.maxStretch, 3));
+  const puzzle = room.chapter >= 4;                // the puzzles carry heavier balls, so allow a touch more stretch
+  const maxStretch = puzzle ? 1.15 : 1.12;
+  check("yarn stretch stays under " + maxStretch, r.log.maxStretch < maxStretch, "max " + fmt(r.log.maxStretch, 3));
   check("yarn never inside a post", r.log.minPegGap > 0, "gap " + fmt(r.log.minPegGap, 1) + "px");
   if (w.balls.length) {
     check("ball won with pointer released", !w.down);
@@ -142,6 +144,95 @@ for (const room of K.ROOMS) {
   check("recorded solution wins", r.w.status === "won", "yarn used=" + (r.w.yarnStart - r.w.yarn));
   const r0 = K.runScript(room, K.SOLUTIONS[room.id].filter(s => !s.unravel));
   check("without unravelling the old knot it does NOT win", r0.w.status !== "won", "yarn left=" + r0.w.yarn);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The puzzles (chapters 4+): yarn strength, tight budgets, and the ways they can go wrong
+// ---------------------------------------------------------------------------------------------
+console.log("--- puzzles ---\n");
+const TINY = { nodes: [{ x: 0, y: 0 }, { x: 10, y: 5 }, { x: 20, y: 10 }, { x: 30, y: 12 }], knots: [] };
+let heavyRooms = 0, tripleRooms = 0, mixedRooms = 0;
+for (const room of K.ROOMS.filter(r => r.chapter >= 4)) {
+  const sol = K.SOLUTIONS[room.id];
+  const ghost = room.ghost ? TINY : undefined;       // the smallest first knot a player can bring
+  const weights = (room.balls || []).map(b => b[3] || 1);
+  const heavy = weights.some(x => x > 1);
+  console.log(pad(room.id, 20) + room.name + (weights.length ? "  [balls x" + weights.join(", x") + "]" : "  [reach]"));
+  const r = K.runScript(room, sol, { ghost: ghost });
+  const w = r.w;
+  check("recorded solution wins with the smallest saved knot", w.status === "won",
+    "t=" + fmt(r.frames / 60, 1) + "s yarn left=" + w.yarn + "/" + w.yarnCap +
+    (w.balls.length ? " strands=" + w.balls.map(b => b.strands).join(",") : ""));
+  // tight budget: little spare yarn, so a detour costing more than the spare cannot win
+  const spare = w.yarn;
+  check("yarn is tight (spare " + spare + " <= 30)", spare <= 30);
+  {
+    const extra = (spare + 10) * K.sim.SEG_LEN;       // a wasteful wiggle that costs spare+10 yarn
+    const ax = 900 * room.anchor[0], ay = 640 * room.anchor[1];
+    const dy = ay > 320 ? -1 : 1;
+    const wiggle = [[ax, ay + dy * extra / 2], [ax, ay]];
+    const k0 = sol.findIndex(s => s.drag);
+    const waste = sol.slice();
+    waste[k0] = Object.assign({}, sol[k0], { drag: wiggle.concat(sol[k0].drag) });
+    const rw = K.runScript(room, waste, { ghost: ghost });
+    check("a wasteful detour (" + (spare + 10) + " yarn) does NOT win", rw.w.status !== "won", "yarn left=" + rw.w.yarn);
+  }
+  if (heavy) {
+    heavyRooms++;
+    if (weights.some(x => x >= 3)) tripleRooms++;
+    if (weights.some(x => x > 1) && weights.some(x => x === 1)) mixedRooms++;
+    const need = Math.max.apply(null, weights);
+    const one = K.runScript(room, K.ONE[room.id], { ghost: ghost });
+    check("a single strand does NOT win: the yarn snaps (or a ball is left with none)", one.w.status !== "won" && (one.w.snapped || one.w.lost),
+      "strands=" + one.w.balls.map(b => b.strands).join(",") + " snapped=" + one.w.snapped);
+    const short = K.runScript(room, K.SHORT[room.id], { ghost: ghost });
+    check("one strand too few does NOT win: the yarn snaps", short.w.status !== "won" && short.w.snapped,
+      "snapped=" + short.w.snapped + " fails=" + short.w.fails);
+    // the snap is a slip: the room goes back to building with the yarn as the player left it
+    const sw = short.w;
+    K.sim.toBuild(sw);
+    check("a snap counts as a slip and the yarn is restored", sw.phase === "BUILD" && sw.cut.length === 0 && !sw.snapped && sw.fails >= 1);
+    // recovering: from the restored room, Drop again with the full solution's extra strand would need more yarn,
+    // so just check the same rope drops again without error
+    check("Drop again works after a snap", K.sim.drop(sw) && sw.phase === "DROPPED");
+  }
+  // forgiving ties: slightly bigger or smaller loops and slower or faster hands still win (when budget allows)
+  if (K.ITEMS[room.id] && room.balls) {
+    const it = K.ITEMS[room.id];
+    let ok = 0, tot = 0;
+    for (const dr of [-5, 0, 6]) for (const speed of [380, 750]) {
+      const items = it.items.map(x => Object.assign({}, x, { r0: (byIdPeg(room, x.post) + 12) + dr, speed: speed }));
+      const rv = K.runScript(room, it.pre.concat(K.route(room, items)), { ghost: ghost });
+      tot++; if (rv.w.status === "won") ok++;
+    }
+    check("loop size / speed variations mostly win", ok >= Math.ceil(tot * 0.66), ok + "/" + tot);
+  }
+  console.log("");
+}
+function byIdPeg(room, i) { return room.pegs[i][2]; }
+check("at least 6 heavy-ball puzzles", heavyRooms >= 6, heavyRooms + " rooms");
+check("at least one x3 ball", tripleRooms >= 1, tripleRooms + " rooms");
+check("at least 2 rooms mix heavy and light balls", mixedRooms >= 2, mixedRooms + " rooms");
+check("20 puzzle rooms after the 10 tutorial rooms", K.ROOMS.filter(r => r.chapter >= 4).length === 20 && K.ROOMS.slice(0, 10).every(r => r.chapter < 4));
+
+// loose zigzag under the ball with one tie is ONE strand, not three: the yarn still snaps
+{
+  const room = K.ROOMS.find(r => r.id === "triple-play");
+  const Q = [900 * room.pegs[1][0], 640 * room.pegs[1][1]];
+  const zig = K.route(room, [{ post: 1, dir: 1, via: [[300, 250], [560, 270], [250, 280], [560, 290], [250, 300], [Q[0] - 36, Q[1]]] }]);
+  const rz = K.runScript(room, zig);
+  console.log("\ntriple-play with a loose zigzag and one tie");
+  check("a loose zigzag is one strand: does NOT win", rz.w.status !== "won", "strands=" + rz.w.balls[0].strands + " snapped=" + rz.w.snapped);
+}
+// the old yarn left in a ghost room never counts as a strand, and tutorial balls (weight 1) never strain
+{
+  let worst = 0;
+  for (const room of K.ROOMS.filter(r => r.chapter < 4 && r.balls)) {
+    const r = K.runScript(room, K.SOLUTIONS[room.id]);
+    worst = Math.max(worst, r.w.balls.reduce((m, b) => Math.max(m, b.strain), 0));
+  }
+  console.log("\ntutorial balls");
+  check("weight-1 balls never strain", worst === 0, "max strain " + fmt(worst));
 }
 
 console.log(bad ? "\n" + bad + " CHECK(S) FAILED" : "\nAll checks passed.");

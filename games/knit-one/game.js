@@ -4,10 +4,11 @@
  * You are a single thread. Drag to lay yarn from the spool, loop it round a
  * wooden post and cross your own line, hold still (or press TIE) to cinch the loop into a knot,
  * then DROP a felt ball onto it. A knot tied to a post holds the ball with your
- * hands off; a loose line does not.
+ * hands off; a loose line does not. Heavy balls (x2, x3) need that many strands of
+ * yarn under them or the yarn strains and snaps. Some rooms have a basket to land in.
  *
  * Files (plain scripts, no modules, works double-clicked from disk):
- *   rooms.js      the rooms (data)
+ *   rooms.js      the rooms (data): 10 tutorial rooms, then 20 puzzles
  *   sim.js        the physics + rules, no DOM (also run by dev/solve-check.js)
  *   solutions.js  a recorded solution per room: proof they are solvable + the Hint
  *   game.js       this file: screens, input, touch buttons, audio, drawing, saves
@@ -21,6 +22,7 @@
 const K = window.KnitOne;
 const S = K.sim;
 const ROOMS = K.ROOMS;
+const TUTORIAL_ROOMS = ROOMS.filter(r => r.chapter < K.PARTS[1].chapters[0]).length;   // the rooms before the puzzles
 const VW = S.VW, VH = S.VH;
 const TAU = Math.PI * 2;
 const MAX_DT = 1 / 20;
@@ -60,6 +62,10 @@ const COLORS = {
   weightHi: "#88a070",
   weightRim: "#42513a",
   weightSeam: "rgba(24,32,16,0.45)",
+  heavy: "#6d5b3a",        // heavier balls are stuffed with stones: dusty brown felt
+  heavyHi: "#9a8355",
+  heavyRim: "#4a3d26",
+  basket: "#8fd0e0",       // the basket a ball must land in
 
   // yarn ball HUD — plum-wound ball
   yarnBall: "#c47e9a",
@@ -465,6 +471,7 @@ function hitButton(p) {
   for (let i = uiButtons.length - 1; i >= 0; i--) {
     const b = uiButtons[i];
     if (b.enabled === false) continue;
+    if (b.clipTop !== undefined && p.y < b.clipTop) continue;        // a scrolled card hidden under the header
     if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return b;
   }
   return null;
@@ -475,6 +482,11 @@ canvas.addEventListener("pointerdown", (e) => {
   const p = toScreen(e);
   try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
   const b = hitButton(p);
+  if (screen === SELECT && (!b || b.card !== undefined)) {
+    // the rooms list scrolls: a tap on a card opens it, a drag anywhere moves the list
+    pointers.set(e.pointerId, { kind: b ? "card" : "sdrag", id: b ? b.id : null, sy: p.y, scroll0: selectScroll, moved: false });
+    return;
+  }
   if (b) {
     pointers.set(e.pointerId, { kind: "btn", id: b.id });
     press(b.id, true);
@@ -498,12 +510,24 @@ canvas.addEventListener("pointermove", (e) => {
   if (e.pointerId === steerId) {
     const w = toWorld(toScreen(e)); pointer.x = w.x; pointer.y = w.y;
   }
+  const info = pointers.get(e.pointerId);
+  if (info && (info.kind === "card" || info.kind === "sdrag")) {
+    const dy = toScreen(e).y - info.sy;
+    if (Math.abs(dy) > 8) info.moved = true;
+    if (info.moved) selectScroll = info.scroll0 - dy;
+  }
 });
+canvas.addEventListener("wheel", (e) => {
+  if (screen !== SELECT) return;
+  e.preventDefault();
+  selectScroll += e.deltaY;
+}, { passive: false });
 function pointerEnd(e) {
   const info = pointers.get(e.pointerId);
   pointers.delete(e.pointerId);
   if (e.pointerId === steerId) { steerId = null; pointer.down = false; }
   if (info && info.kind === "btn") press(info.id, false);
+  if (info && info.kind === "card" && !info.moved && e.type === "pointerup") act(info.id);
   if (info && info.kind === "mouse2") unravelMouse = false;
 }
 window.addEventListener("pointerup", pointerEnd);
@@ -519,7 +543,14 @@ window.addEventListener("keydown", (e) => {
   ensureAudio();
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   if (screen === TITLE) { if (k === "Enter" || k === " ") act("continue"); return; }
-  if (screen === SELECT) { if (k === "Escape") act("title"); return; }
+  if (screen === SELECT) {
+    if (k === "Escape") act("title");
+    else if (k === "ArrowDown") selectScroll += 90;
+    else if (k === "ArrowUp") selectScroll -= 90;
+    else if (k === "PageDown") selectScroll += view.H * 0.7;
+    else if (k === "PageUp") selectScroll -= view.H * 0.7;
+    return;
+  }
   if (screen === END) { if (k === "Enter" || k === " " || k === "Escape") act("rooms"); return; }
   if (screen === WON) {
     if (k === "Enter" || k === " ") { if (winTimer > 0.4) act("next"); }
@@ -563,7 +594,7 @@ function showToast(text, secs) { toast.text = text; toast.t = secs || 2.8; }
 function startRoom(i) {
   roomIndex = Math.max(0, Math.min(ROOMS.length - 1, i));
   const room = ROOMS[roomIndex];
-  world = S.create(room, room.finale ? firstKnot : null);
+  world = S.create(room, room.finale || room.ghost ? firstKnot : null);
   screen = PLAY; winTimer = 0; failTimer = 0; showHint = false;
   particles = []; cinchHint = null; cinchPop = null; toast.t = 0; simAcc = 0;
   pointer.down = false; steerId = null;
@@ -582,7 +613,7 @@ function act(id) {
       if (doneIds.length >= ROOMS.length) screen = SELECT; else startRoom(i);
       break;
     }
-    case "rooms": screen = SELECT; break;
+    case "rooms": screen = SELECT; scrollToOpenRoom(); break;
     case "title": screen = TITLE; break;
     case "mute": setMuted(!muted); break;
     case "next":
@@ -628,6 +659,10 @@ function handleEvents() {
         showToast("Nothing to tie yet. Loop the yarn round a post and cross your own line.", 3.6);
         break;
       case "drop": sndSnip(); break;
+      case "snap":
+        sndSnip(); sndDrop(); addShake(14); addFlash(COLORS.threadSnap, 0.3); failTimer = 0;
+        spawnWisps(ev.x, ev.y, { count: 30, col: COLORS.threadStrain, spd: 150 });
+        break;
       case "lost":
         sndDrop(); addShake(12); addFlash(COLORS.bad, 0.26); failTimer = 0;
         break;
@@ -658,7 +693,7 @@ function onWon() {
   markDone(room, used);
   // save the player's REAL first knot: the rope as they built it, from the first
   // ball room they solved with a tie.
-  if (!firstKnot && world.balls.length && world.testSnap && world.testSnap.knots.length > 0 && !room.finale) {
+  if (!firstKnot && world.balls.length && world.testSnap && world.testSnap.knots.length > 0 && !room.finale && !room.ghost) {
     firstKnot = {
       room: room.id, roomName: room.name,
       nodes: world.testSnap.nodes.map(n => ({ x: Math.round(n.x), y: Math.round(n.y) })),
@@ -727,22 +762,35 @@ function hintFor(room) {
 function coach() {
   const w = world, room = ROOMS[roomIndex];
   if (!w) return "";
+  const ghostLeft = !!w.ghost && w.nodes.length <= w.ghost.to + 4 && !w.down;    // old wool not touched yet
   if (room.finale && w.ghost) {
     return firstKnot ? "The plum yarn is your first knot, from \"" + firstKnot.roomName + "\". Hold UNRAVEL to take its yarn back."
                      : "The plum yarn is an old sample knot. Hold UNRAVEL to take its yarn back.";
   }
+  if (room.ghost && w.ghost && (ghostLeft || w.yarn <= 0)) return "The plum yarn is your old work. Hold UNRAVEL to take its yarn back.";
   if (w.balls.length) {
+    const need = w.balls.reduce((m, b) => Math.max(m, b.weight), 1);
+    if (w.snapped) return "It snapped! A \u00d7" + need + " ball needs " + need + " strands under it, with a knot between each. Your yarn goes back as you laid it.";
     if (w.lost) return "It slipped! Your yarn goes back as you laid it.";
-    if (w.phase === "DROPPED") return w.hold > 0.05 ? "Holding... keep your hands off." : "";
+    if (w.phase === "DROPPED") {
+      const weak = w.balls.find(b => b.strain > 0.05);
+      if (weak) return "The yarn is straining: " + weak.strands + " of " + weak.weight + " strands hold this ball.";
+      return w.hold > 0.05 ? "Holding... keep your hands off." : "";
+    }
     if (w.yarn <= 0) return "Out of yarn. Hold UNRAVEL to take back what you laid.";
     if (cinchHint) return cinchHint.peg >= 0 ? "Loop round a post: now hold still to tie it." : "A loop, but no post inside it. Loop round a post.";
-    if (w.knots.some(k => !(w.ghost && k.i <= w.ghost.to))) return "Tied. Now press DROP.";
+    if (w.knots.some(k => !(w.ghost && k.i <= w.ghost.to))) {
+      if (need > 1 && w.knots.length < need) return "Tied. A \u00d7" + need + " ball needs " + need + " strands: run the yarn under it again and tie.";
+      return "Tied. Now press DROP.";
+    }
+    if (room.learn && w.drops === 0) return room.learn;
+    if (need > 1 && w.drops === 0) return "The heavy ball needs " + need + " strands under it. Each strand runs from knot to knot.";
     if (w.nodes.length <= 3 && !w.down) return "Press and drag to lay yarn from the spool.";
     if (w.fails > 0) return "It slipped. Change the yarn, then DROP AGAIN.";
     return "";
   }
   if (w.yarn <= 0) return "Out of yarn. Hold UNRAVEL to take back what you laid.";
-  if (w.nodes.length <= 3 && !w.down) return "Press and drag. The loose end follows your finger.";
+  if (w.nodes.length <= 3 && !w.down) return room.learn || "Press and drag. The loose end follows your finger.";
   if (room.wraps) {
     const got = w.wrapIdx.filter(i => i >= 0).length;
     if (w.wrapsOk && got === room.wraps.length) return "Wrapped. Now reach the stitch.";
@@ -975,49 +1023,111 @@ function drawPegs() {
 }
 
 function segColor(strain) {
-  if (strain > 1.1) return COLORS.threadSnap;
-  if (strain > 1.05) return COLORS.threadStrain;
+  if (strain > 1.14) return COLORS.threadSnap;
+  if (strain > 1.08) return COLORS.threadStrain;     // kept above a loaded strand's normal stretch, so it only reads as strain when it is
   return COLORS.thread;
 }
 function sx(n, i) { return n.x + jitter(i * 2.7 + 3) * 0.9; }
 function syy(n, i) { return n.y + jitter(i * 2.7 + 9) * 0.9; }
 
+// How strained each stretch of yarn is (0..1): the strands a ball is overloading fray before they snap.
+function strainMap() {
+  const m = {};
+  for (const b of world.balls) {
+    if (b.strain <= 0.02 || world.snapped) continue;
+    const lv = Math.min(1, b.strain / S.STRAIN_TIME);
+    for (const p of b.pips) for (const i of p.segs) {
+      for (let d = -5; d <= 5; d++) {
+        const k = i + d, v = lv * (1 - Math.abs(d) * 0.15);
+        if (v > (m[k] || 0)) m[k] = v;
+      }
+    }
+  }
+  return m;
+}
+function strainColor(base, lv) {
+  if (lv <= 0.02) return base;
+  const t = Math.min(1, lv * 1.5);       // reads as strain early, goes terracotta just before it snaps
+  return t < 0.6 ? mixHex(base, COLORS.threadStrain, t / 0.6) : mixHex(COLORS.threadStrain, COLORS.threadSnap, (t - 0.6) / 0.4);
+}
+function mixHex(a, b, t) {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const ch = (sh) => Math.round(((pa >> sh) & 255) * (1 - t) + ((pb >> sh) & 255) * t);
+  return "rgb(" + ch(16) + "," + ch(8) + "," + ch(0) + ")";
+}
+
 function drawThread() {
   const nodes = world.nodes;
   if (nodes.length < 2) return;
   ctx.lineCap = "round"; ctx.lineJoin = "round";
-  const g = world.ghost;
-  // halo
-  ctx.strokeStyle = COLORS.threadHalo; ctx.lineWidth = 13;
-  ctx.beginPath(); ctx.moveTo(sx(nodes[0], 0), syy(nodes[0], 0));
-  for (let i = 1; i < nodes.length; i++) ctx.lineTo(sx(nodes[i], i), syy(nodes[i], i));
-  ctx.stroke();
-  // shadow underside
-  ctx.strokeStyle = COLORS.threadLo; ctx.lineWidth = 7.5;
-  ctx.beginPath(); ctx.moveTo(sx(nodes[0], 0), syy(nodes[0], 0) + 1.6);
-  for (let i = 1; i < nodes.length; i++) ctx.lineTo(sx(nodes[i], i), syy(nodes[i], i) + 1.6);
-  ctx.stroke();
+  const g = world.ghost, cut = world.cut, stress = strainMap();
+  const isCut = (i) => cut.length && cut.indexOf(i) >= 0;
+  // wobble: a strained strand shivers, a bit more as it nears snapping
+  const nx = (i) => nodes[i].x + jitter(i * 2.7 + 3) * 0.9 + (stress[i] || stress[i - 1] ? jitter(i * 5.3 + 1) * 5 * Math.max(stress[i] || 0, stress[i - 1] || 0) : 0);
+  const ny = (i) => nodes[i].y + jitter(i * 2.7 + 9) * 0.9 + (stress[i] || stress[i - 1] ? jitter(i * 5.3 + 7) * 5 * Math.max(stress[i] || 0, stress[i - 1] || 0) : 0);
+  // runs of yarn not split by a snap
+  const runs = [];
+  let from = 0;
+  for (let i = 0; i < nodes.length - 1; i++) if (isCut(i)) { runs.push([from, i]); from = i + 1; }
+  runs.push([from, nodes.length - 1]);
+  const strokeRuns = (dy) => {
+    ctx.beginPath();
+    for (const r of runs) {
+      ctx.moveTo(nx(r[0]), ny(r[0]) + dy);
+      for (let i = r[0] + 1; i <= r[1]; i++) ctx.lineTo(nx(i), ny(i) + dy);
+    }
+    ctx.stroke();
+  };
+  ctx.strokeStyle = COLORS.threadHalo; ctx.lineWidth = 13; strokeRuns(0);                 // halo
+  for (const k in stress) {                                                              // a warm glow on strained yarn
+    const i = +k;
+    if (stress[k] < 0.15 || i < 0 || i >= nodes.length - 1 || isCut(i)) continue;
+    ctx.strokeStyle = "rgba(230,194,74," + (stress[k] * 0.35).toFixed(2) + ")"; ctx.lineWidth = 15;
+    ctx.beginPath(); ctx.moveTo(nx(i), ny(i)); ctx.lineTo(nx(i + 1), ny(i + 1)); ctx.stroke();
+  }
+  ctx.strokeStyle = COLORS.threadLo; ctx.lineWidth = 7.5; strokeRuns(1.6);                // shadow underside
   // core, strain tinted; the old knot in the finale reads in plum
   ctx.lineWidth = 6;
   for (let i = 0; i < nodes.length - 1; i++) {
+    if (isCut(i)) continue;
     const a = nodes[i], b = nodes[i + 1];
     const strain = Math.hypot(b.x - a.x, b.y - a.y) / S.SEG_LEN;
     let col = segColor(strain);
     if (g && i >= g.from - 1 && i <= g.to) col = (i % 2 === 0) ? COLORS.plum : COLORS.yarnBall;
+    if (stress[i]) col = strainColor(COLORS.thread, stress[i]);
     ctx.strokeStyle = col;
-    ctx.beginPath(); ctx.moveTo(sx(a, i), syy(a, i)); ctx.lineTo(sx(b, i + 1), syy(b, i + 1)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(nx(i), ny(i)); ctx.lineTo(nx(i + 1), ny(i + 1)); ctx.stroke();
   }
   // fiber highlights
   ctx.strokeStyle = COLORS.threadHi; ctx.lineWidth = 1.8;
   for (let i = 0; i < nodes.length - 1; i++) {
-    if ((i + stopFrame) % 3 !== 0) continue;
-    const a = nodes[i], b = nodes[i + 1];
-    const ax = sx(a, i), ay = syy(a, i), bx = sx(b, i + 1), by = syy(b, i + 1);
+    if ((i + stopFrame) % 3 !== 0 || isCut(i)) continue;
+    const ax = nx(i), ay = ny(i), bx = nx(i + 1), by = ny(i + 1);
     const nxv = -(by - ay), nyv = (bx - ax), nl = Math.hypot(nxv, nyv) || 1, off = -2.2;
     ctx.beginPath();
     ctx.moveTo(ax + nxv / nl * off, ay + nyv / nl * off);
     ctx.lineTo((ax + bx) / 2 + nxv / nl * off, (ay + by) / 2 + nyv / nl * off);
     ctx.stroke();
+  }
+  // frayed fibres sticking out of a strained strand, and tufts at the ends of a snap
+  ctx.strokeStyle = COLORS.threadHi; ctx.lineWidth = 1.4;
+  for (const k in stress) {
+    const i = +k;
+    if (stress[k] < 0.25 || i < 0 || i >= nodes.length - 1 || isCut(i)) continue;
+    for (let f = 0; f < 2; f++) {
+      const sd = i * 3 + f, mx = (nx(i) + nx(i + 1)) / 2, my = (ny(i) + ny(i + 1)) / 2;
+      const ang = jitter(sd + 20) * Math.PI, len = 4 + stress[k] * 6;
+      ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(mx + Math.cos(ang) * len, my + Math.sin(ang) * len); ctx.stroke();
+    }
+  }
+  for (const i of cut) {
+    for (const n of [nodes[i], nodes[i + 1]]) {
+      if (!n) continue;
+      for (let f = 0; f < 4; f++) {
+        const ang = jitter(i * 4 + f + 40) * Math.PI, len = 4 + Math.abs(jitter(i * 4 + f + 60)) * 6;
+        ctx.beginPath(); ctx.moveTo(n.x, n.y); ctx.lineTo(n.x + Math.cos(ang) * len, n.y + Math.sin(ang) * len); ctx.stroke();
+      }
+    }
   }
   // knots: chunky beads where two bits of yarn are welded
   for (const k of world.knots) {
@@ -1057,6 +1167,7 @@ function drawBalls() {
     }
     if (b.state === "lost") continue;
     drawBall(b);
+    drawStrands(b);
     // hold progress ring
     if (world.hold > 0.05 && world.status === "play") {
       ctx.strokeStyle = COLORS.good; ctx.lineWidth = 4; ctx.lineCap = "round";
@@ -1070,16 +1181,17 @@ function drawBalls() {
   }
 }
 function drawBall(b) {
-  const wob = jitter(40) * 0.06, nx = jitter(41) * 0.7, ny = jitter(42) * 0.7;
+  const heavy = b.weight > 1, lv = Math.min(1, b.strain / S.STRAIN_TIME);
+  const wob = jitter(40) * 0.06, nx = jitter(41) * 0.7 + jitter(43) * 3 * lv, ny = jitter(42) * 0.7 + jitter(44) * 2 * lv;
   ctx.save();
   ctx.translate(b.x + nx, b.y + ny); ctx.rotate(wob);
   const r = b.r;
   ctx.fillStyle = COLORS.pegShadow;
   ctx.beginPath(); ctx.ellipse(2, 4, r, r * 0.95, 0, 0, TAU); ctx.fill();
   const grad = ctx.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.2, 0, 0, r);
-  grad.addColorStop(0, COLORS.weightHi); grad.addColorStop(1, COLORS.weight);
+  grad.addColorStop(0, heavy ? COLORS.heavyHi : COLORS.weightHi); grad.addColorStop(1, heavy ? COLORS.heavy : COLORS.weight);
   ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
-  ctx.strokeStyle = COLORS.weightRim; ctx.lineWidth = 1.2;
+  ctx.strokeStyle = heavy ? COLORS.heavyRim : COLORS.weightRim; ctx.lineWidth = heavy ? 2 : 1.2;
   for (let a = 0; a < 22; a++) {
     const ang = a / 22 * TAU + jitter(50 + a) * 0.1;
     const r0 = r - 1, r1 = r + 1.6 + jitter(70 + a) * 1.2;
@@ -1087,8 +1199,62 @@ function drawBall(b) {
   }
   ctx.strokeStyle = COLORS.weightSeam; ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
   ctx.beginPath(); ctx.arc(0, 0, r - 5, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
-  ctx.beginPath(); ctx.moveTo(-r + 5, 0); ctx.lineTo(r - 5, 0); ctx.moveTo(0, -r + 5); ctx.lineTo(0, r - 5); ctx.stroke();
+  if (heavy) {
+    // a heavier ball: a second stitched ring, rivets, and its weight on a cream patch
+    ctx.strokeStyle = "rgba(24,16,6,0.5)"; ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.arc(0, 0, r - 1.5, 0, TAU); ctx.stroke();
+    ctx.fillStyle = COLORS.heavyRim;
+    for (let k = 0; k < 6; k++) { const a = k / 6 * TAU + 0.3; ctx.beginPath(); ctx.arc(Math.cos(a) * (r - 8), Math.sin(a) * (r - 8), 2.2, 0, TAU); ctx.fill(); }
+    const fs = Math.max(15, Math.min(r * 0.72, 22)), tw = fs * 2.1, th = fs * 1.25;
+    ctx.fillStyle = "#efe0c0"; roundRect(-tw / 2, -th / 2, tw, th, th / 2); ctx.fill();
+    ctx.strokeStyle = COLORS.heavyRim; ctx.lineWidth = 1.5; roundRect(-tw / 2, -th / 2, tw, th, th / 2); ctx.stroke();
+    ctx.fillStyle = "#3a2c14"; ctx.font = "bold " + fs + "px Georgia, serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("\u00d7" + b.weight, 0, 1);
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  } else {
+    ctx.beginPath(); ctx.moveTo(-r + 5, 0); ctx.lineTo(r - 5, 0); ctx.moveTo(0, -r + 5); ctx.lineTo(0, r - 5); ctx.stroke();
+  }
   ctx.restore();
+}
+
+// After a Drop: a ring on every strand that is holding the ball, and "2 of 3" beside it when it is heavy.
+function drawStrands(b) {
+  if (world.phase !== "DROPPED" || world.status !== "play" || world.lost || !b.onYarn) return;
+  const lv = Math.min(1, b.strain / S.STRAIN_TIME), ok = b.strands >= b.weight;
+  const col = ok ? COLORS.good : lv > 0.5 ? COLORS.threadSnap : COLORS.threadStrain;
+  if (b.weight > 1) {
+    ctx.save();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = col;
+    for (const p of b.pips) { ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, TAU); ctx.stroke(); }
+    ctx.restore();
+    const label = b.strands + " of " + b.weight + " strands";
+    ctx.save();
+    ctx.font = "bold " + wpx(13) + "px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const tw = ctx.measureText(label).width + 16, ty = b.y - b.r - 18 - lv * jitter(45) * 2;
+    ctx.fillStyle = "rgba(28,22,15,0.85)"; roundRect(b.x - tw / 2, ty - wpx(10), tw, wpx(20), 9); ctx.fill();
+    ctx.fillStyle = col; ctx.fillText(label, b.x, ty);
+    ctx.restore();
+  }
+}
+
+// the baskets a ball has to land in
+function drawCups() {
+  if (!world.cups.length) return;
+  const t = stopFrame;
+  for (const c of world.cups) {
+    const full = world.balls.some(b => b.state === "fall" && Math.hypot(b.x - c.x, b.y - c.y) <= c.r);
+    ctx.save(); ctx.translate(c.x, c.y);
+    ctx.fillStyle = full ? "rgba(167,210,122,0.22)" : "rgba(143,208,224,0.10)";
+    ctx.beginPath(); ctx.arc(0, 0, c.r, 0, TAU); ctx.fill();
+    ctx.strokeStyle = full ? COLORS.good : COLORS.basket; ctx.lineWidth = 3.5;
+    ctx.setLineDash([9, 7]); ctx.lineDashOffset = -t * 1.5;
+    ctx.beginPath(); ctx.arc(0, 0, c.r, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    // a little woven basket rim under it
+    ctx.strokeStyle = full ? COLORS.good : COLORS.basket; ctx.lineWidth = 2; ctx.globalAlpha = 0.7;
+    ctx.beginPath(); ctx.arc(0, 0, c.r * 0.62, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, c.r * 0.34, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+    ctx.restore();
+  }
 }
 
 // the stitch to reach
@@ -1218,6 +1384,7 @@ function drawBoard() {
   clearBg();
   if (world) {
     drawTarget();
+    drawCups();
     drawAnchor(world.anchor);
     drawPegs();
     drawCinchHint();
@@ -1375,7 +1542,7 @@ function wonButtons() {
     const bw = Math.max(80, Math.min(128, view.ox - 14));
     const rx = view.ox + VW * view.s + 7, gap = 8;
     const bigH = Math.min(84, (view.H - 16 - 44 * 2 - gap * 3) / 2);
-    mk("next", last ? "Finish" : "Next room", "Enter", { x: rx, y: 8, w: bw, h: bigH, kind: "primary", big: true, pulse: ready, enabled: ready });
+    mk("next", last ? "Finish" : roomIndex === TUTORIAL_ROOMS - 1 ? "Puzzles" : "Next room", "Enter", { x: rx, y: 8, w: bw, h: bigH, kind: "primary", big: true, pulse: ready, enabled: ready });
     mk("replay", "Replay", "R", { x: rx, y: 8 + bigH + gap, w: bw, h: bigH });
     mk("rooms", "Menu", "Esc", { x: rx, y: view.H - 8 - 44 * 2 - gap, w: bw, h: 44 });
     mk("mute", muted ? "Sound off" : "Sound on", "M", { x: rx, y: view.H - 8 - 44, w: bw, h: 44 });
@@ -1384,7 +1551,7 @@ function wonButtons() {
     let x = (view.W - (bw * n + gap * (n - 1))) / 2;
     mk("rooms", "Menu", "", { x: x, y: view.H - bh - 8, w: bw, h: bh }); x += bw + gap;
     mk("replay", "Replay", "", { x: x, y: view.H - bh - 8, w: bw, h: bh }); x += bw + gap;
-    mk("next", last ? "Finish" : "Next room", "", { x: x, y: view.H - bh - 8, w: bw, h: bh, kind: "primary", pulse: ready, enabled: ready });
+    mk("next", last ? "Finish" : roomIndex === TUTORIAL_ROOMS - 1 ? "Puzzles" : "Next room", "", { x: x, y: view.H - bh - 8, w: bw, h: bh, kind: "primary", pulse: ready, enabled: ready });
   }
   return list;
 }
@@ -1400,18 +1567,17 @@ function buildButtons() {
     add({ id: "rooms", label: "Rooms", x: cx - 140, y: view.H / 2 + 24 + 68, w: 280, h: 52, sub: "", big: false });
     add({ id: "mute", label: muted ? "Sound off" : "Sound on", x: view.W - 120, y: 10, w: 108, h: 44 });
   } else if (screen === SELECT) {
+    const L = selectLayout();
+    selectScroll = Math.max(0, Math.min(L.max, selectScroll));
+    L.items.forEach(it => {
+      if (it.kind !== "card") return;
+      const y = L.m.top + it.y - selectScroll;
+      if (y + it.h < L.m.top || y > view.H) return;
+      add({ id: "room:" + it.i, label: "", x: it.x, y: y, w: it.w, h: it.h, enabled: unlocked(it.i), card: it.i, clipTop: L.m.top });
+    });
+    // header buttons last, so they win over any card scrolled beneath them
     add({ id: "title", label: "Back", x: 12, y: 12, w: 96, h: 48, sub: "Esc" });
     add({ id: "mute", label: muted ? "Sound off" : "Sound on", x: view.W - 120, y: 12, w: 108, h: 48 });
-    const cols = Math.max(2, Math.min(4, Math.floor((view.W - 24) / 190)));
-    const cw = Math.min(210, (view.W - 24 - 10 * (cols - 1)) / cols);
-    const ch = view.H < 520 ? 64 : 78;
-    const gridW = cols * cw + (cols - 1) * 10, x0 = (view.W - gridW) / 2;
-    const rows = Math.ceil(ROOMS.length / cols);
-    const y0 = view.H < 520 ? 72 : 110;
-    ROOMS.forEach((r, i) => {
-      const c = i % cols, rr = Math.floor(i / cols);
-      add({ id: "room:" + i, label: "", x: x0 + c * (cw + 10), y: y0 + rr * (ch + 10), w: cw, h: ch, enabled: unlocked(i), card: i });
-    });
   } else if (screen === PLAY && world) {
     playButtons().forEach(add);
   } else if (screen === WON && world) {
@@ -1479,13 +1645,13 @@ function drawHUD() {
   if (world.lost && world.status === "play") {
     const t = Math.min(1, failTimer * 4);
     ctx.globalAlpha = t;
-    const w = Math.min(380, bw - 40), h = 74, x = bx + bw / 2 - w / 2, yy = by + bh * 0.5 - h / 2;
+    const w = Math.min(420, bw - 40), h = 74, x = bx + bw / 2 - w / 2, yy = by + bh * 0.5 - h / 2;
     ctx.fillStyle = "rgba(40,16,12,0.88)"; roundRect(x, yy, w, h, 14); ctx.fill();
     ctx.strokeStyle = "rgba(207,106,79,0.8)"; ctx.lineWidth = 2; roundRect(x, yy, w, h, 14); ctx.stroke();
     ctx.textAlign = "center"; ctx.fillStyle = "#f0a58c"; ctx.font = "bold 20px Georgia, serif";
-    ctx.fillText("It slipped!", bx + bw / 2, yy + 30);
+    ctx.fillText(world.snapped ? "It snapped!" : "It slipped!", bx + bw / 2, yy + 30);
     ctx.fillStyle = COLORS.text; ctx.font = "14px system-ui, sans-serif";
-    ctx.fillText("Putting your yarn back as you laid it...", bx + bw / 2, yy + 54);
+    ctx.fillText(world.snapped ? "One strand cannot hold that. Putting your yarn back..." : "Putting your yarn back as you laid it...", bx + bw / 2, yy + 54);
     ctx.globalAlpha = 1; ctx.textAlign = "left";
   }
   if (DEBUG) {
@@ -1517,6 +1683,52 @@ function drawTitle() {
   ctx.textAlign = "left";
 }
 
+// ---- the rooms list: two parts (the tutorial, the puzzles), a header per chapter, scrolls -----------
+let selectScroll = 0;
+function selectLayout() {
+  const compact = view.H < 520;
+  const cols = Math.max(2, Math.min(5, Math.floor((view.W - 24) / 190)));
+  const cw = Math.min(210, (view.W - 24 - 10 * (cols - 1)) / cols);
+  const ch = compact ? 58 : 70;
+  const x0 = (view.W - (cols * cw + (cols - 1) * 10)) / 2;
+  const m = { compact: compact, top: compact ? 66 : 104, x0: x0, cw: cw, ch: ch, cols: cols };
+  const items = [];
+  let y = 0;
+  K.PARTS.forEach((part) => {
+    const rooms = ROOMS.map((r, i) => ({ r: r, i: i })).filter(o => part.chapters.indexOf(o.r.chapter) >= 0);
+    items.push({ kind: "part", y: y, text: part.name, done: rooms.filter(o => isDone(o.r.id)).length, total: rooms.length });
+    y += compact ? 32 : 40;
+    part.chapters.forEach((ci) => {
+      const list = rooms.filter(o => o.r.chapter === ci);
+      if (!list.length) return;
+      items.push({ kind: "chapter", y: y, text: K.CHAPTERS[ci] });
+      y += 22;
+      list.forEach((o, k) => {
+        items.push({ kind: "card", i: o.i, x: x0 + (k % cols) * (cw + 10), y: y + Math.floor(k / cols) * (ch + 10), w: cw, h: ch });
+      });
+      y += Math.ceil(list.length / cols) * (ch + 10) + 4;
+    });
+    y += 14;
+  });
+  const viewport = view.H - m.top - 6;
+  return { items: items, m: m, height: y, max: Math.max(0, y - viewport) };
+}
+// open the list with the room you would play next in view
+function scrollToOpenRoom() {
+  const L = selectLayout(), open = firstOpenIndex();
+  const card = L.items.find(it => it.kind === "card" && it.i === open);
+  selectScroll = card ? Math.max(0, Math.min(L.max, card.y - (view.H - L.m.top) / 3)) : 0;
+}
+function roomTag(r) {
+  const tags = [];
+  const wmax = (r.balls || []).reduce((m, b) => Math.max(m, b[3] || 1), 1);
+  if (wmax > 1) tags.push("heavy \u00d7" + wmax);
+  if (r.cups) tags.push("basket");
+  if (r.target) tags.push("reach");
+  if (r.ghost || r.finale) tags.push("old wool");
+  return tags.join(" \u00b7 ");
+}
+
 function drawSelect() {
   drawFrameBg();
   const compact = view.H < 520;
@@ -1524,6 +1736,25 @@ function drawSelect() {
   ctx.fillText("Rooms", view.W / 2, compact ? 44 : 58);
   ctx.fillStyle = COLORS.textDim; ctx.font = "14px system-ui, sans-serif";
   if (!compact) ctx.fillText(doneIds.length + " of " + ROOMS.length + " done", view.W / 2, 82);
+  const L = selectLayout();
+  selectScroll = Math.max(0, Math.min(L.max, selectScroll));
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, L.m.top, view.W, view.H - L.m.top); ctx.clip();
+  const left = L.m.x0, right = L.m.x0 + L.m.cols * L.m.cw + (L.m.cols - 1) * 10;
+  for (const it of L.items) {
+    const y = L.m.top + it.y - selectScroll;
+    if (it.kind === "part") {
+      ctx.textAlign = "left"; ctx.fillStyle = COLORS.thread; ctx.font = "bold " + (compact ? 20 : 24) + "px Georgia, serif";
+      ctx.fillText(it.text, left, y + (compact ? 22 : 28));
+      ctx.textAlign = "right"; ctx.fillStyle = COLORS.textDim; ctx.font = "13px system-ui, sans-serif";
+      ctx.fillText(it.done + " of " + it.total + " done", right, y + (compact ? 22 : 28));
+      ctx.strokeStyle = "rgba(214,178,110,0.35)"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(left, y + (compact ? 28 : 35)); ctx.lineTo(right, y + (compact ? 28 : 35)); ctx.stroke();
+    } else if (it.kind === "chapter") {
+      ctx.textAlign = "left"; ctx.fillStyle = COLORS.threadHi; ctx.font = "bold 12px system-ui, sans-serif";
+      ctx.fillText(it.text.toUpperCase(), left + 2, y + 15);
+    }
+  }
   for (const b of uiButtons) {
     if (b.card === undefined) continue;
     const i = b.card, r = ROOMS[i], done = isDone(r.id), open = unlocked(i);
@@ -1537,11 +1768,18 @@ function drawSelect() {
     ctx.fillText(String(i + 1), b.x + 14, b.y + b.h / 2 + 8);
     ctx.fillStyle = COLORS.text; ctx.font = "bold 14px system-ui, sans-serif";
     const nameLines = wrapLines(r.name, b.w - 70, "bold 14px system-ui, sans-serif");
-    nameLines.slice(0, 2).forEach((l, k) => ctx.fillText(l, b.x + 46, b.y + 24 + k * 17));
+    nameLines.slice(0, 2).forEach((l, k) => ctx.fillText(l, b.x + 46, b.y + 24 + k * 17 - (nameLines.length > 1 ? 4 : 0)));
     ctx.fillStyle = COLORS.textDim; ctx.font = "11px system-ui, sans-serif";
-    ctx.fillText(open ? K.CHAPTERS[r.chapter] : "locked", b.x + 46, b.y + b.h - 12);
-    if (done) { ctx.fillStyle = COLORS.good; ctx.font = "bold 18px system-ui, sans-serif"; ctx.textAlign = "right"; ctx.fillText("✓", b.x + b.w - 12, b.y + 24); }
+    ctx.fillText(open ? roomTag(r) : "locked", b.x + 46, b.y + b.h - 11);
+    if (done) { ctx.fillStyle = COLORS.good; ctx.font = "bold 18px system-ui, sans-serif"; ctx.textAlign = "right"; ctx.fillText("\u2713", b.x + b.w - 12, b.y + 24); }
     ctx.restore();
+  }
+  ctx.restore();
+  // a slim scroll bar, so it is clear the list goes on
+  if (L.max > 0) {
+    const th = view.H - L.m.top - 10, bh = Math.max(30, th * th / (th + L.max));
+    ctx.fillStyle = "rgba(214,178,110,0.35)";
+    roundRect(view.W - 8, L.m.top + 4 + (th - bh) * (selectScroll / L.max), 4, bh, 2); ctx.fill();
   }
   ctx.textAlign = "left";
   uiButtons.forEach(b => { if (b.card === undefined) drawButton(b); });
@@ -1557,9 +1795,13 @@ function drawWonBanner() {
   ctx.globalAlpha = t;
   let y = by + 8;
   ctx.font = "bold 30px Georgia, serif";
-  y += pillLines([world.target ? "Reached!" : "It holds!"], bx + 14, y, "bold 30px Georgia, serif", COLORS.good, 38) + 4;
-  const msg = world.target ? "You got the yarn to the stitch." :
-              world.balls.length > 1 ? "One length of yarn holds both balls. Hands off." : "The knot holds the ball. Hands off.";
+  const tutEnd = roomIndex === TUTORIAL_ROOMS - 1;
+  y += pillLines([tutEnd ? "Tutorial done!" : world.target ? "Reached!" : "It holds!"], bx + 14, y, "bold 30px Georgia, serif", COLORS.good, 38) + 4;
+  const heavy = world.balls.some(b => b.weight > 1);
+  let msg = world.target ? "You got the yarn to the stitch." :
+            heavy ? (world.balls.length > 1 ? "Every strand holds. Hands off." : "The strands hold it. Hands off.") :
+            world.balls.length > 1 ? "One length of yarn holds both balls. Hands off." : "The knot holds the ball. Hands off.";
+  if (tutEnd) msg += " Twenty puzzles are open now.";
   const best = bestYarn[room.id], used = world.shown;
   const stat = (world.target ? "Yarn used: " : "Yarn in your knot: ") + used +
                (best !== undefined && best < used ? " (your best: " + best + ")" : best === used ? " (your best)" : "") +
@@ -1578,9 +1820,9 @@ function drawEnd() {
   ctx.fillStyle = COLORS.good; ctx.font = "bold 44px Georgia, serif";
   ctx.fillText("Bound off!", cx, p.y + 70);
   ctx.fillStyle = COLORS.text; ctx.font = "17px system-ui, sans-serif";
-  ctx.fillText("You worked every room of Knit One,", cx, p.y + 112);
-  ctx.fillText(firstKnot && firstKnot.room ? "and unravelled your very first knot (" + firstKnot.roomName + ")" : "and unravelled an old sample knot", cx, p.y + 138);
-  ctx.fillText("to finish it.", cx, p.y + 164);
+  ctx.fillText("All " + ROOMS.length + " rooms, from the first stitch to the last knot.", cx, p.y + 112);
+  ctx.fillText("Every strand held, and you finished by unravelling", cx, p.y + 138);
+  ctx.fillText(firstKnot && firstKnot.room ? "your very first knot (" + firstKnot.roomName + ") one last time." : "an old sample knot one last time.", cx, p.y + 164);
   ctx.textAlign = "left";
 }
 
@@ -1634,5 +1876,6 @@ requestAnimationFrame(frame);
 window.__knit = {
   get world() { return world; }, get screen() { return screen; }, get view() { return view; },
   startRoom: startRoom, act: act, get doneIds() { return doneIds; }, get firstKnot() { return firstKnot; },
+  get selectScroll() { return selectScroll; }, get pointers() { return pointers.size; },
 };
 

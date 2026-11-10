@@ -14,6 +14,10 @@
  *   - a cinched knot welds two points of yarn together and is a solid bead.
  * A ball only stays up if yarn tied at both ends carries it: the anchor end is
  * fixed, the other end needs a knot around a post. Hands must be off the yarn.
+ *
+ * YARN STRENGTH: a ball has a weight (default 1). Each strand of yarn tied at both ends and passing
+ * under the ball holds one unit, so a x2 ball needs two strands. Too few and the yarn strains for
+ * STRAIN_TIME seconds, then snaps (see strandsUnder / strainStep below). A snap counts as a slip.
  */
 (function (root) {
   "use strict";
@@ -34,6 +38,11 @@
   const UNRAVEL_RATE = 0.02;      // seconds per node pulled back
   const WRAP_ANGLE = Math.PI * 1.1;
   const REACH_R = 24;
+  // Yarn strength: one strand of yarn carries 1 unit of weight. A ball of weight 2 needs two strands
+  // passing under it. An overloaded stretch strains for STRAIN_TIME seconds, then snaps.
+  const STRAND_HOLD = 1;
+  const STRAIN_TIME = 1.1;
+  const STRAIN_SPEED = 160;       // px/s: strain only builds once the ball has settled on the yarn
 
   // --------------------------------------------------------------------------
   // helpers
@@ -81,16 +90,18 @@
       anchor: { x: VW * room.anchor[0], y: VH * room.anchor[1] },
       pegs: (room.pegs || []).map(p => ({ x: VW * p[0], y: VH * p[1], r: p[2] })),
       balls: (room.balls || []).map(b => ({
-        hx: VW * b[0], hy: VH * b[1], r: b[2] || 22,
+        hx: VW * b[0], hy: VH * b[1], r: b[2] || 22, weight: b[3] || 1,
         x: VW * b[0], y: VH * b[1], px: VW * b[0], py: VH * b[1],
-        state: "hook", onYarn: false, speed: 0,
+        state: "hook", onYarn: false, speed: 0, strands: 0, strain: 0, pips: [],
       })),
+      cups: (room.cups || []).map(c => ({ x: VW * c[0], y: VH * c[1], r: c[2] })),
       target: room.target ? { x: VW * room.target[0], y: VH * room.target[1] } : null,
       nodes: [], knots: [],
       yarn: room.yarn, yarnStart: room.yarn, yarnCap: room.yarn,
       phase: "BUILD",          // BUILD: ball waits on its hook. DROPPED: ball released.
       status: "play",          // play | won
-      lost: false,             // a ball fell off the bottom
+      lost: false,             // a ball fell off the bottom (or the yarn under it snapped)
+      snapped: false, cut: [], // yarn gave way under a heavy ball; cut = indices of the segments that broke
       fails: 0, drops: 0,
       hold: 0, holdGoal: room.hold || HOLD_DEFAULT,
       wrapIdx: [], wrapsOk: true, wrapSeen: [],
@@ -104,7 +115,7 @@
     const a = w.anchor;
     w.nodes.push({ x: a.x, y: a.y });
     w.nodes.push({ x: a.x + 8, y: a.y + 8 });
-    if (room.finale) seedGhost(w, ghost || K.sampleKnot());
+    if (room.finale || room.ghost) seedGhost(w, ghost || K.sampleKnot());
     updateWraps(w, true);
     return w;
   }
@@ -189,6 +200,7 @@
     w.nodes = s.nodes.map(n => ({ x: n.x, y: n.y }));
     w.knots = s.knots.map(k => ({ i: k.i, j: k.j }));
     w.yarn = s.yarn; w.ghost = s.ghost ? { from: s.ghost.from, to: s.ghost.to } : null;
+    w.cut = [];
   }
   // Going back to building: ball to its hook and the yarn exactly as the player left it.
   function ensureBuild(w) {
@@ -200,7 +212,7 @@
     if (!w.undo.length || w.status !== "play") return false;
     const s = w.undo.pop();
     w.nodes = s.nodes; w.knots = s.knots; w.yarn = s.yarn; w.ghost = s.ghost;
-    w.unravelling = false;
+    w.cut = []; w.unravelling = false;
     returnBalls(w);
     updateWraps(w, true);
     w.events.push({ type: "undo" });
@@ -213,8 +225,9 @@
   function returnBalls(w) {
     for (const b of w.balls) {
       b.x = b.px = b.hx; b.y = b.py = b.hy; b.state = "hook"; b.onYarn = false; b.speed = 0;
+      b.strands = 0; b.strain = 0; b.pips = [];
     }
-    w.phase = "BUILD"; w.lost = false; w.hold = 0;
+    w.phase = "BUILD"; w.lost = false; w.hold = 0; w.snapped = false; w.cut = [];
   }
 
   // Drop the ball(s). From BUILD this is "Drop"; afterwards it is "Drop again":
@@ -259,6 +272,7 @@
       // yarn
       for (let i = 0; i < w.nodes.length - 1; i++) {
         if (inert(w, i) && inert(w, i + 1)) continue;
+        if (w.cut.length && w.cut.indexOf(i) >= 0) continue;
         const A = w.nodes[i], B = w.nodes[i + 1];
         const cp = closestOnSeg(b.x, b.y, A, B);
         let dx = b.x - cp.x, dy = b.y - cp.y, d = Math.hypot(dx, dy);
@@ -357,6 +371,7 @@
     const a0 = w.anchor;
     nodes[0].x = a0.x; nodes[0].y = a0.y;
     for (let i = 1; i < nodes.length; i++) {
+      if (w.cut.length && w.cut.indexOf(i - 1) >= 0) continue;
       const A = nodes[i - 1], B = nodes[i];
       const dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy);
       if (d > maxLen) { const k = maxLen / d; B.x = A.x + dx * k; B.y = A.y + dy * k; }
@@ -371,6 +386,7 @@
     for (let dir = 0; dir < 2; dir++) {
       for (let k = 0; k < N - 1; k++) {
         const i = dir === 0 ? k : N - 2 - k;
+        if (w.cut.length && w.cut.indexOf(i) >= 0) continue;
         const A = nodes[i], B = nodes[i + 1];
         const dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy);
         if (d <= maxLen) continue;
@@ -528,6 +544,68 @@
   }
 
   // --------------------------------------------------------------------------
+  // yarn strength: how many strands pass under a resting ball, and when they give way
+  // --------------------------------------------------------------------------
+  // A "strand under the ball" is a span of yarn tied at both ends (the spool or a knot) that passes
+  // under the ball, i.e. crosses the vertical line below the ball's centre. Two passes of the same span
+  // (a loose zigzag between two ties) are still one strand, so the only way to get more is to tie more
+  // spans: out to a post and back to another, or three posts in turn. Twinned spans in one hammock both
+  // count even though the ball only touches the upper one. Yarn wound on a post, a loose tail and the old
+  // ghost yarn are never counted; a ball resting on yarn always has at least one.
+  function strandsUnder(w, b) {
+    const n = w.nodes, out = [], seen = {};
+    const pins = [0];
+    for (const k of w.knots) { pins.push(k.i, k.j); }
+    pins.sort((p, q) => p - q);
+    for (let i = 0; i < n.length - 1; i++) {
+      if (inert(w, i) && inert(w, i + 1)) continue;
+      if (w.cut.length && w.cut.indexOf(i) >= 0) continue;
+      const A = n[i], B = n[i + 1];
+      const lo = Math.min(A.x, B.x), hi = Math.max(A.x, B.x);
+      if (!(b.x >= lo && b.x < hi)) continue;          // half-open, so a node exactly under the ball counts once
+      const y = A.y + (b.x - A.x) / (B.x - A.x) * (B.y - A.y);
+      if (!(y > b.y)) continue;
+      if (w.pegs.some(pg => Math.hypot(pg.x - b.x, pg.y - y) < pg.r + ROPE_R + 12)) continue;   // yarn wound on a post isn't a strand
+      let left = -1, right = -1;
+      for (const p of pins) { if (p <= i) left = p; else if (right < 0) right = p; }
+      if (left < 0 || right < 0) continue;              // not tied at both ends
+      const key = left + "-" + right;
+      if (seen[key]) { seen[key].segs.push(i); continue; }
+      seen[key] = { x: b.x, y: y, i: i, segs: [i] };
+      out.push(seen[key]);
+    }
+    if (!out.length && b.onYarn) {                     // resting on a knot bead or the side of a post's yarn
+      let best = null, bd = 1e9;
+      for (let i = 0; i < n.length - 1; i++) {
+        if (inert(w, i) && inert(w, i + 1)) continue;
+        if (w.cut.length && w.cut.indexOf(i) >= 0) continue;
+        const cp = closestOnSeg(b.x, b.y, n[i], n[i + 1]);
+        const d = Math.hypot(cp.x - b.x, cp.y - b.y);
+        if (d < bd) { bd = d; best = { x: cp.x, y: cp.y, i: i }; }
+      }
+      if (best) { best.segs = [best.i]; out.push(best); }
+    }
+    return out;
+  }
+
+  function snap(w, b) {
+    for (const p of b.pips) for (const i of p.segs) if (w.cut.indexOf(i) < 0) w.cut.push(i);
+    w.snapped = true; w.lost = true; w.fails++;
+    w.events.push({ type: "snap", x: b.x, y: b.y + b.r, weight: b.weight, strands: b.strands });
+  }
+
+  function strainStep(w) {
+    for (const b of w.balls) {
+      if (b.state !== "fall" || w.phase !== "DROPPED") { b.strain = 0; b.strands = 0; b.pips = []; continue; }
+      if (!b.onYarn) { b.strands = 0; b.pips = []; b.strain = Math.max(0, b.strain - DT * 3); continue; }
+      b.pips = strandsUnder(w, b); b.strands = b.pips.length;
+      if (b.strands * STRAND_HOLD < b.weight && b.speed < STRAIN_SPEED) b.strain += DT;
+      else b.strain = Math.max(0, b.strain - DT * 2);
+      if (b.strain >= STRAIN_TIME && !w.lost) snap(w, b);
+    }
+  }
+
+  // --------------------------------------------------------------------------
   // wraps (reach rooms): which posts the yarn has gone around. Any order counts, and so does one
   // big loop around several posts at once (players reasonably try that)
   // --------------------------------------------------------------------------
@@ -606,6 +684,7 @@
         w.lost = true; w.fails++;
         w.events.push({ type: "lost" });
       }
+      strainStep(w);
     }
 
     updateWraps(w, false);
@@ -618,8 +697,10 @@
         if (w.dwell >= 0.4) win(w);
       } else { w.reached = false; w.dwell = Math.max(0, w.dwell - DT * 2); }
     } else if (w.balls.length && w.phase === "DROPPED" && !w.lost) {
-      const calm = w.balls.every(b => b.state === "fall" && b.onYarn && b.speed < STILL_SPEED && b.y < VH - b.r - 10);
-      if (calm && !down && !w.unravelling) {
+      const calm = w.balls.every(b => b.state === "fall" && b.onYarn && b.speed < STILL_SPEED && b.y < VH - b.r - 10 &&
+                                      b.strands * STRAND_HOLD >= b.weight);
+      const inCups = w.cups.every(c => w.balls.some(b => Math.hypot(b.x - c.x, b.y - c.y) <= c.r));
+      if (calm && inCups && !down && !w.unravelling) {
         w.hold += DT;
         if (w.hold >= w.holdGoal) win(w);
       } else {
@@ -639,6 +720,7 @@
     create: create, step: step, drop: drop, cinch: cinch, undo: undo, pushUndo: pushUndo,
     findCinch: findCinch, head: head, toBuild: ensureBuild, relax: relax, returnBalls: returnBalls,
     wrapIndexFor: wrapIndexFor, closestOnSeg: closestOnSeg,
+    STRAIN_TIME: STRAIN_TIME, STRAND_HOLD: STRAND_HOLD, strandsUnder: strandsUnder,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = K;
 })(typeof window !== "undefined" ? window : globalThis);

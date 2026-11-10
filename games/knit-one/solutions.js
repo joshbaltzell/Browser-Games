@@ -104,6 +104,31 @@
   }
   K.tiePath = tie;
 
+  // route(room, items, opts): lay yarn from the spool through each item in turn. An item is
+  //   { via: [[x,y],...], post: i, dir: +1|-1, r0, turn, cinch: false }
+  // `via` points are passed through first; then, if `post` is given, a loop is wound round that post
+  // (starting on the side facing the last point, dir +1 = clockwise on screen) and Tie is pressed.
+  // After the last item: Drop, then wait opts.wait seconds (opts.drop === false stops before Drop).
+  function route(room, items, opts) {
+    opts = opts || {};
+    const steps = [];
+    let prev = [900 * room.anchor[0], 640 * room.anchor[1]];
+    for (const it of items) {
+      let pts = (it.via || []).slice();
+      if (it.post !== undefined) {
+        const p = px(room, it.post), last = pts.length ? pts[pts.length - 1] : prev;
+        const r0 = it.r0 || p[2] + 12, a0 = Math.atan2(last[1] - p[1], last[0] - p[0]) * 180 / Math.PI;
+        pts = pts.concat(spiral(p[0], p[1], r0, r0 + 10, a0, it.turn || 400, it.dir || 1));
+      }
+      steps.push({ drag: pts, speed: it.speed || 500 });
+      if (it.post !== undefined && it.cinch !== false) steps.push({ up: 0.2 }, { cinch: true });
+      prev = pts[pts.length - 1];
+    }
+    if (opts.drop !== false) steps.push({ drop: true }, { wait: opts.wait || 7 });
+    return steps;
+  }
+  K.route = route;
+
   const S = K.SOLUTIONS = {};
   let r;
 
@@ -155,6 +180,130 @@
   S[r.id] = [{ unravel: 3 },
     { drag: [[300, 215], [520, 340]].concat(tie(r, 0, 36)), speed: 500 },
     { up: 0.2 }, { cinch: true }, { drop: true }, { wait: 6 }];
+
+
+  // ---- the puzzles ----------------------------------------------------------------------------
+  // puzzle(id, pre, items): the recorded solution is `pre` (e.g. an Unravel) then route(items).
+  // K.SHORT[id] is the same build one strand short (last item left out), K.ONE[id] only its first
+  // strand: dev/solve-check.js uses them to prove that a heavy ball snaps the yarn without enough strands.
+  K.SHORT = {}; K.ONE = {}; K.ITEMS = {};
+  function puzzle(id, pre, items) {
+    const room = byId[id];
+    K.ITEMS[id] = { pre: pre, items: items };
+    S[id] = pre.concat(route(room, items));
+    if (room.balls && room.balls.some(b => (b[3] || 1) > 1)) {
+      K.SHORT[id] = pre.concat(route(room, items.slice(0, -1)));
+      K.ONE[id] = pre.concat(route(room, items.slice(0, 1)));
+    }
+  }
+
+  // Garter Stitch -------------------------------------------------------------------------------
+  r = byId["basket-case"];
+  { const Q = px(r, 0);
+    puzzle(r.id, [], [{ post: 0, dir: 1, via: [[250, 330], [450, 380], [620, 320], [Q[0] - 60, Q[1]]] }]); }
+
+  r = byId["slalom"];
+  { const P = [0, 1, 2, 3].map(i => px(r, i)), T = [900 * r.target[0], 640 * r.target[1]];
+    let pts = [], cur = [900 * r.anchor[0], 640 * r.anchor[1]];
+    [[0, 1], [1, -1], [2, 1], [3, -1]].forEach(c => {
+      const p = P[c[0]], a0 = Math.atan2(cur[1] - p[1], cur[0] - p[0]) * 180 / Math.PI;
+      const w = spiral(p[0], p[1], p[2] + 10, p[2] + 10, a0, 240, c[1]);
+      pts = pts.concat(w); cur = w[w.length - 1];
+    });
+    pts.push(T);
+    S[r.id] = [{ drag: pts, speed: 600 }, { wait: 1 }]; }
+
+  r = byId["two-baskets"];
+  { const P = px(r, 0), Q = px(r, 1);
+    puzzle(r.id, [], [{ post: 1, dir: 1, via: [[300, 260], [450, P[1] - P[2] - 14], [600, 300], [Q[0] - 40, Q[1] - 20]] }]); }
+
+  r = byId["spare-wool"];
+  { const Q = px(r, 0);
+    puzzle(r.id, [{ unravel: 3.5 }], [{ post: 0, dir: 1, via: [[250, 330], [450, 430], [620, 330], [Q[0] - 60, Q[1]]] }]); }
+
+  // Double Knit ---------------------------------------------------------------------------------
+  r = byId["too-heavy"];
+  { const L = px(r, 0), Q = px(r, 1);
+    puzzle(r.id, [], [{ post: 1, dir: 1, via: [[300, 290], [Q[0] - 34, Q[1]]] }, { post: 0, dir: -1, via: [[L[0] + 34, L[1] - 6]] }]); }
+
+  r = byId["hanging-basket"];
+  { const L = px(r, 0), Q = px(r, 1);
+    puzzle(r.id, [], [{ post: 1, dir: 1, via: [[300, 260], [480, 380], [640, 300], [Q[0] - 40, Q[1]]] },
+      { post: 0, dir: -1, via: [[640, 360], [480, 420], [300, 320], [L[0] + 36, L[1]]] }]); }
+
+  r = byId["uphill"];
+  { const H = px(r, 0), Lo = px(r, 1);
+    puzzle(r.id, [], [{ post: 1, dir: 1, via: [[300, 500], [Lo[0] - 36, Lo[1] + 8]] }, { post: 0, dir: -1, via: [[H[0] + 40, H[1] + 30]] }]); }
+
+  r = byId["heavy-and-light"];
+  { const P1 = px(r, 0), P2 = px(r, 1), P3 = px(r, 2);
+    puzzle(r.id, [], [{ post: 2, dir: 1, via: [[300, 260], [P3[0] - 36, P3[1]]] }, { post: 1, dir: 1, via: [[P2[0] + 40, P2[1] - 10]] },
+      { post: 0, dir: -1, via: [[P1[0] + 40, P1[1] - 10]] }]); }
+
+  r = byId["two-heavies"];
+  { const L = px(r, 0), Q = px(r, 1);
+    puzzle(r.id, [], [{ post: 0, dir: -1, via: [[600, 470], [L[0] + 36, L[1] + 6]] }, { post: 1, dir: 1, via: [[Q[0] - 36, Q[1]]] }]); }
+
+  // Cable Knit ----------------------------------------------------------------------------------
+  puzzle("triple-play", [], [{ post: 1, dir: 1 }, { post: 0, dir: -1 }, { post: 1, dir: 1 }]);
+
+  r = byId["three-and-one"];
+  { const L = px(r, 0), M = px(r, 1), Q = px(r, 2);
+    puzzle(r.id, [], [{ post: 2, dir: 1, via: [[300, 260], [Q[0] - 36, Q[1]]] }, { post: 1, dir: 1, via: [[M[0] + 40, M[1] - 10]] },
+      { post: 0, dir: -1, via: [[L[0] + 40, L[1] - 10]] }, { post: 1, dir: 1, via: [[M[0] - 40, M[1] - 10]] }]); }
+
+  r = byId["hill-climb"];
+  { const H = px(r, 0), Lo = px(r, 1);
+    puzzle(r.id, [], [{ post: 1, dir: 1, via: [[300, 500], [Lo[0] - 36, Lo[1] + 8]] }, { post: 0, dir: -1, via: [[H[0] + 40, H[1] + 30]] },
+      { post: 1, dir: 1, via: [[Lo[0] - 40, Lo[1] - 30]] }]); }
+
+  r = byId["the-pillar"];
+  { const P = px(r, 0), Q = px(r, 1);
+    puzzle(r.id, [], [{ post: 1, dir: 1, via: [[300, 230], [P[0], P[1] - P[2] - 14], [640, 330], [Q[0] - 36, Q[1]]] },
+      { post: 0, dir: -1, via: [[640, 330], [P[0] + 50, P[1] - P[2] - 12]] }]); }
+
+  // Tangles -------------------------------------------------------------------------------------
+  r = byId["old-wool"];
+  { const L = px(r, 0), Q = px(r, 1);
+    puzzle(r.id, [{ unravel: 3.5 }], [{ post: 1, dir: 1, via: [[300, 290], [Q[0] - 34, Q[1]]] }, { post: 0, dir: -1, via: [[L[0] + 34, L[1] - 6]] }]); }
+
+  r = byId["weighty-matters"];
+  { const L = px(r, 0), Q = px(r, 1);
+    puzzle(r.id, [], [{ post: 0, dir: -1, via: [[300, 250], [L[0] + 40, L[1] - 20]] }, { post: 1, dir: 1, via: [[Q[0] - 40, Q[1] - 14]] },
+      { post: 0, dir: -1, via: [[L[0] + 44, L[1] + 14]] }]); }
+
+  r = byId["spool-run"];
+  { const P = [0, 1, 2, 3].map(i => px(r, i)), T = [900 * r.target[0], 640 * r.target[1]];
+    let pts = [], cur = [900 * r.anchor[0], 640 * r.anchor[1]];
+    [[0, 1], [1, 1], [2, -1], [3, 1]].forEach(c => {
+      const p = P[c[0]], a0 = Math.atan2(cur[1] - p[1], cur[0] - p[0]) * 180 / Math.PI;
+      const w = spiral(p[0], p[1], p[2] + 10, p[2] + 10, a0, 230, c[1]);
+      pts = pts.concat(w); cur = w[w.length - 1];
+    });
+    pts.push(T);
+    S[r.id] = [{ unravel: 5 }, { drag: pts, speed: 600 }, { wait: 1 }]; }
+
+  r = byId["deep-pocket"];
+  { const L = px(r, 0), Q = px(r, 1);
+    puzzle(r.id, [], [{ post: 1, dir: 1, via: [[300, 260], [480, 370], [640, 300], [Q[0] - 40, Q[1]]] },
+      { post: 0, dir: -1, via: [[640, 350], [480, 410], [300, 320], [L[0] + 36, L[1]]] },
+      { post: 1, dir: 1, via: [[640, 370], [480, 430], [Q[0] - 40, Q[1]]] }]); }
+
+  // Bind Off ------------------------------------------------------------------------------------
+  r = byId["heavy-tent"];
+  { const P = px(r, 0), Q = px(r, 1), L = px(r, 2);
+    puzzle(r.id, [], [{ post: 1, dir: 1, via: [[300, 270], [450, P[1] - P[2] - 14], [600, 300], [Q[0] - 40, Q[1] - 20]] },
+      { post: 2, dir: -1, via: [[600, 310], [450, P[1] - P[2] - 20], [300, 290], [L[0] + 40, L[1] - 20]] }]); }
+
+  r = byId["three-weights"];
+  { const P = [0, 1, 2, 3].map(i => px(r, i));
+    puzzle(r.id, [], [{ post: 3, dir: 1, via: [[300, 290], [P[3][0] - 36, P[3][1]]] }, { post: 1, dir: -1, via: [[P[1][0] + 40, P[1][1] - 14]] },
+      { post: 3, dir: 1, via: [[P[3][0] - 44, P[3][1] - 18]] }]); }
+
+  r = byId["bound-off"];
+  { const L = px(r, 0), Q = px(r, 1);
+    puzzle(r.id, [{ unravel: 7 }], [{ post: 1, dir: 1, via: [[300, 260], [Q[0] - 36, Q[1]]] }, { post: 0, dir: -1, via: [[L[0] + 36, L[1] - 8]] },
+      { post: 1, dir: 1, via: [[Q[0] - 40, Q[1] - 14]] }]); }
 
 
   if (typeof module !== "undefined" && module.exports) module.exports = K;
