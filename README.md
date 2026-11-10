@@ -35,19 +35,13 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 | **[Sky Climber](games/sky-climber/)** | Auto-bounce ever upward across drifting, springing, and crumbling platforms. Steer carefully and climb as high as you can. |
 | **[Neon Gauntlet](games/neon-gauntlet/)** | A room-by-room neon dungeon crawler. Clear rooms, fight six enemy archetypes, and build your skill tree one level at a time. |
 | **[Switchback](games/switchback/)** | A one-button runner. A droplet rolls forever forward; flip gravity to arc between floor and ceiling and bank off the bulges to keep your speed. |
-| **[Cartographer's Curse](games/cartographers-curse/)** | Freehand-draw a dungeon with a scarce ink budget, then survive inside exactly the walls you drew. |
-| **[Tank Yard Sonnet](games/tank-yard/)** | A 3D toon-shaded tank survival game: drive, aim the turret, and outlast an endless stream of enemy tanks. |
-| **[Tank Yard Fable](games/tank-yard-fable/)** | A second build of Tank Yard from the same plan, made by a different model. |
+| **[Tank Yard Fable](games/tank-yard-fable/)** | A 3D toon-shaded tank survival game: drive a slow, sturdy tank, aim the turret, and outlast an endless stream of enemy tanks. |
 
 ### Puzzle and word
 
 | Game | Description |
 | --- | --- |
-| **[LexiGrid](games/lexigrid/)** | A cozy word puzzle: arrange letter tiles on an oak board and find hidden words in every direction. |
-| **[Coroner & Crossword](games/coroner-crossword/)** | Solve a homicide by filling a crossword where every shared letter forces two alibis to agree. |
-| **[Stained Glass Saint](games/stained-glass-saint/)** | Rotate cathedral glass to route sunlight through subtractive color filters and light each saint in the right hue. |
 | **[Knit One](games/knit-one/)** | You are the yarn. Wrap pegs, loop through your own bight, and cinch a knot that actually holds the weight. |
-| **[Vanishing Point](games/vanishing-point/)** | Slide objects through depth in a one-point-perspective plaza — later, drag the vanishing point itself. |
 | **[Notary of the Damned](games/notary-of-the-damned/)** | The underworld's paperwork clerk: check each ghost's dossier against a shifting rulebook and stamp APPROVED or DENIED. |
 | **[Last Words](games/last-words/)** | A deckbuilder where every card is a word. Chain them into a sentence and it happens literally. |
 
