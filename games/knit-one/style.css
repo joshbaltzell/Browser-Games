@@ -1,5 +1,4 @@
-/* Knit One — cozy felt-and-fiber physics toy.
-   The wool-dyed warmth runs from the page chrome into the canvas. */
+/* Knit One — the whole game is one full-window canvas. */
 
 * {
   box-sizing: border-box;
@@ -11,34 +10,19 @@ body {
   padding: 0;
   height: 100%;
   overflow: hidden;
-  background:
-    radial-gradient(140% 100% at 50% -10%, #3a3026 0%, #241d15 55%, #15110c 100%);
+  background: #17120d;
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   color: #f1e6d1;
   user-select: none;
   -webkit-user-select: none;
-}
-
-/* Centre the fixed-aspect play area. */
-#stage {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 12px;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
 }
 
 #game {
+  position: fixed;
+  inset: 0;
   display: block;
-  /* JS sets the CSS width/height to keep the 9:6.4 aspect ratio. */
-  border-radius: 20px;
-  background: #241d15;
-  /* a warm wool glow + a faint stitched rim around the play frame */
-  box-shadow:
-    0 0 0 2px rgba(214, 178, 110, 0.22),
-    0 0 0 6px rgba(40, 30, 18, 0.6),
-    0 0 70px -10px rgba(214, 138, 106, 0.30),
-    0 30px 90px -30px rgba(0, 0, 0, 0.92);
   touch-action: none;
   cursor: crosshair;
 }

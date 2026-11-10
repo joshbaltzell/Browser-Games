@@ -1,195 +1,30 @@
 /*
- * KNIT ONE — Phases 1–3
- * =====================
- * You are a single continuous thread. Steer the HEAD with the mouse; segments
- * pay out behind it as a verlet-integrated rope (finite yarn). Wrap the rope
- * around the wooden peg, loop the head back through its own bight, and press
- * SPACE to CINCH — that bakes a stiff constraint into the crossing so the loop
- * can't slide open. A cinched loop around the peg honestly bears the weight; a
- * loose, un-cinched loop opens under load and the weight slips and falls. The
- * catch is emergent rope tension, not a scripted snap-to-net.
+ * KNIT ONE
+ * ========
+ * You are a single thread. Drag to lay yarn from the spool, loop it round a
+ * wooden post and cross your own line, press TIE to cinch the loop into a knot,
+ * then DROP a felt ball onto it. A knot tied to a post holds the ball with your
+ * hands off; a loose line does not.
  *
- * PHASE 2 — Style & Identity: the grey-box is reskinned as a cozy felt-and-
- * fiber world. Baked knit-stockinette background, fuzzy multi-pass plied yarn
- * with fiber highlights, stitched wooden-button pegs, a felted forest ball
- * weight, a stop-motion frame-step that makes everything jitter at a low
- * animation framerate while the sim stays smooth, fiber-wisp particles, and a
- * synthesized music-box lullaby loop under needle-click / win / drop foley.
+ * Files (plain scripts, no modules, works double-clicked from disk):
+ *   rooms.js      the rooms (data)
+ *   sim.js        the physics + rules, no DOM (also run by dev/solve-check.js)
+ *   solutions.js  a recorded solution per room: proof they are solvable + the Hint
+ *   game.js       this file: screens, input, touch buttons, audio, drawing, saves
  *
- * PHASE 3 — The Twist (unravel economy): yarn is finite and the only source of
- * more is to pull apart your own work. Right-click / U unravels the thread from
- * the head, winding each segment's length back onto the ball and DESTROYING any
- * knot it carried — so a structure that was bearing load stops working the
- * instant it is unraveled (the weight falls). Your very first completed
- * creation persists in localStorage so the finale (Phase 4) can demand it.
- *
- * Pure vanilla JS + Canvas 2D. No modules, no assets, no fetch — visuals and
- * audio are generated in code so it runs straight from file://.
- *
- * Sections: Constants -> Canvas/state -> Persistence -> Audio -> Input ->
- *   Rope model -> Physics -> Crossings & knots -> Unravel -> Weight -> Room ->
- *   Update -> Render -> Main loop.
+ * Sections: Setup -> Persistence -> Audio -> Layout -> Input -> Flow -> Update ->
+ *   Render -> Screens -> Main loop.
  */
 
 "use strict";
 
-// ----------------------------------------------------------------------------
-// Constants
-// ----------------------------------------------------------------------------
+const K = window.KnitOne;
+const S = K.sim;
+const ROOMS = K.ROOMS;
+const VW = S.VW, VH = S.VH;
 const TAU = Math.PI * 2;
+const MAX_DT = 1 / 20;
 
-// Fixed logical play area. Canvas scales to fit while keeping this aspect.
-const VW = 900;
-const VH = 640;
-
-// Verlet rope
-const SEG_LEN = 16;          // rest length of one rope segment
-const GRAVITY = 1300;        // px/s^2, applied to rope nodes
-const DAMP = 0.86;           // verlet velocity damping
-const ITER = 24;             // constraint relaxation iterations per frame
-const MAX_DT = 1 / 30;       // clamp big frame gaps so the sim stays stable
-
-// Yarn budget is measured in segment-lengths (number of nodes we may spawn).
-const START_YARN = 90;
-
-// Weight body
-const WEIGHT_R = 22;
-const WEIGHT_GRAVITY = 1700;
-const WEIGHT_DAMP = 0.90;
-
-// A loop is considered "cinched" when SPACE is pressed and the head segment is
-// currently crossing an earlier segment (a closed bight exists).
-const KNOT_REST = 4;         // cinched crossing pulls the two points this close
-const KNOT_STIFF = 1.0;      // fully stiff — a real knot doesn't creep
-
-// Win: weight must rest (held, slow) for this long (default; rooms can override).
-const HOLD_TO_WIN = 2.0;
-
-// ----------------------------------------------------------------------------
-// ROOMS — Phase 4 content. Each room is pure data: where the thread is anchored,
-// the wooden-button pegs, where the weight drops in, the yarn budget, the hold
-// time to win, and a single diegetic teaching prompt. The list is ordered as a
-// teaching curve: each early room introduces ONE verb before later rooms combine
-// them. The final room is the unravel-your-first-creation finale.
-//
-// Coordinates are fractions of the play area (0..1) so rooms read cleanly and
-// scale with VW/VH. A room may declare:
-//   teach   : { text, at:[fx,fy] }  diegetic low-text prompt drawn in-world
-//   tip     : short bottom-line goal text
-//   finale  : true  -> seeds the player's persisted first creation as a
-//                      pre-built, load-bearing ghost the player must unravel
-// ----------------------------------------------------------------------------
-const ROOMS = [
-  {
-    name: "First Stitch",
-    anchor: [0.16, 0.24],
-    pegs: [],
-    weight: null,                 // no load yet — pure "learn to steer" room
-    target: [0.80, 0.62],         // reach the marked spot with the head
-    yarn: 60,
-    tip: "Drag from the loose end to lay yarn. Reach the marked stitch.",
-    teach: { text: "drag here", at: [0.80, 0.62] },
-  },
-  {
-    name: "Round the Post",
-    anchor: [0.14, 0.22],
-    pegs: [[0.50, 0.45, 26]],
-    weight: null,
-    target: [0.84, 0.40],
-    wrapPeg: 0,                   // must wind around peg 0 on the way
-    yarn: 70,
-    tip: "Wind the yarn around the wooden button, then reach the stitch.",
-    teach: { text: "wrap me", at: [0.50, 0.45] },
-  },
-  {
-    name: "A Loose Loop",
-    anchor: [0.14, 0.20],
-    pegs: [[0.50, 0.40, 26]],
-    weight: [0.50, 0.40],
-    yarn: 95,
-    hold: 2.0,
-    tip: "Loop over the post and CINCH (SPACE) so the knot holds the weight.",
-    teach: { text: "loop back, then SPACE", at: [0.50, 0.62] },
-  },
-  {
-    name: "Cross & Cinch",
-    anchor: [0.13, 0.22],
-    pegs: [[0.46, 0.40, 24]],
-    weight: [0.46, 0.40],
-    yarn: 100,
-    hold: 2.0,
-    tip: "Cross the yarn over itself (hold SHIFT to go under), then cinch.",
-    teach: { text: "cross your own line", at: [0.46, 0.66] },
-  },
-  {
-    name: "Two Posts",
-    anchor: [0.12, 0.20],
-    pegs: [[0.40, 0.38, 24], [0.66, 0.50, 24]],
-    weight: [0.53, 0.30],
-    yarn: 120,
-    hold: 2.0,
-    tip: "Sling a hammock between both posts and cinch it to hold the weight.",
-  },
-  {
-    name: "Heavy Drop",
-    anchor: [0.12, 0.18],
-    pegs: [[0.38, 0.42, 26], [0.64, 0.42, 26]],
-    weight: [0.51, 0.20],
-    weightR: 28,                  // a chunkier, heavier felt ball
-    yarn: 130,
-    hold: 2.2,
-    tip: "A heavier ball. Build a tighter cradle between the posts.",
-  },
-  {
-    name: "The Narrow Gap",
-    anchor: [0.10, 0.30],
-    pegs: [[0.34, 0.30, 20], [0.55, 0.56, 20], [0.78, 0.34, 20]],
-    weight: [0.55, 0.18],
-    yarn: 145,
-    hold: 2.2,
-    tip: "Three posts, less room. Weave a path that still bears the load.",
-  },
-  {
-    name: "Thin Ball",
-    anchor: [0.12, 0.22],
-    pegs: [[0.42, 0.40, 24], [0.66, 0.46, 24]],
-    weight: [0.54, 0.22],
-    yarn: 78,                     // TWIST-03: too little to solve outright
-    hold: 2.0,
-    tip: "Not enough yarn on the ball. Build, fail, UNRAVEL, and re-spend it.",
-    teach: { text: "run out, then unravel", at: [0.30, 0.74] },
-  },
-  {
-    name: "Double Span",
-    anchor: [0.10, 0.20],
-    pegs: [[0.34, 0.36, 22], [0.55, 0.52, 22], [0.76, 0.36, 22]],
-    weight: [0.55, 0.16],
-    weightR: 26,
-    yarn: 150,
-    hold: 2.4,
-    tip: "A long heavy run. Spend every inch — unravel mistakes to afford it.",
-  },
-  {
-    name: "Unravel the First",
-    anchor: [0.13, 0.20],
-    pegs: [[0.46, 0.42, 26]],
-    weight: [0.56, 0.42],        // drops just past the peg so it won't balance on it
-    yarn: 34,                     // far too little on its own…
-    hold: 2.4,
-    finale: true,                 // …the rest is locked inside your first work
-    tip: "Only one thing holds enough yarn: your very first creation. Unravel it.",
-    teach: { text: "unravel your first work", at: [0.74, 0.30] },
-  },
-];
-
-let roomIndex = 0;            // which room we're playing
-let roomTarget = null;       // {x,y} reach-goal for no-load rooms (or null)
-let roomConfig = null;       // the active ROOMS[roomIndex] record
-let wrapNeeded = -1;         // peg index that must be wrapped (or -1)
-let wrapDone = false;        // has the required wrap been achieved
-let reached = false;         // has the head reached roomTarget
-let failState = false;       // soft fail: stuck with no yarn and nothing to unravel
-let failTimer = 0;
 
 // Wool-dyed palette — the single source of truth for every rendered color.
 // Warm oatmeal ground, dusty rose / clay yarn, mustard strain, forest felt,
@@ -241,35 +76,6 @@ const COLORS = {
   panelRim: "rgba(214,178,110,0.28)",
 };
 
-// ----------------------------------------------------------------------------
-// Canvas & global state
-// ----------------------------------------------------------------------------
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-
-let scale = 1;
-function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const availW = window.innerWidth - 24;
-  const availH = window.innerHeight - 24;
-  scale = Math.min(availW / VW, availH / VH);
-  scale = Math.max(0.2, scale);
-  canvas.style.width = VW * scale + "px";
-  canvas.style.height = VH * scale + "px";
-  canvas.width = Math.round(VW * dpr);
-  canvas.height = Math.round(VH * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-window.addEventListener("resize", resize);
-
-// Screen states: routed through a tiny machine so later phases plug in cleanly.
-const TITLE = "TITLE", PLAY = "PLAY", ROOM_COMPLETE = "ROOM_COMPLETE",
-      GAME_COMPLETE = "GAME_COMPLETE";
-let state = TITLE;
-function setState(s) { state = s; }
-
-let DEBUG = false;
-
 // --- Stop-motion frame-step ---------------------------------------------
 // The sim runs smooth, but rendering samples a quantized clock so objects
 // visibly "pop" between handmade-looking frames, like claymation. We also
@@ -303,119 +109,65 @@ function jitter(seed) {
   return (v - Math.floor(v)) * 2 - 1;
 }
 
-// Rope / world state (initialised in resetRoom)
-let nodes;          // [{x,y,px,py,pinned}]
-let crossings;      // [{a,b,over}]  a,b = segment start-node indices
-let knots;          // [{i,j,rest}]  stiff constraints between two node indices
-let pegs;           // [{x,y,r}]
-let anchor;         // {x,y}
-let weight;         // {x,y,px,py}
-let yarn;           // remaining yarn budget (segment-lengths)
-let yarnStart;      // budget at room start (for HUD scaling)
-let yarnCap;        // max yarn the ball can hold this room (start + reclaimable
-                    // yarn locked inside any pre-seeded structure)
-let holdTimer;      // seconds the weight has been held
-let weightState;    // "FALLING" | "HELD" | "DROPPED"
-let lastSpawnX, lastSpawnY; // where we last paid out a node
-
-// Input
-let pointer = { x: VW * 0.3, y: VH * 0.4, down: false, active: false };
-let underToggle = false; // hold Shift => new crossing goes UNDER
-
-// --- Unravel economy (Phase 3 / The Twist) ------------------------------
-// Pulling apart built thread retracts it from the head end back toward the
-// anchor, returning each segment's yarn to the ball and destroying any knot
-// it carried — so a structure that was bearing load stops working the instant
-// it is unraveled.
-let unravel = {
-  active: false,
-  cutIndex: 0,    // nodes at index > cutIndex are being/already pulled (visual ghost line)
-  accum: 0,       // seconds accumulated toward next node retract
-  recovered: 0,   // yarn ticked back this unravel (for HUD flourish)
-};
-const UNRAVEL_RATE = 0.018; // seconds per node retracted (fast but legible)
-
-// The player's FIRST creation persists across rooms; the finale (Phase 4)
-// will demand unraveling it. We persist a lightweight record so the hook is
-// real now and ready for the room system.
-const FIRST_KEY = "knit-one-first-creation";
-let firstCreation = null;   // { nodes:[{x,y}], yarnLength:int } | null
-let firstCreationGhost = null; // loaded structure shown faintly + unravelable
-
-// Best record
-let bestYarnUsed; // least yarn used to win, persisted
 
 // ----------------------------------------------------------------------------
-// Persistence
+// Setup: canvas, screens, global state
 // ----------------------------------------------------------------------------
-const BEST_KEY = "knit-one-best-yarn";
-function loadBest() {
-  try {
-    const v = parseInt(localStorage.getItem(BEST_KEY) || "0", 10);
-    return Number.isFinite(v) && v > 0 ? v : 0;
-  } catch (e) { return 0; }
-}
-function saveBest(v) {
-  try { localStorage.setItem(BEST_KEY, String(v)); } catch (e) {}
-}
-bestYarnUsed = loadBest();
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
-// Furthest room the player has reached (1-based), persisted so the TITLE can
-// show progress and the full-run completion is acknowledged.
-const PROG_KEY = "knit-one-progress";
-let bestRoom = 0;          // highest room index completed (0 = none)
-let runCompleted = false;  // has the player ever finished the whole run
-function loadProgress() {
-  try {
-    const v = parseInt(localStorage.getItem(PROG_KEY) || "0", 10);
-    bestRoom = Number.isFinite(v) && v > 0 ? v : 0;
-    runCompleted = bestRoom >= ROOMS.length;
-  } catch (e) { bestRoom = 0; }
-}
-function saveProgress(roomCompleted1Based) {
-  if (roomCompleted1Based > bestRoom) {
-    bestRoom = roomCompleted1Based;
-    if (bestRoom >= ROOMS.length) runCompleted = true;
-    try { localStorage.setItem(PROG_KEY, String(bestRoom)); } catch (e) {}
-  }
-}
-loadProgress();
+const TITLE = "TITLE", SELECT = "SELECT", PLAY = "PLAY", WON = "WON", END = "END";
+let screen = TITLE;
 
-// Total yarn spent across the whole run (the run-level "score").
-let runYarnUsed = 0;
-const RUN_BEST_KEY = "knit-one-run-best";
-let bestRunYarn = 0;
-function loadRunBest() {
-  try {
-    const v = parseInt(localStorage.getItem(RUN_BEST_KEY) || "0", 10);
-    return Number.isFinite(v) && v > 0 ? v : 0;
-  } catch (e) { return 0; }
-}
-function saveRunBest(v) {
-  try { localStorage.setItem(RUN_BEST_KEY, String(v)); } catch (e) {}
-}
-bestRunYarn = loadRunBest();
+let roomIndex = 0;
+let world = null;           // the live simulation (sim.js)
+let winTimer = 0;           // seconds since the room was won (delays the card)
+let failTimer = 0;          // seconds since the ball was lost
+let toast = { text: "", t: 0 };
+let showHint = false;
+let cinchHint = null;       // the loop a Tie press would tie right now (or null)
+let cinchHintAge = 0;
+let particles = [];
+let DEBUG = false;
 
-function loadFirstCreation() {
+// ----------------------------------------------------------------------------
+// Persistence — every access is inside try/catch (private windows, file://)
+// ----------------------------------------------------------------------------
+const DONE_KEY = "knit-one-done-v2";        // JSON array of finished room ids
+const BEST_KEY = "knit-one-room-best-v2";   // JSON {roomId: least yarn used}
+const KNOT_KEY = "knit-one-first-knot-v2";  // the player's real first knot
+
+function readJSON(key, fallback) {
   try {
-    const raw = localStorage.getItem(FIRST_KEY);
-    if (!raw) return null;
-    const o = JSON.parse(raw);
-    if (o && Array.isArray(o.nodes) && o.nodes.length > 1) return o;
-  } catch (e) {}
-  return null;
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const v = JSON.parse(raw);
+    return v === null || v === undefined ? fallback : v;
+  } catch (e) { return fallback; }
 }
-function saveFirstCreation(rec) {
-  try { localStorage.setItem(FIRST_KEY, JSON.stringify(rec)); } catch (e) {}
+function writeJSON(key, v) {
+  try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {}
 }
-// Snapshot the current built thread as a persistable creation record.
-function snapshotCreation() {
-  return {
-    nodes: nodes.map(n => ({ x: Math.round(n.x), y: Math.round(n.y) })),
-    yarnLength: nodes.length, // segment-lengths it cost
-  };
+
+let doneIds = readJSON(DONE_KEY, []);
+if (!Array.isArray(doneIds)) doneIds = [];
+doneIds = doneIds.filter(id => ROOMS.some(r => r.id === id));
+let bestYarn = readJSON(BEST_KEY, {});
+if (!bestYarn || typeof bestYarn !== "object" || Array.isArray(bestYarn)) bestYarn = {};
+let firstKnot = readJSON(KNOT_KEY, null);
+if (!(firstKnot && Array.isArray(firstKnot.nodes) && firstKnot.nodes.length > 3)) firstKnot = null;
+
+function isDone(id) { return doneIds.indexOf(id) >= 0; }
+// first room not yet finished; every room up to and including it is playable
+function firstOpenIndex() {
+  for (let i = 0; i < ROOMS.length; i++) if (!isDone(ROOMS[i].id)) return i;
+  return ROOMS.length - 1;
 }
-firstCreation = loadFirstCreation();
+function unlocked(i) { return i <= firstOpenIndex() || isDone(ROOMS[i].id); }
+function markDone(room, used) {
+  if (!isDone(room.id)) { doneIds.push(room.id); writeJSON(DONE_KEY, doneIds); }
+  if (!(bestYarn[room.id] <= used)) { bestYarn[room.id] = used; writeJSON(BEST_KEY, bestYarn); }
+}
 
 // ----------------------------------------------------------------------------
 // Audio — lazily created & resumed on first gesture (file://-safe). Phase 1
@@ -621,449 +373,319 @@ function sndTick() {
   } catch (e) {}
 }
 
+
+// A soft "no" blip for a Tie press that found nothing to tie, and a snip for Drop.
+function sndNo() {
+  if (muted || !audioCtx) return;
+  try {
+    const now = audioCtx.currentTime;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(260, now);
+    o.frequency.exponentialRampToValueAtTime(190, now + 0.14);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.1, now + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+    o.connect(g).connect(masterGain || audioCtx.destination);
+    o.start(now); o.stop(now + 0.2);
+  } catch (e) {}
+}
+function sndSnip() {
+  if (muted || !audioCtx) return;
+  try {
+    const now = audioCtx.currentTime;
+    for (let i = 0; i < 2; i++) {
+      const t = now + i * 0.07;
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = "square";
+      o.frequency.setValueAtTime(1800 - i * 400, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.05, t + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+      o.connect(g).connect(masterGain || audioCtx.destination);
+      o.start(t); o.stop(t + 0.06);
+    }
+  } catch (e) {}
+}
+
+// ----------------------------------------------------------------------------
+// Layout. The canvas fills the window. The 900x640 board is scaled to fit and
+// the controls live outside it in real screen pixels, so text stays readable and
+// tap targets stay big on a phone: side columns when the window is wide (phone
+// landscape, desktop), a bottom bar when it is narrow (portrait).
+// ----------------------------------------------------------------------------
+const view = { W: 0, H: 0, dpr: 1, s: 1, ox: 0, oy: 0, mode: "side", bar: 108 };
+const COARSE = (function () {
+  try { return window.matchMedia("(pointer: coarse)").matches; } catch (e) { return false; }
+})();
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const W = window.innerWidth, H = window.innerHeight;
+  view.W = W; view.H = H; view.dpr = dpr;
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  const bar = W < 700 ? 100 : 116;
+  const sSide = Math.min((W - bar * 2) / VW, H / VH);
+  const sBot = Math.min(W / VW, (H - 74) / VH);
+  if (sSide >= sBot) {
+    view.mode = "side"; view.s = Math.max(0.2, sSide); view.bar = bar;
+    view.ox = (W - VW * view.s) / 2; view.oy = (H - VH * view.s) / 2;
+  } else {
+    view.mode = "bottom"; view.s = Math.max(0.2, sBot);
+    view.ox = (W - VW * view.s) / 2; view.oy = (H - 74 - VH * view.s) / 2;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", resize);
+
+// font size for text drawn inside the board: never smaller than ~13px on screen
+function wpx(px) { return Math.max(px, 13 / view.s); }
+
 // ----------------------------------------------------------------------------
 // Input
 // ----------------------------------------------------------------------------
-function canvasPoint(e) {
-  const r = canvas.getBoundingClientRect();
-  return {
-    x: (e.clientX - r.left) / r.width * VW,
-    y: (e.clientY - r.top) / r.height * VH,
-  };
-}
-
-canvas.addEventListener("pointerdown", (e) => {
-  ensureAudio();
-  if (state === TITLE) { startRun(); return; }
-  if (state === ROOM_COMPLETE) { nextRoom(); return; }
-  if (state === GAME_COMPLETE) { startRun(); return; }
-  // Right-click (or two-finger) toggles unravel — pull the thread apart.
-  if (e.button === 2) { startUnravel(); return; }
-  const p = canvasPoint(e);
-  pointer.x = p.x; pointer.y = p.y;
-  pointer.down = true; pointer.active = true;
-  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
-});
-canvas.addEventListener("contextmenu", (e) => e.preventDefault());
-canvas.addEventListener("pointermove", (e) => {
-  const p = canvasPoint(e);
-  pointer.x = p.x; pointer.y = p.y;
-  pointer.active = true;
-});
-window.addEventListener("pointerup", () => { pointer.down = false; });
-window.addEventListener("blur", () => { pointer.down = false; });
-
-window.addEventListener("keydown", (e) => {
-  if (e.key === "Shift") underToggle = true;
-  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Spacebar"].includes(e.key)) e.preventDefault();
-  if (e.repeat) return;
-  ensureAudio();
-
-  if (state === TITLE) {
-    if (e.key === "Enter" || e.key === " ") startRun();
-    return;
-  }
-  if (state === ROOM_COMPLETE) {
-    if (e.key === "Enter" || e.key === " ") nextRoom();
-    return;
-  }
-  if (state === GAME_COMPLETE) {
-    if (e.key === "Enter" || e.key === " ") startRun();
-    return;
-  }
-  // PLAY
-  if (e.key === " " || e.key === "Spacebar") { tryCinch(); return; }
-  if (e.key === "u" || e.key === "U") { startUnravel(); return; }
-  if (e.key === "r" || e.key === "R") { startRoom(); return; }
-  if (e.key === "m" || e.key === "M") { setMuted(!muted); return; }
-  if (e.key === "`") { DEBUG = !DEBUG; return; }
-});
-window.addEventListener("keyup", (e) => {
-  if (e.key === "Shift") underToggle = false;
-});
-
-// Keyboard steering fallback (when not dragging with the mouse).
+const pointer = { x: VW * 0.3, y: VH * 0.4, down: false };
+const pointers = new Map();     // pointerId -> {kind, id}
+let steerId = null;
+let unravelBtn = false, unravelMouse = false;
 const keys = new Set();
-window.addEventListener("keydown", (e) => keys.add(e.key));
-window.addEventListener("keyup", (e) => keys.delete(e.key));
+let uiButtons = [];             // rebuilt every frame: {id,x,y,w,h,label,...}
 
-// ----------------------------------------------------------------------------
-// Rope model
-// ----------------------------------------------------------------------------
-function head() { return nodes[nodes.length - 1]; }
-
-function addNode(x, y, pinned) {
-  nodes.push({ x, y, px: x, py: y, pinned: !!pinned });
+function toScreen(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
-
-// Pay out a new segment if the head has travelled ~SEG_LEN and yarn remains.
-// Two triggers:
-//   (a) the head has physically travelled a segment-length from its last spawn
-//       (normal "drawing" payout), OR
-//   (b) the rope is taut and the player is reaching for a pointer the head can't
-//       yet reach — we feed a segment toward the cursor so a held, distant drag
-//       keeps unspooling instead of stalling against tension.
-function payOut() {
-  if (yarn <= 0) return;
-  const h = head();
-  const dx = h.x - lastSpawnX, dy = h.y - lastSpawnY;
-  const d = Math.hypot(dx, dy);
-  if (d >= SEG_LEN) {
-    addNode(h.x, h.y, false);
-    lastSpawnX = h.x; lastSpawnY = h.y;
-    yarn--;
-    return;
-  }
-  // Taut-feed: head is being steered but can't reach the held pointer.
-  if (pointer.down) {
-    const pdx = pointer.x - h.x, pdy = pointer.y - h.y;
-    const pd = Math.hypot(pdx, pdy);
-    if (pd > SEG_LEN * 1.4) {
-      // nudge the head toward the pointer and drop a node so the rope grows
-      const nx = h.x + pdx / pd * SEG_LEN;
-      const ny = h.y + pdy / pd * SEG_LEN;
-      addNode(nx, ny, false);
-      lastSpawnX = h.x; lastSpawnY = h.y; // measured from the previous head
-      yarn--;
-    }
-  }
+function toWorld(p) {
+  return { x: Math.max(0, Math.min(VW, (p.x - view.ox) / view.s)),
+           y: Math.max(0, Math.min(VH, (p.y - view.oy) / view.s)) };
 }
-
-// ----------------------------------------------------------------------------
-// Physics: verlet integrate + relax distance constraints + peg/knot contacts
-// ----------------------------------------------------------------------------
-function integrate(dt) {
-  const g = GRAVITY * dt * dt;
-  for (let i = 0; i < nodes.length; i++) {
-    const n = nodes[i];
-    if (n.pinned) { n.px = n.x; n.py = n.y; continue; }
-    const vx = (n.x - n.px) * DAMP;
-    const vy = (n.y - n.py) * DAMP;
-    n.px = n.x; n.py = n.y;
-    n.x += vx;
-    n.y += vy + g;
-  }
-}
-
-function satisfyConstraints() {
-  const h = head();
-  // The head is "steered" — when dragging, it's pulled hard toward the pointer.
-  for (let it = 0; it < ITER; it++) {
-    // Distance constraints between consecutive nodes.
-    for (let i = 0; i < nodes.length - 1; i++) {
-      const a = nodes[i], b = nodes[i + 1];
-      let dx = b.x - a.x, dy = b.y - a.y;
-      let d = Math.hypot(dx, dy) || 0.0001;
-      const diff = (d - SEG_LEN) / d;
-      const aw = a.pinned ? 0 : 0.5;
-      const bw = b.pinned ? 0 : 0.5;
-      const tw = aw + bw || 1;
-      const mx = dx * diff, my = dy * diff;
-      a.x += mx * (aw / tw); a.y += my * (aw / tw);
-      b.x -= mx * (bw / tw); b.y -= my * (bw / tw);
-    }
-    // Knot constraints: stiff short links binding two crossing nodes.
-    for (let k = 0; k < knots.length; k++) {
-      const kn = knots[k];
-      const a = nodes[kn.i], b = nodes[kn.j];
-      if (!a || !b) continue;
-      let dx = b.x - a.x, dy = b.y - a.y;
-      let d = Math.hypot(dx, dy) || 0.0001;
-      const diff = ((d - kn.rest) / d) * KNOT_STIFF;
-      const aw = a.pinned ? 0 : 0.5;
-      const bw = b.pinned ? 0 : 0.5;
-      const tw = aw + bw || 1;
-      const mx = dx * diff, my = dy * diff;
-      a.x += mx * (aw / tw); a.y += my * (aw / tw);
-      b.x -= mx * (bw / tw); b.y -= my * (bw / tw);
-    }
-    // Peg contacts: no node may be inside a peg; push to its surface.
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      if (n.pinned) continue;
-      for (let p = 0; p < pegs.length; p++) {
-        const pg = pegs[p];
-        let dx = n.x - pg.x, dy = n.y - pg.y;
-        let d = Math.hypot(dx, dy);
-        const minD = pg.r + 2;
-        if (d < minD) {
-          if (d < 0.0001) { dx = 1; dy = 0; d = 1; }
-          n.x = pg.x + dx / d * minD;
-          n.y = pg.y + dy / d * minD;
-        }
-      }
-    }
-    // Steer the head toward the pointer while dragging (strong attraction so
-    // payout tracks the cursor). The head is never pinned, so tension still
-    // pulls back on the chain behind it.
-    if (state === PLAY && pointer.down) {
-      h.x += (pointer.x - h.x) * 0.5;
-      h.y += (pointer.y - h.y) * 0.5;
-    }
-    // Re-pin pinned nodes. Node 0 holds at the spool; finale cradle nodes hold
-    // at their own anchorTo point (so the pre-built sling stays put over the peg).
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      if (!n.pinned) continue;
-      if (n.anchorTo) { n.x = n.anchorTo.x; n.y = n.anchorTo.y; }
-      else { n.x = anchor.x; n.y = anchor.y; }
-    }
-    // Keep nodes on screen-ish (soft floor so a dropped weight is obvious but
-    // the rope doesn't fly away).
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      if (n.y > VH + 200) n.y = VH + 200;
-    }
-  }
-}
-
-// ----------------------------------------------------------------------------
-// Crossings & knots
-// ----------------------------------------------------------------------------
-// 2D segment-segment intersection. Returns true if [p1,p2] crosses [p3,p4].
-function segIntersect(p1, p2, p3, p4) {
-  const d1x = p2.x - p1.x, d1y = p2.y - p1.y;
-  const d2x = p4.x - p3.x, d2y = p4.y - p3.y;
-  const denom = d1x * d2y - d1y * d2x;
-  if (Math.abs(denom) < 1e-6) return false;
-  const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
-  const u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / denom;
-  return t > 0.02 && t < 0.98 && u > 0.02 && u < 0.98;
-}
-
-// Each frame, test the head's most-recent few segments against earlier,
-// non-adjacent segments. Record fresh crossings (deduped) with an over/under
-// flag from the toggle. Returns the index of the most recent live crossing.
-function detectCrossings() {
-  const N = nodes.length;
-  if (N < 4) return -1;
-  // Only test the last couple of segments (the "head" segments) for new work.
-  const headStart = Math.max(0, N - 3);
-  let recent = -1;
-  for (let i = headStart; i < N - 1; i++) {
-    const a1 = nodes[i], a2 = nodes[i + 1];
-    for (let j = 0; j < i - 1; j++) {
-      // skip adjacency
-      if (Math.abs(i - j) < 2) continue;
-      const b1 = nodes[j], b2 = nodes[j + 1];
-      if (segIntersect(a1, a2, b1, b2)) {
-        // dedupe: same (i,j) pair already recorded?
-        const exists = crossings.some(c => c.a === i && c.b === j);
-        if (!exists) {
-          crossings.push({ a: i, b: j, over: !underToggle });
-        }
-        recent = crossings.length - 1;
-      }
-    }
-  }
-  return recent;
-}
-
-// CINCH: if the head currently forms a closed bight (its recent segment crosses
-// an earlier segment AND the rope wraps a peg between them), bake a stiff knot
-// constraint pinning the two crossing node-pairs together so the loop can't
-// slide open. Honest: it's just a tight distance constraint that survives load.
-function tryCinch() {
-  // Find a live crossing involving a head segment.
-  const N = nodes.length;
-  if (N < 6) { return; }
-  let chosen = null;
-  for (let ci = crossings.length - 1; ci >= 0; ci--) {
-    const c = crossings[ci];
-    // crossing must involve a recent head segment and an earlier one with
-    // enough rope between them to enclose a loop.
-    if (c.a >= N - 4 && (c.a - c.b) >= 4) { chosen = c; break; }
-  }
-  if (!chosen) {
-    // Be forgiving: if the head is simply near an earlier node forming a small
-    // closed loop around a peg, allow a cinch there too.
-    chosen = findLoopAroundPeg();
-  }
-  if (!chosen) return;
-
-  // Avoid stacking duplicate knots on the same pair.
-  const dup = knots.some(k => k.i === chosen.a && k.j === chosen.b);
-  if (dup) return;
-
-  knots.push({ i: chosen.a + 1, j: chosen.b, rest: KNOT_REST });
-  spawnWisps(nodes[chosen.b].x, nodes[chosen.b].y, { count: 18, col: COLORS.threadHi, spd: 100 });
-  sndClick();
-  // JUICE-01: a knot fires sound + wisps + a brief cinch pop together.
-  addShake(3); addFlash(COLORS.threadHi, 0.14);
-  cinchPop = { x: nodes[chosen.b].x, y: nodes[chosen.b].y, t: 0.32 };
-}
-
-// Looks for the head being close to an earlier node such that a peg sits
-// inside the enclosed loop — a wrap-and-tuck that should cinch.
-function findLoopAroundPeg() {
-  const N = nodes.length;
-  const h = head();
-  for (let j = 0; j < N - 5; j++) {
-    const d = Math.hypot(nodes[j].x - h.x, nodes[j].y - h.y);
-    if (d < SEG_LEN * 2.2) {
-      // Is a peg enclosed by the span j..N-1? Cheap test: peg roughly inside
-      // the bounding loop and the rope wraps past it.
-      for (let p = 0; p < pegs.length; p++) {
-        if (loopWrapsPeg(j, N - 1, pegs[p])) {
-          return { a: N - 2, b: j, over: !underToggle };
-        }
-      }
-    }
+function hitButton(p) {
+  for (let i = uiButtons.length - 1; i >= 0; i--) {
+    const b = uiButtons[i];
+    if (b.enabled === false) continue;
+    if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return b;
   }
   return null;
 }
 
-// Does the polyline nodes[i..k] (closed by the chord k->i) wind around the peg?
-// Approximate by summed signed angle subtended at the peg center > ~PI.
-function loopWrapsPeg(i, k, peg) {
-  let total = 0;
-  let prevAng = null;
-  for (let n = i; n <= k; n++) {
-    const ang = Math.atan2(nodes[n].y - peg.y, nodes[n].x - peg.x);
-    if (prevAng !== null) {
-      let d = ang - prevAng;
-      while (d > Math.PI) d -= TAU;
-      while (d < -Math.PI) d += TAU;
-      total += d;
-    }
-    prevAng = ang;
+canvas.addEventListener("pointerdown", (e) => {
+  ensureAudio();
+  const p = toScreen(e);
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  const b = hitButton(p);
+  if (b) {
+    pointers.set(e.pointerId, { kind: "btn", id: b.id });
+    press(b.id, true);
+    return;
   }
-  return Math.abs(total) > Math.PI * 1.1;
-}
-
-// ----------------------------------------------------------------------------
-// Unravel — pull the thread apart from the head, reclaim its yarn, kill its
-// function. This is the game's twist made into a real, working system.
-// ----------------------------------------------------------------------------
-
-// Begin (or stop) unraveling. We unravel from the free head end backward.
-function startUnravel() {
-  if (unravel.active) { stopUnravel(); return; }
-  // Need more than the seed (anchor + one) to have anything to reclaim.
-  if (nodes.length <= 2) return;
-  unravel.active = true;
-  unravel.cutIndex = nodes.length - 1; // start retracting the very last node
-  unravel.accum = 0;
-  unravel.recovered = 0;
-  sndUnravel();
-  addShake(4); addFlash(COLORS.plum, 0.12);
-}
-function stopUnravel() {
-  unravel.active = false;
-}
-
-// Each tick removes the current head node: its yarn returns to the ball, any
-// knot anchored on a now-removed node is destroyed (function lost), and the
-// weight — if it was resting on that thread — is no longer supported.
-function updateUnravel(dt) {
-  if (!unravel.active) return;
-  unravel.accum += dt;
-  while (unravel.accum >= UNRAVEL_RATE && nodes.length > 2) {
-    unravel.accum -= UNRAVEL_RATE;
-    const removedIdx = nodes.length - 1;
-    const removed = nodes[removedIdx];
-    // wisps of recovered fiber at the point being pulled
-    spawnWisps(removed.x, removed.y, { count: 3, col: COLORS.threadHi, spd: 50 });
-    nodes.pop();
-    yarn = Math.min(yarnCap, yarn + 1); // reclaim one segment-length
-    unravel.recovered++;
-    // Destroy any knot that referenced a node at/after the new end — its
-    // crossing no longer exists, so it can no longer bear load.
-    for (let k = knots.length - 1; k >= 0; k--) {
-      if (knots[k].i >= nodes.length || knots[k].j >= nodes.length) knots.splice(k, 1);
+  if (screen === PLAY) {
+    if (e.button === 2) { unravelMouse = true; pointers.set(e.pointerId, { kind: "mouse2" }); return; }
+    if (steerId === null) {
+      steerId = e.pointerId;
+      const w = toWorld(p); pointer.x = w.x; pointer.y = w.y; pointer.down = true;
+      pointers.set(e.pointerId, { kind: "steer" });
     }
-    // Drop stale crossings too.
-    for (let c = crossings.length - 1; c >= 0; c--) {
-      if (crossings[c].a >= nodes.length || crossings[c].b >= nodes.length) crossings.splice(c, 1);
+    return;
+  }
+  // tapping empty space moves the story on
+  if (screen === TITLE) act("continue");
+  else if (screen === END) act("rooms");
+});
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointermove", (e) => {
+  if (e.pointerId === steerId) {
+    const w = toWorld(toScreen(e)); pointer.x = w.x; pointer.y = w.y;
+  }
+});
+function pointerEnd(e) {
+  const info = pointers.get(e.pointerId);
+  pointers.delete(e.pointerId);
+  if (e.pointerId === steerId) { steerId = null; pointer.down = false; }
+  if (info && info.kind === "btn") press(info.id, false);
+  if (info && info.kind === "mouse2") unravelMouse = false;
+}
+window.addEventListener("pointerup", pointerEnd);
+window.addEventListener("pointercancel", pointerEnd);
+window.addEventListener("blur", () => {
+  pointer.down = false; steerId = null; unravelBtn = false; unravelMouse = false; keys.clear(); pointers.clear();
+});
+
+window.addEventListener("keydown", (e) => {
+  if ([" ", "Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
+  keys.add(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+  if (e.repeat) return;
+  ensureAudio();
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (screen === TITLE) { if (k === "Enter" || k === " ") act("continue"); return; }
+  if (screen === SELECT) { if (k === "Escape") act("title"); return; }
+  if (screen === END) { if (k === "Enter" || k === " " || k === "Escape") act("rooms"); return; }
+  if (screen === WON) {
+    if (k === "Enter" || k === " ") { if (winTimer > 0.4) act("next"); }
+    else if (k === "r") act("restart");
+    else if (k === "Escape") act("rooms");
+    return;
+  }
+  // PLAY
+  if (k === " ") act("tie");
+  else if (k === "Enter") act("drop");
+  else if (k === "z") act("undo");
+  else if (k === "r") act("restart");
+  else if (k === "h") act("hint");
+  else if (k === "m") act("mute");
+  else if (k === "Escape") act("rooms");
+  else if (k === "`") DEBUG = !DEBUG;
+});
+window.addEventListener("keyup", (e) => {
+  keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+});
+
+// keyboard steering: arrows / WASD nudge a target around the head
+function keyboardSteer() {
+  let dx = 0, dy = 0;
+  if (keys.has("ArrowLeft") || keys.has("a")) dx -= 1;
+  if (keys.has("ArrowRight") || keys.has("d")) dx += 1;
+  if (keys.has("ArrowUp") || keys.has("w")) dy -= 1;
+  if (keys.has("ArrowDown") || keys.has("s")) dy += 1;
+  if (!dx && !dy) return null;
+  const h = S.head(world), n = Math.hypot(dx, dy);
+  return { x: h.x + dx / n * 60, y: h.y + dy / n * 60 };
+}
+
+
+// ----------------------------------------------------------------------------
+// Flow: starting rooms, button actions, events from the simulation
+// ----------------------------------------------------------------------------
+
+function showToast(text, secs) { toast.text = text; toast.t = secs || 2.8; }
+
+function startRoom(i) {
+  roomIndex = Math.max(0, Math.min(ROOMS.length - 1, i));
+  const room = ROOMS[roomIndex];
+  world = S.create(room, room.finale ? firstKnot : null);
+  screen = PLAY; winTimer = 0; failTimer = 0; showHint = false;
+  particles = []; cinchHint = null; cinchPop = null; toast.t = 0; simAcc = 0;
+  pointer.down = false; steerId = null;
+  pointer.x = world.anchor.x + 40; pointer.y = world.anchor.y + 40;
+}
+
+function act(id) {
+  if (id.indexOf("room:") === 0) {
+    const i = parseInt(id.slice(5), 10);
+    if (unlocked(i)) startRoom(i);
+    return;
+  }
+  switch (id) {
+    case "continue": {
+      const i = firstOpenIndex();
+      if (doneIds.length >= ROOMS.length) screen = SELECT; else startRoom(i);
+      break;
     }
-    unravel.cutIndex = nodes.length - 1;
-    if (unravel.recovered % 2 === 0) sndTick();
+    case "rooms": screen = SELECT; break;
+    case "title": screen = TITLE; break;
+    case "mute": setMuted(!muted); break;
+    case "next":
+      if (roomIndex < ROOMS.length - 1) startRoom(roomIndex + 1); else screen = END;
+      break;
+    case "replay": case "restart": startRoom(roomIndex); break;
+    default: break;
   }
-  if (nodes.length <= 2) {
-    unravel.active = false;
+  if (screen !== PLAY || !world) return;
+  switch (id) {
+    case "tie":
+      if (world.balls.length && world.status === "play") S.cinch(world);
+      break;
+    case "drop":
+      if (world.balls.length && world.status === "play") { S.drop(world); failTimer = 0; }
+      break;
+    case "undo": if (!S.undo(world)) showToast("Nothing to undo."); break;
+    case "hint":
+      showHint = !showHint;
+      if (showHint) world.usedHint = true;
+      break;
+    default: break;
   }
-  // keep the new head from snapping to a stale pointer
-  lastSpawnX = head().x; lastSpawnY = head().y;
+}
+function press(id, down) {
+  if (id === "unravel") { unravelBtn = down; return; }
+  if (down) act(id);
 }
 
-// ----------------------------------------------------------------------------
-// Weight body — a heavy circle that collides with rope segments.
-// ----------------------------------------------------------------------------
-function integrateWeight(dt) {
-  if (!weight.active) return;
-  const g = WEIGHT_GRAVITY * dt * dt;
-  const vx = (weight.x - weight.px) * WEIGHT_DAMP;
-  const vy = (weight.y - weight.py) * WEIGHT_DAMP;
-  weight.px = weight.x; weight.py = weight.y;
-  weight.x += vx;
-  weight.y += vy + g;
-}
-
-// Closest point on segment [a,b] to point p.
-function closestOnSeg(p, a, b) {
-  const abx = b.x - a.x, aby = b.y - a.y;
-  const apx = p.x - a.x, apy = p.y - a.y;
-  const len2 = abx * abx + aby * aby || 0.0001;
-  let t = (apx * abx + apy * aby) / len2;
-  t = Math.max(0, Math.min(1, t));
-  return { x: a.x + abx * t, y: a.y + aby * t, t };
-}
-
-// Resolve weight-vs-rope: push the weight out of any segment it overlaps, and
-// push the rope nodes down a bit (so the rope sags & bears the load honestly).
-function collideWeightRope() {
-  if (!weight.active) return;
-  const WR = weight.r || WEIGHT_R;
-  for (let i = 0; i < nodes.length - 1; i++) {
-    const a = nodes[i], b = nodes[i + 1];
-    const cp = closestOnSeg(weight, a, b);
-    let dx = weight.x - cp.x, dy = weight.y - cp.y;
-    let d = Math.hypot(dx, dy);
-    const minD = WR + 3;
-    if (d < minD) {
-      if (d < 0.0001) { dx = 0; dy = -1; d = 1; }
-      const nx = dx / d, ny = dy / d;
-      const pen = minD - d;
-      // Push weight out (mostly), push rope in (a little) -> the rope holds it.
-      weight.x += nx * pen * 0.7;
-      weight.y += ny * pen * 0.7;
-      // Distribute reaction onto the two nodes (weighted by t).
-      const wA = (1 - cp.t), wB = cp.t;
-      if (!a.pinned) { a.x -= nx * pen * 0.18 * wA; a.y -= ny * pen * 0.18 * wA; }
-      if (!b.pinned) { b.x -= nx * pen * 0.18 * wB; b.y -= ny * pen * 0.18 * wB; }
+// what the simulation tells us happened this tick
+function handleEvents() {
+  for (const ev of world.events) {
+    switch (ev.type) {
+      case "cinch":
+        sndClick();
+        spawnWisps(ev.x, ev.y, { count: 18, col: COLORS.threadHi, spd: 100 });
+        addShake(3); addFlash(COLORS.threadHi, 0.14);
+        cinchPop = { x: ev.x, y: ev.y, t: 0.32 };
+        showToast(ev.onPost ? "Knot tied round the post." : "Tied, but there is no post inside that loop.", 2.4);
+        break;
+      case "nocinch":
+        sndNo(); addShake(2);
+        showToast("Nothing to tie yet. Loop the yarn round a post and cross your own line.", 3.6);
+        break;
+      case "drop": sndSnip(); break;
+      case "lost":
+        sndDrop(); addShake(12); addFlash(COLORS.bad, 0.26); failTimer = 0;
+        break;
+      case "wrap": {
+        sndClick();
+        const pg = world.pegs[ev.peg];
+        if (pg) spawnWisps(pg.x, pg.y, { count: 12, col: COLORS.threadHi, spd: 70 });
+        break;
+      }
+      case "unravel": sndUnravel(); addFlash(COLORS.plum, 0.1); break;
+      case "undo": sndTick(); break;
+      default: break;
     }
   }
-  // Weight also can't pass through pegs.
-  for (let p = 0; p < pegs.length; p++) {
-    const pg = pegs[p];
-    let dx = weight.x - pg.x, dy = weight.y - pg.y, d = Math.hypot(dx, dy);
-    const minD = pg.r + WR;
-    if (d < minD) {
-      if (d < 0.0001) { dx = 0; dy = -1; d = 1; }
-      weight.x = pg.x + dx / d * minD;
-      weight.y = pg.y + dy / d * minD;
-    }
+  world.events.length = 0;
+}
+
+// yarn currently sitting in the player's own work (not counting old ghost yarn)
+function yarnInWork() {
+  const g = world.ghost ? world.ghost.to - world.ghost.from + 1 : 0;
+  return Math.max(0, world.nodes.length - 2 - g);
+}
+
+function onWon() {
+  const room = ROOMS[roomIndex];
+  const used = yarnInWork();
+  world.shown = used;
+  markDone(room, used);
+  // save the player's REAL first knot: the rope as they built it, from the first
+  // ball room they solved with a tie.
+  if (!firstKnot && world.balls.length && world.testSnap && world.testSnap.knots.length > 0 && !room.finale) {
+    firstKnot = {
+      room: room.id, roomName: room.name,
+      nodes: world.testSnap.nodes.map(n => ({ x: Math.round(n.x), y: Math.round(n.y) })),
+      knots: world.testSnap.knots.map(k => ({ i: k.i, j: k.j })),
+    };
+    writeJSON(KNOT_KEY, firstKnot);
   }
+  screen = WON; winTimer = 0;
+  sndWin(); addFlash(COLORS.good, 0.3); addShake(4);
+  const h = S.head(world);
+  spawnWisps(h.x, h.y, { count: 20, col: COLORS.threadHi, spd: 110 });
+  for (const b of world.balls) spawnWisps(b.x, b.y, { count: 22, col: COLORS.weightHi, spd: 120 });
+  if (world.target) spawnWisps(world.target.x, world.target.y, { count: 22, col: COLORS.good, spd: 120 });
 }
 
 // ----------------------------------------------------------------------------
-// Particles — minimal fiber wisps (used on cinch; a fuller system is Phase 2).
+// Particles (fiber wisps)
 // ----------------------------------------------------------------------------
-let particles = [];
 function spawnWisps(x, y, opts) {
   opts = opts || {};
-  const n = opts.count || 12;
-  const col = opts.col || COLORS.threadHi;
-  const spd = opts.spd || 80;
+  const n = opts.count || 12, col = opts.col || COLORS.threadHi, spd = opts.spd || 80;
   for (let i = 0; i < n; i++) {
     const a = Math.random() * TAU, s = spd * (0.4 + Math.random());
     particles.push({
-      x: x + (Math.random() - 0.5) * 6,
-      y: y + (Math.random() - 0.5) * 6,
-      vx: Math.cos(a) * s + (opts.vx || 0),
-      vy: Math.sin(a) * s - 20 + (opts.vy || 0),
-      life: 0.5 + Math.random() * 0.5, max: 1.0,
-      col, w: 1.5 + Math.random() * 1.8,
+      x: x + (Math.random() - 0.5) * 6, y: y + (Math.random() - 0.5) * 6,
+      vx: Math.cos(a) * s, vy: Math.sin(a) * s - 20,
+      life: 0.5 + Math.random() * 0.5, max: 1.0, col: col, w: 1.5 + Math.random() * 1.8,
     });
   }
 }
@@ -1072,294 +694,103 @@ function updateParticles(dt) {
     const p = particles[i];
     p.life -= dt;
     if (p.life <= 0) { particles.splice(i, 1); continue; }
-    p.x += p.vx * dt; p.y += p.vy * dt;
-    p.vy += 200 * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt;
   }
 }
 
 // ----------------------------------------------------------------------------
-// Room setup
+// Hint: the path of the recorded solution (solutions.js), drawn as a dotted line
 // ----------------------------------------------------------------------------
-// Begin the run from room 1.
-function startRun() {
-  roomIndex = 0;
-  runYarnUsed = 0;
-  startRoom();
-}
-
-// (Re)load whatever room roomIndex points at and enter PLAY.
-function startRoom() {
-  setState(PLAY);
-  resetRoom();
-}
-
-// Advance to the next room, or finish the run.
-function nextRoom() {
-  if (roomIndex >= ROOMS.length - 1) {
-    if (bestRunYarn === 0 || runYarnUsed < bestRunYarn) {
-      bestRunYarn = runYarnUsed; saveRunBest(runYarnUsed);
+function hintFor(room) {
+  const sol = K.SOLUTIONS[room.id];
+  const out = { lines: [], ties: [], unravelFirst: false };
+  if (!sol) return out;
+  let lastEnd = [VW * room.anchor[0], VH * room.anchor[1]];
+  for (let i = 0; i < sol.length; i++) {
+    const st = sol[i];
+    if (st.unravel) { if (i === 0) out.unravelFirst = true; continue; }
+    if (st.drag) {
+      const next = sol[i + 1];
+      if (next && next.unravel) continue;           // a wasteful first try, not part of the answer
+      const pts = st.drag.slice();
+      if (lastEnd) pts.unshift(lastEnd);
+      out.lines.push(pts); lastEnd = st.drag[st.drag.length - 1];
     }
-    runCompleted = true;
-    try { localStorage.setItem(PROG_KEY, String(ROOMS.length)); } catch (e) {}
-    bestRoom = Math.max(bestRoom, ROOMS.length);
-    setState(GAME_COMPLETE);
-    addFlash(COLORS.good, 0.5);
-    return;
+    if (st.cinch && lastEnd) out.ties.push(lastEnd);
   }
-  roomIndex++;
-  startRoom();
+  return out;
 }
 
-function fx(f) { return VW * f; }
-function fyv(f) { return VH * f; }
-
-function resetRoom() {
-  const room = ROOMS[roomIndex] || ROOMS[0];
-  roomConfig = room;
-
-  anchor = { x: fx(room.anchor[0]), y: fyv(room.anchor[1]) };
-  pegs = (room.pegs || []).map(p => ({ x: fx(p[0]), y: fyv(p[1]), r: p[2] }));
-
-  // Weight: load rooms drop a felt ball; pure-steer rooms have none.
-  if (room.weight) {
-    const wr = room.weightR || WEIGHT_R;
-    const wx = fx(room.weight[0]);
-    // Give a tiny lateral drift on spawn so a ball can never just balance on a
-    // bare peg — it always rolls off and needs a real holder underneath.
-    weight = {
-      x: wx, y: -40 - wr,
-      px: wx - 5, py: -50 - wr,    // px<x => slight initial rightward drift
-      r: wr, active: true,
-    };
-  } else {
-    weight = { x: -999, y: -999, px: -999, py: -999, r: WEIGHT_R, active: false };
+// ----------------------------------------------------------------------------
+// Coaching line: one short sentence saying what to do next
+// ----------------------------------------------------------------------------
+function coach() {
+  const w = world, room = ROOMS[roomIndex];
+  if (!w) return "";
+  if (room.finale && w.ghost) {
+    return firstKnot ? "The plum yarn is your first knot, from \"" + firstKnot.roomName + "\". Hold UNRAVEL to take its yarn back."
+                     : "The plum yarn is an old sample knot. Hold UNRAVEL to take its yarn back.";
   }
-
-  // Reach-goal rooms (no load): reach the marked stitch with the head.
-  roomTarget = room.target ? { x: fx(room.target[0]), y: fyv(room.target[1]) } : null;
-  wrapNeeded = (room.wrapPeg != null) ? room.wrapPeg : -1;
-  wrapDone = false;
-  reached = false;
-  failState = false;
-  failTimer = 0;
-
-  nodes = [];
-  crossings = [];
-  knots = [];
-  particles = [];
-  firstCreationGhost = null;
-  yarn = room.yarn || START_YARN;
-  yarnStart = room.yarn || START_YARN;
-  yarnCap = yarnStart;
-  holdTimer = 0;
-  weightState = weight.active ? "FALLING" : "NONE";
-  unravel.active = false;
-  unravel.recovered = 0;
-  unravel.accum = 0;
-
-  // Seed the thread: anchor (pinned) + a short tail so the head can be steered.
-  addNode(anchor.x, anchor.y, true);
-  addNode(anchor.x + 8, anchor.y + 8, false);
-  lastSpawnX = anchor.x + 8; lastSpawnY = anchor.y + 8;
-  pointer.x = anchor.x + 40; pointer.y = anchor.y + 40;
-
-  // FINALE (TWIST-04): seed the player's persisted FIRST creation as a real,
-  // pre-built, load-bearing structure. Its nodes hold a stiff knot over the peg
-  // so the weight rests on it — but its yarn is "spent" until the player
-  // unravels it back onto the ball. The finale gives only a tiny starting ball,
-  // so the run literally cannot finish without pulling apart the first work.
-  if (room.finale && firstCreation && firstCreation.nodes.length > 3) {
-    seedFinaleGhost();
+  if (w.balls.length) {
+    if (w.lost) return "It slipped! Your yarn goes back as you laid it.";
+    if (w.phase === "DROPPED") return w.hold > 0.05 ? "Holding... keep your hands off." : "";
+    if (w.yarn <= 0) return "Out of yarn. Hold UNRAVEL to take back what you laid.";
+    if (cinchHint) return cinchHint.peg >= 0 ? "Loop round a post: press TIE." : "A loop, but no post inside it. Loop round a post.";
+    if (w.knots.some(k => !(w.ghost && k.i <= w.ghost.to))) return "Tied. Now press DROP.";
+    if (w.nodes.length <= 3 && !w.down) return "Press and drag to lay yarn from the spool.";
+    if (w.fails > 0) return "It slipped. Change the yarn, then DROP AGAIN.";
+    return "";
   }
-}
-
-// Append the persisted first creation onto the live thread as extra nodes the
-// player can unravel for yarn. It is laid as a loop that wraps the finale peg
-// and carries a cinched knot, so it genuinely bears the dropped weight until
-// it is unraveled.
-function seedFinaleGhost() {
-  const rec = firstCreation;
-  const startN = nodes.length - 1;
-  const peg = pegs[0];
-  // The ghost stands in for the player's FIRST creation, kept aside in this room
-  // as a tight wound coil ABOVE the peg. It deliberately does NOT catch the
-  // finale's weight — the room's own ball is far too small to build a holder, so
-  // the only way to afford one is to pull this first work apart and wind its
-  // yarn back onto the ball. (If it held the weight by itself there'd be no
-  // finale.) Size it generously so unraveling it reliably refills the ball past
-  // what the room needs; richer first creations leave a little more to reclaim.
-  const count = Math.max(90, Math.min(rec.nodes.length + 40, 130));
-
-  // The coil is laid as a loose wound bundle hanging just below the start
-  // anchor — extra thread already "spent" into the player's first work. It is
-  // part of the one continuous strand (spool -> live tail -> coil), unpinned, so
-  // physics lets it settle into a soft heap. The player unravels it from the
-  // free end to reclaim its yarn.
-  const cx = anchor.x + 70, cy = anchor.y + 90;
-  const baseR = 12;
-  for (let i = 0; i < count; i++) {
-    const t = i / Math.max(1, count - 1);
-    const ang = t * TAU * 6.0;          // dense flat spiral = finished bundle
-    const rr = baseR + t * 24;
-    addNode(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr * 0.7, false);
+  if (w.yarn <= 0) return "Out of yarn. Hold UNRAVEL to take back what you laid.";
+  if (w.nodes.length <= 3 && !w.down) return "Press and drag. The loose end follows your finger.";
+  if (room.wraps) {
+    const got = w.wrapIdx.filter(i => i >= 0).length;
+    if (w.wrapsOk && got === room.wraps.length) return "Wrapped. Now reach the stitch.";
+    return "Wrapped " + got + " of " + room.wraps.length + (room.wraps.length > 1 ? " in order" : "") + ".";
   }
-
-  firstCreationGhost = { from: startN + 1, to: nodes.length - 1, yarn: rec.yarnLength };
-  // Raise the ball's cap so unraveling the ghost refills it past what's needed.
-  yarnCap = yarnStart + (nodes.length - startN - 1);
+  return "";
 }
 
 // ----------------------------------------------------------------------------
 // Update
 // ----------------------------------------------------------------------------
-function keyboardSteer(dt) {
-  if (pointer.down) return; // mouse drag has priority
-  let dx = 0, dy = 0;
-  if (keys.has("ArrowLeft") || keys.has("a")) dx -= 1;
-  if (keys.has("ArrowRight") || keys.has("d")) dx += 1;
-  if (keys.has("ArrowUp") || keys.has("w")) dy -= 1;
-  if (keys.has("ArrowDown") || keys.has("s")) dy += 1;
-  if (dx || dy) {
-    const sp = 300 * dt;
-    pointer.x += dx * sp; pointer.y += dy * sp;
-    pointer.x = Math.max(0, Math.min(VW, pointer.x));
-    pointer.y = Math.max(0, Math.min(VH, pointer.y));
-    pointer.down = true; // treat keyboard as a held steer for this frame
-    payOutAndSteerKeyboardFlag = true;
-  }
-}
-let payOutAndSteerKeyboardFlag = false;
-
-// Evaluate weight state honestly from its motion & position.
-function evaluateWeightState(dt) {
-  if (!weight.active) { weightState = "NONE"; return; }
-  const WR = weight.r || WEIGHT_R;
-  const speed = Math.hypot(weight.x - weight.px, weight.y - weight.py) / Math.max(dt, 1e-3);
-  const onScreen = weight.y < VH - 10;
-  if (weight.y > VH + 120) {
-    if (weightState !== "DROPPED") {
-      weightState = "DROPPED"; sndDrop();
-      addShake(14); addFlash(COLORS.bad, 0.28);
-    }
-  } else if (onScreen && speed < 40 && weight.y < VH - WR - 4) {
-    weightState = "HELD";
-  } else {
-    if (weightState !== "DROPPED") weightState = "FALLING";
-  }
+let simAcc = 0;
+function tickSim() {
+  const kb = keyboardSteer();
+  const inp = {
+    x: kb ? kb.x : pointer.x, y: kb ? kb.y : pointer.y,
+    down: pointer.down || !!kb,
+    unravel: unravelBtn || unravelMouse || keys.has("u"),
+  };
+  S.step(world, inp);
 }
 
 function update(dt) {
-  if (state !== PLAY) { updateParticles(dt); return; }
+  advanceStopMotion(dt); updateJuice(dt); updateParticles(dt);
+  if (toast.t > 0) toast.t -= dt;
+  if ((screen !== PLAY && screen !== WON) || !world) return;
 
-  // Unraveling takes over: while pulling apart, the head can't pay out.
-  if (unravel.active) {
-    updateUnravel(dt);
-    integrate(dt);
-    satisfyConstraints();
-    integrateWeight(dt);
-    for (let s = 0; s < 4; s++) collideWeightRope();
-    evaluateWeightState(dt);
-    updateParticles(dt);
-    return;
-  }
-
-  // Keyboard steering: emulate a held pointer toward a moving target.
-  payOutAndSteerKeyboardFlag = false;
-  keyboardSteer(dt);
-
-  // Pay out yarn as the head moves (only while actively steering).
-  if (pointer.down) payOut();
-
-  integrate(dt);
-  satisfyConstraints();
-  detectCrossings();
-
-  // Weight physics + collision (run a few sub-iterations for stability).
-  integrateWeight(dt);
-  for (let s = 0; s < 4; s++) collideWeightRope();
-
-  // Reset the keyboard-held flag so it doesn't stick.
-  if (payOutAndSteerKeyboardFlag) pointer.down = false;
-
-  evaluateWeightState(dt);
-
-  // Track the required peg-wrap (Room 2 teaching gate).
-  if (wrapNeeded >= 0 && !wrapDone && pegs[wrapNeeded]) {
-    if (loopWrapsPeg(0, nodes.length - 1, pegs[wrapNeeded])) {
-      wrapDone = true;
-      spawnWisps(pegs[wrapNeeded].x, pegs[wrapNeeded].y, { count: 10, col: COLORS.threadHi, spd: 70 });
-      sndClick();
+  if (world.status === "play") {
+    simAcc += dt;
+    let guard = 0;
+    while (simAcc >= S.DT && guard++ < 6) { tickSim(); simAcc -= S.DT; handleEvents(); if (world.status !== "play") break; }
+    if (guard >= 6) simAcc = 0;
+    // which loop would TIE tie right now?
+    cinchAge += dt;
+    if (cinchAge > 0.05 && world.balls.length) {
+      cinchAge = 0;
+      cinchHint = world.phase === "BUILD" ? S.findCinch(world) : null;
     }
+    if (world.lost) { failTimer += dt; if (failTimer > 1.6) { S.toBuild(world); failTimer = 0; } }
+    if (world.fails === 2 && world.lost && failTimer < 0.05 && !showHint) showToast("Stuck? Tap HINT to see one way.", 4);
   }
-
-  const holdGoal = roomConfig && roomConfig.hold ? roomConfig.hold : HOLD_TO_WIN;
-
-  // --- WIN evaluation -----------------------------------------------------
-  if (roomTarget) {
-    // Reach-the-stitch rooms (no load). Win when the head touches the target
-    // and any required wrap has been done.
-    const h = head();
-    const dToTarget = Math.hypot(h.x - roomTarget.x, h.y - roomTarget.y);
-    if (dToTarget < 26 && (wrapNeeded < 0 || wrapDone)) {
-      if (!reached) {
-        reached = true;
-        holdTimer += dt; // tiny dwell so a graze doesn't instantly fire
-      } else {
-        holdTimer += dt;
-      }
-      if (holdTimer >= 0.5) { winRoom(); return; }
-    } else {
-      holdTimer = Math.max(0, holdTimer - dt * 2);
-      reached = false;
-    }
-  } else if (weight.active) {
-    // Load rooms: held & calm for the room's hold time, above the floor.
-    if (weightState === "HELD") {
-      holdTimer += dt;
-      if (holdTimer >= holdGoal) { winRoom(); return; }
-    } else {
-      holdTimer = Math.max(0, holdTimer - dt * 2);
-    }
+  if (world.status === "won") {
+    if (screen === PLAY) onWon();
+    winTimer += dt;
   }
-
-  // --- Soft FAIL (no dead ends) ------------------------------------------
-  // If the weight has fallen and the ball is empty AND there is no built thread
-  // left to unravel, the room is stuck — surface a clear retry prompt. R always
-  // restarts, so this is a soft fail, never a hard lock.
-  const nothingToReclaim = nodes.length <= 2;
-  const stuck = weightState === "DROPPED" && yarn <= 0 && nothingToReclaim && !unravel.active;
-  if (stuck) {
-    failTimer += dt;
-    if (failTimer > 0.6) failState = true;
-  } else {
-    failTimer = 0; failState = false;
-  }
-
-  updateParticles(dt);
 }
+let cinchAge = 0;
 
-// Commit a room win: bank yarn, persist records, snapshot the first creation,
-// fire juice, and move on.
-function winRoom() {
-  const used = Math.max(0, yarnStart - yarn);
-  runYarnUsed += used;
-  if (bestYarnUsed === 0 || used < bestYarnUsed) { bestYarnUsed = used; saveBest(used); }
-  // TWIST-04: snapshot the player's very FIRST completed structure so the finale
-  // can literally demand unraveling it. Only record from real built thread.
-  if (!firstCreation && nodes.length > 3) {
-    firstCreation = snapshotCreation();
-    saveFirstCreation(firstCreation);
-  }
-  saveProgress(roomIndex + 1); // 1-based count of rooms completed
-  sndWin();
-  addFlash(COLORS.good, 0.4); addShake(5);
-  spawnWisps(head().x, head().y, { count: 24, col: COLORS.threadHi, spd: 120 });
-  setState(ROOM_COMPLETE);
-}
-
-// ----------------------------------------------------------------------------
-// Render
-// ----------------------------------------------------------------------------
 // The knit-textured background is expensive to draw stitch-by-stitch every
 // frame, so we bake it once to an offscreen canvas and blit it.
 let knitBg = null;
@@ -1457,7 +888,7 @@ function drawPeg(pg, idx) {
   ctx.restore();
 }
 
-function drawAnchor() {
+function drawAnchor(anchor) {
   // a little wound spool the thread is tied to
   const x = anchor.x, y = anchor.y;
   ctx.fillStyle = COLORS.pegShadow;
@@ -1475,292 +906,6 @@ function drawAnchor() {
     ctx.beginPath();
     ctx.arc(x, y, 6 + a * 2, a, a + 2.4);
     ctx.stroke();
-  }
-}
-
-// Per-segment strain tints the thread so a player can predict hold vs fail.
-function segColor(strain) {
-  if (strain > 1.18) return COLORS.threadSnap;
-  if (strain > 1.06) return COLORS.threadStrain;
-  return COLORS.thread;
-}
-
-// Stepped node position: the true sim point plus a tiny stop-motion wobble
-// that only changes on each animation frame. Makes the yarn look hand-placed.
-function sx(n, i) { return n.x + jitter(i * 2.7 + 3) * 0.9; }
-function syy(n, i) { return n.y + jitter(i * 2.7 + 9) * 0.9; }
-
-function drawThread() {
-  if (nodes.length < 2) return;
-  ctx.lineCap = "round"; ctx.lineJoin = "round";
-
-  // Build a stop-motion-wobbled, mark a span as "ghosted" if it's mid-unravel.
-  const unravelFrom = unravel.active ? unravel.cutIndex : -1;
-
-  // Pass 1: soft fuzzy halo (the wool "fluff" around the core)
-  ctx.strokeStyle = COLORS.threadHalo;
-  ctx.lineWidth = 13;
-  ctx.beginPath();
-  ctx.moveTo(sx(nodes[0], 0), syy(nodes[0], 0));
-  for (let i = 1; i < nodes.length; i++) ctx.lineTo(sx(nodes[i], i), syy(nodes[i], i));
-  ctx.stroke();
-
-  // Pass 2: shadow underside of the yarn for depth
-  for (let i = 0; i < nodes.length - 1; i++) {
-    const ax = sx(nodes[i], i), ay = syy(nodes[i], i);
-    const bx = sx(nodes[i + 1], i + 1), by = syy(nodes[i + 1], i + 1);
-    ctx.strokeStyle = COLORS.threadLo;
-    ctx.lineWidth = 7.5;
-    ctx.beginPath(); ctx.moveTo(ax, ay + 1.6); ctx.lineTo(bx, by + 1.6); ctx.stroke();
-  }
-
-  // Pass 3: core yarn, strain-tinted, with a fiber-twist offset so it reads
-  // as a plied strand rather than a clean line.
-  for (let i = 0; i < nodes.length - 1; i++) {
-    const a = nodes[i], b = nodes[i + 1];
-    const ax = sx(a, i), ay = syy(a, i);
-    const bx = sx(b, i + 1), by = syy(b, i + 1);
-    const d = Math.hypot(b.x - a.x, b.y - a.y);
-    const strain = d / SEG_LEN;
-    let col = segColor(strain);
-    // Finale: the player's persisted first creation reads in plum so they know
-    // it is the old work the room is asking them to pull apart.
-    if (firstCreationGhost && i >= firstCreationGhost.from && i <= firstCreationGhost.to) {
-      col = (Math.floor(stopFrame) % 2 === 0) ? COLORS.plum : COLORS.yarnBall;
-    }
-    if (unravelFrom >= 0 && i >= unravelFrom) col = "rgba(214,138,106,0.35)"; // ghost
-    ctx.strokeStyle = col;
-    ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-  }
-
-  // Pass 4: fiber highlights — short dashes riding the top of the strand,
-  // their phase set by the stop-motion frame so they twinkle in steps.
-  ctx.strokeStyle = COLORS.threadHi;
-  ctx.lineWidth = 1.8;
-  for (let i = 0; i < nodes.length - 1; i++) {
-    if ((i + stopFrame) % 3 !== 0) continue;
-    const a = nodes[i], b = nodes[i + 1];
-    const ax = sx(a, i), ay = syy(a, i);
-    const bx = sx(b, i + 1), by = syy(b, i + 1);
-    const mx = (ax + bx) / 2, my = (ay + by) / 2;
-    const nxv = -(by - ay), nyv = (bx - ax);
-    const nl = Math.hypot(nxv, nyv) || 1;
-    const off = -2.2;
-    ctx.beginPath();
-    ctx.moveTo(ax + nxv / nl * off, ay + nyv / nl * off);
-    ctx.lineTo(mx + nxv / nl * off, my + nyv / nl * off);
-    ctx.stroke();
-  }
-
-  // knots — chunky cinched bundles
-  for (const k of knots) {
-    const a = nodes[k.i];
-    if (!a) continue;
-    const kx = sx(a, k.i), ky = syy(a, k.i);
-    ctx.fillStyle = COLORS.threadLo;
-    ctx.beginPath(); ctx.arc(kx, ky + 1.5, 6.5, 0, TAU); ctx.fill();
-    ctx.fillStyle = COLORS.thread;
-    ctx.beginPath(); ctx.arc(kx, ky, 6.5, 0, TAU); ctx.fill();
-    ctx.fillStyle = COLORS.threadHi;
-    ctx.beginPath(); ctx.arc(kx - 2, ky - 2, 2.2, 0, TAU); ctx.fill();
-  }
-
-  // head marker — the working end / "needle tip"
-  const h = head();
-  const hx = sx(h, nodes.length - 1), hy = syy(h, nodes.length - 1);
-  ctx.fillStyle = COLORS.threadHi;
-  ctx.beginPath(); ctx.arc(hx, hy, 6, 0, TAU); ctx.fill();
-  ctx.fillStyle = "#fff3df";
-  ctx.beginPath(); ctx.arc(hx - 1.5, hy - 1.5, 2, 0, TAU); ctx.fill();
-}
-
-function drawWeight() {
-  if (!weight.active) return;
-  const wob = jitter(40) * 0.06;
-  const nx = jitter(41) * 0.7, ny = jitter(42) * 0.7;
-  ctx.save();
-  ctx.translate(weight.x + nx, weight.y + ny);
-  ctx.rotate(wob);
-  const r = weight.r || WEIGHT_R;
-  // shadow
-  ctx.fillStyle = COLORS.pegShadow;
-  ctx.beginPath(); ctx.ellipse(2, 4, r, r * 0.95, 0, 0, TAU); ctx.fill();
-  // felt body with soft shading
-  const grad = ctx.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.2, 0, 0, r);
-  grad.addColorStop(0, COLORS.weightHi);
-  grad.addColorStop(1, COLORS.weight);
-  ctx.fillStyle = grad;
-  ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
-  // fuzzy felt fibers around the rim (little radial flecks)
-  ctx.strokeStyle = COLORS.weightRim; ctx.lineWidth = 1.2;
-  for (let a = 0; a < 22; a++) {
-    const ang = a / 22 * TAU + jitter(50 + a) * 0.1;
-    const r0 = r - 1, r1 = r + 1.6 + jitter(70 + a) * 1.2;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(ang) * r0, Math.sin(ang) * r0);
-    ctx.lineTo(Math.cos(ang) * r1, Math.sin(ang) * r1);
-    ctx.stroke();
-  }
-  // running stitch seam (dashed) around as if hand-sewn
-  ctx.strokeStyle = COLORS.weightSeam; ctx.lineWidth = 2;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath(); ctx.arc(0, 0, r - 5, 0, TAU); ctx.stroke();
-  ctx.setLineDash([]);
-  // cross seam
-  ctx.beginPath();
-  ctx.moveTo(-r + 5, 0); ctx.lineTo(r - 5, 0);
-  ctx.moveTo(0, -r + 5); ctx.lineTo(0, r - 5);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawParticles() {
-  for (const p of particles) {
-    const a = Math.max(0, p.life / p.max);
-    ctx.globalAlpha = a * 0.85;
-    ctx.strokeStyle = p.col || COLORS.threadHi;
-    ctx.lineWidth = p.w || 2;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
-    ctx.lineTo(p.x - p.vx * 0.045, p.y - p.vy * 0.045);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-}
-
-function drawHUD() {
-  // --- Yarn ball meter (top-right) — a wound plum ball ---
-  const bx = VW - 90, by = 60, R = 34;
-  const frac = Math.max(0, Math.min(1, yarn / Math.max(1, yarnCap)));
-  // drop shadow
-  ctx.fillStyle = COLORS.pegShadow;
-  ctx.beginPath(); ctx.arc(bx + 2, by + 3, R, 0, TAU); ctx.fill();
-  // back ring (depleted track)
-  ctx.lineWidth = 8; ctx.strokeStyle = COLORS.yarnBack;
-  ctx.beginPath(); ctx.arc(bx, by, R, 0, TAU); ctx.stroke();
-  // remaining arc
-  ctx.strokeStyle = yarn <= 0 ? COLORS.bad : COLORS.yarnBall;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.arc(bx, by, R, -Math.PI / 2, -Math.PI / 2 + TAU * frac);
-  ctx.stroke();
-  ctx.lineCap = "butt";
-  // ball body
-  const bg = ctx.createRadialGradient(bx - 8, by - 8, 4, bx, by, R - 8);
-  bg.addColorStop(0, COLORS.yarnBallHi);
-  bg.addColorStop(1, COLORS.yarnBall);
-  ctx.fillStyle = bg;
-  ctx.beginPath(); ctx.arc(bx, by, R - 11, 0, TAU); ctx.fill();
-  // crisscross windings
-  ctx.strokeStyle = COLORS.yarnWind; ctx.lineWidth = 1.6;
-  for (let a = 0; a < 5; a++) {
-    const ang = a / 5 * Math.PI + stopFrame * 0.0; // static windings
-    ctx.beginPath();
-    ctx.ellipse(bx, by, R - 13, (R - 13) * 0.45, ang, 0, TAU);
-    ctx.stroke();
-  }
-  ctx.fillStyle = COLORS.text;
-  ctx.font = "bold 15px system-ui, sans-serif";
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText(Math.max(0, yarn) + "", bx, by);
-  ctx.font = "11px system-ui, sans-serif";
-  ctx.fillStyle = COLORS.textDim;
-  ctx.textBaseline = "alphabetic";
-  ctx.fillText("YARN", bx, by + R + 14);
-
-  // --- Room banner (top-left) ---
-  ctx.textAlign = "left";
-  ctx.fillStyle = COLORS.text;
-  ctx.font = "bold 16px Georgia, serif";
-  ctx.fillText("Room " + (roomIndex + 1) + "/" + ROOMS.length + " — " + roomConfig.name, 20, 28);
-
-  // --- Goal progress: hold bar (load rooms) or reach state (target rooms) ---
-  const holdGoal = roomConfig && roomConfig.hold ? roomConfig.hold : HOLD_TO_WIN;
-  if (weight.active) {
-    const stColor = weightState === "HELD" ? COLORS.good
-                  : weightState === "DROPPED" ? COLORS.bad : COLORS.textDim;
-    ctx.fillStyle = stColor;
-    ctx.font = "13px system-ui, sans-serif";
-    ctx.fillText("WEIGHT: " + weightState, 20, 48);
-    if (weightState === "HELD") {
-      const w = 140, h = 8, x = 20, y = 56;
-      ctx.fillStyle = COLORS.yarnBack; ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = COLORS.good;
-      ctx.fillRect(x, y, w * Math.min(1, holdTimer / holdGoal), h);
-    }
-  } else if (roomTarget) {
-    ctx.fillStyle = reached ? COLORS.good : COLORS.textDim;
-    ctx.font = "13px system-ui, sans-serif";
-    ctx.fillText(reached ? "AT THE STITCH…" : "Reach the marked stitch", 20, 48);
-  }
-
-  // --- Unravel indicator ---
-  let infoY = 78;
-  if (unravel.active) {
-    ctx.fillStyle = COLORS.plum;
-    ctx.font = "bold 14px system-ui, sans-serif";
-    ctx.fillText("UNRAVELLING…  +" + unravel.recovered + " yarn reclaimed", 20, infoY);
-    infoY += 20;
-  } else if (yarn <= 0) {
-    ctx.fillStyle = COLORS.bad;
-    ctx.font = "bold 14px system-ui, sans-serif";
-    ctx.fillText("Ball empty — right-click / U to unravel for more yarn", 20, infoY);
-    infoY += 20;
-  }
-
-  // --- Finale callout ---
-  if (roomConfig && roomConfig.finale && firstCreationGhost) {
-    ctx.fillStyle = COLORS.yarnBall;
-    ctx.font = "12px system-ui, sans-serif";
-    ctx.fillText("The plum thread is your FIRST creation — unravel it to afford this room.", 20, infoY);
-    infoY += 18;
-  }
-
-  // --- Soft fail prompt ---
-  if (failState) {
-    ctx.textAlign = "center";
-    ctx.fillStyle = COLORS.bad;
-    ctx.font = "bold 22px Georgia, serif";
-    ctx.fillText("It dropped — and the ball is empty.", VW / 2, VH * 0.42);
-    ctx.fillStyle = COLORS.text;
-    ctx.font = "15px system-ui, sans-serif";
-    ctx.fillText("Press R to start this room fresh.", VW / 2, VH * 0.42 + 30);
-    ctx.textAlign = "left";
-  }
-
-  // --- Bottom hint line (room tip + controls) ---
-  ctx.textAlign = "center";
-  ctx.fillStyle = COLORS.text;
-  ctx.font = "13px system-ui, sans-serif";
-  if (roomConfig && roomConfig.tip) ctx.fillText(roomConfig.tip, VW / 2, VH - 32);
-  ctx.fillStyle = COLORS.textDim;
-  ctx.font = "12px system-ui, sans-serif";
-  ctx.fillText("Drag = lay yarn  •  SPACE = cinch  •  SHIFT = go under  •  right-click / U = unravel  •  R = restart  •  M = mute",
-    VW / 2, VH - 14);
-  ctx.textAlign = "left";
-
-  if (DEBUG) drawDebug();
-}
-
-function drawDebug() {
-  ctx.fillStyle = "rgba(0,0,0,0.5)";
-  ctx.fillRect(8, VH - 150, 230, 120);
-  ctx.fillStyle = "#9fe";
-  ctx.font = "12px monospace";
-  let y = VH - 132;
-  const line = (s) => { ctx.fillText(s, 16, y); y += 16; };
-  line("nodes:    " + nodes.length);
-  line("crossings:" + crossings.length + (underToggle ? " (UNDER)" : " (OVER)"));
-  line("knots:    " + knots.length);
-  line("yarn:     " + yarn + "/" + yarnStart);
-  line("weight:   " + weightState + "  hold=" + holdTimer.toFixed(2));
-  // segment tension near head
-  if (nodes.length >= 2) {
-    const a = nodes[nodes.length - 2], b = head();
-    const t = Math.hypot(b.x - a.x, b.y - a.y) / SEG_LEN;
-    line("head tens: " + t.toFixed(2));
   }
 }
 
@@ -1788,200 +933,649 @@ function roundRect(x, y, w, h, r) {
   ctx.closePath();
 }
 
-function drawTitle() {
-  clearBg();
-  drawAnchor();
-  pegs.forEach(drawPeg);
-  const p = panel(580, 380);
-  ctx.textAlign = "center";
-  ctx.fillStyle = COLORS.thread;
-  ctx.font = "bold 52px Georgia, serif";
-  ctx.fillText("Knit One", VW / 2, p.y + 78);
-  ctx.fillStyle = COLORS.text;
-  ctx.font = "16px system-ui, sans-serif";
-  ctx.fillText("You are a single continuous thread.", VW / 2, p.y + 116);
-  ctx.fillStyle = COLORS.textDim;
-  ctx.font = "15px system-ui, sans-serif";
-  const lines = [
-    "Drag to pay out yarn from the head.",
-    "Wrap the rope around the peg, loop the head back",
-    "through its own bight, then press SPACE to CINCH.",
-    "A cinched knot bears the weight — a loose loop drops it.",
-    "",
-    "Yarn is finite. Right-click (or U) to UNRAVEL your",
-    "own work and wind that thread back onto the ball.",
-  ];
-  lines.forEach((l, i) => ctx.fillText(l, VW / 2, p.y + 152 + i * 24));
-  ctx.fillStyle = COLORS.good;
-  ctx.font = "bold 17px system-ui, sans-serif";
-  // ONBOARD-01: first tap here unlocks audio before any sound plays.
-  const blink = (Math.floor(stopFrame / 3) % 2 === 0);
-  ctx.globalAlpha = blink ? 1 : 0.45;
-  ctx.fillText("Tap or press SPACE to begin", VW / 2, p.y + 326);
-  ctx.globalAlpha = 1;
 
-  // Progress + best records (ONBOARD-04).
-  ctx.fillStyle = COLORS.textDim;
-  ctx.font = "13px system-ui, sans-serif";
-  let ly = p.y + 354;
-  if (runCompleted) {
-    ctx.fillStyle = COLORS.good;
-    ctx.fillText("✦ Full run complete — all " + ROOMS.length + " rooms ✦", VW / 2, ly); ly += 20;
-    ctx.fillStyle = COLORS.textDim;
-  } else if (bestRoom > 0) {
-    ctx.fillText("Progress: reached room " + Math.min(bestRoom + 1, ROOMS.length) + " of " + ROOMS.length, VW / 2, ly); ly += 20;
+// ----------------------------------------------------------------------------
+// Render: the board (world space)
+// ----------------------------------------------------------------------------
+// Pegs with an order badge when a room asks for posts in sequence.
+function drawPegs() {
+  const room = ROOMS[roomIndex];
+  world.pegs.forEach(drawPeg);
+  if (room.wraps && room.wraps.length > 1) {
+    room.wraps.forEach((pi, k) => {
+      const pg = world.pegs[pi];
+      const done = world.wrapIdx[k] >= 0;
+      const bx = pg.x - pg.r * 0.9, by = pg.y - pg.r * 0.9, r = wpx(12);
+      ctx.fillStyle = done ? COLORS.good : "rgba(28,22,15,0.85)";
+      ctx.beginPath(); ctx.arc(bx, by, r, 0, TAU); ctx.fill();
+      ctx.strokeStyle = COLORS.panelRim; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = done ? "#20300f" : COLORS.text;
+      ctx.font = "bold " + wpx(14) + "px system-ui, sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(String(k + 1), bx, by + 0.5);
+    });
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   }
-  if (bestRunYarn > 0) ctx.fillText("Best full run: " + bestRunYarn + " yarn used", VW / 2, ly);
-  else if (bestYarnUsed > 0) ctx.fillText("Best room: held with only " + bestYarnUsed + " yarn", VW / 2, ly);
-  ctx.textAlign = "left";
 }
 
-function drawComplete() {
-  // keep the scene visible behind the panel
-  renderScene();
-  ctx.fillStyle = "rgba(20,15,9,0.62)";
-  ctx.fillRect(0, 0, VW, VH);
+function segColor(strain) {
+  if (strain > 1.1) return COLORS.threadSnap;
+  if (strain > 1.05) return COLORS.threadStrain;
+  return COLORS.thread;
+}
+function sx(n, i) { return n.x + jitter(i * 2.7 + 3) * 0.9; }
+function syy(n, i) { return n.y + jitter(i * 2.7 + 9) * 0.9; }
 
-  if (state === GAME_COMPLETE) {
-    const p = panel(560, 300);
-    ctx.textAlign = "center";
-    ctx.fillStyle = COLORS.good;
-    ctx.font = "bold 44px Georgia, serif";
-    ctx.fillText("Bound off!", VW / 2, p.y + 76);
-    ctx.fillStyle = COLORS.text;
-    ctx.font = "17px system-ui, sans-serif";
-    ctx.fillText("You worked every room of Knit One —", VW / 2, p.y + 116);
-    ctx.fillText("and unravelled your very first creation to do it.", VW / 2, p.y + 142);
-    ctx.font = "15px system-ui, sans-serif";
-    ctx.fillStyle = COLORS.textDim;
-    ctx.fillText("Total yarn spent this run: " + runYarnUsed, VW / 2, p.y + 180);
-    if (bestRunYarn > 0)
-      ctx.fillText("Best full run: " + bestRunYarn + " yarn", VW / 2, p.y + 204);
-    ctx.fillStyle = COLORS.good;
-    ctx.font = "bold 16px system-ui, sans-serif";
-    ctx.fillText("Tap or press SPACE to play the run again", VW / 2, p.y + 250);
-    ctx.textAlign = "left";
-    return;
+function drawThread() {
+  const nodes = world.nodes;
+  if (nodes.length < 2) return;
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const g = world.ghost;
+  // halo
+  ctx.strokeStyle = COLORS.threadHalo; ctx.lineWidth = 13;
+  ctx.beginPath(); ctx.moveTo(sx(nodes[0], 0), syy(nodes[0], 0));
+  for (let i = 1; i < nodes.length; i++) ctx.lineTo(sx(nodes[i], i), syy(nodes[i], i));
+  ctx.stroke();
+  // shadow underside
+  ctx.strokeStyle = COLORS.threadLo; ctx.lineWidth = 7.5;
+  ctx.beginPath(); ctx.moveTo(sx(nodes[0], 0), syy(nodes[0], 0) + 1.6);
+  for (let i = 1; i < nodes.length; i++) ctx.lineTo(sx(nodes[i], i), syy(nodes[i], i) + 1.6);
+  ctx.stroke();
+  // core, strain tinted; the old knot in the finale reads in plum
+  ctx.lineWidth = 6;
+  for (let i = 0; i < nodes.length - 1; i++) {
+    const a = nodes[i], b = nodes[i + 1];
+    const strain = Math.hypot(b.x - a.x, b.y - a.y) / S.SEG_LEN;
+    let col = segColor(strain);
+    if (g && i >= g.from - 1 && i <= g.to) col = (i % 2 === 0) ? COLORS.plum : COLORS.yarnBall;
+    ctx.strokeStyle = col;
+    ctx.beginPath(); ctx.moveTo(sx(a, i), syy(a, i)); ctx.lineTo(sx(b, i + 1), syy(b, i + 1)); ctx.stroke();
   }
-
-  // ROOM_COMPLETE
-  const p = panel(500, 250);
-  ctx.textAlign = "center";
-  ctx.fillStyle = COLORS.good;
-  ctx.font = "bold 40px Georgia, serif";
-  const won = roomTarget ? "Reached!" : "It holds!";
-  ctx.fillText(won, VW / 2, p.y + 70);
-  ctx.fillStyle = COLORS.text;
-  ctx.font = "16px system-ui, sans-serif";
-  const used = Math.max(0, yarnStart - yarn);
-  ctx.fillText(roomTarget ? "The stitch is yours."
-                          : "The knot bore the weight honestly.", VW / 2, p.y + 108);
-  ctx.fillStyle = COLORS.textDim;
-  ctx.font = "15px system-ui, sans-serif";
-  ctx.fillText("Yarn used this room: " + used, VW / 2, p.y + 136);
-  ctx.fillText("Run total so far: " + runYarnUsed, VW / 2, p.y + 158);
-  ctx.fillStyle = COLORS.good;
-  ctx.font = "bold 16px system-ui, sans-serif";
-  const more = roomIndex < ROOMS.length - 1;
-  ctx.fillText(more ? "Tap or press SPACE for the next room"
-                    : "Tap or press SPACE for the finale", VW / 2, p.y + 206);
-  ctx.textAlign = "left";
+  // fiber highlights
+  ctx.strokeStyle = COLORS.threadHi; ctx.lineWidth = 1.8;
+  for (let i = 0; i < nodes.length - 1; i++) {
+    if ((i + stopFrame) % 3 !== 0) continue;
+    const a = nodes[i], b = nodes[i + 1];
+    const ax = sx(a, i), ay = syy(a, i), bx = sx(b, i + 1), by = syy(b, i + 1);
+    const nxv = -(by - ay), nyv = (bx - ax), nl = Math.hypot(nxv, nyv) || 1, off = -2.2;
+    ctx.beginPath();
+    ctx.moveTo(ax + nxv / nl * off, ay + nyv / nl * off);
+    ctx.lineTo((ax + bx) / 2 + nxv / nl * off, (ay + by) / 2 + nyv / nl * off);
+    ctx.stroke();
+  }
+  // knots: chunky beads where two bits of yarn are welded
+  for (const k of world.knots) {
+    const a = nodes[k.i], b = nodes[k.j];
+    if (!a || !b) continue;
+    const kx = (a.x + b.x) / 2, ky = (a.y + b.y) / 2, r = S.KNOT_BEAD;
+    ctx.fillStyle = COLORS.threadLo; ctx.beginPath(); ctx.arc(kx, ky + 1.5, r, 0, TAU); ctx.fill();
+    ctx.fillStyle = COLORS.thread; ctx.beginPath(); ctx.arc(kx, ky, r, 0, TAU); ctx.fill();
+    ctx.strokeStyle = COLORS.threadLo; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(kx, ky, r - 3, 0.3, 4.2); ctx.stroke();
+    ctx.fillStyle = COLORS.threadHi; ctx.beginPath(); ctx.arc(kx - 2.5, ky - 2.5, 2.4, 0, TAU); ctx.fill();
+  }
+  // the working end
+  const h = nodes[nodes.length - 1];
+  const hx = sx(h, nodes.length - 1), hy = syy(h, nodes.length - 1);
+  ctx.fillStyle = COLORS.threadHi; ctx.beginPath(); ctx.arc(hx, hy, 6.5, 0, TAU); ctx.fill();
+  ctx.fillStyle = "#fff3df"; ctx.beginPath(); ctx.arc(hx - 1.5, hy - 1.5, 2, 0, TAU); ctx.fill();
 }
 
-// A pulsing marked stitch the head must reach (no-load teaching rooms).
-function drawTarget() {
-  if (!roomTarget) return;
-  const pulse = 1 + Math.sin(stopFrame * 0.7) * 0.12;
-  const r = 16 * pulse;
+// A felt ball on a cord from a little wooden hook; the cord is cut on Drop.
+function drawBalls() {
+  const room = ROOMS[roomIndex];
+  for (const b of world.balls) {
+    // hook + cord
+    ctx.fillStyle = COLORS.peg;
+    roundRect(b.hx - 14, -6, 28, 14, 5); ctx.fill();
+    ctx.strokeStyle = COLORS.pegHi; ctx.lineWidth = 1.5; roundRect(b.hx - 14, -6, 28, 14, 5); ctx.stroke();
+    ctx.strokeStyle = COLORS.threadLo; ctx.lineWidth = 3; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(b.hx, 6);
+    if (b.state === "hook") ctx.lineTo(b.hx, b.hy - b.r + 2);
+    else ctx.lineTo(b.hx + 3, 26);
+    ctx.stroke();
+    if (b.state !== "hook") {
+      // where it will go back to on DROP AGAIN
+      ctx.strokeStyle = "rgba(241,230,209,0.28)"; ctx.lineWidth = 2; ctx.setLineDash([5, 6]);
+      ctx.beginPath(); ctx.arc(b.hx, b.hy, b.r, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (b.state === "lost") continue;
+    drawBall(b);
+    // hold progress ring
+    if (world.hold > 0.05 && world.status === "play") {
+      ctx.strokeStyle = COLORS.good; ctx.lineWidth = 4; ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r + 8, -Math.PI / 2, -Math.PI / 2 + TAU * Math.min(1, world.hold / world.holdGoal));
+      ctx.stroke();
+    } else if (world.status === "won") {
+      ctx.strokeStyle = COLORS.good; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 8, 0, TAU); ctx.stroke();
+    }
+  }
+}
+function drawBall(b) {
+  const wob = jitter(40) * 0.06, nx = jitter(41) * 0.7, ny = jitter(42) * 0.7;
   ctx.save();
-  ctx.translate(roomTarget.x, roomTarget.y);
-  // dashed ring
-  ctx.strokeStyle = reached ? COLORS.good : COLORS.threadHi;
-  ctx.lineWidth = 3; ctx.setLineDash([6, 6]);
-  ctx.lineDashOffset = stopFrame * 2;
-  ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
-  ctx.setLineDash([]);
-  // a little knot dot
-  ctx.fillStyle = reached ? COLORS.good : COLORS.thread;
+  ctx.translate(b.x + nx, b.y + ny); ctx.rotate(wob);
+  const r = b.r;
+  ctx.fillStyle = COLORS.pegShadow;
+  ctx.beginPath(); ctx.ellipse(2, 4, r, r * 0.95, 0, 0, TAU); ctx.fill();
+  const grad = ctx.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.2, 0, 0, r);
+  grad.addColorStop(0, COLORS.weightHi); grad.addColorStop(1, COLORS.weight);
+  ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+  ctx.strokeStyle = COLORS.weightRim; ctx.lineWidth = 1.2;
+  for (let a = 0; a < 22; a++) {
+    const ang = a / 22 * TAU + jitter(50 + a) * 0.1;
+    const r0 = r - 1, r1 = r + 1.6 + jitter(70 + a) * 1.2;
+    ctx.beginPath(); ctx.moveTo(Math.cos(ang) * r0, Math.sin(ang) * r0); ctx.lineTo(Math.cos(ang) * r1, Math.sin(ang) * r1); ctx.stroke();
+  }
+  ctx.strokeStyle = COLORS.weightSeam; ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.arc(0, 0, r - 5, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(-r + 5, 0); ctx.lineTo(r - 5, 0); ctx.moveTo(0, -r + 5); ctx.lineTo(0, r - 5); ctx.stroke();
+  ctx.restore();
+}
+
+// the stitch to reach
+function drawTarget() {
+  if (!world.target) return;
+  const t = world.target, pulse = 1 + Math.sin(stopFrame * 0.7) * 0.12, r = 18 * pulse;
+  ctx.save(); ctx.translate(t.x, t.y);
+  ctx.strokeStyle = world.reached ? COLORS.good : COLORS.threadHi; ctx.lineWidth = 3;
+  ctx.setLineDash([6, 6]); ctx.lineDashOffset = stopFrame * 2;
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = world.reached ? COLORS.good : COLORS.thread;
   ctx.beginPath(); ctx.arc(0, 0, 5, 0, TAU); ctx.fill();
   ctx.restore();
 }
 
-// Expanding pop ring at the most recent cinch.
+// the loop TIE would tie: gold wash over the loop, a ring where the yarn crosses
+function drawCinchHint() {
+  const c = cinchHint;
+  if (!c || world.status !== "play") return;
+  const nodes = world.nodes, pulse = 0.5 + 0.5 * Math.sin(stopFrame * 0.9);
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(c.x, c.y);
+  for (let i = c.from; i <= c.to; i++) ctx.lineTo(nodes[i].x, nodes[i].y);
+  ctx.closePath();
+  const good = c.peg >= 0, tone = good ? COLORS.threadStrain : "#9a8f7a";
+  ctx.fillStyle = good ? "rgba(231,194,74," + (0.12 + pulse * 0.1) + ")" : "rgba(180,170,150,0.1)"; ctx.fill();
+  ctx.strokeStyle = tone; ctx.lineWidth = 3; ctx.setLineDash([7, 6]); ctx.lineDashOffset = -stopFrame * 3;
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.lineWidth = 3.5;
+  ctx.beginPath(); ctx.arc(c.x, c.y, 13 + pulse * 5, 0, TAU); ctx.stroke();
+  if (c.peg >= 0) {
+    const pg = world.pegs[c.peg];
+    ctx.beginPath(); ctx.arc(pg.x, pg.y, pg.r + 7 + pulse * 3, 0, TAU); ctx.stroke();
+  }
+  ctx.font = "bold " + wpx(15) + "px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const ty = c.y - 46 - pulse * 3, label = !good ? "no post inside" : COARSE ? "TIE here" : "TIE here (Space)";
+  const tw = ctx.measureText(label).width + 18;
+  ctx.fillStyle = "rgba(28,22,15,0.85)"; roundRect(c.x - tw / 2, ty - wpx(11), tw, wpx(22), 10); ctx.fill();
+  ctx.fillStyle = tone; ctx.fillText(label, c.x, ty);
+  ctx.restore();
+}
+
+function drawHintPath() {
+  if (!showHint) return;
+  const h = hintFor(ROOMS[roomIndex]);
+  ctx.save();
+  ctx.strokeStyle = "rgba(167,210,122,0.9)"; ctx.lineWidth = 3.5; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.setLineDash([2, 9]); ctx.lineDashOffset = -stopFrame * 2;
+  for (const line of h.lines) {
+    ctx.beginPath(); ctx.moveTo(line[0][0], line[0][1]);
+    for (let i = 1; i < line.length; i++) ctx.lineTo(line[i][0], line[i][1]);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.fillStyle = COLORS.good; ctx.font = "bold " + wpx(15) + "px system-ui, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const t of h.ties) {
+    ctx.beginPath(); ctx.arc(t[0], t[1], 7, 0, TAU); ctx.fill();
+    ctx.fillText("tie here", t[0], t[1] + wpx(20));
+  }
+  if (h.unravelFirst) {
+    ctx.fillText("first: hold UNRAVEL until the plum yarn is gone", VW / 2, VH * 0.9);
+  }
+  ctx.restore(); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+}
+
 function drawCinchPop() {
   if (!cinchPop) return;
   const k = 1 - cinchPop.t / 0.32;
-  ctx.save();
-  ctx.globalAlpha = (1 - k) * 0.8;
-  ctx.strokeStyle = COLORS.threadHi;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(cinchPop.x, cinchPop.y, 6 + k * 26, 0, TAU);
-  ctx.stroke();
-  ctx.restore();
+  ctx.save(); ctx.globalAlpha = (1 - k) * 0.8; ctx.strokeStyle = COLORS.threadHi; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(cinchPop.x, cinchPop.y, 6 + k * 26, 0, TAU); ctx.stroke(); ctx.restore();
 }
 
-// Diegetic low-text onboarding prompt for the current room (Phase 5).
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life / p.max) * 0.85;
+    ctx.strokeStyle = p.col; ctx.lineWidth = p.w; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.045, p.y - p.vy * 0.045); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// the little in-world prompt (fades once the player has done what it asks)
 function drawTeach() {
-  const room = roomConfig;
-  if (!room || !room.teach) return;
-  // fade the prompt once its verb has clearly been performed
+  const room = ROOMS[roomIndex];
+  if (!room.teach || screen !== PLAY) return;
   let alpha = 1;
-  if (room.target && reached) alpha = 0;
-  if (room.wrapPeg != null && wrapDone) alpha = 0.25;
+  if (world.target && world.reached) alpha = 0;
+  if (room.wraps && world.wrapsOk) alpha = 0.25;
+  if (world.balls.length && (world.knots.length || world.phase === "DROPPED")) alpha = 0;
   if (alpha <= 0.02) return;
-  const tx = fx(room.teach.at[0]), ty = fyv(room.teach.at[1]);
+  const tx = VW * room.teach.at[0], ty = VH * room.teach.at[1], bob = Math.sin(stopFrame * 0.5) * 3;
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.font = "italic " + wpx(16) + "px Georgia, serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const w = ctx.measureText(room.teach.text).width + 22, h = wpx(16) * 2;
+  ctx.fillStyle = "rgba(28,22,15,0.7)"; roundRect(tx - w / 2, ty - h / 2 + bob, w, h, 14); ctx.fill();
+  ctx.fillStyle = COLORS.text; ctx.fillText(room.teach.text, tx, ty + bob);
+  ctx.restore(); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+}
+
+// a ring where the finger/pointer is (so a fingertip never hides the action)
+function drawPointer() {
+  if (!(pointer.down && screen === PLAY)) return;
+  ctx.strokeStyle = "rgba(241,230,209,0.5)"; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(pointer.x, pointer.y, wpx(14), 0, TAU); ctx.stroke();
+}
+
+function drawBoard() {
   ctx.save();
-  ctx.globalAlpha = alpha;
-  const bob = Math.sin(stopFrame * 0.5) * 3;
-  ctx.font = "italic 16px Georgia, serif";
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  // soft backing
-  const w = ctx.measureText(room.teach.text).width + 22;
-  ctx.fillStyle = "rgba(28,22,15,0.6)";
-  roundRect(tx - w / 2, ty - 15 + bob, w, 30, 14); ctx.fill();
-  ctx.fillStyle = COLORS.text;
-  ctx.fillText(room.teach.text, tx, ty + bob);
-  // a little dashed pointer down toward the spot it refers to
-  ctx.restore();
-  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-}
-
-function renderScene() {
+  ctx.translate(view.ox, view.oy); ctx.scale(view.s, view.s);
+  roundRect(0, 0, VW, VH, 18); ctx.clip();
+  if (shakeAmt > 0) ctx.translate(jitter(900) * shakeAmt, jitter(901) * shakeAmt);
   clearBg();
-  drawTarget();
-  drawAnchor();
-  pegs.forEach(drawPeg);
-  drawThread();
-  drawCinchPop();
-  drawWeight();
-  drawParticles();
-  drawTeach();
-  drawHUD();
+  if (world) {
+    drawTarget();
+    drawAnchor(world.anchor);
+    drawPegs();
+    drawCinchHint();
+    drawBalls();
+    drawThread();
+    drawHintPath();
+    drawCinchPop();
+    drawPointer();
+    drawParticles();
+    drawTeach();
+  }
+  ctx.restore();
+  // frame
+  ctx.save(); ctx.strokeStyle = "rgba(214,178,110,0.25)"; ctx.lineWidth = 2;
+  ctx.translate(view.ox, view.oy); ctx.scale(view.s, view.s);
+  roundRect(0, 0, VW, VH, 18); ctx.stroke(); ctx.restore();
 }
 
+
+// ----------------------------------------------------------------------------
+// UI helpers (screen space, real CSS pixels)
+// ----------------------------------------------------------------------------
+function fontSize() { return view.W >= 1000 ? 17 : 15; }
+
+function wrapLines(str, maxW, font) {
+  ctx.font = font;
+  const words = String(str).split(" "), lines = [];
+  let cur = "";
+  for (const w of words) {
+    const t = cur ? cur + " " + w : w;
+    if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+// text with a soft dark backing so it reads on top of the knit cloth
+function pillLines(lines, x, y, font, color, lh, align) {
+  ctx.font = font; ctx.textBaseline = "middle";
+  let maxW = 0;
+  for (const l of lines) maxW = Math.max(maxW, ctx.measureText(l).width);
+  const padX = 10, padY = 5, h = lines.length * lh + padY * 2 - (lh - 14) / 2;
+  const bx = align === "center" ? x - maxW / 2 - padX : x - padX;
+  ctx.fillStyle = "rgba(24,18,12,0.72)";
+  roundRect(bx, y - padY, maxW + padX * 2, h, 10); ctx.fill();
+  ctx.fillStyle = color; ctx.textAlign = align === "center" ? "center" : "left";
+  lines.forEach((l, i) => ctx.fillText(l, x, y + lh / 2 + i * lh - 1));
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  return h;
+}
+function panelAt(cx, cy, w, h) {
+  const x = cx - w / 2, y = cy - h / 2;
+  ctx.fillStyle = COLORS.panel; ctx.strokeStyle = COLORS.panelRim; ctx.lineWidth = 1.5;
+  roundRect(x, y, w, h, 18); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = "rgba(214,178,110,0.22)"; ctx.setLineDash([5, 5]);
+  roundRect(x + 7, y + 7, w - 14, h - 14, 14); ctx.stroke(); ctx.setLineDash([]);
+  return { x: x, y: y };
+}
+
+function drawButton(b) {
+  const held = b.hold && (unravelBtn || unravelMouse || keys.has("u"));
+  const pulse = b.pulse ? 0.5 + 0.5 * Math.sin(performance.now() / 180) : 0;
+  ctx.save();
+  ctx.globalAlpha = b.enabled === false ? 0.38 : 1;
+  let fill = "#4d3d2c";
+  if (b.kind === "primary") fill = "#6f8a48";
+  else if (b.kind === "accent") fill = "#8a4f6f";
+  if (held) fill = "#b06a90";
+  const grad = ctx.createLinearGradient(0, b.y, 0, b.y + b.h);
+  grad.addColorStop(0, lighten(fill, 22)); grad.addColorStop(1, fill);
+  ctx.fillStyle = "rgba(10,7,3,0.4)"; roundRect(b.x + 1, b.y + 3, b.w, b.h, 13); ctx.fill();
+  ctx.fillStyle = grad; roundRect(b.x, b.y, b.w, b.h, 13); ctx.fill();
+  ctx.strokeStyle = pulse ? "rgba(231,194,74," + (0.5 + pulse * 0.5) + ")" : "rgba(214,178,110,0.4)";
+  ctx.lineWidth = pulse ? 3 : 1.5; roundRect(b.x, b.y, b.w, b.h, 13); ctx.stroke();
+  ctx.strokeStyle = "rgba(241,230,209,0.22)"; ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]);
+  roundRect(b.x + 5, b.y + 5, b.w - 10, b.h - 10, 9); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = COLORS.text; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  let big = b.big ? 18 : 15;
+  ctx.font = "bold " + big + "px system-ui, sans-serif";
+  while (big > 11 && ctx.measureText(b.label).width > b.w - 18) { big--; ctx.font = "bold " + big + "px system-ui, sans-serif"; }
+  const showSub = b.sub && !COARSE && b.h >= 54;
+  ctx.font = "bold " + big + "px system-ui, sans-serif";
+  ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 - (showSub ? 7 : 0));
+  if (showSub) {
+    ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = "rgba(241,230,209,0.7)";
+    ctx.fillText(b.sub, b.x + b.w / 2, b.y + b.h / 2 + 11);
+  }
+  ctx.restore(); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+}
+function lighten(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.min(255, (n >> 16) + amt), g = Math.min(255, ((n >> 8) & 255) + amt), b = Math.min(255, (n & 255) + amt);
+  return "rgb(" + r + "," + g + "," + b + ")";
+}
+
+// ----------------------------------------------------------------------------
+// Buttons per screen
+// ----------------------------------------------------------------------------
+function playButtons() {
+  const w = world, hasBall = w.balls.length > 0;
+  const dropLabel = w.drops > 0 ? "Drop again" : "Drop";
+  const list = [];
+  const mk = (id, label, sub, extra) => list.push(Object.assign({ id: id, label: label, sub: sub, enabled: w.status === "play" }, extra || {}));
+  const canUndo = w.undo.length > 0;
+  const canUnravel = w.nodes.length > 2;
+  const lostPulse = hasBall && (w.lost || (w.phase === "BUILD" && w.knots.length > 0 && !cinchHint));
+  const tiePulse = !!cinchHint && cinchHint.peg >= 0;
+  if (view.mode === "side") {
+    const bw = Math.max(80, Math.min(128, view.ox - 14));
+    const lx = Math.max(6, view.ox - bw - 7), rx = view.ox + VW * view.s + 7;
+    const gap = 8;
+    // left column: edit tools. right column: the two big actions, then menu
+    const left = [["undo", "Undo", "Z", { enabled: canUndo && w.status === "play" }],
+                  ["unravel", "Unravel", "hold U", { hold: true, enabled: canUnravel && w.status === "play" }],
+                  ["restart", "Restart", "R", { enabled: true }],
+                  ["hint", showHint ? "Hide hint" : "Hint", "H", { enabled: w.status === "play" }]];
+    const nl = left.length;
+    const bh = Math.max(48, Math.min(64, (view.H - 16 - gap * (nl - 1)) / nl));
+    let y = 8;
+    left.forEach(c => { mk(c[0], c[1], c[2], Object.assign({ x: lx, y: y, w: bw, h: bh }, c[3])); y += bh + gap; });
+    // right column
+    const rb = [];
+    if (hasBall) {
+      rb.push(["drop", dropLabel, "Enter", { kind: "primary", big: true, pulse: lostPulse, hh: 1.5 }]);
+      rb.push(["tie", "Tie", "Space", { kind: "accent", big: true, pulse: tiePulse, hh: 1.5 }]);
+    }
+    const small = [["rooms", "Menu", "Esc", { enabled: true }], ["mute", muted ? "Sound off" : "Sound on", "M", { enabled: true }]];
+    const totalH = view.H - 16;
+    const smallH = Math.max(44, Math.min(56, bh));
+    const bigH = hasBall ? Math.min(84, (totalH - smallH * 2 - gap * 3) / 2) : 0;
+    let ry = 8;
+    rb.forEach(c => { mk(c[0], c[1], c[2], Object.assign({ x: rx, y: ry, w: bw, h: bigH }, c[3])); ry += bigH + gap; });
+    let sy = view.H - 8 - smallH * 2 - gap;
+    small.forEach(c => { mk(c[0], c[1], c[2], Object.assign({ x: rx, y: sy, w: bw, h: smallH }, c[3])); sy += smallH + gap; });
+  } else {
+    const items = [["rooms", "Menu", { enabled: true }], ["undo", "Undo", { enabled: canUndo && w.status === "play" }],
+                   ["unravel", "Unravel", { hold: true, enabled: canUnravel && w.status === "play" }],
+                   ["restart", "Restart", { enabled: true }], ["hint", showHint ? "Hide" : "Hint", { enabled: w.status === "play" }]];
+    if (hasBall) { items.push(["tie", "Tie", { kind: "accent", pulse: tiePulse }]); items.push(["drop", dropLabel, { kind: "primary", pulse: lostPulse }]); }
+    const n = items.length, gap = 6, bh = 60, bw = Math.min(150, (view.W - 12 - gap * (n - 1)) / n);
+    const total = bw * n + gap * (n - 1);
+    let x = (view.W - total) / 2;
+    items.forEach(c => { mk(c[0], c[1], "", Object.assign({ x: x, y: view.H - bh - 8, w: bw, h: bh }, c[2])); x += bw + gap; });
+  }
+  return list;
+}
+
+// after a win: the board stays in view; Next / Replay take over the big buttons
+function wonButtons() {
+  const list = [];
+  const last = roomIndex >= ROOMS.length - 1;
+  const mk = (id, label, sub, extra) => list.push(Object.assign({ id: id, label: label, sub: sub }, extra));
+  const ready = winTimer > 0.4;
+  if (view.mode === "side") {
+    const bw = Math.max(80, Math.min(128, view.ox - 14));
+    const rx = view.ox + VW * view.s + 7, gap = 8;
+    const bigH = Math.min(84, (view.H - 16 - 44 * 2 - gap * 3) / 2);
+    mk("next", last ? "Finish" : "Next room", "Enter", { x: rx, y: 8, w: bw, h: bigH, kind: "primary", big: true, pulse: ready, enabled: ready });
+    mk("replay", "Replay", "R", { x: rx, y: 8 + bigH + gap, w: bw, h: bigH });
+    mk("rooms", "Menu", "Esc", { x: rx, y: view.H - 8 - 44 * 2 - gap, w: bw, h: 44 });
+    mk("mute", muted ? "Sound off" : "Sound on", "M", { x: rx, y: view.H - 8 - 44, w: bw, h: 44 });
+  } else {
+    const n = 3, gap = 6, bh = 60, bw = Math.min(170, (view.W - 12 - gap * (n - 1)) / n);
+    let x = (view.W - (bw * n + gap * (n - 1))) / 2;
+    mk("rooms", "Menu", "", { x: x, y: view.H - bh - 8, w: bw, h: bh }); x += bw + gap;
+    mk("replay", "Replay", "", { x: x, y: view.H - bh - 8, w: bw, h: bh }); x += bw + gap;
+    mk("next", last ? "Finish" : "Next room", "", { x: x, y: view.H - bh - 8, w: bw, h: bh, kind: "primary", pulse: ready, enabled: ready });
+  }
+  return list;
+}
+
+function buildButtons() {
+  const list = [];
+  const add = (b) => list.push(b);
+  const cx = view.W / 2;
+  if (screen === TITLE) {
+    const open = firstOpenIndex(), started = doneIds.length > 0;
+    const label = doneIds.length >= ROOMS.length ? "Play again" : started ? "Continue: room " + (open + 1) : "Play";
+    add({ id: "continue", label: label, x: cx - 140, y: view.H / 2 + 24, w: 280, h: 58, kind: "primary", big: true, sub: "Enter", pulse: false });
+    add({ id: "rooms", label: "Rooms", x: cx - 140, y: view.H / 2 + 24 + 68, w: 280, h: 52, sub: "", big: false });
+    add({ id: "mute", label: muted ? "Sound off" : "Sound on", x: view.W - 120, y: 10, w: 108, h: 44 });
+  } else if (screen === SELECT) {
+    add({ id: "title", label: "Back", x: 12, y: 12, w: 96, h: 48, sub: "Esc" });
+    add({ id: "mute", label: muted ? "Sound off" : "Sound on", x: view.W - 120, y: 12, w: 108, h: 48 });
+    const cols = Math.max(2, Math.min(4, Math.floor((view.W - 24) / 190)));
+    const cw = Math.min(210, (view.W - 24 - 10 * (cols - 1)) / cols);
+    const ch = view.H < 520 ? 64 : 78;
+    const gridW = cols * cw + (cols - 1) * 10, x0 = (view.W - gridW) / 2;
+    const rows = Math.ceil(ROOMS.length / cols);
+    const y0 = view.H < 520 ? 72 : 110;
+    ROOMS.forEach((r, i) => {
+      const c = i % cols, rr = Math.floor(i / cols);
+      add({ id: "room:" + i, label: "", x: x0 + c * (cw + 10), y: y0 + rr * (ch + 10), w: cw, h: ch, enabled: unlocked(i), card: i });
+    });
+  } else if (screen === PLAY && world) {
+    playButtons().forEach(add);
+  } else if (screen === WON && world) {
+    wonButtons().forEach(add);
+  } else if (screen === END) {
+    add({ id: "rooms", label: "Back to rooms", x: cx - 130, y: view.H / 2 + 80, w: 260, h: 56, kind: "primary", big: true });
+  }
+  uiButtons = list;
+}
+
+// ----------------------------------------------------------------------------
+// HUD (play)
+// ----------------------------------------------------------------------------
+function drawYarnBall() {
+  const bx = view.ox, by = view.oy, bw = VW * view.s;
+  const mx = bx + bw - 46, my = by + 46, R = 26;
+  const frac = Math.max(0, Math.min(1, world.yarn / Math.max(1, world.yarnCap)));
+  ctx.fillStyle = "rgba(24,18,12,0.6)"; ctx.beginPath(); ctx.arc(mx, my, R + 9, 0, TAU); ctx.fill();
+  ctx.lineWidth = 7; ctx.strokeStyle = COLORS.yarnBack; ctx.beginPath(); ctx.arc(mx, my, R, 0, TAU); ctx.stroke();
+  ctx.strokeStyle = world.yarn <= 0 ? COLORS.bad : COLORS.yarnBall; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.arc(mx, my, R, -Math.PI / 2, -Math.PI / 2 + TAU * frac); ctx.stroke(); ctx.lineCap = "butt";
+  const bg = ctx.createRadialGradient(mx - 6, my - 6, 3, mx, my, R - 8);
+  bg.addColorStop(0, COLORS.yarnBallHi); bg.addColorStop(1, COLORS.yarnBall);
+  ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(mx, my, R - 9, 0, TAU); ctx.fill();
+  ctx.fillStyle = "#2a1620"; ctx.font = "bold 15px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(String(Math.max(0, world.yarn)), mx, my + 1);
+  ctx.fillStyle = COLORS.textDim; ctx.font = "11px system-ui, sans-serif"; ctx.textBaseline = "alphabetic";
+  ctx.fillText("YARN", mx, my + R + 17);
+}
+
+function drawRoomLabel() {
+  const room = ROOMS[roomIndex];
+  const bx = view.ox, by = view.oy, bh = VH * view.s;
+  ctx.textAlign = "left";
+  const lab = "Room " + (roomIndex + 1) + " of " + ROOMS.length + "  ·  " + K.CHAPTERS[room.chapter] + "  ·  " + room.name;
+  pillLines([lab], bx + 14, by + bh - 30, "12px system-ui, sans-serif", COLORS.textDim, 16);
+}
+
+function drawHUD() {
+  if (screen === WON) { drawWonBanner(); drawYarnBall(); drawRoomLabel(); return; }
+  const room = ROOMS[roomIndex];
+  const bx = view.ox, by = view.oy, bw = VW * view.s, bh = VH * view.s;
+  const fs = fontSize();
+  const maxW = bw - 120;
+  // goal + coaching, top-left of the board
+  let y = by + 8;
+  const goal = wrapLines(room.goal, maxW, "bold " + fs + "px system-ui, sans-serif");
+  y += pillLines(goal, bx + 14, y, "bold " + fs + "px system-ui, sans-serif", COLORS.text, fs + 5) + 4;
+  const c = coach();
+  if (c) {
+    const cl = wrapLines(c, maxW, fs - 1 + "px system-ui, sans-serif");
+    const alert = world.lost || world.yarn <= 0;
+    pillLines(cl, bx + 14, y, fs - 1 + "px system-ui, sans-serif", alert ? "#f0a58c" : COLORS.threadStrain, fs + 4);
+  }
+  drawYarnBall();
+  drawRoomLabel();
+  // toast
+  if (toast.t > 0) {
+    const lines = wrapLines(toast.text, bw - 40, fs + "px system-ui, sans-serif");
+    ctx.globalAlpha = Math.min(1, toast.t * 2);
+    pillLines(lines, bx + bw / 2, by + bh - 36 - lines.length * (fs + 5) - 34, fs + "px system-ui, sans-serif", COLORS.text, fs + 5, "center");
+    ctx.globalAlpha = 1;
+  }
+  // failure card: a reason and the next step
+  if (world.lost && world.status === "play") {
+    const t = Math.min(1, failTimer * 4);
+    ctx.globalAlpha = t;
+    const w = Math.min(380, bw - 40), h = 74, x = bx + bw / 2 - w / 2, yy = by + bh * 0.5 - h / 2;
+    ctx.fillStyle = "rgba(40,16,12,0.88)"; roundRect(x, yy, w, h, 14); ctx.fill();
+    ctx.strokeStyle = "rgba(207,106,79,0.8)"; ctx.lineWidth = 2; roundRect(x, yy, w, h, 14); ctx.stroke();
+    ctx.textAlign = "center"; ctx.fillStyle = "#f0a58c"; ctx.font = "bold 20px Georgia, serif";
+    ctx.fillText("It slipped!", bx + bw / 2, yy + 30);
+    ctx.fillStyle = COLORS.text; ctx.font = "14px system-ui, sans-serif";
+    ctx.fillText("Putting your yarn back as you laid it...", bx + bw / 2, yy + 54);
+    ctx.globalAlpha = 1; ctx.textAlign = "left";
+  }
+  if (DEBUG) {
+    ctx.fillStyle = "#9fe"; ctx.font = "12px monospace";
+    ctx.fillText("nodes " + world.nodes.length + " knots " + world.knots.length + " yarn " + world.yarn + " hold " + world.hold.toFixed(2) + " " + world.phase, bx + 10, by + bh - 50);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Screens
+// ----------------------------------------------------------------------------
+function drawFrameBg() {
+  ctx.fillStyle = "#17120d"; ctx.fillRect(0, 0, view.W, view.H);
+}
+
+function drawTitle() {
+  drawBoard();
+  ctx.fillStyle = "rgba(20,15,9,0.55)"; ctx.fillRect(view.ox, view.oy, VW * view.s, VH * view.s);
+  const cx = view.W / 2, cy = view.H / 2;
+  const compact = view.H < 520;
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.thread; ctx.font = "bold " + (compact ? 44 : 60) + "px Georgia, serif";
+  ctx.fillText("Knit One", cx, cy - (compact ? 40 : 70));
+  ctx.fillStyle = COLORS.text; ctx.font = (compact ? 16 : 19) + "px system-ui, sans-serif";
+  ctx.fillText("Lay yarn. Tie a knot. Catch the ball.", cx, cy - (compact ? 8 : 30));
+  ctx.fillStyle = COLORS.textDim; ctx.font = "14px system-ui, sans-serif";
+  const done = doneIds.length;
+  if (done > 0) ctx.fillText(done + " of " + ROOMS.length + " rooms done", cx, cy + (compact ? 14 : 4));
+  ctx.textAlign = "left";
+}
+
+function drawSelect() {
+  drawFrameBg();
+  const compact = view.H < 520;
+  ctx.textAlign = "center"; ctx.fillStyle = COLORS.thread; ctx.font = "bold " + (compact ? 26 : 34) + "px Georgia, serif";
+  ctx.fillText("Rooms", view.W / 2, compact ? 44 : 58);
+  ctx.fillStyle = COLORS.textDim; ctx.font = "14px system-ui, sans-serif";
+  if (!compact) ctx.fillText(doneIds.length + " of " + ROOMS.length + " done", view.W / 2, 82);
+  for (const b of uiButtons) {
+    if (b.card === undefined) continue;
+    const i = b.card, r = ROOMS[i], done = isDone(r.id), open = unlocked(i);
+    ctx.save(); ctx.globalAlpha = open ? 1 : 0.4;
+    ctx.fillStyle = done ? "#41522b" : open ? "#4d3d2c" : "#30271d";
+    roundRect(b.x, b.y, b.w, b.h, 13); ctx.fill();
+    ctx.strokeStyle = i === firstOpenIndex() && !done ? COLORS.threadStrain : "rgba(214,178,110,0.35)";
+    ctx.lineWidth = i === firstOpenIndex() && !done ? 2.5 : 1.5; roundRect(b.x, b.y, b.w, b.h, 13); ctx.stroke();
+    ctx.strokeStyle = "rgba(241,230,209,0.2)"; ctx.setLineDash([4, 4]); roundRect(b.x + 5, b.y + 5, b.w - 10, b.h - 10, 9); ctx.stroke(); ctx.setLineDash([]);
+    ctx.textAlign = "left"; ctx.fillStyle = COLORS.threadHi; ctx.font = "bold 22px Georgia, serif";
+    ctx.fillText(String(i + 1), b.x + 14, b.y + b.h / 2 + 8);
+    ctx.fillStyle = COLORS.text; ctx.font = "bold 14px system-ui, sans-serif";
+    const nameLines = wrapLines(r.name, b.w - 70, "bold 14px system-ui, sans-serif");
+    nameLines.slice(0, 2).forEach((l, k) => ctx.fillText(l, b.x + 46, b.y + 24 + k * 17));
+    ctx.fillStyle = COLORS.textDim; ctx.font = "11px system-ui, sans-serif";
+    ctx.fillText(open ? K.CHAPTERS[r.chapter] : "locked", b.x + 46, b.y + b.h - 12);
+    if (done) { ctx.fillStyle = COLORS.good; ctx.font = "bold 18px system-ui, sans-serif"; ctx.textAlign = "right"; ctx.fillText("✓", b.x + b.w - 12, b.y + 24); }
+    ctx.restore();
+  }
+  ctx.textAlign = "left";
+  uiButtons.forEach(b => { if (b.card === undefined) drawButton(b); });
+}
+
+// the win banner sits where the goal text was; the board stays fully visible so the
+// player can enjoy the ball held in the sling
+function drawWonBanner() {
+  const room = ROOMS[roomIndex];
+  const bx = view.ox, by = view.oy, bw = VW * view.s;
+  const fs = fontSize();
+  const t = Math.min(1, winTimer * 3);
+  ctx.globalAlpha = t;
+  let y = by + 8;
+  ctx.font = "bold 30px Georgia, serif";
+  y += pillLines([world.target ? "Reached!" : "It holds!"], bx + 14, y, "bold 30px Georgia, serif", COLORS.good, 38) + 4;
+  const msg = world.target ? "You got the yarn to the stitch." :
+              world.balls.length > 1 ? "One length of yarn holds both balls. Hands off." : "The knot holds the ball. Hands off.";
+  const best = bestYarn[room.id], used = world.shown;
+  const stat = (world.target ? "Yarn used: " : "Yarn in your knot: ") + used +
+               (best !== undefined && best < used ? " (your best: " + best + ")" : best === used ? " (your best)" : "") +
+               (world.usedHint ? "  ·  hint used" : "");
+  const lines = wrapLines(msg + " " + stat, bw - 140, fs + "px system-ui, sans-serif");
+  pillLines(lines, bx + 14, y, fs + "px system-ui, sans-serif", COLORS.text, fs + 5);
+  ctx.globalAlpha = 1;
+}
+
+function drawEnd() {
+  drawBoard();
+  ctx.fillStyle = "rgba(20,15,9,0.7)"; ctx.fillRect(0, 0, view.W, view.H);
+  const cx = view.W / 2, cy = view.H / 2, w = Math.min(560, view.W - 24), h = 300;
+  const p = panelAt(cx, cy, w, h);
+  ctx.textAlign = "center";
+  ctx.fillStyle = COLORS.good; ctx.font = "bold 44px Georgia, serif";
+  ctx.fillText("Bound off!", cx, p.y + 70);
+  ctx.fillStyle = COLORS.text; ctx.font = "17px system-ui, sans-serif";
+  ctx.fillText("You worked every room of Knit One,", cx, p.y + 112);
+  ctx.fillText(firstKnot && firstKnot.room ? "and unravelled your very first knot (" + firstKnot.roomName + ")" : "and unravelled an old sample knot", cx, p.y + 138);
+  ctx.fillText("to finish it.", cx, p.y + 164);
+  ctx.textAlign = "left";
+}
+
+// ----------------------------------------------------------------------------
+// Render
+// ----------------------------------------------------------------------------
 function drawFlash() {
   if (flash.a <= 0) return;
-  ctx.save();
-  ctx.globalAlpha = Math.min(1, flash.a);
-  ctx.fillStyle = flash.col;
-  ctx.fillRect(0, 0, VW, VH);
-  ctx.restore();
+  ctx.save(); ctx.globalAlpha = Math.min(1, flash.a); ctx.fillStyle = flash.col;
+  ctx.fillRect(0, 0, view.W, view.H); ctx.restore();
 }
 
 function render() {
-  // Apply screen shake to the whole frame (decays fast). Shake is keyed off the
-  // stop-motion clock so it reads as chunky judder, not smooth vibration.
-  const sh = shakeAmt;
-  ctx.save();
-  if (sh > 0) ctx.translate(jitter(900) * sh, jitter(901) * sh);
-
-  if (state === TITLE) { drawTitle(); ctx.restore(); drawFlash(); return; }
-  if (state === ROOM_COMPLETE || state === GAME_COMPLETE) {
-    drawComplete(); ctx.restore(); drawFlash(); return;
+  drawFrameBg();
+  buildButtons();
+  if (screen === TITLE) { drawTitle(); }
+  else if (screen === SELECT) { drawSelect(); drawFlash(); return; }
+  else if (screen === END) { drawEnd(); }
+  else if (world) {
+    drawBoard(); drawHUD();
+    if (view.mode === "bottom" && screen === PLAY && view.H > view.W) {
+      ctx.fillStyle = COLORS.textDim; ctx.font = "12px system-ui, sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("Turn your phone sideways for a bigger board.", view.W / 2, view.H - 80); ctx.textAlign = "left";
+    }
   }
-  renderScene();
-  ctx.restore();
+  uiButtons.forEach(b => { if (b.card === undefined) drawButton(b); });
   drawFlash();
 }
 
@@ -1992,16 +1586,22 @@ let lastT = performance.now();
 function frame(now) {
   let dt = (now - lastT) / 1000;
   lastT = now;
-  if (dt > MAX_DT) dt = MAX_DT; // clamp for stability
-  advanceStopMotion(dt);
-  updateJuice(dt);
+  if (dt > MAX_DT) dt = MAX_DT;
+  if (dt < 0) dt = 0;
   update(dt);
   render();
   requestAnimationFrame(frame);
 }
 
-// Boot
+// Boot: a scene behind the title, then the title.
 resize();
-resetRoom();        // initialise world so the title screen has a scene behind it
-setState(TITLE);
+startRoom(0);
+screen = TITLE;
 requestAnimationFrame(frame);
+
+// handy for dev/testing from the console
+window.__knit = {
+  get world() { return world; }, get screen() { return screen; }, get view() { return view; },
+  startRoom: startRoom, act: act, get doneIds() { return doneIds; }, get firstKnot() { return firstKnot; },
+};
+

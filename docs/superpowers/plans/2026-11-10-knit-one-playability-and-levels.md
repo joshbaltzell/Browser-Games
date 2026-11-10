@@ -2,6 +2,17 @@
 
 Date: 2026-11-10. Game: `games/knit-one/` (index.html, style.css, game.js, about 2000 lines). This is a plan only. No game files were changed.
 
+## Decisions
+
+The user delegated every open question (goal: a fun game that is easy to understand). Answers, as built:
+
+1. Released yarn stays where you laid it, resting on pegs. It does not swing back to the anchor as a plumb line. (Built as a quasi-static rope: no gravity on yarn, so it holds its shape until the ball or the player moves it.)
+2. The SHIFT over/under mechanic is removed entirely, including the Room 4 and title-screen teaching text.
+3. The ball waits on a hook until the player presses Drop (button and Enter). "Drop again" keeps the yarn and re-drops the ball. No time pressure.
+4. Phones matter: on-screen Drop, Tie (cinch), Undo, Unravel (hold), Restart, Hint and Menu buttons with big tap targets, and a phone-landscape layout with readable text.
+5. Order of work: playability fixes first, then levels in chapter order (steering, the knot, yarn economy, finale), ending with level select and Continue with saved progress. Stop after a finished chapter rather than mid-chapter.
+6. The finale uses the player's real first knot (the rope from the first room they solved with a knot, saved properly). It falls back to the old sample coil if none exists.
+
 ## Summary
 
 Knit One looks lovely (knit-stitch table, felt pieces, stop-motion wobble, music-box lullaby) and has a strong pitch, but the pitch is not what the player actually does. In my playthrough the "knot" never mattered: every one of the nine rooms before the last can be beaten by dragging one straight line of yarn across the ball's path and holding it for about two seconds (no loop, no peg wrap, no cinch). The loaded rooms also start with the ball already falling, so a new player sees it drop in under a second and fail with no explanation. There is no touch support for the keys the game needs (SPACE, SHIFT, U, R), no level select, and no hints. The biggest wins are, in order: let the player be ready before the ball drops, make the rope behave like real yarn (no stretching through pegs, no rubber-band whip on release), make a knot genuinely required, and add a few on-screen buttons so it works on phones.
