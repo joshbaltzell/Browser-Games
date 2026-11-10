@@ -137,16 +137,6 @@ const GAMES = [
       </svg>`,
   },
   {
-    title: "Hush",
-    description:
-      "Silence is a budget. A single noise meter glows hotter with every footstep and slammed door — and the guards hear the meter, not you. Bank quiet, then blow it all on a thrown stone to lure the guard off your route and slip past.",
-    path: "games/hush/index.html",
-    tags: ["stealth", "systems", "minimalist"],
-    accent: "#9fe0ff",
-    art: `
-      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="120" height="80" fill="#101216"/><rect x="10" y="8" width="100" height="7" fill="none" stroke="#5a6172" stroke-width="1"/><rect x="10" y="8" width="58" height="7" fill="#9fe0ff"/><rect x="68" y="6" width="1.5" height="11" fill="#ffd27a"/><rect x="14" y="26" width="92" height="46" fill="none" stroke="#3a4150" stroke-width="1"/><circle cx="40" cy="50" r="6" fill="#eef2f8" stroke="#cfd6e0" stroke-width="1"/><circle cx="40" cy="50" r="13" fill="none" stroke="#ffffff" stroke-width="1.4" opacity="0.6"/><circle cx="40" cy="50" r="20" fill="none" stroke="#ffffff" stroke-width="1" opacity="0.25"/><circle cx="86" cy="44" r="6.5" fill="#ff6f6f" stroke="#cfd6e0" stroke-width="1"/></svg>`,
-  },
-  {
     title: "Echo Cartographer",
     description:
       "Navigate a pitch-black cave by sound alone. Space fires a real ping that reveals walls — right-click fires a decoy ping that throws the predator off your trail. Every echo you need to see is also a dinner bell.",

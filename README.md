@@ -49,7 +49,6 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 
 | Game | Description |
 | --- | --- |
-| **[Hush](games/hush/)** | Silence is a budget. Guards hear a shared noise meter, not you — bank quiet, then spend it on a thrown stone. |
 | **[Echo Cartographer](games/echo-cartographer/)** | Navigate a pitch-black cave by sound. Every ping reveals the walls — and tells the predator where you are. |
 
 ### Board games
