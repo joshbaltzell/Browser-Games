@@ -273,8 +273,10 @@ void main() {
     const sparks = [];
 
     // --- RENDER TARGETS (multisampled scene for antialiasing, then bloom chain) ---
-    const SAMPLES = Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 0);
-    let scale = Math.min(window.devicePixelRatio || 1, 1.5);
+    // Phones get lighter antialiasing and a lower starting resolution
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    const SAMPLES = Math.min(coarse ? 2 : 4, gl.getParameter(gl.MAX_SAMPLES) || 0);
+    let scale = Math.min(window.devicePixelRatio || 1, coarse ? 1.25 : 1.5);
     if (window.innerWidth * window.innerHeight > 1.6e6) scale = Math.min(scale, 1);
     let T = null, ms = null;
     function resize() {

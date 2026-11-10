@@ -71,6 +71,9 @@
 
   function startAudio() {
     if (ac) { ac.resume(); return; }
+    // iPhones mute web audio when the ring/silent switch is on silent, unless the page asks to play
+    // like a media app (Safari 16.4+)
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* older browsers */ }
     ac = new (window.AudioContext || window.webkitAudioContext)();
     audio = JT.createAudio(ac);
     renderTransport();
@@ -483,6 +486,7 @@
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   function render() {
+    document.body.dataset.tray = state.tray;   // the phone layout hides the layers list on some screens
     loadSounds();
     scheduleSave();
     renderSong();
@@ -610,6 +614,7 @@
         </div>
         ${jamsList()}
         <div class="tray-head"><h3 class="small">Pick a genre to begin</h3><p>It sets the key, tempo, chords and instruments. <button type="button" class="link" data-act="surpriseall">Or surprise me</button></p></div>
+        <p class="phone-credit">Instrument samples: FluidR3_GM by Frank Wen and Salamander Grand Piano by Alexander Holm, both CC BY 3.0</p>
         <div class="cards four">${Object.values(JT.GENRES).map(g => `
           <button type="button" class="card" data-genre="${g.id}" style="--accent:${g.accent}">
             <span class="top"><span class="nm">${esc(g.name)}</span></span>
@@ -747,11 +752,14 @@
         <div class="tray-head"><h3>Running on the ${ROLE_NAME[E.role].toLowerCase()} <span class="inst">${esc(soundName(E.role))} · ${JT.SURFACE[E.role]}</span></h3>
           <p>Lane: <strong>${esc(laneName(E.role, E.lanes[E.cursor]))}</strong> · ${L.notes.length} notes</p></div>
         <p class="lead">Notes sound when they reach the glowing gate, where your runner is.${scaleName}</p>
-        <div class="keys">
-          <span><kbd>←</kbd><kbd>→</kbd> switch lanes</span>
-          <span><kbd>Space</kbd> add a note where you are, or remove the one that's there</span>
-          <span><kbd>P</kbd> pause, then <kbd>↑</kbd><kbd>↓</kbd> step through time</span>
-          <span>Or click a spot on the surface</span>
+        <div class="pad" style="--accent:${ROLE_HEX[E.role]}">
+          <button type="button" data-act="laneLeft" aria-label="Move one lane left">◀</button>
+          <button type="button" class="drop" data-act="drop">Add or remove a note</button>
+          <button type="button" data-act="laneRight" aria-label="Move one lane right">▶</button>
+        </div>
+        <div class="pad-row">
+          <button type="button" data-act="pauseRun">${paused ? 'Play' : 'Pause to step through'}</button>
+          ${paused ? `<button type="button" data-act="stepBack">◀ Step back</button><button type="button" data-act="stepFwd">Step forward ▶</button>` : ''}
         </div>
         <div class="actions">
           <button type="button" class="primary" data-act="done">Done</button>
@@ -759,6 +767,14 @@
           <button type="button" data-act="clear">Clear all notes</button>
           <button type="button" data-act="restore" ${L.edited ? '' : 'disabled'}>Go back to the suggested part</button>
         </div>
+        <p class="hint touch-hint">Or swipe the tunnel to change lanes, and tap a spot on the surface to add a note there.</p>
+        <div class="keys">
+          <span><kbd>←</kbd><kbd>→</kbd> switch lanes</span>
+          <span><kbd>Space</kbd> add a note where you are, or remove the one that's there</span>
+          <span><kbd>P</kbd> pause, then <kbd>↑</kbd><kbd>↓</kbd> step through time</span>
+          <span>Or click a spot on the surface</span>
+        </div>
+
         <p class="hint">Notes snap to the beat. A part you edit stays exactly as you wrote it, even if you change chords.</p>`;
       return;
     }
@@ -857,6 +873,12 @@
       case 'midi': exportMidi(); break;
       case 'genres': state.song = null; state.tray = 'start'; render(); break;
       case 'done': exitEdit(); break;
+      case 'laneLeft': moveLane(-1); break;
+      case 'laneRight': moveLane(1); break;
+      case 'drop': toggleAt(position(performance.now()), state.edit.cursor); break;
+      case 'pauseRun': togglePause(); renderTray(); break;
+      case 'stepBack': stepTime(-1); break;
+      case 'stepFwd': stepTime(1); break;
       case 'undo': undoEdit(); break;
       case 'clear': { const L = state.song.layers[state.edit.role]; state.edit.undo.push(L.notes); L.notes = []; L.edited = true; render(); break; }
       case 'restore': {
@@ -974,7 +996,22 @@
   // --- FRAME LOOP ---
   const tunnel = JT.createTunnel($('tunnel'));
   if (!tunnel) $('nogl').hidden = false;
+  let touchStart = null, swiped = false;
+  $('tunnel').addEventListener('touchstart', e => {
+    if (!state.edit) return;
+    const t = e.changedTouches[0];
+    touchStart = { x: t.clientX, y: t.clientY };
+    swiped = false;
+  }, { passive: true });
+  $('tunnel').addEventListener('touchend', e => {
+    if (!state.edit || !touchStart) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStart.x, dy = t.clientY - touchStart.y;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) { swiped = true; moveLane(dx > 0 ? 1 : -1); }
+    touchStart = null;
+  });
   $('tunnel').addEventListener('click', e => {
+    if (swiped) { swiped = false; return; }
     if (!state.edit || !tunnel) return;
     const hit = tunnel.pick(e.clientX, e.clientY, state.edit.role);
     if (!hit) return;

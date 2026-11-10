@@ -227,3 +227,113 @@ kbd { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink); back
 .jam .acts button { padding: 4px 9px; font-size: 0.78rem; }
 button.link { background: none; border: 0; padding: 0; color: var(--ember); text-decoration: underline; font-size: inherit; -webkit-backdrop-filter: none; backdrop-filter: none; }
 @media (max-width: 520px) { .jam { grid-template-columns: 1fr auto; } .jam .sub { grid-column: 1 / -1; grid-row: 2; } }
+
+/* --- PHONES --- */
+.rotate { display: none; }
+/* Portrait phones: ask for landscape */
+@media (orientation: portrait) and (max-width: 600px) {
+  .rotate {
+    position: fixed; inset: 0; z-index: 50; display: grid; place-content: center; justify-items: center; gap: 10px;
+    padding: 24px; text-align: center; background: var(--night); color: var(--ink);
+  }
+  .rotate svg { color: var(--ember); animation: tip 2.4s ease-in-out infinite; }
+  .rotate p { max-width: 30ch; color: var(--ink-dim); }
+  .rotate p strong { color: var(--ink); font-family: var(--font-display); font-size: 1.3rem; }
+  .ui, .credit { display: none; }
+}
+@keyframes tip { 0%, 30% { transform: rotate(0); } 50%, 80% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+@media (prefers-reduced-motion: reduce) { .rotate svg { animation: none; } }
+
+/* Fingers need bigger targets */
+@media (pointer: coarse) {
+  button, .chip { min-height: 40px; }
+  .layer .acts button { min-height: 36px; padding: 6px 10px; }
+  .keys { display: none; }
+}
+
+/* Landscape phones: the tunnel on the left, a scrolling control panel on the right */
+@media (orientation: landscape) and (max-height: 500px) {
+  .ui {
+    grid-template-columns: minmax(0, 1fr) min(46vw, 440px);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: 8px 12px;
+    padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  }
+  .bar { display: contents; }
+  /* The song's name and chords float over the tunnel, out of the right column's way */
+  .song {
+    position: fixed; z-index: 2;
+    top: calc(env(safe-area-inset-top, 0px) + 8px); left: max(16px, env(safe-area-inset-left, 0px));
+    max-width: calc(100vw - min(46vw, 440px) - 48px);
+  }
+  .chords .mood { display: none; }
+  .song .name { font-size: 1.05rem; margin-top: 2px; }
+  .song .meta { font-size: 0.7rem; }
+  .chords-row { margin-top: 4px; }
+  .transport { grid-column: 2; grid-row: 1; justify-content: flex-start; gap: 6px; flex-wrap: nowrap; }
+  .transport button { padding: 6px 10px; font-size: 0.8rem; }
+  .tempo { display: none; }
+  .layers { grid-column: 2; grid-row: 2; width: auto; justify-self: stretch; padding: 8px 10px; gap: 6px; }
+  .layers h2 { display: none; }
+  .layer { grid-template-columns: 10px 1fr auto; }
+  .layer .ld { display: none; }
+  .layer .acts { grid-column: 3; grid-row: 1; margin-top: 0; }
+  /* A plain column that scrolls: grid rows here would squash the swipeable card rows */
+  .tray {
+    grid-column: 2; grid-row: 3; align-self: stretch; max-height: none; max-width: none; width: auto;
+    padding: 10px; gap: 10px;
+    display: flex; flex-direction: column;
+  }
+  .tray > * { flex-shrink: 0; min-width: 0; max-width: 100%; }
+  .ui > .tray { min-width: 0; justify-self: stretch; }   /* fill the column; centered, it spilled over the tunnel */
+  /* Show the layers panel only where it helps */
+  body[data-tray="start"] .layers, body[data-tray="mood"] .layers, body[data-tray="add"] .layers,
+  body[data-tray="suggest"] .layers, body[data-tray="edit"] .layers { display: none; }
+  body[data-tray="start"] .tray, body[data-tray="mood"] .tray, body[data-tray="add"] .tray,
+  body[data-tray="suggest"] .tray, body[data-tray="edit"] .tray { grid-row: 2 / 4; }
+  body[data-tray="start"] .tray { grid-row: 1 / 4; }
+  /* Ready: the next step first, the parts list under it */
+  body[data-tray="ready"] .tray { grid-row: 2; align-self: start; }
+  body[data-tray="ready"] .layers { grid-row: 3; overflow-y: auto; align-self: stretch; }
+  /* The song editor needs the whole column */
+  body[data-tray="song"] .layers { display: none; }
+  body[data-tray="song"] .tray { grid-row: 2 / 4; }
+  .welcome, .steps { display: none; }
+  .tray-head h3 { font-size: 1rem; }
+  .tray-head p, .lead { font-size: 0.78rem; }
+  .steps li { font-size: 0.72rem; padding: 3px 8px 3px 3px; }
+  /* Suggestions and genres become a swipeable row */
+  .cards, .cards.four, .cards.next {
+    display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 8px; padding-bottom: 4px;
+    grid-template-columns: none;
+  }
+  /* A scrolling row inside the grid would otherwise be squashed to fit; let the tray scroll instead */
+  .cards, .cards.four, .cards.next { min-height: max-content; }
+  .cards > .card { flex: 0 0 78%; scroll-snap-align: start; align-self: flex-start; min-height: max-content; }
+  .cards.four > .card, .cards.next > .card { flex-basis: 46%; }
+  .card .why, .reasons { font-size: 0.74rem; }
+  .actions button { padding: 7px 11px; font-size: 0.82rem; }
+  .section-panel .controls { grid-template-columns: 1fr; }
+  .timeline { height: 40px; }
+  .credit { display: none; }
+  .tray .phone-credit { display: block; }
+  /* Short screens: drop the explanations that push the main buttons below the fold */
+  body[data-tray="mood"] .tray-head p, .mood-result .hint, body[data-tray="ready"] .lead,
+  body[data-tray="edit"] .lead, body[data-tray="add"] .tray-head p,
+  body[data-tray="suggest"] .tray-head p, .card .mini { display: none; }
+  .mood-grid .row { gap: 8px; }
+  .mood-result { padding: 6px 10px; }
+  .mood-result .chords strong { font-size: 1rem; }
+  .pad button { min-height: 46px; }
+}
+.phone-credit { display: none; font-size: 0.65rem; color: var(--ink-dim); }
+
+/* --- RUN MODE TOUCH CONTROLS --- */
+.pad { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 8px; }
+.pad button { min-height: 52px; font-size: 1rem; }
+.pad .drop { background: var(--accent, var(--ember)); color: #140d06; border-color: transparent; font-weight: 600; }
+.pad-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.touch-hint { display: none; }
+@media (pointer: coarse) { .touch-hint { display: block; } }
