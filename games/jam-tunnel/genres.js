@@ -659,7 +659,7 @@ window.JT = window.JT || {};
   JT.GENRES = {
     rock: {
       id: 'rock', name: 'Southern rock', sharps: true, grid: 1 / 3, editScale: [0, 2, 3, 4, 5, 7, 9, 10],  blurb: 'Blues shuffle, overdriven guitar and organ',
-      key: 4, keyName: 'E', bpm: 96, tempo: [70, 124], swing: 1.0,
+      key: 4, keyName: 'E', bpm: 96, tempo: [70, 124], swing: 1.0, trim: 0,
       tint: [1.0, 0.5, 0.22], fog: [0.022, 0.012, 0.008], accent: '#ff8a3d',
       progressions: [
         { roman: 'I7 - IV7 - I7 - V7', bright: 0.6, mood: 'Classic blues: home, away, home, then a push back', chords: [[0, '7'], [5, '7'], [0, '7'], [7, '7']] },
@@ -707,7 +707,7 @@ window.JT = window.JT || {};
 
     trap: {
       id: 'trap', name: 'Trap', grid: 0.25, editScale: [0, 2, 3, 5, 7, 8, 10, 11],  blurb: '808s, hi-hat rolls and a dark piano',
-      key: 5, keyName: 'F minor', minor: true, verseKeepsChords: true, bpm: 140, tempo: [120, 160], swing: 0.3,
+      key: 5, keyName: 'F minor', minor: true, verseKeepsChords: true, bpm: 140, tempo: [120, 160], swing: 0.3, trim: -1.2,
       tint: [0.62, 0.28, 1.0], fog: [0.012, 0.007, 0.026], accent: '#9d6bff',
       progressions: [
         { roman: 'i - VI - III - VII', bright: 0.55, mood: 'Dark and epic', chords: [[0, 'min'], [8, 'maj'], [3, 'maj'], [10, 'maj']] },
@@ -749,7 +749,7 @@ window.JT = window.JT || {};
 
     pop: {
       id: 'pop', name: 'Pop', grid: 0.25, editScale: [0, 2, 4, 5, 7, 9, 11],  blurb: 'Bright chords, a catchy synth hook',
-      key: 0, keyName: 'C', bpm: 112, tempo: [76, 128], swing: 0.2,
+      key: 0, keyName: 'C', bpm: 112, tempo: [76, 128], swing: 0.2, trim: 2.2,
       tint: [1.0, 0.45, 0.7], fog: [0.02, 0.01, 0.018], accent: '#ff6fae',
       progressions: [
         { roman: 'I - V - vi - IV', bright: 0.9, mood: 'Bright and uplifting, the most-used pop progression', chords: [[0, 'maj'], [7, 'maj'], [9, 'min'], [5, 'maj']] },
@@ -792,7 +792,7 @@ window.JT = window.JT || {};
 
     boombap: {
       id: 'boombap', name: 'Classic hip hop', grid: 0.25, editScale: [0, 2, 3, 5, 7, 9, 10],  blurb: 'Boom bap swing, jazzy minor 7th chords',
-      key: 2, keyName: 'D minor', minor: true, verseKeepsChords: true, bpm: 90, tempo: [80, 100], swing: 0.7,
+      key: 2, keyName: 'D minor', minor: true, verseKeepsChords: true, bpm: 90, tempo: [80, 100], swing: 0.7, trim: 1.0,
       tint: [0.95, 0.75, 0.35], fog: [0.02, 0.016, 0.01], accent: '#e8c15a',
       progressions: [
         { roman: 'i7 - i7 - iv7 - iv7', bright: 0.15, mood: 'A hypnotic two-chord loop', chords: [[0, 'm7'], [0, 'm7'], [5, 'm7'], [5, 'm7']] },
@@ -834,7 +834,7 @@ window.JT = window.JT || {};
     country: {
       id: 'country', name: 'Country', sharps: true, blurb: 'Three chords and the truth: boom-chick bass, strummed acoustic, fiddle',
       grid: 0.25, editScale: [0, 2, 4, 5, 7, 9, 11],
-      key: 7, keyName: 'G', bpm: 104, tempo: [72, 124], swing: 0.4,
+      key: 7, keyName: 'G', bpm: 104, tempo: [72, 124], swing: 0.4, trim: 0.3,
       tint: [1.0, 0.7, 0.32], fog: [0.022, 0.016, 0.01], accent: '#d9a441',
       progressions: [
         { roman: 'I - IV - V - I', bright: 0.8, mood: 'Three chords and the truth', chords: [[0, 'maj'], [5, 'maj'], [7, 'maj'], [0, 'maj']] },

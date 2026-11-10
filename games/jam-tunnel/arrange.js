@@ -239,6 +239,7 @@ window.JT = window.JT || {};
     const rate = 44100;
     const ctx = new OfflineAudioContext(2, Math.ceil(seconds * rate), rate);
     const audio = JT.createAudio(ctx);
+    audio.setTrim(JT.GENRES[song.genre].trim);
     await audio.ready;
     await audio.load(Object.values(voices).map(JT.instOf));
     const parts = JT.ROLES.filter(r => track.parts[r].length).map(r => ({ role: r, voice: voices[r], notes: track.parts[r], lead: r === 'lead' }));

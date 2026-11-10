@@ -7,7 +7,9 @@ and audio.js adds the script tag only when a song needs that instrument.
 
 Sources (both are conversions of FluidR3_GM by Frank Wen, CC BY 3.0):
   - melodic instruments: https://github.com/gleitz/midi-js-soundfonts
-  - drum kit: https://github.com/surikov/webaudiofontdata
+  - percussion: https://github.com/surikov/webaudiofontdata
+The drum kit, basses, electric and acoustic guitar and electric piano come from multi-sampled
+libraries instead: see dev/build-drumkit.py and dev/build-melodic.py.
   - grand piano: Salamander Grand Piano by Alexander Holm, CC BY 3.0, as MP3s from
     https://github.com/Tonejs/audio (recorded every three semitones)
 
@@ -27,28 +29,22 @@ CACHE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, '.cache')
 MELODIC = {
     'guitar': ('overdriven_guitar', 40, 67),
     'distguitar': ('distortion_guitar', 40, 67),
-    'bass': ('electric_bass_finger', 26, 52),
-    'upright': ('acoustic_bass', 26, 52),
     'synthbass': ('synth_bass_1', 26, 52),
     'organ': ('drawbar_organ', 48, 76),
     'piano': ('acoustic_grand_piano', 45, 88),
-    'epiano': ('electric_piano_1', 45, 80),
     'strings': ('string_ensemble_1', 44, 82),
     'warmpad': ('pad_2_warm', 45, 76),
     'musicbox': ('music_box', 58, 88),
     'flute': ('flute', 58, 88),
     'vibes': ('vibraphone', 53, 86),
-    'acoustic': ('acoustic_guitar_steel', 40, 76),
     # The country fiddle uses the orchestral violin: General MIDI's 'Fiddle' sits in the Ethnic group
     # and in this sound font sounds closer to an erhu than to a Nashville fiddle.
     'violin': ('violin', 55, 88),
     'banjo': ('banjo', 48, 84),
-    'cleanguitar': ('electric_guitar_clean', 40, 80),
     'harmonica': ('harmonica', 55, 86),
     'brass': ('brass_section', 50, 82),
 }
 # name in the game -> General MIDI drum note
-KIT = {'kick': 36, 'snare': 38, 'hat': 42, 'openhat': 46, 'tomlow': 45, 'tomhigh': 48, 'crash': 49}
 # The percussion side, from the same General MIDI kit
 PERC = {'shaker': 70, 'tambourine': 54, 'rim': 37, 'congahi': 63, 'congalo': 64, 'cowbell': 56}
 
@@ -89,12 +85,6 @@ for key, (inst, lo, hi) in MELODIC.items():
     notes = {midi(n): b for n, b in re.findall(r'"([A-G]b?-?\d)":\s*"data:audio/mp3;base64,([^"]+)"', src)
              if lo <= midi(n) <= hi}
     write(key, {str(k): v for k, v in sorted(notes.items())})
-
-kit = {}
-for name, note in KIT.items():
-    src = fetch('https://surikov.github.io/webaudiofontdata/sound/128%d_0_FluidR3_GM_sf2_file.js' % note, 'drum%d.js' % note)
-    kit[name] = re.search(r"file:'([^']+)'", src).group(1)
-write('kit', kit)
 
 perc = {}
 for name, note in PERC.items():

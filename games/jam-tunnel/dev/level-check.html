@@ -33,6 +33,7 @@
     const spb = 60 / song.bpm;
     const ctx = new OfflineAudioContext(2, Math.ceil((16 * spb + 1) * 44100), 44100);
     const audio = JT.createAudio(ctx, { samplesBase: '../samples/' });
+    if (!onlyRole) audio.setTrim(g.trim);
     const roles = JT.ROLES.filter(r => !onlyRole || r === onlyRole);
     await audio.load(roles.map(r => JT.instOf(voice(r))));
     audio.schedule(roles.map(r => ({ role: r, voice: voice(r), notes: song.layers[r].notes, lead: r === 'lead' })), 0, 16, 0.05, spb, 16);

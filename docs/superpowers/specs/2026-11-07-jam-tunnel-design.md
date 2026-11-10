@@ -179,6 +179,30 @@ after the loop is ready, each adding a side (a square tunnel grows to at most se
 - Full-song defaults: percussion in choruses and the outro, the second melody in choruses and the
   break. Transitions are sound effects and stay out of MIDI exports.
 
+## Sound quality pass (added 2026-11-10)
+
+The user asked how to make the instruments sound more realistic and better produced, then approved
+all five recommendations:
+
+- Mixing: every part has a channel strip (a low cut, a mud cut around 250 to 400 Hz, presence or
+  top-end shelves, gentle parallel saturation on bass and melody). The drums get parallel
+  compression. The master gets a small air shelf, glue compression, a limiter and a soft clipper, and
+  each genre has a loudness trim so all five play at about -14.5 dB RMS (measured with
+  dev/level-check.html).
+- Playback: soft notes sound darker than hard ones, no two hits are identical (level, a few cents of
+  pitch, a sliver of start offset), notes fade with per-instrument release tails, and a closed
+  hi-hat chokes a ringing open one.
+- Drum kit: Karoryfer Big Rusty Drums (CC0), three velocity layers and two round robins per drum
+  (1 MB, dev/build-drumkit.py).
+- Bass, guitars and keys: Karoryfer Swagbass, D. Smolken's double bass, Karoryfer's Gretsch clean
+  guitar and archtop acoustic (all CC0), and Greg Sullivan's Wurlitzer (CC BY 3.0), two layers each
+  (dev/build-melodic.py). The overdriven and distorted rock guitars and the drawbar organ stay on
+  FluidR3: the CC0 libraries have no drawbar organ (a pipe organ was built but left out) and an amp
+  simulation of a clean guitar wasn't judged better without listening.
+- Reverb: real room recordings (OpenAIR) were the plan, but their licenses couldn't be checked, so
+  the reverbs are computed: early reflections from a model of a room's walls and a tail that loses
+  its highs faster than its lows. Drums and percussion use a small room; everything else a hall.
+
 ## Genres
 
 Required: classic hip hop (boom bap), trap, pop. Proposed to make about 20 (Claude's list; the
