@@ -4,16 +4,158 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Notary of the Damned</title>
+  <!-- One typewriter face for the paper. Falls back to Courier New offline. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Single canvas; the entire tribunal (desk, dossier, rulebook, stamp,
-       overlays) is drawn in canvas 2D so the document layout stays crisp. -->
-  <div id="stage">
-    <canvas id="game" width="960" height="640"></canvas>
-    <a class="back-link" href="../../index.html">&larr; Back to games</a>
+  <div id="stage" data-screen="title">
+    <!-- Atmosphere behind the desk: candle glow, motes, the pile. -->
+    <canvas id="bg" aria-hidden="true"></canvas>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <!-- ===================== START SCREEN ===================== -->
+    <main id="titleScreen" class="screen" aria-labelledby="titleH">
+      <div class="titlewrap">
+        <div class="closedfolder">
+          <div class="foldertab"><h1 id="titleH">Notary of the Damned</h1></div>
+          <div class="waxseal" aria-hidden="true">N</div>
+          <p class="pitch">Check each ghost's dossier against the rulebook. Stamp <b class="a">APPROVED</b> or <b class="d">DENIED</b>. The rules do not stay kind.</p>
+          <ol class="howto">
+            <li><span class="ico" aria-hidden="true">
+              <svg viewBox="0 0 40 40"><rect x="8" y="5" width="24" height="30" rx="2" fill="#d8cba3" stroke="#1d1a12" stroke-width="2"/><path d="M13 14h14M13 20h14M13 26h9" stroke="#1d1a12" stroke-width="2"/></svg></span>
+              <b>1. Read the orders</b><span>The Standing Orders card lists what a soul must satisfy.</span></li>
+            <li><span class="ico" aria-hidden="true">
+              <svg viewBox="0 0 40 40"><rect x="5" y="9" width="30" height="22" rx="2" fill="#e4d7b4" stroke="#1d1a12" stroke-width="2"/><rect x="11" y="15" width="14" height="8" fill="#f0c36a" stroke="#a77a1e" stroke-width="2" stroke-dasharray="3 2"/></svg></span>
+              <b>2. Check the file</b><span>Point at a rule and the fields it reads light up.</span></li>
+            <li><span class="ico" aria-hidden="true">
+              <svg viewBox="0 0 40 40"><rect x="14" y="4" width="12" height="14" rx="4" fill="#8a6534"/><rect x="8" y="18" width="24" height="10" rx="2" fill="#2f6b52"/><rect x="6" y="32" width="28" height="4" fill="#58b58b"/></svg></span>
+              <b>3. Stamp it</b><span>Click a stamp, drag it onto the folder, or press A / D.</span></li>
+          </ol>
+          <div class="beginrow">
+            <button id="beginBtn" class="brassbtn" type="button">Begin the night</button>
+            <div class="titlestats">
+              <span id="bestLine">Best: 0 souls judged correctly</span>
+              <span id="endingsLine">Endings discovered: 0 / 2</span>
+            </div>
+          </div>
+          <p class="darkline">Denied souls do not leave. They pile in the corner, and reach back.</p>
+        </div>
+        <div class="brassstrip" role="group" aria-label="Settings">
+          <button id="optSound" class="optbtn" type="button" aria-pressed="true">Sound: on</button>
+          <button id="optTimer" class="optbtn" type="button" aria-pressed="false" title="A soft 30 second timer per soul. Running out costs half a reprimand.">Soul timer: off</button>
+          <button id="optCalm" class="optbtn" type="button" aria-pressed="false" title="No screen shake or flashes. Stamps just fade in.">Calm motion: off</button>
+          <a class="optbtn" href="../../index.html">Back to games</a>
+        </div>
+      </div>
+    </main>
+
+    <!-- ======================= THE DESK ======================= -->
+    <div id="desk" class="screen" hidden>
+      <header id="docket" class="docket">
+        <div class="dk-left"><b class="dk-title">NIGHT SHIFT</b><span id="dkCleared">Souls cleared <b>0</b></span><span id="dkStreak" class="streak" hidden></span><span id="dkDenied" class="dk-denied">Denied <b>0</b></span></div>
+        <div id="queue" class="queue" role="img" aria-label="Queue"></div>
+        <div class="dk-right">
+          <div id="seals" class="lives" role="img" aria-label="3 reprimands left"></div>
+          <button id="muteBtn" class="iconbtn" type="button" aria-pressed="false" aria-label="Mute sound">&#9835;</button>
+        </div>
+        <div id="wick" class="wick" hidden><i id="wickFill"></i></div>
+      </header>
+
+      <aside id="orders" class="orders" aria-labelledby="ordersH">
+        <h2 id="ordersH">STANDING ORDERS</h2>
+        <ol id="rules" class="rules"></ol>
+        <p id="moreOrders" class="more" hidden>&#9660; more orders below: scroll</p>
+        <p class="foot">Approve only if every order is satisfied. Tap the box beside a rule to tick it off as you check.</p>
+      </aside>
+
+      <section id="left" class="left" aria-label="The dossier">
+        <div id="folder" class="folder">
+          <article id="sheetCert" class="sheet cert">
+            <h3>DEATH CERTIFICATE</h3>
+            <div class="row">
+              <div class="f wide" data-field="cert.name" tabindex="0"><label>NAME</label><span id="vName"></span></div>
+              <div class="f" data-field="cert.deathDate" data-smear tabindex="0"><label>DIED</label><span id="vDied"></span></div>
+              <div class="f" data-field="cert.issueDate" data-smear tabindex="0"><label>ISSUED</label><span id="vIssued"></span></div>
+            </div>
+            <div class="sealmark f" id="vSeal" data-field="cert.seal" tabindex="0"></div>
+          </article>
+          <article id="sheetSins" class="sheet sins">
+            <h3>SINS LEDGER</h3>
+            <div class="row">
+              <div class="f" data-field="sins.tally" data-smear tabindex="0"><label>SIN TALLY</label><span id="vTally"></span></div>
+              <div class="f" data-field="sins.karmaWeight" data-smear tabindex="0"><label>KARMA WEIGHT</label><span id="vKarma"></span></div>
+            </div>
+            <div class="f wide" data-field="sins.list" tabindex="0"><label>RECORDED SINS</label><span id="vSins" class="small"></span></div>
+          </article>
+          <article id="sheetBiz" class="sheet biz">
+            <h3>UNFINISHED BUSINESS</h3>
+            <div class="f wide" data-field="biz.statement" data-smear tabindex="0"><span id="vQuote" class="quote"></span></div>
+            <div class="f" data-field="biz.resolved" tabindex="0"><label>RESOLVED</label><span id="vResolved"></span></div>
+          </article>
+          <div id="imprints" class="imprints" aria-hidden="true"></div>
+        </div>
+
+        <div class="pilebar">
+          <div id="pileSlot" class="pileslot"><span id="pileLabel">THE DENIED (0)</span></div>
+        </div>
+        <div id="status" class="status"><p id="hint" class="hint"></p></div>
+
+        <div id="memo" class="memo" role="dialog" aria-labelledby="memoH" hidden>
+          <small id="memoH">MEMO FROM THE LOWER OFFICE</small>
+          <p id="memoText"></p>
+          <button id="memoBtn" class="brassbtn small" type="button">Understood <kbd>Space</kbd></button>
+        </div>
+      </section>
+
+      <section id="wicket" class="wicket" aria-label="At the wicket">
+        <div id="shade" class="shade" aria-hidden="true"></div>
+        <p><small id="wkLabel">AT THE WICKET</small><span id="wkName" class="nm"></span><span id="wkPlea" class="pl"></span></p>
+      </section>
+
+      <div id="rack" class="rack" role="group" aria-label="Stamps">
+        <button id="stampA" class="stamp a" type="button" aria-label="Stamp APPROVED (key A)">
+          <span class="knob"></span><span class="face"><span class="word">APPROVED</span></span><span class="pad"></span><kbd>A</kbd>
+        </button>
+        <button id="stampD" class="stamp d" type="button" aria-label="Stamp DENIED (key D)">
+          <span class="knob"></span><span class="face"><span class="word">DENIED</span></span><span class="pad"></span><kbd>D</kbd>
+        </button>
+      </div>
+    </div>
+
+    <!-- ===================== NIGHT REPORT ===================== -->
+    <section id="reportScreen" class="screen" hidden aria-labelledby="reportH">
+      <div class="report">
+        <header class="rp-head">
+          <div><small>THE LOWER OFFICE · FORM 7-N</small><h2 id="reportH">NIGHT SHIFT REPORT</h2></div>
+          <div id="endStamp" class="endstamp"></div>
+        </header>
+        <p id="endNote" class="endnote"></p>
+        <div class="rp-body">
+          <div class="rp-table" tabindex="0" aria-label="Souls handled this night">
+            <table>
+              <caption class="sr-only">Souls handled this night</caption>
+              <thead><tr><th>#</th><th>Soul</th><th>Your call</th><th>The rulebook</th><th>Decided by</th></tr></thead>
+              <tbody id="rpRows"></tbody>
+            </table>
+          </div>
+          <dl id="rpTotals" class="rp-totals"></dl>
+        </div>
+        <footer class="rp-foot">
+          <button id="againBtn" class="brassbtn" type="button">Begin another night <kbd>Enter</kbd></button>
+          <a class="optbtn" href="../../index.html">Back to games</a>
+        </footer>
+      </div>
+    </section>
+
+    <canvas id="fx" aria-hidden="true"></canvas>
+    <div id="live" class="sr-only" role="status" aria-live="polite"></div>
   </div>
 
+  <script src="data.js"></script>
+  <script src="audio.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
