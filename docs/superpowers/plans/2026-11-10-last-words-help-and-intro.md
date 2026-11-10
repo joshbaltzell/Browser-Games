@@ -1,5 +1,16 @@
 # Last Words: Help and Intro Plan
 
+## Decisions
+
+The user was away and delegated every open question. These answers apply, and the Open questions section at the bottom is resolved by them.
+
+1. **Honest wording.** There is no deck: each turn deals fresh random words. All in-game copy says so, and the game never calls itself a deckbuilder. A suggested hub description is in the build report (hub.js and README.md were not edited).
+2. **Content note.** One gentle, non-spoiling line on the title screen and in Help: "Content note: this story touches on suicide." Help also carries: "If you're struggling, you can reach a crisis line through findahelpline.com (in the US, call or text 988)." The twist stays out of all new copy.
+3. **Intro shows once to everyone,** existing players included. New localStorage key `lastWords.intro`, read and written inside try/catch (`loadInt`/`saveInt`). Skippable at every beat, replayable from the title and from Help (when on the title screen).
+4. **Heal-only hands are a bug and are fixed:** every dealt hand has at least one damage verb.
+5. Other decisions made while building: hand cards live in 12 fixed slots (keys 1-9, 0, -, =); the old `lastWords.seen` tutorial and `TUTORIAL_LINES` were deleted; enemy subtitles, the Foes tab and the thorns/ward numbers all come from `ENEMY_ROSTER`, `THORNS_PER_REPEAT` and `WARD_BLUNT`; the Foes tab does not describe the final boss and Help never mentions misgrammar (the in-run boss line explains it after the reveal).
+
+
 Plan only. No game files were changed. Everything below was checked against `games/last-words/game.js` (1865 lines, one IIFE), `index.html` (17 lines), `style.css` (52 lines). There are no specs or docs for Last Words anywhere under `docs/`. The code comments cite phase requirement IDs (ONBOARD-02, CORE-04, and so on) but those documents are not in the repo.
 
 ## Summary
