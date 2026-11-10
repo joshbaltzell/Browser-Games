@@ -33,11 +33,14 @@ window.JT = window.JT || {};
     acoustic: { inst: 'agtr', level: 0.37, wet: 0.15, minDur: 0.4, release: 0.3 },
     fiddle: { inst: 'violin', level: 0.38, wet: 0.25, attack: 0.04 },   // a violin played country-style
     banjo: { inst: 'banjo', level: 0.26, wet: 0.12, minDur: 0.35, leadBoost: 2 },
-    cleanguitar: { inst: 'eguitar', level: 0.66, wet: 0.2, minDur: 0.35, release: 0.25 },
+    cleanguitar: { inst: 'eguitar', level: 0.66, wet: 0.2, minDur: 0.35, release: 0.25, leadBoost: 1.35 },
+    bigguitar: { inst: 'guitar', level: 0.18, wet: 0.2, minDur: 0.3, release: 0.3 },   // the overdriven guitar strumming whole chords
+    // A pedal steel, played on the clean electric: notes swell in, slide up into pitch and shimmer
+    steel: { inst: 'eguitar', level: 0.6, wet: 0.4, attack: 0.07, minDur: 0.5, release: 0.6, slide: 1, vibrato: true, leadBoost: 1.35 },
     harmonica: { inst: 'harmonica', level: 0.3, wet: 0.2, attack: 0.03 },
     brass: { inst: 'brass', level: 0.3, wet: 0.25, attack: 0.02 },
   };
-  const KIT_LEVEL = { kick: 1.4, snare: 1.1, clap: 1.0, hat: 0.38, openhat: 0.38, tomlow: 0.95, tomhigh: 0.87, crash: 0.48 };
+  const KIT_LEVEL = { kick: 1.4, snare: 1.1, clap: 1.0, rim: 0.8, hat: 0.38, openhat: 0.38, tomlow: 0.95, tomhigh: 0.87, crash: 0.48 };
   // The sample set a voice needs, or null for synthesized voices
   const PERC_LEVEL = { shaker: 1.4, tambourine: 1.0, rim: 1.1, congahi: 1.2, congalo: 1.3, cowbell: 0.8 };
   JT.instOf = voice => voice === 'kit' ? 'drumkit' : voice === 'perc' ? 'perc' : voice === 'fx' ? 'drumkit'   // the reverse cymbal is the kit's crash
@@ -266,7 +269,7 @@ window.JT = window.JT || {};
       duckBus.gain.linearRampToValueAtTime(0.6, t + 0.012);
       duckBus.gain.linearRampToValueAtTime(1, t + 0.22);
     }
-    const DRUM_PAN = { hat: 0.25, openhat: 0.25, tomhigh: -0.25, tomlow: 0.3, crash: -0.2 };
+    const DRUM_PAN = { rim: 0.05, clap: -0.08, hat: 0.25, openhat: 0.25, tomhigh: -0.25, tomlow: 0.3, crash: -0.2 };
     const PERC_PAN = { shaker: 0.45, tambourine: -0.4, rim: 0.2, congahi: -0.3, congalo: 0.3, cowbell: 0.35 };
     let place = null;   // set by play() for the note being built
     let openHat = null;   // the last open hi-hat, so a closed one can choke it
@@ -335,6 +338,21 @@ window.JT = window.JT || {};
       if (!layered) src.detune.value = (Math.random() - 0.5) * 10;
       const level = gain * entry.norm * (1 + (Math.random() - 0.5) * 0.12);
       const startAt = layered ? 0 : Math.random() * 0.002;
+      if (opts && opts.slide) {
+        // Slide up into the note from below
+        const rate = src.playbackRate.value;
+        src.playbackRate.setValueAtTime(rate * Math.pow(2, -opts.slide / 12), t);
+        src.playbackRate.exponentialRampToValueAtTime(rate, t + 0.14);
+      }
+      if (opts && opts.vibrato) {
+        // A slow shimmer that fades in once the note has settled
+        const lfo = ctx.createOscillator(); lfo.frequency.value = 5.2;
+        const depth = ctx.createGain();
+        depth.gain.setValueAtTime(0, t);
+        depth.gain.linearRampToValueAtTime(src.playbackRate.value * 0.004, t + 0.45);
+        lfo.connect(depth).connect(src.playbackRate);
+        lfo.start(t); lfo.stop(t + dur + 0.8);
+      }
       const attack = (opts && opts.attack) || 0.004;
       const g = out(t, 0.0001, opts && opts.wet);
       g.gain.linearRampToValueAtTime(level, t + attack);
@@ -589,7 +607,8 @@ window.JT = window.JT || {};
       const dur = n.len * spb;
       switch (voice) {
         case 'kit': {
-          const piece = n.p === 'clap' ? 'snare' : n.p;
+          if (n.p === 'clap') { clap808(t, n.v * 0.75); break; }   // a real hand clap, often stacked on the snare
+          const piece = n.p;
           if (n.p === 'hat' && openHat && openHat.t < t) {
             openHat.g.gain.cancelScheduledValues(t);
             openHat.g.gain.setTargetAtTime(0.0001, t, 0.012);   // the closing hat chokes the ringing open one
@@ -618,8 +637,10 @@ window.JT = window.JT || {};
           const V = VOICES[voice];
           if (!V) break;
           const boost = n.lead && V.leadBoost ? V.leadBoost : 1;
-          playSample(V.inst, n.p, t, V.level * boost * n.v, Math.max(V.minDur || 0, dur), {
+          const held = Math.max(V.minDur || 0, dur);
+          playSample(V.inst, n.p, t, V.level * boost * n.v, held, {
             wet: V.wet, lowpass: V.lowpass, attack: n.swell ? dur * 0.6 : V.attack, release: V.release, level: V.level * boost,
+            slide: V.slide && held > 0.3 ? V.slide * (Math.random() < 0.3 ? 2 : 1) : 0, vibrato: V.vibrato && held > 0.6,
           });
         }
       }

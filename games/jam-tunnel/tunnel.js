@@ -11,7 +11,7 @@ window.JT = window.JT || {};
   const GATE = 3.0;               // distance from the camera where notes sound
   const FAR = 46;
   const MAXL = 24;                // note lights that reach the tunnel surfaces
-  const LANES = { hat: -1.15, snare: -0.4, clap: -0.4, kick: 0.4, tomhigh: 1.15, tomlow: 1.15, crash: 1.15, openhat: 1.15 };
+  const LANES = { hat: -1.15, snare: -0.4, clap: -0.4, rim: -0.4, kick: 0.4, tomhigh: 1.15, tomlow: 1.15, crash: 1.15, openhat: 1.15 };
   JT.DRUM_LANES = LANES;
   const ROLE_COLOR = {
     lead: [1.0, 0.42, 0.12], drums: [0.32, 0.72, 1.0], bass: [0.72, 0.42, 1.0], pad: [0.35, 1.0, 0.72],

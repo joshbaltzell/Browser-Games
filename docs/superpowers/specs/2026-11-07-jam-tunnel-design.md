@@ -219,6 +219,15 @@ The genres differ in more than patterns, and the engine has to support all of th
 - Sounds: an 808 bass with long pitch glides, claps, rim shots, synth leads and pads, organ,
   piano, plus the guitar and band kit from the mockup.
 
+**Country means today's country radio (the user, 2026-11-10).** The first country was traditional
+(boom-chick, fiddle tunes, honky-tonk); the user meant current pop country. It now defaults to a
+polished backbeat with a clap stacked on the snare (plus half-time, cross-stick verse, country trap
+and stomp-and-clap), bass locked to the kick, a syncopated sixteenth-note acoustic strum or a banjo
+loop, a talky syncopated hook on a twangy electric, and a steel guitar (the clean electric with a
+swell, a slide up into each note and a slow vibrato) for the second melody. Pop-country progressions
+(I-V-vi-IV and its rotations) replace I-IV-V. The boom-chick drums, walk-up bass and fiddle remain
+as options, and older saved jams fall back to each part's first style when theirs is gone.
+
 **Phasing (Claude's call):** the first release ships the engine, the full flow, and four genres
 tuned by ear: blues / southern rock (the mockup's example), classic hip hop, trap and pop. The
 other genres are added afterwards in batches of four or five, each batch playable on its own.

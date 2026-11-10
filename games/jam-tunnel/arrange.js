@@ -182,7 +182,7 @@ window.JT = window.JT || {};
   const GM_PROGRAM = {
     guitar: 29, distguitar: 30, bass: 33, upright: 32, synthbass: 38, '808': 38, organ: 16,
     piano: 0, darkpiano: 0, epiano: 4, strings: 48, warmpad: 89, musicbox: 10, flute: 73, vibes: 11,
-    acoustic: 25, fiddle: 40, banjo: 105, cleanguitar: 27, harmonica: 22, synthlead: 81, brass: 61,
+    acoustic: 25, fiddle: 40, banjo: 105, cleanguitar: 27, steel: 27, bigguitar: 29, harmonica: 22, synthlead: 81, brass: 61,
   };
   const GM_DRUM = {
     kick: 36, snare: 38, clap: 39, hat: 42, openhat: 46, tomlow: 45, tomhigh: 48, crash: 49,
