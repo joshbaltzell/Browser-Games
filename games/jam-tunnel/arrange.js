@@ -198,7 +198,7 @@ window.JT = window.JT || {};
   // A type-1 Standard MIDI File: a tempo track, then one named track per instrument with a
   // General MIDI program, drums on channel 10 using the standard drum notes.
   const GM_PROGRAM = {
-    guitar: 29, distguitar: 30, bass: 33, upright: 32, synthbass: 38, '808': 38, organ: 16,
+    guitar: 29, distguitar: 30, bass: 33, upright: 32, subbass: 38, synthbass: 38, '808': 38, organ: 16,
     piano: 0, darkpiano: 0, epiano: 4, strings: 48, warmpad: 89, musicbox: 10, flute: 73, vibes: 11,
     acoustic: 25, fiddle: 40, banjo: 105, cleanguitar: 27, steel: 27, bigguitar: 29, harmonica: 22, synthlead: 81, brass: 61,
   };

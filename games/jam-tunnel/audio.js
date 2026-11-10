@@ -451,6 +451,25 @@ window.JT = window.JT || {};
       o.connect(sh).connect(g);
       o.start(t); o.stop(t + dur + 0.05);
     }
+    // A deep, round sub bass (hip hop's low end): a sine, saturated a little so its overtones carry on
+    // laptop and phone speakers, then low-passed so it stays smooth with no string attack
+    const subCurve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = i / 1023 * 2 - 1; subCurve[i] = Math.tanh(x * 2.2) / Math.tanh(2.2); }
+    function subBass(t, n, spb) {
+      const dur = Math.max(0.12, n.len * spb);
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = hz(n.p);
+      const sh = ctx.createWaveShaper(); sh.curve = subCurve;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 380; lp.Q.value = 0.5;
+      const level = 0.15 * n.v;
+      const g = out(t, 0.0001);
+      g.gain.linearRampToValueAtTime(level, t + 0.008);   // fast, but slow enough not to click
+      g.gain.setValueAtTime(level, t + dur);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.09);
+      o.connect(sh).connect(lp).connect(g);
+      o.start(t); o.stop(t + dur + 0.12);
+    }
     // A bright pluck: two detuned saws through a closing low-pass filter
     function synthLead(t, n, spb) {
       const dur = Math.max(0.12, n.len * spb);
@@ -632,6 +651,7 @@ window.JT = window.JT || {};
           else hat808(t, n.v, n.p === 'openhat' ? 0.3 : 0.045);
           break;
         case '808': bass808(t, n, spb); break;
+        case 'subbass': subBass(t, n, spb); break;
         case 'synthlead': synthLead(t, n, spb); break;
         case 'darkpiano': darkPiano(t, n, spb); break;
         case 'perc': playSample('perc', n.p, t, (PERC_LEVEL[n.p] || 0.35) * n.v, 0, { wet: 0.12 }); break;

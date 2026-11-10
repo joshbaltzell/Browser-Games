@@ -882,7 +882,7 @@ window.JT = window.JT || {};
 
     boombap: {
       id: 'boombap', name: 'Classic hip hop', grid: 0.25, editScale: [0, 2, 3, 5, 7, 9, 10],  blurb: 'Boom bap swing, jazzy minor 7th chords',
-      key: 2, keyName: 'D minor', minor: true, verseKeepsChords: true, bpm: 90, tempo: [80, 100], swing: 0.7, trim: 1.0,
+      key: 2, keyName: 'D minor', minor: true, verseKeepsChords: true, bpm: 90, tempo: [80, 100], swing: 0.7, trim: -1.0,
       tint: [0.95, 0.75, 0.35], fog: [0.02, 0.016, 0.01], accent: '#e8c15a',
       progressions: [
         { roman: 'i7 - i7 - iv7 - iv7', bright: 0.15, mood: 'A hypnotic two-chord loop', chords: [[0, 'm7'], [0, 'm7'], [5, 'm7'], [5, 'm7']] },
@@ -902,7 +902,7 @@ window.JT = window.JT || {};
           { id: 'busy', name: 'Busy sixteenths', why: 'Swung sixteenth hats and ghost snares.', gen: bbDrums('busy') },
           { id: 'halftime', name: 'Trap half-time', clash: 'A straight half-time snare drags against the head-nod swing.', why: 'A trap-style beat.', gen: bbDrums('halftime') },
         ] },
-        bass: { label: 'Electric bass', voice: 'bass', range: [28, 50], sounds: [{ id: 'bass', name: 'Electric bass' }, { id: 'upright', name: 'Upright bass' }], styles: [
+        bass: { label: 'Sub bass', voice: 'subbass', range: [28, 50], sounds: [{ id: 'subbass', name: 'Sub bass' }, { id: 'upright', name: 'Upright bass' }, { id: 'bass', name: 'Electric bass' }], styles: [
           { id: 'kick', name: 'Follows the kick', why: 'Root notes locked to the kick drum.', gen: bbBass('kick') },
           { id: 'walking', name: 'Jazz walk', why: 'One note per beat walking into each chord.', gen: bbBass('walking') },
           { id: 'sparse', name: 'Sparse roots', why: 'Long roots with lots of space.', gen: bbBass('sparse') },
