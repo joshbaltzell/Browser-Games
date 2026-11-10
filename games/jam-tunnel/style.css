@@ -83,15 +83,32 @@ button.primary:hover { filter: brightness(1.08); }
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
 }
 .layers h2 { font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-dim); font-weight: 500; }
-.layer { display: grid; grid-template-columns: 10px 1fr; gap: 2px 10px; align-items: center; }
-.layer .sw { width: 10px; height: 10px; border-radius: 3px; align-self: start; margin-top: 5px; border: 1px solid; }
-.layer .ln { font-weight: 500; }
-.layer .ld { color: var(--ink-dim); font-size: 0.78rem; grid-column: 2; }
-.layer .acts { grid-column: 2; grid-row: 3; display: flex; gap: 4px; margin-top: 3px; }
+/* Each part wears its tunnel wall's color */
+.layer {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 8px; align-items: center;
+  padding: 6px 4px 6px 10px; border-radius: 8px; border-left: 3px solid var(--c);
+  background: color-mix(in srgb, var(--c) 10%, transparent);
+}
+.layer .ln { grid-column: 1 / -1; grid-row: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer .ld { grid-column: 1; grid-row: 2; color: var(--ink-dim); font-size: 0.74rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer .acts { grid-column: 2; grid-row: 2; display: flex; gap: 1px; align-items: center; margin: -2px 0; }
 .layer .acts:empty { display: none; }
-.layer .acts button { padding: 4px 7px; font-size: 0.75rem; }
+.layer .acts button { padding: 4px 8px; font-size: 0.75rem; }
+.layer .acts button.icon { padding: 5px; background: transparent; border-color: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.layer .acts button.icon:hover { background: rgba(255, 255, 255, 0.06); border-color: var(--line); }
+.layer.muted { background: transparent; border-left-style: dashed; }
 .layer.muted .ln { color: var(--ink-dim); text-decoration: line-through; }
+.layer.empty, .layer.choosing { background: transparent; border-left-color: color-mix(in srgb, var(--c) 45%, transparent); }
 .layer.empty .ln { color: var(--ink-dim); font-weight: 400; }
+.layer.choosing .ld { color: var(--c); }
+/* With a mouse the buttons stay quiet until you reach for them */
+@media (pointer: fine) {
+  .layer .acts { opacity: 0.5; transition: opacity 0.15s; }
+  .layer:hover .acts, .layer:focus-within .acts { opacity: 1; }
+}
+.ic { width: 15px; height: 15px; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.ic .dot { fill: currentColor; stroke: none; }
+.transport button.icon { padding: 8px 10px; }
 
 /* --- TRAY --- */
 .tray {
@@ -209,7 +226,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 .keys { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.8rem; color: var(--ink-dim); }
 kbd { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink); background: rgba(255, 255, 255, 0.08);
   border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; margin-right: 3px; }
-.layer .acts button[aria-pressed="true"] { border-color: var(--ember); color: var(--ember); }
+.layer .acts button[aria-pressed="true"], .layer .acts button.icon[aria-pressed="true"] { border-color: var(--ember); color: var(--ember); }
 .sound-row .chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 
 /* --- WHAT KIND OF SONG --- */
@@ -250,6 +267,7 @@ button.link { background: none; border: 0; padding: 0; color: var(--ember); text
 @media (pointer: coarse) {
   button, .chip { min-height: 40px; }
   .layer .acts button { min-height: 36px; padding: 6px 10px; }
+  .layer .acts button.icon { min-width: 34px; display: grid; place-items: center; }
   .keys { display: none; }
 }
 
@@ -278,9 +296,9 @@ button.link { background: none; border: 0; padding: 0; color: var(--ember); text
   .tempo { display: none; }
   .layers { grid-column: 2; grid-row: 2; width: auto; justify-self: stretch; padding: 8px 10px; gap: 6px; }
   .layers h2 { display: none; }
-  .layer { grid-template-columns: 10px 1fr auto; }
   .layer .ld { display: none; }
-  .layer .acts { grid-column: 3; grid-row: 1; margin-top: 0; }
+  .layer .ln { grid-column: 1; }
+  .layer .acts { grid-row: 1; margin: 0; }
   /* A plain column that scrolls: grid rows here would squash the swipeable card rows */
   .tray {
     grid-column: 2; grid-row: 3; align-self: stretch; max-height: none; max-width: none; width: auto;
@@ -399,3 +417,25 @@ button:disabled { opacity: 0.4; cursor: default; }
   .perf button { padding: 6px 4px; }
 }
 @media (pointer: coarse) { .perf kbd, .note kbd { display: none; } }
+
+/* --- GIVING THE TUNNEL THE SCREEN --- */
+.layers, .tray, .transport, .chords-row, .credit, .song .back { transition: opacity 0.4s ease, transform 0.4s ease; }
+/* Just watch: everything but the song's name slides away */
+body.watch .layers, body.watch .tray, body.watch .transport, body.watch .chords-row, body.watch .credit, body.watch .song .back {
+  opacity: 0; pointer-events: none;
+}
+body.watch .tray { transform: translateY(30px); }
+body.watch .layers { transform: translateX(-30px); }
+.show-controls {
+  position: fixed; z-index: 5; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  opacity: 0.55; transition: opacity 0.2s;
+}
+.show-controls:hover, .show-controls:focus-visible { opacity: 1; }
+/* Idle while a song plays: the panels fade back until you move */
+body.idle .tray, body.idle .layers { opacity: 0.12; }
+body.idle .tray { transform: translateY(12px); }
+body.idle .layers { transform: translateX(-12px); }
+body.idle .tray:hover, body.idle .layers:hover { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  body.watch .tray, body.watch .layers, body.idle .tray, body.idle .layers { transform: none; }
+}

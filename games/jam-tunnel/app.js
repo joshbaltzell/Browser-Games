@@ -21,6 +21,19 @@
     fx: 'Risers and swells that launch each chorus, or a texture under the song.',
   };
   const NOTES_LABEL = ['Fewer notes', 'As suggested', 'More notes'];
+  // Small line icons for the common buttons (16x16, drawn with the text color)
+  const svg = d => `<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">${d}</svg>`;
+  const ICON = {
+    mute: svg('<path d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5z"/><path d="M11 5.5a3.5 3.5 0 0 1 0 5M12.8 3.8a6 6 0 0 1 0 8.4"/>'),
+    unmute: svg('<path d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5z"/><path d="M11 6l4 4M15 6l-4 4"/>'),
+    edit: svg('<path d="M10.5 2.5l3 3L6 13H3v-3z"/><path d="M9 4l3 3"/>'),
+    change: svg('<path d="M2.5 5h9l-2.5-2.5M13.5 11h-9l2.5 2.5"/>'),
+    shake: svg('<rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><circle cx="5.5" cy="5.5" r=".9" class="dot"/><circle cx="10.5" cy="10.5" r=".9" class="dot"/><circle cx="8" cy="8" r=".9" class="dot"/>'),
+    remove: svg('<path d="M4 4l8 8M12 4l-8 8"/>'),
+    pause: svg('<path d="M5 3v10M11 3v10"/>'),
+    play: svg('<path d="M5 3l8 5-8 5z"/>'),
+    watch: svg('<path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>'),
+  };
   const SHARP_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   // Play-along keys: the home row, low to high
   const PAD_CODES = ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon'];
@@ -638,6 +651,7 @@
   function resetPerform() {
     perf.holds.clear();
     perf.half = null;
+    perf.stop = null;
     perf.keyUp = 0;
     perf.filter = 0;
     perf.filterKey = 0;
@@ -667,6 +681,7 @@
     if (!audio || !audioClock()) return;
     const p = position(performance.now());
     const back = Math.ceil((p + 1) / 4) * 4;
+    perf.stop = { from: p, to: back };
     audio.perform.stop(ac.currentTime + 0.005, audioOrigin + back * spb());
   }
   function toggleKeyUp() {
@@ -785,6 +800,21 @@
     render();
   }
 
+  // Just watch: every panel slides away; tap the tunnel, press H or Esc to bring them back
+  function setWatch(on) {
+    document.body.classList.toggle('watch', on);
+    $('showBtn').hidden = !on;
+    if (on) toast('Tap anywhere or press H to bring the controls back');
+  }
+  // While a song plays and nobody touches anything, the panels fade back so the tunnel has the screen
+  const IDLE_TRAYS = ['ready', 'add', 'song'];
+  let lastActivity = performance.now();
+  function wake() {
+    lastActivity = performance.now();
+    document.body.classList.remove('idle');
+  }
+  ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(ev => window.addEventListener(ev, wake, { passive: true }));
+
   // A short message over the tunnel
   const toastEl = document.createElement('div');
   toastEl.className = 'toast';
@@ -854,25 +884,28 @@
     const rows = STEPS.concat(JT.EXTRAS.filter(r => sides.includes(r))).map(role => {
       const L = song.layers[role];
       const label = soundName(role) === ROLE_NAME[role] ? ROLE_NAME[role] : `${ROLE_NAME[role]} · ${soundName(role)}`;
-      const sw = `<span class="sw" style="background:${L && !state.muted[role] ? ROLE_HEX[role] : 'transparent'};border-color:${ROLE_HEX[role]}"></span>`;
+      // Each row wears its wall's color, so the list and the tunnel read as one
+      const style = `style="--c:${ROLE_HEX[role]}"`;
+      const part = esc(ROLE_NAME[role].toLowerCase());
+      const ib = (act, icon, text, extra) => `<button type="button" class="icon" data-act="${act}" data-role="${role}" title="${text}" aria-label="${text}" ${extra || ''}>${icon}</button>`;
       if (state.tray === 'suggest' && state.role === role) {
-        return `<div class="layer">${sw}<span class="ln">${esc(label)}</span><span class="acts"></span><span class="ld">${surfaceOf(role)} · choosing…</span></div>`;
+        return `<div class="layer choosing" ${style}><span class="ln">${esc(label)}</span><span class="ld">choosing…</span></div>`;
       }
       if (!L) {
-        return `<div class="layer empty">${sw}<span class="ln">${esc(label)}</span>
-          <span class="acts"><button type="button" data-act="add" data-role="${role}">Add</button></span>
-          <span class="ld">${surfaceOf(role)} · empty</span></div>`;
+        return `<div class="layer empty" ${style}><span class="ln">${esc(label)}</span>
+          <span class="acts"><button type="button" class="add" data-act="add" data-role="${role}">Add</button></span>
+          <span class="ld">${surfaceOf(role)}</span></div>`;
       }
-      return `<div class="layer ${state.muted[role] ? 'muted' : ''}">${sw}<span class="ln">${esc(label)}</span>
+      const editing = !!(state.edit && state.edit.role === role);
+      return `<div class="layer ${state.muted[role] ? 'muted' : ''}" ${style}><span class="ln">${esc(label)}</span>
         <span class="acts">
-          <button type="button" data-act="mute" data-role="${role}" aria-pressed="${state.muted[role]}">${state.muted[role] ? 'Unmute' : 'Mute'}</button>
-          ${state.mode === 'loop' ? `<button type="button" data-act="edit" data-role="${role}" aria-pressed="${!!(state.edit && state.edit.role === role)}">Edit</button>
-          <button type="button" data-act="change" data-role="${role}">Change</button>` : ''}
-          <button type="button" class="icon" data-act="shake" data-role="${role}" title="Shake: new notes, same style" aria-label="Shake the ${esc(ROLE_NAME[role].toLowerCase())}: new notes, same style">\u{1F3B2}</button>
+          ${ib('mute', state.muted[role] ? ICON.unmute : ICON.mute, state.muted[role] ? `Unmute the ${part}` : `Mute the ${part}`, `aria-pressed="${state.muted[role]}"`)}
+          ${state.mode === 'loop' ? ib('edit', ICON.edit, `Edit the ${part} note by note`, `aria-pressed="${editing}"`) + ib('change', ICON.change, `Change the ${part}: pick another style or sound`) : ''}
+          ${ib('shake', ICON.shake, `Shake the ${part}: new notes, same style`)}
           <button type="button" class="icon busy" data-act="busier" data-role="${role}" ${L.edited ? 'disabled title="Edited by hand"' : `title="${NOTES_LABEL[L.busy]}: click for ${L.busy === 1 ? 'more' : L.busy === 2 ? 'fewer' : 'the usual amount of'} notes"`} aria-label="Notes: ${NOTES_LABEL[L.busy].toLowerCase()}"><span class="bars" data-n="${L.busy}"><i></i><i></i><i></i></span></button>
-          ${state.mode === 'loop' ? `<button type="button" data-act="remove" data-role="${role}" aria-label="Remove ${esc(label)}">✕</button>` : ''}
+          ${state.mode === 'loop' ? ib('remove', ICON.remove, `Remove the ${part}`) : ''}
         </span>
-        <span class="ld">${surfaceOf(role)} · ${esc(L.name)}${L.edited ? ' · edited by you' : ''}</span></div>`;
+        <span class="ld">${esc(L.name)}${L.edited ? ' · edited by you' : ''}</span></div>`;
     });
     $('layers').innerHTML = `<h2>${state.mode === 'song' ? 'Instruments' : 'Your loop'}</h2>${rows.join('')}`;
   }
@@ -1044,9 +1077,7 @@
       tray.innerHTML = `
         ${stepsStrip(2)}
         <div class="tray-head"><h3>Your loop is ready</h3>
-          <p>Listen to it in the tunnel. Change any part from the list, or try other chords.</p></div>
-        <p class="lead">Next, Jam Tunnel turns this loop into a full song. Your loop becomes the <strong>chorus</strong>,
-          and it writes an intro, verses, a break and an outro around it by changing which instruments play and how busy they are.</p>
+          <p>Your loop becomes the <strong>chorus</strong> of a full song, with an intro, verses, a break and an outro around it.</p></div>
         <div class="actions">
           <button type="button" class="primary" data-act="song">Make it a full song</button>
           <button type="button" data-act="jam">Jam on it</button>
@@ -1152,7 +1183,7 @@
       tray.style.setProperty('--accent', g.accent);
       tray.innerHTML = `
         <div class="tray-head"><h3>Jam on it</h3>
-          <p>Hold a button to play with the mix. Nothing here changes your song unless you record a melody or keep a genre.</p></div>
+          <p>Hold a button to play with the mix. It doesn\u2019t change your song.</p></div>
         <div class="jam-grid">
           <div class="jam-block">
             <span class="lbl">Perform</span>
@@ -1172,7 +1203,7 @@
             <div class="chips">${Object.values(JT.GENRES).map(x => `
               <button type="button" class="chip" data-flip="${x.id}" aria-pressed="${song.genre === x.id}">${esc(x.name)}${x.id === yours ? ' <span class="yours">yours</span>' : ''}</button>`).join('')}
             </div>
-            <p class="hint">Your chords and melody, in another genre\u2019s key, beat and instruments. Change anything and that version becomes yours.</p>
+            <p class="hint">Your chords and melody, with another genre\u2019s beat and instruments.</p>
           </div>
           <div class="jam-block">
             <span class="lbl">Play along</span>
@@ -1241,7 +1272,9 @@
     const tempo = $('tempo');
     tempo.min = g.tempo[0]; tempo.max = g.tempo[1]; tempo.value = state.song.bpm;
     $('tempoVal').textContent = state.song.bpm;
-    $('pause').textContent = paused ? 'Play' : 'Pause';
+    $('pause').innerHTML = paused ? ICON.play : ICON.pause;
+    $('pause').setAttribute('aria-label', paused ? 'Play' : 'Pause');
+    $('pause').title = paused ? 'Play (Space)' : 'Pause (Space)';
     const sound = $('sound');
     sound.textContent = !ac ? 'Sound off' : !audioReady ? 'Loading sounds…' : soundOn ? 'Sound on' : 'Sound off';
     sound.setAttribute('aria-pressed', String(soundOn && audioReady));
@@ -1445,6 +1478,9 @@
     renderTransport();
   });
   $('jamBtn').addEventListener('click', () => { if (state.tray === 'jam') exitJam(); else enterJam(); });
+  $('watchBtn').innerHTML = ICON.watch;
+  $('watchBtn').addEventListener('click', () => setWatch(!document.body.classList.contains('watch')));
+  $('showBtn').addEventListener('click', () => setWatch(false));
   $('newSong').addEventListener('click', () => {
     state.song = null; state.mode = 'loop'; state.tray = 'start'; state.role = null; state.arrangement = null; state.track = null;
     state.original = null; state.clock = null; state.edit = null;
@@ -1452,6 +1488,9 @@
   });
   const HOLD_KEYS = { Digit1: 'solo', Digit2: 'echo', Digit3: 'half' };
   window.addEventListener('keydown', e => {
+    const body = document.body;
+    if (body.classList.contains('watch') && (e.key === 'Escape' || e.code === 'KeyH')) { e.preventDefault(); setWatch(false); return; }
+    if (e.code === 'KeyH' && state.song && !state.edit && state.tray !== 'jam' && !e.metaKey && !e.ctrlKey && e.target.tagName !== 'INPUT') { setWatch(true); return; }
     if (state.tray === 'jam' && !e.metaKey && !e.ctrlKey && !e.altKey && e.target.tagName !== 'INPUT') {
       const c = e.code;
       const pad = PAD_CODES.indexOf(c);
@@ -1508,6 +1547,7 @@
   });
   $('tunnel').addEventListener('click', e => {
     if (swiped) { swiped = false; return; }
+    if (document.body.classList.contains('watch')) { setWatch(false); return; }
     if (!state.edit && state.tray === 'jam' && tunnel) {
       // The wall you tapped is the nearest side the tap's ray reaches
       let best = null;
@@ -1530,6 +1570,13 @@
   });
   const IDLE = { tint: [1.0, 0.5, 0.22], fog: [0.02, 0.012, 0.012], swing: 0.5 };
   let padChord = '', clockText = '';
+  let sectionsMemo = null;
+  function sectionsView() {
+    if (!sectionsMemo || sectionsMemo.track !== state.track) {
+      sectionsMemo = { track: state.track, list: state.track.sections.map(s => ({ start: s.start, end: s.end, type: s.type })) };
+    }
+    return sectionsMemo.list;
+  }
   let prevPos = 0, lastNow = performance.now();
   let roll = 0, runAmt = 0;
   const t0 = performance.now();
@@ -1558,6 +1605,13 @@
         marks: songMode ? state.track.sections.map(s => ({ beat: s.start, color: toRgb(JT.SECTION_TYPES[s.type].color) })) : [],
         roll, runAmt,
         sides: currentSides(),
+        genre: state.song ? state.song.genre : undefined,
+        perf: {
+          stop: !!perf.stop && p >= perf.stop.from && p < perf.stop.to,
+          half: !!perf.half && p >= perf.half.from && (perf.half.to == null || p < perf.half.to),
+          filter: perf.filter, keyUp: perf.keyUp,
+        },
+        sections: songMode ? sectionsView() : null,
         edit: E ? { role: E.role, lanes: E.lanes, cursor: E.cursor, range: rangeOf(E.role), pieces: piecesOf(E.role) } : null,
         parts: currentParts().map(part => ({ role: part.role, notes: part.notes, ghost: part.ghost || part.muted, range: part.range, pieces: part.pieces, dim: !!E && part.role !== E.role })),
       });
@@ -1579,6 +1633,8 @@
       }
       if (perf.filterKey) setFilter(perf.filter + perf.filterKey * dt * 0.9);
     }
+    const idle = !paused && state.song && IDLE_TRAYS.includes(state.tray) && now - lastActivity > 7000;
+    if (idle !== document.body.classList.contains('idle')) document.body.classList.toggle('idle', idle);
     if (state.clock && !state.clock.done) {
       const left = Math.max(0, state.clock.end - now);
       const text = left > 0 ? `\u23f1 ${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, '0')}` : 'Time\u2019s up!';
