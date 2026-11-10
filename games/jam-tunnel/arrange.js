@@ -7,34 +7,33 @@ window.JT = window.JT || {};
 
 (function() {
   const T = JT.theory;
-  const ROLE_ORDER = ['drums', 'bass', 'pad', 'lead'];   // drums first, so the bass can follow the kick
 
   // What each section is for, in plain words, and how it starts out
   const SECTION_TYPES = {
     intro: {
       name: 'Intro', color: '#6bf3b8',
       about: 'Eases the listener in: chords and a light hi-hat, nothing heavy yet.',
-      layers: { drums: true, bass: false, pad: true, lead: false }, energy: -1, bars: 4,
+      layers: { drums: true, bass: false, pad: true, lead: false, perc: false, counter: false, fx: true }, energy: -1, bars: 4,
     },
     verse: {
       name: 'Verse', color: '#7cc7ff',
       about: 'Tells the story. Lighter drums, no melody, so a singer would have room.',
-      layers: { drums: true, bass: true, pad: true, lead: false }, energy: -1, bars: 8,
+      layers: { drums: true, bass: true, pad: true, lead: false, perc: false, counter: false, fx: true }, energy: -1, bars: 8,
     },
     chorus: {
       name: 'Chorus', color: '#ff8a3d',
       about: 'The big part, and the loop you built. Everything plays, and a drum fill leads in.',
-      layers: { drums: true, bass: true, pad: true, lead: true }, energy: 0, bars: 8,
+      layers: { drums: true, bass: true, pad: true, lead: true, perc: true, counter: true, fx: true }, energy: 0, bars: 8,
     },
     break: {
       name: 'Break', color: '#c58cff',
       about: 'A breather. Drums and bass drop out, then a drum roll builds back into the chorus.',
-      layers: { drums: false, bass: false, pad: true, lead: true }, energy: -1, bars: 4,
+      layers: { drums: false, bass: false, pad: true, lead: true, perc: false, counter: true, fx: true }, energy: -1, bars: 4,
     },
     outro: {
       name: 'Outro', color: '#e8c15a',
       about: 'Winds down without the melody and ends on the home chord.',
-      layers: { drums: true, bass: true, pad: true, lead: false }, energy: -1, bars: 4,
+      layers: { drums: true, bass: true, pad: true, lead: false, perc: true, counter: false, fx: true }, energy: -1, bars: 4,
     },
   };
   JT.SECTION_TYPES = SECTION_TYPES;
@@ -83,7 +82,10 @@ window.JT = window.JT || {};
   // Build every note of the full song. Returns { parts: {role: notes}, sections: [{...start, end}], length }
   JT.buildTrack = function(song, arrangement) {
     const g = JT.GENRES[song.genre];
-    const parts = { drums: [], bass: [], lead: [], pad: [] };
+    const parts = {};
+    JT.ROLES.forEach(role => { parts[role] = []; });
+    const fxL = song.layers.fx;
+    const fxTransitions = fxL && fxL.styleId !== 'texture';
     const sections = [];
     const verse = JT.verseChords(song);
     let beat = 0;
@@ -95,11 +97,20 @@ window.JT = window.JT || {};
       const next = arrangement[i + 1];
       const intoChorus = next && next.type === 'chorus';
 
+      // Transitions lead into each chorus (when it has them on): a riser or a reverse swell, then an impact.
+      // A texture instead plays under every section that has it on.
+      if (fxTransitions && sec.layers.fx && sec.type === 'chorus' && i > 0) {
+        if (fxL.styleId === 'build') parts.fx.push({ b: start - 4, len: 4, p: 'riser', v: 0.9 });
+        else parts.fx.push({ b: start - 1, len: 1, p: 'reverse', v: 0.9 });
+        parts.fx.push({ b: start, len: 1.5, p: 'impact', v: sec.type === 'chorus' ? 1 : 0.7 });
+      }
+
       // Write each kept part for this section's chords and energy
       const local = {};
-      ROLE_ORDER.forEach(role => {
+      JT.ROLES.forEach(role => {
         const L = song.layers[role];
         if (!L || !sec.layers[role]) return;
+        if (role === 'fx' && fxTransitions) return;   // placed at the section changes below
         const busy = Math.max(0, Math.min(2, L.busy + sec.energy));
         // Hand-edited parts play exactly as written in every section
         let notes = L.edited ? L.notes.map(n => Object.assign({}, n))
@@ -160,11 +171,14 @@ window.JT = window.JT || {};
   const GM_PROGRAM = {
     guitar: 29, distguitar: 30, bass: 33, upright: 32, synthbass: 38, '808': 38, organ: 16,
     piano: 0, darkpiano: 0, epiano: 4, strings: 48, warmpad: 89, musicbox: 10, flute: 73, vibes: 11,
-    acoustic: 25, fiddle: 40, banjo: 105, cleanguitar: 27, harmonica: 22, synthlead: 81,
+    acoustic: 25, fiddle: 40, banjo: 105, cleanguitar: 27, harmonica: 22, synthlead: 81, brass: 61,
   };
-  const GM_DRUM = { kick: 36, snare: 38, clap: 39, hat: 42, openhat: 46, tomlow: 45, tomhigh: 48, crash: 49 };
-  const ROLE_CHANNEL = { bass: 0, pad: 1, lead: 2, drums: 9 };
-  const TRACK_NAME = { drums: 'Drums', bass: 'Bass', pad: 'Chords', lead: 'Melody' };
+  const GM_DRUM = {
+    kick: 36, snare: 38, clap: 39, hat: 42, openhat: 46, tomlow: 45, tomhigh: 48, crash: 49,
+    shaker: 70, tambourine: 54, rim: 37, congahi: 63, congalo: 64, cowbell: 56,
+  };
+  const ROLE_CHANNEL = { bass: 0, pad: 1, lead: 2, counter: 3, drums: 9, perc: 9 };
+  const TRACK_NAME = { drums: 'Drums', perc: 'Percussion', bass: 'Bass', pad: 'Chords', lead: 'Melody', counter: 'Second melody' };
 
   JT.renderMidi = function(song, track, voices, names) {
     const TPQ = 480;
@@ -184,17 +198,18 @@ window.JT = window.JT || {};
       { tick: 0, order: 1, data: [0xff, 0x51, 0x03, (usPerBeat >> 16) & 255, (usPerBeat >> 8) & 255, usPerBeat & 255] },
       { tick: 0, order: 2, data: [0xff, 0x58, 0x04, 4, 2, 24, 8] },
     ])];
-    ['drums', 'bass', 'pad', 'lead'].forEach(role => {
+    // Transitions are sound effects with no notes, so they stay out of the MIDI file
+    ['drums', 'perc', 'bass', 'pad', 'lead', 'counter'].forEach(role => {
       const notes = track.parts[role];
       if (!notes || !notes.length) return;
       const ch = ROLE_CHANNEL[role];
       const events = [{ tick: 0, order: 0, data: text(0x03, `${TRACK_NAME[role]} (${names[role]})`) }];
-      if (role !== 'drums') events.push({ tick: 0, order: 1, data: [0xc0 | ch, GM_PROGRAM[voices[role]] || 0] });
+      if (ch !== 9) events.push({ tick: 0, order: 1, data: [0xc0 | ch, GM_PROGRAM[voices[role]] || 0] });
       notes.forEach(n => {
-        const key = role === 'drums' ? GM_DRUM[n.p] : Math.round(n.p);
+        const key = ch === 9 ? GM_DRUM[n.p] : Math.round(n.p);
         if (key == null) return;
         const on = Math.max(0, Math.round(n.b * TPQ));
-        const off = on + Math.max(30, Math.round((role === 'drums' ? 0.125 : n.len) * TPQ));
+        const off = on + Math.max(30, Math.round((ch === 9 ? 0.125 : n.len) * TPQ));
         const vel = Math.max(1, Math.min(127, Math.round(n.v * 100)));
         events.push({ tick: on, order: 3, data: [0x90 | ch, key, vel] });
         events.push({ tick: off, order: 2, data: [0x80 | ch, key, 0] });   // note-offs sort before note-ons at the same tick

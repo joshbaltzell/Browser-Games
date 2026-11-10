@@ -163,6 +163,22 @@ verse, chorus, break, outro). They then delegated the design ("You decide"). Cla
   instruments play, its energy, its length (4 or 8 bars), its position, or be removed; sections
   can be added. The whole song downloads as a WAV.
 
+## Extra sides (added 2026-11-10)
+
+The user asked whether the tunnel could have more than four sides, with run mode rolling any side
+underfoot, and whether more parts would help or be overkill. Claude's recommendation, which the user
+approved: keep the four core parts as the guided steps, and offer up to three optional extra parts
+after the loop is ready, each adding a side (a square tunnel grows to at most seven sides).
+
+- Percussion: shakers, tambourine, rim clicks, congas, cowbell, chosen per genre.
+- Second melody: an answer that plays where the melody rests, a harmony a third below the melody, or
+  an arpeggio of the chords. Per-genre sounds (horns for classic hip hop, bells for trap, a twangy
+  electric for country, a synth arp for pop, a rhythm guitar for southern rock).
+- Transitions: a riser and impact or reverse cymbals placed right before each chorus in the full
+  song, or a texture under every section (vinyl crackle, amp hum, a noise wash).
+- Full-song defaults: percussion in choruses and the outro, the second melody in choruses and the
+  break. Transitions are sound effects and stay out of MIDI exports.
+
 ## Genres
 
 Required: classic hip hop (boom bap), trap, pop. Proposed to make about 20 (Claude's list; the

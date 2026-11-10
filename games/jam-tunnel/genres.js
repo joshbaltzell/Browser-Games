@@ -515,6 +515,94 @@ window.JT = window.JT || {};
   }
 
   // ===================================================================
+  // EXTRA SIDES: percussion, a second melody, transitions (optional, added after the core loop)
+  // ===================================================================
+  const PERC_PIECES = ['shaker', 'tambourine', 'rim', 'congahi', 'congalo', 'cowbell'];
+  const FX_PIECES = ['riser', 'reverse', 'impact', 'texture'];
+
+  function percPart(kind) {
+    return (ctx, r, busy) => {
+      const out = [];
+      const triplet = ctx.grid < 0.3 ? false : true;   // the shuffle genres use a triplet grid
+      const eighths = triplet ? [0, 2 / 3, 1, 5 / 3, 2, 8 / 3, 3, 11 / 3] : [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
+      for (let bar = 0; bar < BARS; bar++) {
+        const o = bar * 4;
+        if (kind === 'shaker') {
+          const grid = busy === 2 && !triplet ? [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75] : busy === 0 ? [0.5, 1.5, 2.5, 3.5] : eighths;
+          grid.forEach(q => hit(out, o + q, 'shaker', (q % 1 ? 0.75 : 0.45) * hum(r), 0.12));
+        } else if (kind === 'tambourine') {
+          [1, 3].forEach(q => hit(out, o + q, 'tambourine', 0.95 * hum(r), 0.2));
+          if (busy > 0) eighths.filter(q => q % 1).forEach(q => hit(out, o + q, 'tambourine', 0.4 * hum(r), 0.12));
+        } else if (kind === 'congas') {
+          [[0, 'congalo'], [0.75, 'congahi'], [1.5, 'congahi'], [2, 'congalo'], [2.5, 'congahi'], [3.25, 'congahi'], [3.5, 'congalo']]
+            .forEach(([q, p], i) => { if (busy > 0 || i % 2 === 0) hit(out, o + (triplet ? Math.round(q * 3) / 3 : q), p, (p === 'congalo' ? 0.9 : 0.75) * hum(r), 0.2); });
+        } else if (kind === 'cowbell') {
+          (busy === 2 ? [0, 0.75, 1.5, 2, 2.75, 3.5] : [0, 1.5, 2.75]).forEach(q => hit(out, o + q, 'cowbell', 0.8 * hum(r), 0.2));
+        } else {
+          // rim clicks between the snare hits
+          [0.75, 1.75, 2.5, 3.75].forEach((q, i) => { if (busy > 0 || i % 2) hit(out, o + q, 'rim', 0.7 * hum(r), 0.1); });
+        }
+      }
+      return out;
+    };
+  }
+
+  function counterPart(kind, lo, hi) {
+    return (ctx, r, busy) => {
+      const scale = ctx.scale;
+      const lead = ctx.layers.lead ? ctx.layers.lead.notes.filter(n => n.len > 0.1) : null;
+      if (kind === 'arp') {
+        // The chords broken into a rippling pattern
+        const out = [];
+        const step = busy === 2 ? 0.25 : busy === 0 ? 1 : 0.5;
+        voiceLead(ctx.chords, lo, hi).forEach((v, bar) => {
+          const seq = v.concat(v.slice(1, -1).reverse());
+          for (let q = 0, i = 0; q < 4; q += step, i++) out.push({ b: bar * 4 + q, len: step * 0.9, p: seq[i % seq.length], v: i % 2 ? 0.7 : 0.85 });
+        });
+        return out;
+      }
+      if (kind === 'harmony' && lead && lead.length) {
+        // Your melody, a third lower in the song's scale
+        return lead.map(n => ({ b: n.b, len: n.len, p: fold(T.stepScale(snap(n.p, scale), scale, -2), lo, hi), v: n.v * 0.8 }));
+      }
+      // An answer: a phrase that lives in the gaps the melody leaves
+      const notes = melody(r, ctx.chords, { rhythms: [[0.5, 1, 1.5, 3], [0, 0.75, 2.5, 3], [1, 1.5, 2, 3.5]], scaleOf: () => scale, lo, hi, busy });
+      if (!lead || !lead.length) return notes;
+      const busyAt = b => lead.some(n => b >= n.b - 0.1 && b < n.b + Math.max(0.5, n.len));
+      const gaps = notes.filter(n => !busyAt(n.b));
+      return gaps.length >= 4 ? gaps : notes;
+    };
+  }
+
+  function fxPart(kind) {
+    return (ctx, r, busy) => {
+      // In the loop: a build into the top of the loop. In the full song these move to the section changes.
+      if (kind === 'build') return [{ b: 12, len: 4, p: 'riser', v: 0.9 }, { b: 0, len: 1.5, p: 'impact', v: 1 }];
+      if (kind === 'swell') return [{ b: 7, len: 1, p: 'reverse', v: 0.6 }, { b: 15, len: 1, p: 'reverse', v: 0.9 }, { b: 0, len: 1.5, p: 'impact', v: 0.7 }];
+      return [{ b: 0, len: 15.9, p: 'texture', v: 0.8, flavor: ctx.genre === 'boombap' ? 'crackle' : ctx.genre === 'rock' ? 'hum' : 'wash' }];
+    };
+  }
+  JT.PERC_PIECES = PERC_PIECES;
+  JT.FX_PIECES = FX_PIECES;
+  // The styles every genre's transitions side offers
+  const FX_STYLES = texture => [
+    { id: 'build', name: 'Riser and impact', why: 'A noise riser builds through the last bar, then a deep hit lands on the one.', gen: fxPart('build') },
+    { id: 'swell', name: 'Reverse cymbals', why: 'Cymbals swell backwards into the downbeat.', gen: fxPart('swell') },
+    { id: 'texture', name: texture, why: 'A quiet bed of sound under the whole song.', gen: fxPart('texture') },
+  ];
+  const PERC = (styles) => ({ label: 'Percussion', voice: 'perc', pieces: PERC_PIECES, styles });
+  const FX = texture => ({ label: 'Transitions', voice: 'fx', pieces: FX_PIECES, styles: FX_STYLES(texture) });
+  const COUNTER = (label, voice, range, sounds, firstStyle) => {
+    const styles = {
+      answer: { id: 'answer', name: 'Answer', why: 'A phrase that plays in the gaps your melody leaves.', gen: counterPart('answer', range[0], range[1]) },
+      harmony: { id: 'harmony', name: 'Harmony', why: 'Your melody moved a third lower in the song’s scale.', gen: counterPart('harmony', range[0], range[1]) },
+      arp: { id: 'arp', name: 'Arpeggio', why: 'Your chords broken into a rippling pattern.', gen: counterPart('arp', range[0], range[1]) },
+    };
+    const order = [firstStyle].concat(['answer', 'harmony', 'arp'].filter(x => x !== firstStyle));
+    return { label, voice, range, sounds, styles: order.map(k => styles[k]) };
+  };
+
+  // ===================================================================
   // GENRE PROFILES
   // ===================================================================
   JT.GENRES = {
@@ -555,6 +643,13 @@ window.JT = window.JT || {};
           { id: 'pushed', name: 'Pushed chords', why: 'Re-hits on the swung eighth before beat 4.', gen: rockOrgan('pushed') },
           { id: 'backbeat', name: 'Backbeat stabs', why: 'Short chords on 2 and 4 with the snare.', gen: rockOrgan('backbeat') },
         ] },
+        perc: PERC([
+          { id: 'shaker', name: 'Shaker', why: 'A swung shaker that glues the shuffle together.', gen: percPart('shaker') },
+          { id: 'tambourine', name: 'Tambourine', why: 'Tambourine on 2 and 4 with the snare.', gen: percPart('tambourine') },
+          { id: 'cowbell', name: 'Cowbell', why: 'More cowbell.', gen: percPart('cowbell') },
+        ]),
+        counter: COUNTER('Rhythm guitar', 'cleanguitar', [52, 74], [{ id: 'cleanguitar', name: 'Clean guitar' }, { id: 'piano', name: 'Piano' }, { id: 'organ', name: 'Organ' }], 'answer'),
+        fx: FX('Amp hum and hiss'),
       },
     },
 
@@ -590,6 +685,13 @@ window.JT = window.JT || {};
           { id: 'swell', name: 'Swells', why: 'Each chord fades in slowly.', gen: trapStrings('swell') },
           { id: 'stabs', name: 'Stabs', why: 'Short syncopated chord hits.', gen: trapStrings('stabs') },
         ] },
+        perc: PERC([
+          { id: 'rim', name: 'Rim clicks', why: 'Clicks between the claps for bounce.', gen: percPart('rim') },
+          { id: 'cowbell', name: '808 cowbell', why: 'The classic 808 cowbell on the off-beats.', gen: percPart('cowbell') },
+          { id: 'shaker', name: 'Shaker', why: 'Sixteenth shaker under the hats.', gen: percPart('shaker') },
+        ]),
+        counter: COUNTER('Bells', 'musicbox', [66, 86], [{ id: 'musicbox', name: 'Bells' }, { id: 'synthlead', name: 'Synth pluck' }, { id: 'flute', name: 'Flute' }, { id: 'strings', name: 'Strings' }], 'arp'),
+        fx: FX('Dark wash'),
       },
     },
 
@@ -625,6 +727,13 @@ window.JT = window.JT || {};
           { id: 'held', name: 'Held chords', why: 'Whole-bar chords with smooth voice leading.', gen: popPiano('held') },
           { id: 'arp', name: 'Arpeggio', why: 'The chord broken into a rippling pattern.', gen: popPiano('arp') },
         ] },
+        perc: PERC([
+          { id: 'tambourine', name: 'Tambourine', why: 'Tambourine on 2 and 4, the pop shimmer.', gen: percPart('tambourine') },
+          { id: 'shaker', name: 'Shaker', why: 'Steady eighths that keep it moving.', gen: percPart('shaker') },
+          { id: 'congas', name: 'Congas', why: 'A light, dancing conga pattern.', gen: percPart('congas') },
+        ]),
+        counter: COUNTER('Synth arp', 'synthlead', [60, 84], [{ id: 'synthlead', name: 'Synth arp' }, { id: 'musicbox', name: 'Bells' }, { id: 'strings', name: 'Strings' }, { id: 'piano', name: 'Piano' }], 'arp'),
+        fx: FX('Airy wash'),
       },
     },
 
@@ -659,6 +768,13 @@ window.JT = window.JT || {};
           { id: 'held', name: 'Held chords', why: 'Rich minor 7th chords held for the bar.', gen: bbPiano('held') },
           { id: 'stabs', name: 'Stabs on 2 and 4', why: 'Chords that hit with the snare.', gen: bbPiano('stabs') },
         ] },
+        perc: PERC([
+          { id: 'rim', name: 'Rim clicks', why: 'Rim clicks between the snares, the head-nod.', gen: percPart('rim') },
+          { id: 'congas', name: 'Congas', why: 'Soulful congas like a sampled break.', gen: percPart('congas') },
+          { id: 'shaker', name: 'Shaker', why: 'A soft shaker under the swing.', gen: percPart('shaker') },
+        ]),
+        counter: COUNTER('Horns', 'brass', [55, 77], [{ id: 'brass', name: 'Horn section' }, { id: 'vibes', name: 'Vibraphone' }, { id: 'flute', name: 'Flute' }], 'answer'),
+        fx: FX('Vinyl crackle'),
       },
     },
     country: {
@@ -695,11 +811,23 @@ window.JT = window.JT || {};
           { id: 'chick', name: 'Boom-chick strums', why: 'Short chord chops on 2 and 4, the chick to the bass’s boom.', gen: countryStrum('chick') },
           { id: 'rolls', name: 'Banjo rolls', why: 'Fingerpicked rolls through the chord.', gen: countryStrum('rolls') },
         ] },
+        perc: PERC([
+          { id: 'tambourine', name: 'Tambourine', why: 'Tambourine on 2 and 4.', gen: percPart('tambourine') },
+          { id: 'shaker', name: 'Shaker', why: 'A shaker riding the eighths.', gen: percPart('shaker') },
+          { id: 'cowbell', name: 'Cowbell', why: 'A honky-tonk cowbell.', gen: percPart('cowbell') },
+        ]),
+        counter: COUNTER('Twangy electric', 'cleanguitar', [55, 79], [{ id: 'cleanguitar', name: 'Twangy electric' }, { id: 'harmonica', name: 'Harmonica' }, { id: 'piano', name: 'Honky-tonk piano' }], 'answer'),
+        fx: FX('Porch-night wash'),
       },
     },
   };
 
-  JT.ROLES = ['drums', 'bass', 'lead', 'pad'];
+  // Every part, in the order parts are written (the bass can follow the kick, the second melody the melody)
+  JT.ROLES = ['drums', 'perc', 'bass', 'pad', 'lead', 'counter', 'fx'];
+  JT.CORE = ['drums', 'bass', 'pad', 'lead'];
+  JT.EXTRAS = ['perc', 'counter', 'fx'];
+  // Around the tunnel, starting from the floor and going counter-clockwise
+  JT.SIDE_ORDER = ['drums', 'perc', 'bass', 'counter', 'pad', 'fx', 'lead'];
 
   // The "what kind of song?" choices: pace sets the tempo, mood picks the chords
   JT.PACE = [{ id: 'slow', name: 'Slow', value: 0.1 }, { id: 'medium', name: 'Medium', value: 0.5 }, { id: 'fast', name: 'Fast', value: 0.9 }];
@@ -754,7 +882,8 @@ window.JT = window.JT || {};
     const g = JT.GENRES[song.genre];
     const style = g.roles[role].styles.find(s => s.id === styleId);
     const ctx = {
-      key: g.key,
+      key: g.key, grid: g.grid, genre: song.genre,
+      scale: g.editScale.map(i => (g.key + i) % 12),
       chords: (override && override.chords) || song.chords,
       layers: (override && override.layers) || song.layers,
     };
@@ -805,14 +934,26 @@ window.JT = window.JT || {};
         score += (hits / bassOn.length);
         if (hits >= 2) reasons.push(`Its kick lands with ${hits} of your bass notes each bar.`);
       }
-      if (role === 'pad' || role === 'lead') {
+      if (role === 'perc' && kept.drums) {
+        const drumOn = kept.drums.notes.filter(n => n.b < 4).map(n => n.b);
+        const own = bar1.filter(n => !drumOn.some(b => Math.abs(b - n.b) < 0.06)).length;
+        if (bar1.length && own / bar1.length > 0.5) reasons.push('Mostly hits between your drums, so it adds groove instead of doubling them.');
+      }
+      if (role === 'fx') reasons.push(style.id === 'texture' ? 'Sits quietly under every section.' : 'In the full song it lands right before each chorus.');
+      if (role === 'counter' && kept.lead) {
+        const leadOn = kept.lead.notes.map(n => n.b);
+        const shared = bar1.filter(n => leadOn.some(b => Math.abs(b - n.b) < 0.06)).length;
+        if (style.id === 'harmony') reasons.push('Moves with your melody, a third below, so they sound like one part.');
+        else if (bar1.length && shared / bar1.length < 0.3) reasons.push('Mostly plays where your melody rests, so they take turns.');
+      }
+      if (role === 'pad' || role === 'lead' || role === 'counter') {
         reasons.push(`Built from your chords (${chordText}), so every strong beat is a chord note and nothing clashes.`);
       }
       if (role === 'bass' && !kicks) reasons.push(`Follows the roots of ${chordText}, so it outlines the chords.`);
       // Busyness against the other melodic parts
-      const others = Object.entries(kept).filter(([r]) => r !== role && r !== 'drums');
+      const others = Object.entries(kept).filter(([r]) => r !== role && ['bass', 'pad', 'lead', 'counter'].includes(r));
       const busiest = others.sort((x, y) => perBar(y[1].notes) - perBar(x[1].notes))[0];
-      if (role !== 'drums' && busiest) {
+      if (['bass', 'pad', 'lead', 'counter'].includes(role) && busiest) {
         if (perBar(busiest[1].notes) > 6 && perBar(notes) > 6) {
           score -= 0.8;
           reasons.push(`Busy, like your ${ROLE_WORD[busiest[0]]}, so the two may crowd each other.`);

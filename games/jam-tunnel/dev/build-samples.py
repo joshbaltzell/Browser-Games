@@ -45,9 +45,12 @@ MELODIC = {
     'banjo': ('banjo', 48, 84),
     'cleanguitar': ('electric_guitar_clean', 40, 80),
     'harmonica': ('harmonica', 55, 86),
+    'brass': ('brass_section', 50, 82),
 }
 # name in the game -> General MIDI drum note
 KIT = {'kick': 36, 'snare': 38, 'hat': 42, 'openhat': 46, 'tomlow': 45, 'tomhigh': 48, 'crash': 49}
+# The percussion side, from the same General MIDI kit
+PERC = {'shaker': 70, 'tambourine': 54, 'rim': 37, 'congahi': 63, 'congalo': 64, 'cowbell': 56}
 
 PC = {'C': 0, 'Db': 1, 'D': 2, 'Eb': 3, 'E': 4, 'F': 5, 'Gb': 6, 'G': 7, 'Ab': 8, 'A': 9, 'Bb': 10, 'B': 11}
 
@@ -92,6 +95,12 @@ for name, note in KIT.items():
     src = fetch('https://surikov.github.io/webaudiofontdata/sound/128%d_0_FluidR3_GM_sf2_file.js' % note, 'drum%d.js' % note)
     kit[name] = re.search(r"file:'([^']+)'", src).group(1)
 write('kit', kit)
+
+perc = {}
+for name, note in PERC.items():
+    src = fetch('https://surikov.github.io/webaudiofontdata/sound/128%d_0_FluidR3_GM_sf2_file.js' % note, 'drum%d.js' % note)
+    perc[name] = re.search(r"file:'([^']+)'", src).group(1)
+write('perc', perc)
 
 # Salamander grand, used for the darkened trap piano
 import base64

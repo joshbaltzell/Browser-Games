@@ -9,13 +9,16 @@
   Object.entries(JT.ROLE_COLOR).forEach(([role, c]) => { ROLE_HEX[role] = toHex(c); });
 
   // The order producers usually build a loop in, and what each part does
-  const STEPS = ['drums', 'bass', 'pad', 'lead'];
-  const ROLE_NAME = { drums: 'Drums', bass: 'Bass', pad: 'Chords', lead: 'Melody' };
+  const STEPS = JT.CORE;   // the four guided parts; the extras are optional sides added afterwards
+  const ROLE_NAME = { drums: 'Drums', bass: 'Bass', pad: 'Chords', lead: 'Melody', perc: 'Percussion', counter: 'Second melody', fx: 'Transitions' };
   const ROLE_ABOUT = {
     drums: 'The beat everything else sits on. Start here.',
     bass: 'Locks to the kick drum and outlines the chords.',
     pad: 'Sets the mood of the song.',
     lead: 'The part people hum.',
+    perc: 'Shakers, tambourine, congas: extra groove on top of the drums.',
+    counter: 'A second line that answers or harmonizes your melody.',
+    fx: 'Risers and swells that launch each chorus, or a texture under the song.',
   };
   const NOTES_LABEL = ['Fewer notes', 'As suggested', 'More notes'];
   const ENERGY_LABEL = { '-1': 'Calmer', '0': 'Normal', '1': 'Bigger' };
@@ -87,6 +90,19 @@
   }
 
   // The sound a role plays: the one being auditioned, the one kept with the layer, or the genre's default
+  // The tunnel's sides: the four core parts always, plus any extra part kept or being auditioned
+  function currentSides() {
+    const has = r => STEPS.includes(r) || (state.song && state.song.layers[r]) || (state.tray === 'suggest' && state.role === r);
+    return JT.SIDE_ORDER.filter(has);
+  }
+  // A part's side, named for where it sits in the tunnel's current shape
+  function surfaceOf(role) {
+    const sides = currentSides();
+    const i = sides.indexOf(role);
+    return i < 0 ? 'new side' : JT.buildFaces(sides.length)[i].name;
+  }
+  const piecesOf = role => (JT.GENRES[state.song.genre].roles[role] || {}).pieces || null;
+
   function voiceOf(role) {
     if (state.tray === 'suggest' && state.role === role && state.sound) return state.sound;
     const L = state.song.layers[role];
@@ -112,7 +128,7 @@
     if (state.mode === 'song' && state.track) {
       return JT.ROLES.filter(r => state.track.parts[r].length).map(role => ({
         role, voice: voiceOf(role), notes: state.track.parts[role], lead: role === 'lead',
-        ghost: false, muted: state.muted[role], range: rangeOf(role),
+        ghost: false, muted: state.muted[role], range: rangeOf(role), pieces: piecesOf(role),
       }));
     }
     if (state.tray === 'mood') {
@@ -127,7 +143,7 @@
       const previewing = state.tray === 'suggest' && state.role === role;
       const notes = previewing ? previewNotes() : song.layers[role] && song.layers[role].notes;
       if (!notes) return;
-      parts.push({ role, voice: voiceOf(role), notes, lead: role === 'lead', ghost: previewing, muted: state.muted[role] && !previewing, range: rangeOf(role) });
+      parts.push({ role, voice: voiceOf(role), notes, lead: role === 'lead', ghost: previewing, muted: state.muted[role] && !previewing, range: rangeOf(role), pieces: piecesOf(role) });
     });
     return parts;
   }
@@ -298,7 +314,7 @@
     song.bright = j.bright;
     JT.setProgression(song, Math.min(j.progIndex, JT.GENRES[j.genre].progressions.length - 1));
     song.bpm = j.bpm;
-    STEPS.forEach(role => {
+    JT.ROLES.forEach(role => {
       const L = j.layers[role];
       if (!L) return;
       const notes = L.edited ? L.notes : JT.generate(song, role, L.styleId, L.seed, L.busy);
@@ -397,14 +413,28 @@
   // --- RUN MODE (editing one layer) ---
   // The tunnel rolls so the layer's surface is underfoot. Lanes across it are the notes of the
   // song's scale (or the drums); the runner sits at the gate where notes sound.
-  const ROLL = { drums: 0, bass: Math.PI / 2, pad: Math.PI, lead: -Math.PI / 2 };
-  // Which way a lane step moves on screen once the surface is underfoot
-  const SCREEN_SIGN = { drums: 1, bass: 1, pad: -1, lead: -1 };
-  const DRUM_NAMES = { hat: 'Hi-hat', snare: 'Snare', clap: 'Clap', kick: 'Kick', tomhigh: 'Tom', openhat: 'Open hat' };
+  // Side i of n sits at angle 2*pi*i/n around the tunnel; rolling by that angle puts it underfoot
+  function rollFor(role) {
+    const sides = currentSides();
+    return 2 * Math.PI * Math.max(0, sides.indexOf(role)) / sides.length;
+  }
+  // Which way a lane step moves on screen once the side is underfoot (lanes run the way notes rise)
+  function screenSign(role) {
+    const sides = currentSides();
+    return JT.buildFaces(sides.length)[Math.max(0, sides.indexOf(role))].flip;
+  }
+  const DRUM_NAMES = {
+    hat: 'Hi-hat', snare: 'Snare', clap: 'Clap', kick: 'Kick', tomhigh: 'Tom', openhat: 'Open hat',
+    shaker: 'Shaker', tambourine: 'Tambourine', rim: 'Rim click', congahi: 'High conga', congalo: 'Low conga', cowbell: 'Cowbell',
+    riser: 'Riser', reverse: 'Reverse cymbal', impact: 'Impact', texture: 'Texture',
+  };
+  // How long a note placed by hand lasts, for parts that aren't pitched
+  const PIECE_LEN = { riser: 4, reverse: 1, impact: 1.5, texture: 4 };
 
   function editLanes(role) {
     const g = JT.GENRES[state.song.genre];
     if (role === 'drums') return g.roles.drums.voice === '808kit' ? ['hat', 'clap', 'kick', 'openhat'] : ['hat', 'snare', 'kick', 'tomhigh'];
+    if (piecesOf(role)) return piecesOf(role).slice();
     const [lo, hi] = rangeOf(role);
     const pcs = g.editScale.map(i => (g.key + i) % 12);
     const lanes = [];
@@ -415,11 +445,12 @@
   function laneOf(n) {
     const E = state.edit;
     if (E.role === 'drums') return E.lanes.findIndex(l => JT.DRUM_LANES[l] === JT.DRUM_LANES[n.p]);
+    if (typeof n.p === 'string') return E.lanes.indexOf(n.p);
     let best = 0;
     E.lanes.forEach((l, i) => { if (Math.abs(l - n.p) < Math.abs(E.lanes[best] - n.p)) best = i; });
     return best;
   }
-  const laneName = (role, lane) => role === 'drums' ? DRUM_NAMES[lane] : T.NAMES[T.mod12(lane)] + (Math.floor(lane / 12) - 1);
+  const laneName = (role, lane) => typeof lane === 'string' ? DRUM_NAMES[lane] : T.NAMES[T.mod12(lane)] + (Math.floor(lane / 12) - 1);
 
   function enterEdit(role) {
     if (state.mode !== 'loop' || !state.song.layers[role]) return;
@@ -452,8 +483,9 @@
       L.notes = L.notes.filter(n => !hits.includes(n));
     } else {
       const lane = E.lanes[laneIdx];
-      const len = E.role === 'drums' ? 0.18 : E.role === 'pad' ? 1 : grid * 2;
+      const len = typeof lane === 'string' ? (PIECE_LEN[lane] || 0.18) : E.role === 'pad' ? 1 : grid * 2;
       const note = { b: q, len, p: lane, v: 0.9 };
+      if (lane === 'texture') note.flavor = state.song.genre === 'boombap' ? 'crackle' : state.song.genre === 'rock' ? 'hum' : 'wash';
       L.notes = L.notes.concat([note]).sort((a, b) => a.b - b.b);
       if (audio && audioReady && soundOn) audio.playNow(voiceOf(E.role), Object.assign({ lead: E.role === 'lead' }, note), spb(), E.role);
     }
@@ -470,9 +502,9 @@
   }
   function moveLane(dir) {
     const E = state.edit;
-    E.cursor = Math.max(0, Math.min(E.lanes.length - 1, E.cursor + dir * SCREEN_SIGN[E.role]));
+    E.cursor = Math.max(0, Math.min(E.lanes.length - 1, E.cursor + dir * screenSign(E.role)));
     // Let the lane be heard when moving across pitches
-    if (E.role !== 'drums' && audio && audioReady && soundOn) audio.playNow(voiceOf(E.role), { b: 0, len: 0.25, p: E.lanes[E.cursor], v: 0.5, lead: E.role === 'lead' }, spb(), E.role);
+    if (typeof E.lanes[E.cursor] === 'number' && audio && audioReady && soundOn) audio.playNow(voiceOf(E.role), { b: 0, len: 0.25, p: E.lanes[E.cursor], v: 0.5, lead: E.role === 'lead' }, spb(), E.role);
     renderTray();
   }
   function stepTime(dir) {
@@ -528,17 +560,18 @@
     $('layers').hidden = !song;
     if (!song) return;
     const g = JT.GENRES[song.genre];
-    const rows = STEPS.map(role => {
+    const sides = currentSides();
+    const rows = STEPS.concat(JT.EXTRAS.filter(r => sides.includes(r))).map(role => {
       const L = song.layers[role];
-      const label = `${ROLE_NAME[role]} · ${soundName(role)}`;
+      const label = soundName(role) === ROLE_NAME[role] ? ROLE_NAME[role] : `${ROLE_NAME[role]} · ${soundName(role)}`;
       const sw = `<span class="sw" style="background:${L && !state.muted[role] ? ROLE_HEX[role] : 'transparent'};border-color:${ROLE_HEX[role]}"></span>`;
       if (state.tray === 'suggest' && state.role === role) {
-        return `<div class="layer">${sw}<span class="ln">${esc(label)}</span><span class="acts"></span><span class="ld">${JT.SURFACE[role]} · choosing…</span></div>`;
+        return `<div class="layer">${sw}<span class="ln">${esc(label)}</span><span class="acts"></span><span class="ld">${surfaceOf(role)} · choosing…</span></div>`;
       }
       if (!L) {
         return `<div class="layer empty">${sw}<span class="ln">${esc(label)}</span>
           <span class="acts"><button type="button" data-act="add" data-role="${role}">Add</button></span>
-          <span class="ld">${JT.SURFACE[role]} · empty</span></div>`;
+          <span class="ld">${surfaceOf(role)} · empty</span></div>`;
       }
       return `<div class="layer ${state.muted[role] ? 'muted' : ''}">${sw}<span class="ln">${esc(label)}</span>
         <span class="acts">
@@ -547,7 +580,7 @@
           <button type="button" data-act="change" data-role="${role}">Change</button>
           <button type="button" data-act="remove" data-role="${role}" aria-label="Remove ${esc(label)}">✕</button>` : ''}
         </span>
-        <span class="ld">${JT.SURFACE[role]} · ${esc(L.name)}${L.edited ? ' · edited by you' : ''}</span></div>`;
+        <span class="ld">${surfaceOf(role)} · ${esc(L.name)}${L.edited ? ' · edited by you' : ''}</span></div>`;
     });
     $('layers').innerHTML = `<h2>${state.mode === 'song' ? 'Instruments' : 'Your loop'}</h2>${rows.join('')}`;
   }
@@ -558,9 +591,18 @@
     let s = '';
     for (let q = 0; q < 4; q++) s += `<line x1="${x(q)}" x2="${x(q)}" y1="2" y2="${H - 2}" stroke="rgba(255,236,214,.12)"/>`;
     const bar = notes.filter(n => n.b < 4);
+    const pieces = piecesOf(role);
     if (role === 'drums') {
       const rows = { hat: 6, openhat: 6, snare: 14, clap: 14, kick: 22, tomhigh: 30, tomlow: 30, crash: 30 };
       bar.forEach(n => { s += `<circle cx="${x(n.b)}" cy="${rows[n.p] || 30}" r="${1.6 + n.v * 2}" style="fill:var(--accent)" fill-opacity="${0.35 + n.v * 0.65}"/>`; });
+    } else if (pieces) {
+      // one row per piece; long sounds (risers, textures) as bars
+      const rowY = p => 4 + Math.max(0, pieces.indexOf(p)) * ((H - 8) / Math.max(1, pieces.length - 1));
+      notes.filter(n => n.b < 4 || n.len > 1).forEach(n => {
+        const b = n.b % 4;
+        if (n.len > 1) s += `<rect x="${x(b)}" y="${rowY(n.p) - 2}" width="${Math.min(W - 12, n.len / 4 * (W - 12))}" height="4" rx="2" style="fill:var(--accent)" fill-opacity="0.7"/>`;
+        else s += `<circle cx="${x(b)}" cy="${rowY(n.p)}" r="${1.6 + n.v * 2}" style="fill:var(--accent)" fill-opacity="${0.35 + n.v * 0.65}"/>`;
+      });
     } else {
       bar.forEach(n => {
         const y = H - 5 - (n.p - range[0]) / (range[1] - range[0]) * (H - 10);
@@ -584,6 +626,21 @@
           <span class="acts"><button type="button" data-jam="${esc(j.id)}">Open</button><button type="button" data-deljam="${esc(j.id)}" aria-label="Delete this jam">✕</button></span>
         </div>`;
       }).join('')}</div>`;
+  }
+
+  // Optional extra parts: each one adds a side to the tunnel
+  function extrasOffer() {
+    const g = JT.GENRES[state.song.genre];
+    const open = JT.EXTRAS.filter(r => !state.song.layers[r] && g.roles[r]);
+    if (!open.length) return '';
+    return `<div class="tray-head"><h3 class="small">Add a side <span class="inst">optional</span></h3>
+        <p>Each extra part adds a side to the tunnel. Full songs bring them in at the big moments.</p></div>
+      <div class="cards three">${open.map(r => `
+        <button type="button" class="card" data-add="${r}" style="--accent:${ROLE_HEX[r]}">
+          <span class="top"><span class="nm">${ROLE_NAME[r]}</span><span class="sub">${esc(g.roles[r].label)}</span></span>
+          <span class="why">${ROLE_ABOUT[r]}</span>
+        </button>`).join('')}
+      </div>`;
   }
 
   function stepsStrip(active) {
@@ -661,13 +718,13 @@
           <p>${count ? 'Each new part is matched to the chords and to the parts you already kept.' : 'Everything you add later is matched to these drums and the chords.'}</p></div>
         <div class="cards next">
           <button type="button" class="card big" data-add="${next}" style="--accent:${ROLE_HEX[next]}">
-            <span class="top"><span class="nm">Choose your ${ROLE_NAME[next].toLowerCase()}</span><span class="sub">${esc(soundName(next))} · ${JT.SURFACE[next]}</span></span>
+            <span class="top"><span class="nm">Choose your ${ROLE_NAME[next].toLowerCase()}</span><span class="sub">${esc(soundName(next))} · ${surfaceOf(next)}</span></span>
             <span class="why">${ROLE_ABOUT[next]}</span>
           </button>
           ${rest.map(r => `
           <button type="button" class="card" data-add="${r}" style="--accent:${ROLE_HEX[r]}">
             <span class="top"><span class="nm">${ROLE_NAME[r]}</span></span>
-            <span class="sub">${esc(soundName(r))} · ${JT.SURFACE[r]}</span>
+            <span class="sub">${esc(soundName(r))} · ${surfaceOf(r)}</span>
             <span class="why">${ROLE_ABOUT[r]}</span>
           </button>`).join('')}
         </div>
@@ -688,7 +745,8 @@
         <div class="actions">
           <button type="button" class="primary" data-act="song">Make it a full song</button>
           <button type="button" data-act="chords">Try different chords</button>
-        </div>`;
+        </div>
+        ${extrasOffer()}`;
       return;
     }
 
@@ -749,7 +807,7 @@
       tray.style.setProperty('--accent', ROLE_HEX[E.role]);
       const scaleName = E.role === 'drums' ? '' : ` Each lane is a note of the ${esc(g.keyName)} scale.`;
       tray.innerHTML = `
-        <div class="tray-head"><h3>Running on the ${ROLE_NAME[E.role].toLowerCase()} <span class="inst">${esc(soundName(E.role))} · ${JT.SURFACE[E.role]}</span></h3>
+        <div class="tray-head"><h3>Running on the ${ROLE_NAME[E.role].toLowerCase()} <span class="inst">${esc(soundName(E.role))} · ${surfaceOf(E.role)}</span></h3>
           <p>Lane: <strong>${esc(laneName(E.role, E.lanes[E.cursor]))}</strong> · ${L.notes.length} notes</p></div>
         <p class="lead">Notes sound when they reach the glowing gate, where your runner is.${scaleName}</p>
         <div class="pad" style="--accent:${ROLE_HEX[E.role]}">
@@ -805,7 +863,7 @@
         <div class="sec-head"><strong>${type.name}</strong> <span class="hint">bars ${info.start / 4 + 1}–${info.end / 4} · chords ${esc(T.chordsOf(g.key, info.prog.chords, g.sharps).map(T.chordName).join(' '))}</span></div>
         <p class="hint">${esc(type.about)}</p>
         <div class="controls">
-        <div class="row"><span class="lbl">Plays</span><span class="chips">${STEPS.filter(r => state.song.layers[r]).map(r => `
+        <div class="row"><span class="lbl">Plays</span><span class="chips">${JT.ROLES.filter(r => state.song.layers[r]).map(r => `
           <button type="button" class="chip" data-layer="${r}" aria-pressed="${!!sec.layers[r]}" style="--c:${ROLE_HEX[r]}"><span class="dot" style="background:${sec.layers[r] ? ROLE_HEX[r] : 'transparent'};border:1px solid ${ROLE_HEX[r]}"></span>${ROLE_NAME[r]}</button>`).join('')}</span></div>
         <div class="row"><span class="lbl">Energy</span><span class="seg">${[-1, 0, 1].map(e => `<button type="button" data-energy="${e}" aria-pressed="${sec.energy === e}">${ENERGY_LABEL[e]}</button>`).join('')}</span></div>
         <div class="row"><span class="lbl">Length</span><span class="seg">${[4, 8].map(b => `<button type="button" data-bars="${b}" aria-pressed="${sec.bars === b}">${b} bars</button>`).join('')}</span></div>
@@ -947,7 +1005,7 @@
       delete state.song.layers[role];
       regenerateOthers(role);
       if (state.tray === 'suggest' && state.role === role) state.role = null;
-      state.tray = 'add';
+      state.tray = nextStep() ? 'add' : 'ready';
       render();
     }
   });
@@ -1015,7 +1073,7 @@
     if (!state.edit || !tunnel) return;
     const hit = tunnel.pick(e.clientX, e.clientY, state.edit.role);
     if (!hit) return;
-    const lane = tunnel.laneAt(state.edit.role, hit, state.edit.lanes, rangeOf(state.edit.role));
+    const lane = tunnel.laneAt(state.edit.role, hit, state.edit.lanes, { range: rangeOf(state.edit.role), pieces: piecesOf(state.edit.role) });
     state.edit.cursor = lane;
     toggleAt(position(performance.now()) + hit.rel, lane);
   });
@@ -1033,7 +1091,10 @@
     // Ease the camera into (and out of) run mode
     const E = state.edit;
     const ease = Math.min(1, dt * (reduced ? 30 : 5));
-    roll += ((E ? ROLL[E.role] : 0) - roll) * ease;
+    // Roll the short way round to the edited side
+    let target = E ? rollFor(E.role) : 0;
+    target += 2 * Math.PI * Math.round((roll - target) / (2 * Math.PI));
+    roll += (target - roll) * ease;
     runAmt += ((E ? 1 : 0) - runAmt) * ease;
     if (tunnel) {
       const g = state.song ? JT.GENRES[state.song.genre] : IDLE;
@@ -1044,8 +1105,9 @@
         loop: loopLength(),
         marks: songMode ? state.track.sections.map(s => ({ beat: s.start, color: toRgb(JT.SECTION_TYPES[s.type].color) })) : [],
         roll, runAmt,
-        edit: E ? { role: E.role, lanes: E.lanes, cursor: E.cursor, range: rangeOf(E.role) } : null,
-        parts: currentParts().map(part => ({ role: part.role, notes: part.notes, ghost: part.ghost || part.muted, range: part.range, dim: !!E && part.role !== E.role })),
+        sides: currentSides(),
+        edit: E ? { role: E.role, lanes: E.lanes, cursor: E.cursor, range: rangeOf(E.role), pieces: piecesOf(E.role) } : null,
+        parts: currentParts().map(part => ({ role: part.role, notes: part.notes, ghost: part.ghost || part.muted, range: part.range, pieces: part.pieces, dim: !!E && part.role !== E.role })),
       });
     }
     if (songMode) {
