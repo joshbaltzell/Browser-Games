@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notary of the Damned - proposed main desk (static mockup)</title>
+<style>
+  :root {
+    --desk: #1c1410; --desk-hi: #2a1d15; --blotter: #2d2a22;
+    --paper: #e4d7b4; --paper-edge: #c8b88e; --ink: #1d1a12; --ink-faint: #6b5f44;
+    --oxblood: #8c2a22; --oxblood-hi: #b8392d; --brass: #c9a64d; --brass-dk: #7d6425;
+    --approve: #2f6b52; --approve-hi: #58b58b; --deny: #a32d25; --candle: #f0c36a;
+    --cruel: #a8321f; --whisper: #c9a8d6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0807; color: var(--paper); font-family: "Special Elite", "Courier New", ui-monospace, monospace; display: grid; place-items: center; min-height: 100vh; }
+  .note { font: 12px/1.4 system-ui, sans-serif; color: #8d7f66; padding: 8px 12px; text-align: center; }
+  .desk { position: relative; width: min(96vw, calc((100vh - 44px) * 1.5)); aspect-ratio: 3 / 2; overflow: hidden; border-radius: 10px;
+    background:
+      radial-gradient(60% 50% at 38% 38%, rgba(240,195,106,.20), transparent 70%),
+      repeating-linear-gradient(92deg, rgba(255,255,255,.012) 0 2px, transparent 2px 7px),
+      linear-gradient(180deg, var(--desk-hi), var(--desk));
+    box-shadow: 0 0 0 1px #3b2a1d, 0 30px 80px -20px #000; font-size: clamp(9px, 1.25vw, 15px); }
+  .desk::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 100% at 50% 40%, transparent 55%, rgba(0,0,0,.65)); }
+
+  /* HUD: a brass-edged docket strip, not floating text */
+  .docket { position: absolute; left: 2%; right: 2%; top: 2.5%; height: 8%; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 1.5%; background: linear-gradient(#3a2a1c, #2a1d13); border: 1px solid #5a4327; border-radius: 6px; z-index: 3; box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
+  .docket b { color: var(--brass); letter-spacing: .08em; font-weight: normal; }
+  .queue { display: flex; gap: 5px; align-items: center; }
+  .queue i { width: 1.1em; height: .55em; border-radius: 2px; background: #4b3b28; display: block; }
+  .queue i.done { background: var(--approve-hi); } .queue i.bad { background: var(--oxblood-hi); } .queue i.now { background: var(--candle); box-shadow: 0 0 8px var(--candle); }
+  .lives { display: flex; gap: 6px; } .lives span { width: 1em; height: 1em; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #d4553f, #6f1b14); box-shadow: 0 0 6px rgba(184,57,45,.6); }
+  .lives span.lost { background: #2b221b; box-shadow: none; }
+
+  /* Rule-change notice: a slip pushed under the door, shown before the soul arrives */
+  .slip { position: absolute; z-index: 5; left: 27%; top: 78%; transform: translateX(-50%) rotate(-1.2deg); width: 50%; padding: .7em 1em; background: #efe3bd; color: var(--ink);
+    border: 1px solid var(--paper-edge); box-shadow: 0 10px 24px rgba(0,0,0,.6); font-size: 1em; }
+  .slip small { display:block; color: var(--cruel); letter-spacing: .12em; }
+  .slip::before { content: ""; position: absolute; left: 50%; top: -9px; width: 1.6em; height: 1em; transform: translateX(-50%); background: var(--oxblood); border-radius: 50% 50% 40% 40%; box-shadow: 0 2px 3px rgba(0,0,0,.5); }
+
+  /* Dossier: one folder, three sheets, fields are real targets */
+  .folder { position: absolute; left: 2.5%; top: 12%; width: 56%; height: 84%; z-index: 2; }
+  .sheet { position: absolute; background: var(--paper); color: var(--ink); border: 1px solid var(--paper-edge); border-radius: 3px; padding: .8em 1em;
+    box-shadow: 0 6px 14px rgba(0,0,0,.55), inset 0 0 40px rgba(120,90,40,.18);
+    background-image: repeating-linear-gradient(transparent 0 1.55em, rgba(90,70,30,.12) 1.55em calc(1.55em + 1px)); }
+  .sheet h3 { margin: 0 0 .5em; font-size: .85em; letter-spacing: .16em; color: var(--ink-faint); font-weight: normal; border-bottom: 1px solid rgba(60,45,20,.35); padding-bottom: .3em; }
+  .sheet.cert { left: 0; top: 2%; width: 51%; height: 42%; transform: rotate(-.6deg); }
+  .sheet.sins { left: 52%; top: 0%; width: 48%; height: 42%; transform: rotate(.8deg); z-index: 1; }
+  .sheet.biz  { left: 4%; top: 47%; width: 70%; height: 24%; transform: rotate(-.3deg); }
+  .row { display: flex; gap: 1.2em; flex-wrap: wrap; }
+  .f { min-width: 7em; padding: .15em .35em; border-radius: 3px; border: 1px dashed transparent; margin-bottom: .45em; }
+  .f label { display: block; font-size: .72em; letter-spacing: .12em; color: var(--ink-faint); }
+  .f span { font-size: 1.25em; font-weight: bold; }
+  /* the rule currently hovered/selected lights up the exact fields it reads */
+  .f.lit { background: rgba(240,195,106,.35); border-color: #a77a1e; box-shadow: 0 0 0 2px rgba(240,195,106,.35); }
+  .f.lit.fail { background: rgba(184,57,45,.22); border-color: var(--deny); }
+  .f.fail span { color: var(--deny); }
+  .sealmark { position: absolute; right: 6%; bottom: 8%; transform: rotate(-9deg); border: 2px solid var(--approve); color: var(--approve); padding: .2em .6em; font-size: 1.1em; letter-spacing: .1em; border-radius: 4px; opacity: .85; }
+  .quote { font-size: 1.15em; line-height: 1.5; margin: .2em 0 .6em; }
+  .tag { display:inline-block; font-size: .8em; padding: .1em .5em; border: 1px solid var(--ink-faint); border-radius: 2px; color: var(--ink-faint); }
+
+  /* Rulebook: a pinned card on the right, rule-per-row with tick boxes */
+  .orders { position: absolute; right: 2.5%; top: 12%; width: 36%; z-index: 2; background: #d8cba3; color: var(--ink); border-radius: 3px; padding: .8em .9em 1em; border: 1px solid var(--paper-edge);
+    box-shadow: 0 8px 18px rgba(0,0,0,.6), inset 0 0 40px rgba(120,90,40,.2); transform: rotate(.5deg); }
+  .orders::before { content: ""; position: absolute; left: 50%; top: -8px; width: 1.2em; height: 1.2em; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e0bd5e, #7d6425); box-shadow: 0 3px 4px rgba(0,0,0,.55); }
+  .orders h3 { margin: .2em 0 .5em; font-size: .9em; letter-spacing: .16em; font-weight: normal; text-align: center; }
+  .rule { display: grid; grid-template-columns: 1.4em 1fr; gap: .4em; padding: .35em .3em; border-radius: 3px; border-top: 1px solid rgba(60,45,20,.18); line-height: 1.3; font-size: 1em; }
+  .rule .box { width: 1.05em; height: 1.05em; border: 2px solid var(--ink-faint); border-radius: 2px; margin-top: .1em; display: grid; place-items: center; font-size: .9em; line-height: 1; }
+  .rule.hot { background: rgba(240,195,106,.35); }
+  .rule.ok .box { border-color: var(--approve); color: var(--approve); }
+  .rule.bad .box { border-color: var(--deny); color: var(--deny); }
+  .rule.bad { background: rgba(184,57,45,.13); }
+  .rule.cruel { color: var(--cruel); }
+  .rule.cruel .why { display:block; font-size: .8em; font-style: italic; opacity: .85; }
+  .rule .new { font-size: .7em; letter-spacing: .1em; background: var(--oxblood); color: #f3e5c8; padding: .05em .4em; border-radius: 2px; margin-left: .4em; vertical-align: .1em; }
+  .foot { margin-top: .5em; padding-top: .4em; border-top: 2px double rgba(60,45,20,.4); font-size: .85em; font-style: italic; text-align: center; }
+
+  /* Wicket + stamps */
+  .wicket { position: absolute; right: 2.5%; top: 62%; width: 36%; height: 14%; z-index: 2; display: flex; align-items: center; gap: .8em; padding: .5em .9em; background: linear-gradient(#18110d, #120c09); border: 1px solid #4b3622; border-radius: 6px; }
+  .shade { width: 3.6em; height: 3.6em; border-radius: 50% 50% 45% 55%; background: radial-gradient(circle at 40% 35%, #4a4056, #17121c); filter: blur(.4px); box-shadow: 0 0 18px rgba(201,168,214,.25); flex: none; }
+  .wicket p { margin: 0; line-height: 1.25; } .wicket .nm { color: var(--paper); font-size: 1.1em; } .wicket .pl { color: var(--whisper); font-style: italic; font-size: .9em; }
+
+  .rack { position: absolute; right: 2.5%; bottom: 3%; width: 36%; height: 20%; z-index: 4; display: grid; grid-template-columns: 1fr 1fr; gap: 3%; }
+  .stampbtn { position: relative; border: 0; border-radius: 8px; cursor: grab; color: #f6ecd0; font: inherit; font-size: 1.25em; letter-spacing: .12em; padding: 0;
+    background: linear-gradient(#4a3722, #2a1d11); box-shadow: 0 8px 0 #130c06, 0 14px 18px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.1); display: grid; place-items: end center; padding-bottom: .5em; }
+  .stampbtn::before { content: ""; position: absolute; top: -34%; left: 50%; width: 36%; height: 70%; transform: translateX(-50%); border-radius: 40% 40% 12% 12%; background: linear-gradient(90deg, #5a3f22, #8a6534 45%, #4a3219); box-shadow: 0 -2px 0 rgba(255,255,255,.12) inset; }
+  .stampbtn .face { position: absolute; top: 14%; left: 14%; right: 14%; height: 34%; display:grid; place-items:center; border-radius: 4px; font-size: .8em; }
+  .stampbtn.a .face { background: var(--approve); box-shadow: inset 0 0 0 2px var(--approve-hi); }
+  .stampbtn.d .face { background: var(--deny); box-shadow: inset 0 0 0 2px var(--oxblood-hi); }
+  .stampbtn kbd { font: inherit; font-size: .65em; padding: .05em .45em; border: 1px solid #8a6534; border-radius: 3px; margin-left: .5em; color: var(--brass); }
+
+  /* The ink imprint left on the cert after a stamp lands */
+  .imprint { position: absolute; z-index: 4; left: 26%; top: 24%; transform: rotate(-11deg); border: 4px solid var(--approve); color: var(--approve); padding: .1em .5em; font-size: 2.1em; letter-spacing: .12em; border-radius: 6px; mix-blend-mode: multiply; opacity: .78; }
+  .imprint::after { content:""; position:absolute; inset:-4px; border-radius: 8px; background: repeating-radial-gradient(circle at 30% 40%, transparent 0 3px, rgba(228,215,180,.55) 3px 4px); mix-blend-mode: screen; opacity:.35; }
+
+  .pile { position: absolute; left: 2%; bottom: 1%; z-index: 1; display: flex; gap: .2em; align-items: end; color: #6e6256; font-size: .75em; letter-spacing: .1em; }
+  .pile i { width: 2.2em; height: 1.6em; background: #15110e; border-radius: 50% 50% 30% 30%; box-shadow: 0 0 10px rgba(0,0,0,.8); }
+  .hint { position:absolute; z-index:6; left: 31%; top: 96%; transform: translateX(-50%); background: rgba(10,8,6,.85); border:1px solid #5a4327; padding:.3em .8em; border-radius: 6px; color: var(--candle); font-size: .9em; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="note">Static mockup of the proposed main desk, mid-case 14 (a cruel clause in force; rule 3 hovered; soul pleading). 960x640 layout scaled to the window. Fonts fall back to Courier New when "Special Elite" is not installed.</div>
+<div class="desk" role="img" aria-label="Mockup of the proposed Notary of the Damned desk">
+
+  <div class="docket">
+    <span><b>NIGHT SHIFT</b> &nbsp; Souls cleared <b>11</b></span>
+    <span class="queue" aria-label="Queue: case 14 of 16"><i class="done"></i><i class="done"></i><i class="done"></i><i class="bad"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="bad"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="now"></i><i></i><i></i></span>
+    <span class="lives" aria-label="2 reprimands remaining"><span></span><span></span><span class="lost"></span></span>
+  </div>
+
+  <div class="slip"><small>MEMO FROM THE LOWER OFFICE</small>Effective immediately: Clause 3-f. Souls with fewer than two sins are suspiciously unblemished. The Office thanks you for your cooperation.</div>
+
+  <div class="folder">
+    <div class="sheet cert">
+      <h3>DEATH CERTIFICATE</h3>
+      <div class="row">
+        <div class="f"><label>NAME</label><span>Thomasine Ware</span></div>
+        <div class="f lit"><label>ISSUED</label><span>1962-09-17</span></div>
+        <div class="f lit"><label>DIED</label><span>1962-09-19</span></div>
+      </div>
+      <div class="sealmark">SEAL VALID</div>
+    </div>
+    <div class="sheet sins">
+      <h3>SINS LEDGER</h3>
+      <div class="row">
+        <div class="f fail"><label>TALLY</label><span>1</span></div>
+        <div class="f"><label>KARMA WT</label><span>1</span></div>
+      </div>
+      <div class="f"><label>RECORDED</label><span style="font-size:1.05em">Pride x1</span></div>
+    </div>
+    <div class="sheet biz">
+      <h3>UNFINISHED BUSINESS</h3>
+      <p class="quote">"A kindness, unrepaid."</p>
+      <span class="tag">RESOLVED: NO</span>
+    </div>
+  </div>
+
+  <div class="orders">
+    <h3>STANDING ORDERS</h3>
+    <div class="rule ok"><span class="box">&#10003;</span><span>Death date must not precede the issue date.</span></div>
+    <div class="rule ok"><span class="box">&#10003;</span><span>Sin tally must equal karma weight.</span></div>
+    <div class="rule ok"><span class="box">&#10003;</span><span>Seal must read VALID.</span></div>
+    <div class="rule cruel ok"><span class="box">&#10003;</span><span>7-c: Middle initial is irregular. DENY.</span></div>
+    <div class="rule cruel ok"><span class="box">&#10003;</span><span>9-a: Resolved business is meddling. DENY.</span></div>
+    <div class="rule cruel bad hot"><span class="box">&#10007;</span><span>3-f: Fewer than TWO sins is suspiciously unblemished. DENY.<span class="new">NEW</span><span class="why">Tally on the Sins Ledger is 1.</span></span></div>
+    <div class="foot">Approve only if every order is satisfied.</div>
+  </div>
+
+  <div class="wicket">
+    <div class="shade"></div>
+    <p><span class="nm">Thomasine Ware</span><br><span class="pl">"i tried to be good"</span></p>
+  </div>
+
+  <div class="rack">
+    <button class="stampbtn a" aria-label="Stamp APPROVED, key A"><span class="face">APPROVED</span>A<kbd>A</kbd></button>
+    <button class="stampbtn d" aria-label="Stamp DENIED, key D"><span class="face">DENIED</span>D<kbd>D</kbd></button>
+  </div>
+
+  <div class="pile" aria-label="The denied: 2"><span>THE DENIED</span><i></i><i></i></div>
+  <div class="hint">Drag a stamp onto the folder, or press A / D</div>
+</div>
+</body>
+</html>
