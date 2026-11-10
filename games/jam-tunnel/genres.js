@@ -515,6 +515,57 @@ window.JT = window.JT || {};
   }
 
   // ===================================================================
+  // PLAYED BY A DRUMMER: four-bar grooves from the Groove MIDI Dataset (grooves.js), with every hit's
+  // real timing (kept in milliseconds, so the feel survives a tempo change) and velocity
+  // ===================================================================
+  function liveDrums() {
+    return (ctx, r, busy) => {
+      const G = window.JT_GROOVES && JT_GROOVES.genres[ctx.genre];
+      if (!G || !G.grooves.length) return [];
+      const groove = G.grooves[Math.floor(r() * G.grooves.length)];
+      const msPerBeat = 60000 / ctx.bpm;
+      const out = [];
+      groove.notes.forEach(([step, off, pi, vel]) => {
+        const p = JT_GROOVES.pieces[pi];
+        if (busy === 0 && vel < 50 && p !== 'kick') return;    // sparser: drop the ghost notes and soft hats
+        const b = ((step * G.unit + off / msPerBeat) % 16 + 16) % 16;
+        out.push({ b, len: p === 'kick' ? 0.25 : 0.18, p, v: Math.min(1, vel / 110) });
+      });
+      out.meta = groove;
+      return out;
+    };
+  }
+  // The genre's measured feel, applied to the generated drum styles: the snare lands a few ms behind
+  // the kick, hi-hats follow the drummers' accent pattern, and ghost snares fill in
+  function humanize(notes, g, song, seed, busy) {
+    const G = window.JT_GROOVES && JT_GROOVES.genres[song.genre];
+    if (!G) return notes;
+    const F = G.feel, msPerBeat = 60000 / song.bpm;
+    notes.forEach(n => {
+      if (n.p === 'snare' && n.v >= 0.6) n.b += F.snareLagMs / msPerBeat;
+      if (n.p === 'hat') {
+        const k = Math.round((n.b % 1) / G.unit) % F.hatAccent.length;
+        n.v = Math.max(0.12, Math.min(1, n.v * F.hatAccent[k]));
+      }
+    });
+    if (busy > 0) {
+      const r = T.rng(seed ^ 0x5bd1e995);
+      const slots = F.ghostPositions.length;          // grid positions in one bar
+      const perBar = Math.min(3, F.ghostRate * 4) * (busy === 2 ? 1.5 : 1);
+      for (let bar = 0; bar < BARS; bar++) {
+        for (let i = 0; i < Math.round(perBar); i++) {
+          let x = r(), k = 0;
+          while (k < slots - 1 && x > F.ghostPositions[k]) { x -= F.ghostPositions[k]; k++; }
+          const b = bar * 4 + k * G.unit;
+          if (!notes.some(n => n.p === 'snare' && Math.abs(n.b - b) < G.unit / 2)) notes.push({ b, len: 0.12, p: 'snare', v: 0.16 + r() * 0.08 });
+        }
+      }
+    }
+    return notes;
+  }
+  JT.liveDrums = liveDrums;
+
+  // ===================================================================
   // EXTRA SIDES: percussion, a second melody, transitions (optional, added after the core loop)
   // ===================================================================
   const PERC_PIECES = ['shaker', 'tambourine', 'rim', 'congahi', 'congalo', 'cowbell'];
@@ -625,6 +676,7 @@ window.JT = window.JT || {};
           { id: 'straight', name: 'Straight eighths', clash: 'Straight eighths fight the shuffle.', why: 'Even eighth-note chugging.', gen: rockGuitar('straight') },
         ] },
         drums: { label: 'Band kit', voice: 'kit', styles: [
+          { id: 'live', name: 'Played by a drummer', live: true, why: 'A real drummer\u2019s groove: their timing, ghost notes and accents, not a programmed pattern.', gen: liveDrums() },
           { id: 'shuffle', name: 'Shuffle groove', why: 'The hi-hat swings with the shuffle; backbeat on 2 and 4.', gen: rockDrums('shuffle') },
           { id: 'halftime', name: 'Half-time stomp', why: 'One big snare per bar, heavy and roomy.', gen: rockDrums('halftime') },
           { id: 'train', name: 'Train beat', why: 'Rolling ghost notes on every triplet drive it forward.', gen: rockDrums('train') },
@@ -712,6 +764,7 @@ window.JT = window.JT || {};
           { id: 'busy', name: 'Busy topline', why: 'A quick, dense line.', gen: popLead('busy') },
         ] },
         drums: { label: 'Pop kit', voice: 'kit', styles: [
+          { id: 'live', name: 'Played by a drummer', live: true, why: 'A real drummer\u2019s groove: their timing, ghost notes and accents, not a programmed pattern.', gen: liveDrums() },
           { id: 'backbeat', name: 'Pop backbeat', why: 'Kick on 1 and the and-of-2, snare on 2 and 4.', gen: popDrums('backbeat') },
           { id: 'four', name: 'Four on the floor', why: 'A dance-pop kick on every beat with open hats.', gen: popDrums('four') },
           { id: 'ballad', name: 'Half-time ballad', why: 'Big and slow, one snare per bar.', gen: popDrums('ballad') },
@@ -753,6 +806,7 @@ window.JT = window.JT || {};
           { id: 'long', name: 'Long notes', why: 'Slow, cinematic notes over the loop.', gen: bbStrings('long') },
         ] },
         drums: { label: 'Boom bap kit', voice: 'kit', styles: [
+          { id: 'live', name: 'Played by a drummer', live: true, why: 'A real drummer\u2019s groove: their timing, ghost notes and accents, not a programmed pattern.', gen: liveDrums() },
           { id: 'classic', name: 'Classic boom bap', why: 'Swung hats, a hard snare on 2 and 4, kicks that nod.', gen: bbDrums('classic') },
           { id: 'laidback', name: 'Laid back', why: 'Fewer kicks, behind-the-beat feel.', gen: bbDrums('laidback') },
           { id: 'busy', name: 'Busy sixteenths', why: 'Swung sixteenth hats and ghost snares.', gen: bbDrums('busy') },
@@ -796,6 +850,7 @@ window.JT = window.JT || {};
           { id: 'sparse', name: 'Sparse', why: 'A few long notes that leave room for a singer.', gen: countryLead('sparse') },
         ] },
         drums: { label: 'Band kit', voice: 'kit', styles: [
+          { id: 'live', name: 'Played by a drummer', live: true, why: 'A real drummer\u2019s groove: their timing, ghost notes and accents, not a programmed pattern.', gen: liveDrums() },
           { id: 'boomchick', name: 'Boom-chick', why: 'Kick on 1 and 3, snare on 2 and 4: the backbone of country.', gen: countryDrums('boomchick') },
           { id: 'twostep', name: 'Two-step', why: 'Hi-hat on the off-beats, made for dancing.', gen: countryDrums('twostep') },
           { id: 'train', name: 'Train beat', why: 'Sixteenth-note snare that chugs like a locomotive.', gen: countryDrums('train') },
@@ -882,12 +937,17 @@ window.JT = window.JT || {};
     const g = JT.GENRES[song.genre];
     const style = g.roles[role].styles.find(s => s.id === styleId);
     const ctx = {
-      key: g.key, grid: g.grid, genre: song.genre,
+      key: g.key, grid: g.grid, genre: song.genre, bpm: song.bpm,
       scale: g.editScale.map(i => (g.key + i) % 12),
       chords: (override && override.chords) || song.chords,
       layers: (override && override.layers) || song.layers,
     };
-    return style.gen(ctx, T.rng(seed), busy).filter(n => n.b >= 0 && n.b < 16);
+    let notes = style.gen(ctx, T.rng(seed), busy);
+    const meta = notes.meta;
+    if (role === 'drums' && !style.live && g.roles.drums.voice === 'kit') notes = humanize(notes, g, song, seed, busy);
+    notes = notes.filter(n => n.b >= 0 && n.b < 16);
+    notes.meta = meta;
+    return notes;
   };
 
   JT.setProgression = (song, i) => setProgression(song, i);
@@ -933,6 +993,9 @@ window.JT = window.JT || {};
         const hits = bassOn.filter(b => near(b, k)).length;
         score += (hits / bassOn.length);
         if (hits >= 2) reasons.push(`Its kick lands with ${hits} of your bass notes each bar.`);
+      }
+      if (notes.meta && notes.meta.words) {
+        reasons.push(`Played by a real drummer in a ${notes.meta.style} session at ${notes.meta.bpm} BPM: ${notes.meta.words.join(', ')}.`);
       }
       if (role === 'perc' && kept.drums) {
         const drumOn = kept.drums.notes.filter(n => n.b < 4).map(n => n.b);

@@ -63,20 +63,30 @@ window.JT = window.JT || {};
     return { chords: T.chordsOf(g.key, prog.chords, g.sharps), prog };
   };
 
-  // A drum fill in the last beat (or, with build = true, a roll across the whole last bar)
+  // A drum fill in the last beat or two (or, with build = true, a roll across the whole last bar).
+  // Band-kit genres use real fills from the Groove MIDI Dataset. Returns { notes, span } in beats.
   function fill(song, endBeat, build) {
     const shuffle = song.genre === 'rock';
     const out = [];
+    const G = window.JT_GROOVES && JT_GROOVES.genres[song.genre];
+    if (!build && G && G.fills.length) {
+      const f = G.fills[(song.seed + endBeat) % G.fills.length];
+      const msPerBeat = 60000 / song.bpm;
+      return {
+        span: f.span,
+        notes: f.notes.map(([step, off, pi, vel]) => ({ b: endBeat + step * G.unit + off / msPerBeat, len: 0.18, p: JT_GROOVES.pieces[pi], v: Math.min(1, vel / 110) })),
+      };
+    }
     if (build) {
       for (let i = 0; i < 16; i++) out.push({ b: endBeat - 4 + i / 4, len: 0.12, p: 'snare', v: 0.25 + 0.7 * (i / 15) });
-      return out;
+      return { notes: out, span: 4 };
     }
     if (shuffle) {
       [0, 1 / 3, 2 / 3].forEach((d, i) => out.push({ b: endBeat - 1 + d, len: 0.2, p: ['snare', 'tomhigh', 'tomlow'][i], v: 0.85 + i * 0.07 }));
     } else {
       [0, 0.25, 0.5, 0.75].forEach((d, i) => out.push({ b: endBeat - 1 + d, len: 0.12, p: i < 2 ? 'snare' : 'tomhigh', v: 0.7 + i * 0.1 }));
     }
-    return out;
+    return { notes: out, span: 1 };
   }
 
   // Build every note of the full song. Returns { parts: {role: notes}, sections: [{...start, end}], length }
@@ -132,8 +142,9 @@ window.JT = window.JT || {};
       // Fills into the chorus: replace the last beat of drums, or build a roll if the drums are out
       if (intoChorus && song.layers.drums) {
         const drumsOn = sec.layers.drums && sec.type !== 'intro';
-        if (drumsOn) parts.drums = parts.drums.filter(n => !(n.b >= end - 1 && n.b < end));
-        parts.drums.push(...fill(song, end, !drumsOn));
+        const f = fill(song, end, !drumsOn);
+        if (drumsOn) parts.drums = parts.drums.filter(n => !(n.b >= end - f.span - 0.05 && n.b < end));
+        parts.drums.push(...f.notes);
       }
 
       // The outro's last bar: everything stops, one held home chord with bass and a final hit
