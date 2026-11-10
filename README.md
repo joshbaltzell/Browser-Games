@@ -41,9 +41,9 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 
 | Game | Description |
 | --- | --- |
-| **[Knit One](games/knit-one/)** | You are the yarn. Wrap pegs, loop through your own bight, and cinch a knot that actually holds the weight. |
+| **[Knit One](games/knit-one/)** | You are the yarn. Lay it around the posts, tie a real knot, then drop the ball and see if it holds. |
 | **[Notary of the Damned](games/notary-of-the-damned/)** | The underworld's paperwork clerk: check each ghost's dossier against a shifting rulebook and stamp APPROVED or DENIED. |
-| **[Last Words](games/last-words/)** | A deckbuilder where every card is a word. Chain them into a sentence and it happens literally. |
+| **[Last Words](games/last-words/)** | Chain word cards into a sentence and it happens, literally. Each page deals 12 fresh random words. Careful: the last noun takes the blow. |
 
 ### Stealth
 

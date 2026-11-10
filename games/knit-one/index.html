@@ -2,17 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
   <title>Knit One</title>
+  <link rel="icon" href="data:," />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Fixed-aspect play area, scaled to fit the window. All screens (title,
-       play, complete) are drawn inside the canvas itself. -->
-  <div id="stage">
-    <canvas id="game" width="900" height="640"></canvas>
-  </div>
+  <!-- One full-window canvas. The 900x640 board is scaled to fit; the buttons,
+       text and screens are drawn in real screen pixels around it. -->
+  <canvas id="game"></canvas>
 
+  <script src="rooms.js"></script>
+  <script src="sim.js"></script>
+  <script src="solutions.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

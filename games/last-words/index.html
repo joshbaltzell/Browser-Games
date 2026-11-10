@@ -12,6 +12,25 @@
     <canvas id="game" width="960" height="640"></canvas>
   </div>
 
+  <!-- Help: a real DOM overlay so the text stays readable on a phone. game.js fills it in. -->
+  <div id="help" hidden role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <div class="sheet">
+      <header>
+        <h2 id="help-title">Last Words</h2>
+        <button id="help-close" type="button" aria-label="Close help">Close &#x2715;</button>
+      </header>
+      <div id="help-tabs" role="tablist" aria-label="Help sections"></div>
+      <div id="help-body" role="tabpanel"></div>
+      <div id="help-actions"></div>
+      <footer>
+        <p>Content note: this story touches on suicide.</p>
+        <p>If you're struggling, you can reach a crisis line through
+          <a href="https://findahelpline.com" target="_blank" rel="noopener noreferrer">findahelpline.com</a>
+          (in the US, call or text 988).</p>
+      </footer>
+    </div>
+  </div>
+
   <script src="game.js"></script>
 </body>
 </html>

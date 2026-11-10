@@ -1,7 +1,8 @@
 /* =====================================================================
    LAST WORDS — Phase 1: Core Mechanic Prototype
-   A deckbuilder where cards are word-fragments. You chain them left-to-right
-   into a grammatically valid sentence, then cast it LITERALLY.
+   A word-card game: each page deals 12 fresh random word-fragments (there is
+   no deck). You chain them left-to-right into a grammatically valid sentence,
+   then cast it LITERALLY.
    `BURN the GUARD twice` deals fire damage x2 to the Guard.
    `the GUARD STRIKES YOU` turns the blow against the player.
 
@@ -32,14 +33,22 @@
   const W = canvas.width;   // 960
   const H = canvas.height;  // 640
 
+  // uiK grows the tiny canvas text when the canvas is scaled down (phones), so
+  // hints stay readable. 1 on a normal desktop window.
+  let uiK = 1;
+  function fsz(px) { return Math.round(px * uiK); }
   function fitCanvas() {
-    const pad = 24;
+    const pad = window.innerHeight < 500 ? 8 : 24;
     const aw = window.innerWidth - pad;
     const ah = window.innerHeight - pad;
     const scale = Math.min(aw / W, ah / H, 1.25);
     canvas.style.width = Math.round(W * scale) + "px";
     canvas.style.height = Math.round(H * scale) + "px";
+    uiK = Math.min(1.45, Math.max(1, 0.8 / scale));
   }
+  // Touch screens: drop keyboard labels from the buttons.
+  let touchUI = false;
+  try { touchUI = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches); } catch (e) {}
   window.addEventListener("resize", fitCanvas);
   fitCanvas();
 
@@ -245,11 +254,15 @@
     { word: "SAVAGE",  pos: "ADJ", add: 3, weight: 1 },
     { word: "QUIET",   pos: "ADJ", add: 0, weight: 1 },   // flavor; no magnitude
     // Nouns (NOUN). target decides who the effect lands on when this is the OBJECT.
-    { word: "GUARD",   pos: "NOUN", target: "enemy", weight: 2 },
-    { word: "BEAST",   pos: "NOUN", target: "enemy", weight: 2 },
-    { word: "DOOR",    pos: "NOUN", target: "enemy", weight: 1 },
-    { word: "WOUND",   pos: "NOUN", target: "enemy", weight: 2 },
-    { word: "NIGHT",   pos: "NOUN", target: "enemy", weight: 1 },
+    // The foe card: one card whose word is the current foe's short name (GUARD,
+    // BEAST, WARDEN, NIGHT). `word` is a getter, so cards already in hand (and on
+    // the platen) rename themselves when the foe changes. The plain, common hit.
+    { get word() { return foeName(); }, pos: "NOUN", target: "enemy", foe: true, weight: 5 },
+    // Body parts: they aim at a spot on the foe (see PARTS). Same target, a tradeoff each.
+    { word: "HEART",   pos: "NOUN", target: "enemy", part: "heart", weight: 1 },
+    { word: "HANDS",   pos: "NOUN", target: "enemy", part: "hands", weight: 2 },
+    { word: "EYES",    pos: "NOUN", target: "enemy", part: "eyes",  weight: 2 },
+    { word: "MOUTH",   pos: "NOUN", target: "enemy", part: "mouth", weight: 1 },
     { word: "YOU",     pos: "NOUN", target: "player", weight: 1 },
     { word: "I",       pos: "NOUN", target: "player", weight: 1 },
     { word: "ME",      pos: "NOUN", target: "player", weight: 1 },
@@ -271,9 +284,30 @@
     { word: "3",       pos: "NUM", rep: 3, weight: 1 },
   ];
 
+  // Body parts. Each aims the effect at a spot on the foe and adds one rule, but
+  // only when the verb does damage: healing a body part just heals the foe.
+  const HEART_BONUS = 3;   // HEART: weak point, +3 to the amount (before adjectives)
+  const EYES_COST = 2;     // EYES: this cast's amount is 2 lower (min 0)...
+  //                          ...but the foe's next reply misses you entirely.
+  //                       HANDS: the foe's next reply is halved (rounded up).
+  //                       MOUTH: silences the foe's wrinkle for this cast.
+  const PARTS = {
+    heart: { value: "weak +" + HEART_BONUS, tail: "weak point +" + HEART_BONUS, row: "A weak point: +" + HEART_BONUS + " to the number, before adjectives.",
+             tip: "The foe's weak point. Damage here gets +" + HEART_BONUS + " before adjectives." },
+    hands: { value: "reply half", row: "Halves the foe's next reply to you.", tail: "its next reply is halved", land: "Its hands are hurt: next reply halved",
+             tip: "The foe's hands. Damage here also halves its next reply to you." },
+    eyes:  { value: "blind -" + EYES_COST, row: "Its next reply misses you, but this hit is " + EYES_COST + " weaker.", tail: "its next reply misses, this hit -" + EYES_COST, land: "Its eyes are blinded: next reply misses",
+             tip: "The foe's eyes. Damage here is " + EYES_COST + " weaker, but its next reply misses you completely." },
+    mouth: { value: "silence",    row: "Silences its trick (thorns, armor or ward) for this cast.", tail: "silences its trick for this cast", land: "Its mouth is shut: trick silenced",
+             tip: "The foe's mouth. Damage here silences its trick (thorns, armor or ward) for this cast." },
+  };
+
   let _uid = 0;
   function makeCard(def) {
-    return Object.assign({ id: ++_uid }, def);
+    const c = Object.assign({ id: ++_uid }, def);
+    // The foe card keeps following the current foe's name.
+    if (def.foe) Object.defineProperty(c, "word", { get: foeName, enumerable: true, configurable: true });
+    return c;
   }
 
   // ---- Grammar engine --------------------------------------------------
@@ -359,18 +393,49 @@
     return p === "MOD" || p === "DONE";
   }
 
-  // A short human label for the open socket (debug + onboarding hint).
-  function openSocketLabel(chain) {
-    const p = chainPhase(chain);
-    switch (p) {
-      case "START": return "OPEN  (start: VERB, or the / ADJ / NOUN-subject)";
-      case "SUBJ": return "SUBJECT  (ADJ / NOUN)";
-      case "VERB": return "VERB";
-      case "OBJ":  return "OBJECT  (the / ADJ / NOUN)";
-      case "MOD":  return "READY  (optional: ADV / NUM, or Return)";
-      case "DONE": return "READY  (Return to cast)";
+  // What the chain wants next, in plain words (log line under the platen).
+  function nextStepText(chain) {
+    switch (chainPhase(chain)) {
+      case "START": return "Start with a verb, or with a noun (the / an adjective / a noun).";
+      case "SUBJ":  return "Next: an adjective, or the noun that does it.";
+      case "VERB":  return "Next: a verb. What does it do?";
+      case "OBJ":   return "Next: the / an adjective / the noun it happens to.";
+      case "MOD":   return "Done! Cast it, or end with twice / a number to repeat it.";
+      case "DONE":  return "Done! Cast it.";
     }
     return "";
+  }
+  // Short lines for the dotted "next socket" chit.
+  function socketLines(phase) {
+    switch (phase) {
+      case "START": return ["a verb or", "a noun"];
+      case "SUBJ":  return ["adjective", "or noun"];
+      case "VERB":  return ["a verb"];
+      case "OBJ":   return ["the, adjective,", "or noun"];
+      case "MOD":   return ["twice / 2 ?", "or cast"];
+    }
+    return [];
+  }
+  // Why was this card refused? Written from the same rules as canAttach.
+  function whyRefused(chain, card) {
+    const { phase, usedArt, usedAdj } = walkChain(chain);
+    switch (phase) {
+      case "START":
+        return "'" + card.word + "' goes at the very end. Start with a verb, or a noun.";
+      case "SUBJ":
+      case "OBJ":
+        if (card.pos === "ART") return usedArt ? "Only one article per noun." : "An article comes before the adjective.";
+        if (card.pos === "ADJ") return "One adjective per noun.";
+        if (card.pos === "VERB") return phase === "SUBJ" ? "A verb comes after the noun." : "Say who it happens to first: add a noun.";
+        return "Finish the noun first. 'twice' and numbers go at the very end.";
+      case "VERB":
+        return "Need a verb here. What does the noun do?";
+      case "MOD":
+        return "The sentence is done. Add twice / a number, or cast it.";
+      case "DONE":
+        return "The sentence is finished. Press CAST.";
+    }
+    return "That does not fit here.";
   }
 
   // =====================================================================
@@ -416,6 +481,11 @@
 
     const eff = p.verb.effect;            // fire | phys | heal
     let amount = p.verb.base || 0;
+    const part = p.obj.part || null;
+    const dmgVerb = eff !== "heal";
+
+    // HEART is a weak point: a base bonus, so adjectives act on it too.
+    if (part === "heart" && dmgVerb) amount += HEART_BONUS;
 
     // Object adjectives modify the magnitude.
     for (const a of p.objAdjs) {
@@ -423,6 +493,8 @@
       if (a.add != null) amount += a.add;
     }
     amount = Math.max(0, amount);
+    // EYES: a blinded foe misses you, but a blind swing is weaker.
+    if (part === "eyes" && dmgVerb) amount = Math.max(0, amount - EYES_COST);
 
     const reps = p.mod ? (p.mod.rep || 1) : 1;
 
@@ -437,10 +509,15 @@
       total,
       target,
       heal: eff === "heal",
+      part,
+      // Status effects only ride on damage, and apply once however many repeats.
+      status: dmgVerb && part === "hands" ? "halved" : dmgVerb && part === "eyes" ? "blind" : null,
+      silence: dmgVerb && part === "mouth",
+      tail: dmgVerb && part ? PARTS[part].tail : "",
       summary:
         (eff === "heal" ? "heal " : eff === "fire" ? "fire " : "hit ") +
         amount + (reps > 1 ? " x" + reps : "") +
-        " -> " + (target === "player" ? "YOU" : enemy.name) +
+        " -> " + (target === "player" ? "YOU" : (enemy ? enemy.name : "THE GUARD") + (part && !(enemy && enemy.kind === "meaning") ? "'s " + p.obj.word.toLowerCase() : "")) +
         " = " + total,
     };
   }
@@ -521,11 +598,11 @@
 
   // localStorage persistence (ONBOARD-03): best mark, deepest encounter
   // reached, whether the note was ever unwritten, and whether this player has
-  // seen the tutorial (so onboarding only nags first-timers).
+  // played the guided first page (so the intro only shows once).
   const BEST_KEY  = "lastWords.best";
   const DEPTH_KEY = "lastWords.depth";
   const WIN_KEY   = "lastWords.won";
-  const SEEN_KEY  = "lastWords.seen";
+  const INTRO_KEY = "lastWords.intro";
   function loadInt(key) {
     try { return parseInt(localStorage.getItem(key) || "0", 10) || 0; }
     catch (e) { return 0; }
@@ -535,7 +612,7 @@
   function saveBest(v) { saveInt(BEST_KEY, v); }
   let bestDepth = loadInt(DEPTH_KEY);   // deepest encounter index reached (1-based)
   let everWon   = loadInt(WIN_KEY) === 1;
-  let hasSeenTutorial = loadInt(SEEN_KEY) === 1;
+  let introSeen = loadInt(INTRO_KEY) === 1;
   function recordDepth(idx1) {
     if (idx1 > bestDepth) { bestDepth = idx1; saveInt(DEPTH_KEY, bestDepth); }
   }
@@ -549,22 +626,53 @@
   //   plain  : nothing special.
   //   reflect: takes only HALF damage from clean phys hits — favors fire / big adjs.
   //   thorns : every NUM/ADV repeat past the first lashes back at YOU — punishes spam.
-  //   ward   : ignores the first point of every cast unless the object is QUIET/heal-free.
-  // The wrinkle is shown in the enemy subtitle and applied in castChain.
+  //   ward   : every damaging blow loses WARD_BLUNT point.
+  // The wrinkle is shown in the enemy subtitle/tooltip (both generated from this
+  // data) and applied in castChain.
+  const THORNS_PER_REPEAT = 2;  // thorns: self-damage for each repeat past the first
+  const WARD_BLUNT = 1;         // ward: points lost from every blow
+  // `short` is what the foe card says.
   const ENEMY_ROSTER = [
-    { name: "THE GUARD",   hp: 16, max: 16, reply: 2, kind: "plain",
-      sub: "a slow sentinel · replies 2 each turn" },
-    { name: "THE BEAST",   hp: 22, max: 22, reply: 3, kind: "thorns",
-      sub: "thorns · every repeat past the first lashes YOU" },
-    { name: "THE WARDEN",  hp: 26, max: 26, reply: 3, kind: "reflect",
-      sub: "armored · clean STRIKES land at half — burn it instead" },
-    { name: "THE NIGHT",   hp: 30, max: 30, reply: 4, kind: "ward",
-      sub: "warded · blunts the first point of every blow" },
+    { name: "THE GUARD",   short: "GUARD",  hp: 16, max: 16, reply: 2, kind: "plain" },
+    { name: "THE BEAST",   short: "BEAST",  hp: 22, max: 22, reply: 3, kind: "thorns" },
+    { name: "THE WARDEN",  short: "WARDEN", hp: 26, max: 26, reply: 3, kind: "reflect" },
+    { name: "THE NIGHT",   short: "NIGHT",  hp: 30, max: 30, reply: 4, kind: "ward" },
   ];
+  // The word on the foe card: the current foe's short name (the meaning-boss is
+  // just MEANING, so it never clashes with a body part).
+  function foeName() { return enemy && enemy.short ? enemy.short : "GUARD"; }
+  // One-line subtitle under the enemy bar, built from the data.
+  function enemySub(e) {
+    const base = {
+      plain:   "a slow sentinel",
+      thorns:  "thorns · repeats lash YOU",
+      reflect: "armored · hits halved, fire isn't",
+      ward:    "warded · each cast loses " + WARD_BLUNT,
+    }[e.kind] || "";
+    return base + " · replies " + e.reply;
+  }
+  // The longer, plain-language wrinkle for the tooltip and the Foes tab.
+  function wrinkleText(e) {
+    switch (e.kind) {
+      case "plain":
+        return e.dummy ? "A practice dummy. It never hits back."
+                       : "A slow sentinel. Nothing tricky: learn the ropes here.";
+      case "thorns":
+        return "Thorns: every repeat after the first lashes back at YOU for " + THORNS_PER_REPEAT +
+               ". 'twice' costs you " + THORNS_PER_REPEAT + ", 'thrice' costs you " + (2 * THORNS_PER_REPEAT) + ". Hit its MOUTH to silence that.";
+      case "reflect":
+        return "Armored: hit sentences land at half (rounded up). Fire (BURN) goes straight through. Hit its MOUTH to silence that.";
+      case "ward":
+        return "Warded: every cast loses " + WARD_BLUNT + " point, so bigger sentences waste less. Hit its MOUTH to silence that.";
+      case "meaning":
+        return "Clean sentences feed it. Break the words: place cards in any order, then CAST.";
+    }
+    return "";
+  }
   let encIndex = 0; // which roster entry we're on
   function newEnemy() {
     const e = ENEMY_ROSTER[Math.min(encIndex, ENEMY_ROSTER.length - 1)];
-    return Object.assign({}, e);
+    return Object.assign({ status: null, badge: null }, e);
   }
   function totalEncounters() { return ENEMY_ROSTER.length + 1; } // +1 = meaning-boss
 
@@ -574,13 +682,16 @@
   // hurt by mis-grammared sentences — clean ones feed it.
   function meaningFromNote() {
     // Tally significant words (skip articles/short connectors) across the note.
+    // Glue, repeats and the foe's own name carry no meaning; a body part counts
+    // double, so "BREAK the HEART" can name the ending (THE HEART).
     const tally = {};
     for (const line of note) {
-      for (const w of line.split(/\s+/)) {
+      for (const w of line.replace(/\u0335/g, "").split(/\s+/)) {
         const k = w.toUpperCase();
         if (k.length < 2) continue;
-        if (k === "THE" || k === "A") continue;
-        tally[k] = (tally[k] || 0) + 1;
+        const d = defOf(w);
+        if (d && (d.pos === "ART" || d.pos === "ADV" || d.pos === "NUM" || d.foe)) continue;
+        tally[k] = (tally[k] || 0) + (d && d.part ? 2 : 1);
       }
     }
     const ranked = Object.keys(tally).sort((a, b) => tally[b] - tally[a]);
@@ -597,6 +708,7 @@
       name: "THE " + m.word,        // the meaning you wrote, as a being
       hp, max: hp, reply: 4,
       kind: "meaning",
+      short: "MEANING",
       derivedWord: m.word,
     };
   }
@@ -659,6 +771,64 @@
     }
   }
 
+  // ---- Word lookups + card text (generated from POOL, so numbers can't drift) --
+  const FOE_DEF = POOL.filter((d) => d.foe)[0];
+  function defOf(word) {
+    for (const d of POOL) if (!d.foe && d.word === word) return d;
+    // Any foe's short name resolves to the one foe card.
+    if (word === "MEANING" || ENEMY_ROSTER.some((e) => e.short === word)) return FOE_DEF;
+    return null;
+  }
+  function chainOf(words) { return words.map((w) => makeCard(defOf(w))); }
+  const SIGNED = (n) => (n >= 0 ? "+" : "") + n;
+  // The short value line printed on a card face.
+  function cardValueText(def) {
+    switch (def.pos) {
+      case "VERB": return (def.effect === "heal" ? "heal " : def.effect === "fire" ? "fire " : "hit ") + def.base;
+      case "ADJ":  return def.mult != null ? (def.mult === 0.5 ? "half" : "x" + def.mult) : SIGNED(def.add || 0);
+      case "ADV":
+      case "NUM":  return "x" + def.rep;
+      case "NOUN": return def.target === "player" ? "you" : def.part ? PARTS[def.part].value : "foe";
+      case "ART":  return "glue";
+    }
+    return "";
+  }
+  // Tooltip text for a card.
+  function describeCard(def) {
+    switch (def.pos) {
+      case "VERB":
+        if (def.effect === "heal") return { head: def.word + " · verb", text: "Heals " + def.base + " to the LAST noun. SAVE ME heals you; aim it at a foe and you heal the foe." };
+        if (def.effect === "fire") return { head: def.word + " · verb", text: "Fire " + def.base + " damage to the last noun. Fire goes straight through armor." };
+        return { head: def.word + " · verb", text: "Hits for " + def.base + " damage to the last noun." };
+      case "NOUN":
+        if (def.target === "player") return { head: def.word + " · noun", text: "That's YOU. If this is the last noun in the sentence, the effect lands on you." };
+        if (def.part) return { head: def.word + " · body part", text: PARTS[def.part].tip + " Only damage does this; a heal just heals the foe." };
+        return { head: def.word + " · noun", text: "The foe in front of you" + (enemy && !enemy.dummy ? " (" + enemy.name + ")" : "") + ". The LAST noun in the sentence takes the effect." };
+      case "ADJ":
+        return { head: def.word + " · adjective", text: def.mult != null
+          ? "Goes before the noun. Halves the number (rounded)."
+          : (def.add ? "Goes before the noun. Adds " + def.add + " to the number." : "Goes before the noun. No change to the number: just style.") };
+      case "ADV":
+      case "NUM":
+        return { head: def.word + " · " + (def.pos === "ADV" ? "adverb" : "number"), text: "Goes at the very end. The whole effect happens " + def.rep + (def.rep === 1 ? " time." : " times.") };
+      case "ART":
+        return { head: def.word + " · article", text: "Glue: opens a noun phrase. No effect. One per noun, before any adjective." };
+    }
+    return { head: def.word, text: "" };
+  }
+
+  function isDamageVerb(c) { return c.pos === "VERB" && c.effect !== "heal"; }
+  function isFoeNoun(c) { return c.pos === "NOUN" && c.target === "enemy"; }
+
+  // Hand cards each own a fixed slot, so nothing slides under the cursor when
+  // a card is placed or taken back.
+  let handCols = HAND_SIZE;
+  function setHand(words) {
+    hand = chainOf(words);
+    hand.forEach((c, i) => { c.slot = i; });
+    handCols = hand.length;
+  }
+
   function dealHand() {
     hand = [];
     // Build a weighted source bag: each def appears `weight` times so commodity
@@ -679,15 +849,28 @@
         hand.push(makeCard(bag.pop()));
       }
       guard++;
-      // Ensure the hand is "playable": at least 1 NOUN + 1 VERB + 1 enemy-target NOUN.
+      // Ensure the hand is "playable": at least one DAMAGE verb (a heal-only hand
+      // has no way to attack) and a foe-targeting NOUN (the foe card or a body part).
     } while (guard < 40 && !(
-      hand.some(c => c.pos === "NOUN") &&
-      hand.some(c => c.pos === "VERB") &&
-      hand.some(c => c.pos === "NOUN" && c.target === "enemy")
+      hand.some(isDamageVerb) &&
+      hand.some(isFoeNoun)
     ));
+    // Belt and braces: never ship a hand without a foe noun or a damage verb.
+    if (!hand.some(isFoeNoun)) {
+      const at = hand.findIndex((c) => c.pos !== "VERB" && c.pos !== "NOUN");
+      hand[at >= 0 ? at : 0] = makeCard(FOE_DEF);
+    }
+    if (!hand.some(isDamageVerb)) {
+      const dmg = POOL.filter((d) => d.pos === "VERB" && d.effect !== "heal");
+      const at = hand.findIndex((c) => c.pos === "ART" || c.pos === "ADV" || c.pos === "NUM");
+      hand[at >= 0 ? at : 0] = makeCard(dmg[(Math.random() * dmg.length) | 0]);
+    }
+    hand.forEach((c, i) => { c.slot = i; });
+    handCols = HAND_SIZE;
   }
 
   function startRun() {
+    practice = null;
     player = { hp: PLAYER_MAX, max: PLAYER_MAX };
     encIndex = 0;
     enemy = newEnemy();
@@ -695,10 +878,9 @@
     chain = [];
     turnNo = 1;
     runDamage = 0;
-    lastLog = hasSeenTutorial
-      ? "Build a sentence. Click cards (or 1-9) to chain them."
-      : "Place a VERB to begin. The dotted slot shows what fits next.";
+    lastLog = "Click cards to chain a sentence. Stuck? Press H.";
     lastDelta = "";
+    noticeUntil = 0; subjectHints = 0;
     particles = [];
     stains = []; stamps = []; floaters = [];
     note = [];
@@ -712,43 +894,145 @@
     droneDark = 0;
     pageShift = 0;
     shakeMag = 0; flash.a = 0;
-    tutorialStep = hasSeenTutorial ? -1 : 0; // -1 = no tutorial
     castsThisRun = 0;
     typer.target = ""; typer.shown = 0;
+    setTyper(lastLog); typer.shown = 0;
     dealHand();
     state = STATE.RUN;
   }
-
-  // ---- Onboarding tutorial (ONBOARD-02) --------------------------------
-  // First-time players are guided diegetically through the very first cast.
-  // The steps advance as the player performs the matching action. After the
-  // first successful cast the tutorial retires and never nags again.
-  //   0: place a VERB   1: place a NOUN object   2: (optional) modifier  3: cast
-  let tutorialStep = -1;
   let castsThisRun = 0;
-  const TUTORIAL_LINES = [
-    "Step 1 — click a VERB card (e.g. BURN). Verbs start the spell.",
-    "Step 2 — now add an enemy NOUN (e.g. THE GUARD) for it to land on.",
-    "Step 3 — optional: add 'twice' or a number to repeat, then…",
-    "Step 4 — press ENTER (or click CAST) to write it into the world.",
-  ];
-  function tutorialActive() { return tutorialStep >= 0 && !hasSeenTutorial; }
-  function advanceTutorialFromChain() {
-    if (!tutorialActive()) return;
-    const p = chainPhase(chain);
-    // map current chain progress to the most advanced satisfied step
-    if (isCastable(chain)) tutorialStep = 3;
-    else if (p === "OBJ" || p === "MOD") tutorialStep = 1;
-    else if (p === "VERB") tutorialStep = 1; // subject placed; still need verb/obj path
-    else if (chain.length > 0) tutorialStep = Math.max(tutorialStep, 1);
-    else tutorialStep = 0;
+
+  // Gentle one-line notices (why a card was refused, practice nudges).
+  let notice = "", noticeUntil = 0;
+  let subjectHints = 0;  // how many times we've explained "the first noun is decoration"
+  function setNotice(t) { notice = t; noticeUntil = performance.now() + 4500; }
+  function activeNotice() { return performance.now() < noticeUntil ? notice : ""; }
+
+  // =====================================================================
+  // THE FIRST PAGE: a guided practice fight on the real run screen.
+  // Scripted hands, a dummy that never hits back, one idea per beat. It never
+  // touches the Note, the best score, the depth record or runDamage.
+  //   beat 0 welcome   1 verb   2 object   3 cast   4 adjective + repeat
+  //   beat 5 the trap (last noun)   6 free finish   7 done
+  // =====================================================================
+  let practice = null;
+  const PRACTICE_HP = 20;
+  const PRACTICE_HANDS = {
+    1: ["BURN", "the", "GUARD", "twice", "CRUEL", "YOU", "STRIKES", "SAVE"],
+    4: ["STRIKES", "the", "CRUEL", "GUARD", "twice", "YOU", "BURN", "a"],
+    5: ["the", "GUARD", "STRIKES", "YOU", "ME", "HEAL", "twice", "a"],
+  };
+  const PRACTICE_ALLOWED = {
+    1: ["BURN"],
+    2: ["the", "GUARD"],
+    3: [],
+    4: ["STRIKES", "the", "CRUEL", "GUARD", "twice"],
+    5: ["the", "GUARD", "STRIKES", "YOU"],
+  };
+  const PRACTICE_GOAL4 = ["STRIKES", "CRUEL", "GUARD", "twice"];
+
+  function startPractice() {
+    practice = { beat: 0, coachFull: "", coachShown: 0, result: "" };
+    player = { hp: PLAYER_MAX, max: PLAYER_MAX };
+    enemy = { name: "THE GUARD", short: "GUARD", status: null, badge: null, hp: PRACTICE_HP, max: PRACTICE_HP, reply: 0, kind: "plain", dummy: true };
+    encIndex = 0; chain = []; turnNo = 1;
+    lastLog = ""; lastDelta = ""; noticeUntil = 0; subjectHints = 0;
+    note = []; noteRevealed = false; revealAnim = 0; bossPending = false;
+    misGrammar = false; misGrammarUnlocked = false; chainCorrupted = false; endingRewritten = false;
+    particles = []; stains = []; stamps = []; floaters = [];
+    pageShift = 0; shakeMag = 0; flash.a = 0;
+    typer.target = ""; typer.shown = 0;
+    tip = null;
+    setHand(PRACTICE_HANDS[1]);
+    state = STATE.RUN;
   }
-  function finishTutorial() {
-    if (tutorialStep >= 0) {
-      hasSeenTutorial = true;
-      saveInt(SEEN_KEY, 1);
-      tutorialStep = -1;
+  function finishIntro() {
+    introSeen = true;
+    saveInt(INTRO_KEY, 1);
+    startRun();
+  }
+  function practiceAllows(card) {
+    const a = PRACTICE_ALLOWED[practice.beat];
+    return !a || a.indexOf(card.word) >= 0;
+  }
+  function practiceModal() { return practice && (practice.beat === 0 || practice.beat === 7); }
+  // Beats 1-3 follow the chain, so UNDO walks the lesson back too.
+  function practiceSync() {
+    if (!practice || practice.beat < 1 || practice.beat > 3) return;
+    practice.beat = !chain.some((c) => c.pos === "VERB") ? 1 : (isCastable(chain) ? 3 : 2);
+  }
+  function practiceCoach() {
+    const fx = computeEffect(chain);
+    switch (practice.beat) {
+      case 1: return "Start with a verb. It says what happens. Click BURN.";
+      case 2: return "Now say who it happens to. Add \"the\", then GUARD. The dotted slot always shows what fits next.";
+      case 3: return "That's a sentence! The EFFECT line shows what it will do: " + (fx ? fx.summary : "") + ". Press ENTER or click CAST.";
+      case 4:
+        if (isCastable(chain) && PRACTICE_GOAL4.every((w) => chain.some((c) => c.word === w))) {
+          return "STRIKES is " + defOf("STRIKES").base + ", CRUEL adds " + defOf("CRUEL").add + ", twice doubles it: " +
+                 (fx ? fx.total : "?") + ". Cast it.";
+        }
+        return (practice.result ? practice.result + " " : "") +
+               "Stack words: an adjective goes before the noun and changes the number; 'twice' goes at the end and repeats it. Build: STRIKES the CRUEL GUARD twice.";
+      case 5:
+        if (fx && fx.target === "player") {
+          return "Who does the striking doesn't matter. The LAST noun takes the effect, and that is YOU. Cast it to feel it (it's only practice), or UNDO with Backspace and aim at the guard.";
+        }
+        if (fx) return "Good eye: that one hits the guard. Cast it.";
+        return "Careful: sentences are literal. Build: the GUARD STRIKES YOU.";
+      case 6:
+        return (practice.result ? practice.result + " " : "") +
+               "A real page deals 12 random words, including body parts like HEART that aim at a spot on the foe. Hover one to see its trick. Finish the guard.";
     }
+    return "";
+  }
+  function practiceCast() {
+    const fx = computeEffect(chain);
+    const b = practice.beat;
+    if (!fx) { sfx.reject(); setNotice("Not a sentence yet. The note below says what to add."); return; }
+    if (b === 4 && !PRACTICE_GOAL4.every((w) => chain.some((c) => c.word === w))) {
+      sfx.reject(); setNotice("Build STRIKES the CRUEL GUARD twice first. That's the lesson."); return;
+    }
+    if (b === 6 && (fx.heal || fx.target !== "enemy")) {
+      sfx.reject(); setNotice("Aim a hit at the guard to finish the page."); return;
+    }
+    const sentence = previewSentence(chain);
+    sfx.cast(); spawnStamp(); kick(4);
+    lastDelta = "";
+    if (fx.heal) {
+      if (fx.target === "player") { player.hp = Math.min(player.max, player.hp + fx.total); spawnFloater(150, H - 150, "+" + fx.total, COLORS.snap); }
+      else { enemy.hp = Math.min(enemy.max, enemy.hp + fx.total); spawnFloater(W - 160, 180, "+" + fx.total, COLORS.snap); }
+    } else if (fx.target === "player") {
+      player.hp -= fx.total; sfx.hurt(); flashScreen(COLORS.bleed, 0.3); kick(8);
+      spawnInk(120, H - 120, COLORS.bleed, 14);
+      spawnFloater(150, H - 150, "-" + fx.total, COLORS.bleed);
+      lastDelta = "YOU -" + fx.total;
+    } else {
+      enemy.hp -= fx.total;
+      spawnInk(W - 160, 180, COLORS.bleed, 14);
+      spawnFloater(W - 160, 180, "-" + fx.total, COLORS.bleed);
+      flashScreen(COLORS.bleed, 0.22); kick(6);
+      lastDelta = enemy.name + " -" + fx.total;
+    }
+    sfx.bleed();
+    lastLog = '"' + sentence + '"  ->  ' + fx.summary;
+    setTyper(lastLog); typer.shown = 0;
+    chain = [];
+    noticeUntil = 0;
+    pageShift = 26; turnNo++;
+    if (b === 5) practice.result = fx.target === "player"
+      ? "That's the trap: read the last word before you cast." : "Good eye.";
+    else practice.result = "";
+    if (enemy.hp <= 0) {
+      enemy.hp = 0; sfx.ding(); flashScreen(COLORS.snap, 0.35); kick(7);
+      practice.beat = 7;
+      return;
+    }
+    sfx.ding();
+    if (b === 3) { practice.beat = 4; practice.result = "It happened exactly as written."; setHand(PRACTICE_HANDS[4]); }
+    else if (b === 4) { practice.beat = 5; setHand(PRACTICE_HANDS[5]); }
+    else if (b === 5) { practice.beat = 6; dealHand(); }
+    else dealHand();
   }
 
   // ---- Chain manipulation ----------------------------------------------
@@ -758,14 +1042,20 @@
   function tryPlaceCard(idx) {
     const card = hand[idx];
     if (!card) return;
+    if (practice && !practiceAllows(card)) {
+      // Practice: unwanted cards are simply "not yet", never a punishment.
+      setNotice("Not that one yet. The note below says which card.");
+      return;
+    }
     const legal = canAttach(chain, card);
     if (legal) {
       card.corrupt = false;
       chain.push(card);
       hand.splice(idx, 1);
+      noticeUntil = 0;
       sfx.snap();
       kick(2);
-      advanceTutorialFromChain();
+      practiceSync();
     } else if (misGrammar && misGrammarUnlocked) {
       // TWIST-04: mis-grammar mode lets you force a socket-mismatched card,
       // breaking the grammar on purpose. The chain is marked corrupted —
@@ -773,6 +1063,7 @@
       card.corrupt = true;
       chain.push(card);
       hand.splice(idx, 1);
+      noticeUntil = 0;
       chainCorrupted = true;
       // A wrong, jammed-but-forced sound: reject buzz then a snap.
       sfx.reject();
@@ -782,6 +1073,7 @@
       card.shake = 0.35;
       sfx.reject();
       kick(3);
+      setNotice("\u201c" + card.word + "\u201d can't go here. " + whyRefused(chain, card));
     }
   }
 
@@ -794,17 +1086,22 @@
     c.corrupt = false;
     hand.push(c);
     recomputeCorrupt();
+    noticeUntil = 0;
     sfx.snap();
+    practiceSync();
   }
 
   function clearChain() {
     while (chain.length) { const c = chain.pop(); c.corrupt = false; hand.push(c); }
     chainCorrupted = false;
+    noticeUntil = 0;
+    practiceSync();
   }
 
   // CORE-06/07/08 + TWIST-05: commit + resolve + enemy reply + redraw.
   function castChain() {
     if (revealAnim > 0 && revealAnim < 1) return; // locked during reveal
+    if (practice) { practiceCast(); return; }  // the guided first page never touches the run
     const corrupted = chainCorrupted;
     const sentence = previewSentence(chain);
     // A corrupted chain breaks grammar, so it can't be parsed cleanly. Only a
@@ -820,6 +1117,8 @@
 
     let dmgEnemy = 0, dmgPlayer = 0, healEnemy = 0, healPlayer = 0;
     let thornsBack = 0; // self-damage from THE BEAST's thorns wrinkle
+    let statusNote = "";  // what a body part did to the foe, for the log
+    enemy.badge = null;   // last cast's status badge is spent
     const againstMeaning = enemy.kind === "meaning";
     const ENEMY_FX_X = W - 160, ENEMY_FX_Y = 180;
 
@@ -863,23 +1162,32 @@
         // Clean damage to an ordinary enemy — apply the encounter wrinkle (CONTENT-03).
         let dmg = fx.total;
         let wrinkleNote = "";
-        if (enemy.kind === "reflect" && fx.effect === "phys") {
+        // MOUTH silences the wrinkle for this cast (thorns, armor, ward).
+        const silenced = fx.silence && enemy.kind !== "plain";
+        if (silenced) wrinkleNote = " (its trick is silenced)";
+        if (!silenced && enemy.kind === "reflect" && fx.effect === "phys") {
           // Armored: clean physical blows land at half. Fire bypasses.
           dmg = Math.ceil(dmg / 2);
           wrinkleNote = " (armor halves STRIKES)";
         }
-        if (enemy.kind === "ward") {
+        if (!silenced && enemy.kind === "ward") {
           // Warded: blunts the first point of every blow.
-          dmg = Math.max(0, dmg - 1);
-          wrinkleNote = " (ward blunts 1)";
+          dmg = Math.max(0, dmg - WARD_BLUNT);
+          wrinkleNote = " (ward blunts " + WARD_BLUNT + ")";
         }
-        if (enemy.kind === "thorns" && fx.reps > 1) {
+        if (!silenced && enemy.kind === "thorns" && fx.reps > 1) {
           // Thorns: every repeat past the first lashes back at YOU.
-          thornsBack = (fx.reps - 1) * 2;
+          thornsBack = (fx.reps - 1) * THORNS_PER_REPEAT;
           wrinkleNote = " (thorns! repeats lash YOU -" + thornsBack + ")";
         }
         dmgEnemy = dmg; enemy.hp -= dmg; runDamage += dmg;
-        lastLog = '"' + sentence + '"  ->  ' + fx.summary + wrinkleNote;
+        // HANDS / EYES: a status for the foe's very next reply (it survived to give it).
+        if (fx.status && enemy.hp > 0) {
+          // A blinded foe stays blinded: HANDS never downgrades it.
+          if (!(enemy.status === "blind" && fx.status === "halved")) enemy.status = fx.status;
+          statusNote = "  " + PARTS[fx.part].land;
+        } else if (fx.silence && enemy.kind === "plain") statusNote = "  (nothing to silence)";
+        lastLog = '"' + sentence + '"  ->  ' + fx.summary + wrinkleNote + statusNote;
         flashScreen(COLORS.bleed, 0.22); kick(6);
       }
       if (fx.target === "player") spawnInk(120, H - 120, COLORS.bleed, 14);
@@ -897,7 +1205,7 @@
     if (dmgPlayer) spawnFloater(150, H - 150, "-" + dmgPlayer, COLORS.bleed);
     if (healPlayer) spawnFloater(150, H - 150, "+" + healPlayer, COLORS.snap);
     castsThisRun++;
-    finishTutorial(); // a completed cast retires onboarding for good
+    if (!corrupted && parseChain(chain).subj) subjectHints++;
 
     // Build the delta readout (legibility gate).
     const parts = [];
@@ -954,12 +1262,19 @@
 
     // CORE-08: enemy reply, then end the turn (carriage return ding) + redraw.
     enemy.hp = Math.max(0, enemy.hp);
-    player.hp -= enemy.reply;
-    sfx.hurt();
-    spawnInk(120, H - 120, COLORS.bleed, 10);
-    spawnFloater(150, H - 150, "-" + enemy.reply, COLORS.bleed);
-    kick(4);
-    lastDelta += (lastDelta ? "   " : "") + enemy.name + " replies: YOU -" + enemy.reply;
+    // A status from HANDS / EYES is spent on this reply.
+    let reply = enemy.reply, replyNote = "";
+    if (enemy.status === "blind") { reply = 0; replyNote = " (blinded: it misses)"; enemy.badge = "blinded"; }
+    else if (enemy.status === "halved") { reply = Math.ceil(reply / 2); replyNote = " (hands hurt: halved)"; enemy.badge = "halved"; }
+    enemy.status = null;
+    if (reply > 0) {
+      player.hp -= reply;
+      sfx.hurt();
+      spawnInk(120, H - 120, COLORS.bleed, 10);
+      spawnFloater(150, H - 150, "-" + reply, COLORS.bleed);
+      kick(4);
+    }
+    lastDelta += (lastDelta ? "   " : "") + enemy.name + " replies: YOU -" + reply + replyNote;
 
     sfx.ding();
     pageShift = 26;   // STYLE-02: the page advances a line on carriage return
@@ -1000,7 +1315,7 @@
       // Swap in the meaning-boss, full heal-reset of the encounter framing.
       enemy = makeMeaningBoss();
       player.hp = Math.min(player.max, player.hp + 12); // a breath before the end
-      lastLog = "It can only be unwritten. Arm MIS-GRAMMAR and break the words.";
+      lastLog = "It feeds on clean sentences. Break the words: place cards in any order, then CAST.";
       setTyper(lastLog); typer.shown = 0;
       misGrammar = true; // arm it for them so the counter is discoverable
       dealHand();
@@ -1016,18 +1331,321 @@
   }
 
   // =====================================================================
+  // HELP OVERLAY (DOM). Words, Examples and Foes are generated from POOL,
+  // ENEMY_ROSTER and computeEffect, so the numbers can never drift.
+  // =====================================================================
+  let helpOpen = false;
+  let helpTab = "how";
+  const helpEl = document.getElementById("help");
+  const HELP_TABS = [["how", "How to play"], ["words", "Words"], ["examples", "Examples"], ["foes", "Foes"]];
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function para() {
+    const p = el("p");
+    for (let i = 0; i < arguments.length; i++) {
+      const a = arguments[i];
+      p.appendChild(typeof a === "string" ? document.createTextNode(a) : a);
+    }
+    return p;
+  }
+  function chipFor(word) {
+    const d = defOf(word);
+    const c = el("span", "chip", word);
+    if (d) c.style.borderBottomColor = POS_TAG[d.pos].c;
+    if (d && d.target === "player") c.classList.add("danger");
+    return c;
+  }
+  function sentenceEl(words) {
+    const s = el("span", "sentence");
+    words.forEach((w) => s.appendChild(chipFor(w)));
+    return s;
+  }
+  // "hit 6 · CRUEL +2 · twice x2 = 12 on a foe", built by the real engine.
+  function explainChain(words) {
+    const ch = chainOf(words);
+    const fx = computeEffect(ch);
+    if (!fx) return "";
+    const p = parseChain(ch);
+    const bits = [(fx.heal ? "heal " : fx.effect === "fire" ? "fire " : "hit ") + p.verb.base];
+    if (fx.part === "heart" && !fx.heal) bits.push("HEART " + SIGNED(HEART_BONUS));
+    p.objAdjs.forEach((a) => {
+      if (a.mult != null) bits.push(a.word + " halves it");
+      else if (a.add) bits.push(a.word + " " + SIGNED(a.add));
+    });
+    if (fx.part === "eyes" && !fx.heal) bits.push("EYES " + SIGNED(-EYES_COST));
+    if (fx.reps > 1) bits.push(p.mod.word + " x" + fx.reps);
+    const rule = fx.part && !fx.heal && fx.part !== "heart" ? PARTS[fx.part].tail : "";
+    return bits.join(" · ") + " = " + fx.total + (fx.target === "player" ? " on YOU" : " on a foe") +
+      (fx.part === "eyes" ? ", and its next reply misses you" : rule ? ", and " + rule : "");
+  }
+
+  function helpHow() {
+    const f = document.createDocumentFragment();
+    f.appendChild(el("h3", "", "Write it, and it happens."));
+    f.appendChild(para("Each page deals you 12 random word cards. Click them to chain a sentence on the typewriter, then press ENTER or CAST. The sentence happens exactly as written. Words you don't use are discarded, and the next page deals 12 fresh ones."));
+    f.appendChild(el("h3", "", "A sentence needs a verb and a noun to land on."));
+    const F = foeName();
+    f.appendChild(para("The shortest is a verb and a noun: ", sentenceEl(["BURN", "the", F]), ". You can also open with a subject: ", sentenceEl(["the", "HANDS", "STRIKE", "the", F]), ". The dotted slot shows what fits next. Greyed cards don't fit, and if you try one the game tells you why."));
+    f.appendChild(el("h3", "", "The LAST noun takes the effect."));
+    f.appendChild(para("The first noun is just for show. ", sentenceEl(["the", F, "STRIKES", "YOU"]), " hits YOU. ", sentenceEl(["BURN", "the", F]), " burns the foe. The foe card always carries the name of the foe in front of you. Read the last word before you cast."));
+    f.appendChild(el("h3", "", "Aim at a body part."));
+    f.appendChild(para("HEART, HANDS, EYES and MOUTH are spots on the foe. Each has a tradeoff, e.g. ", sentenceEl(["STRIKE", "the", "HANDS"]), ": " + explainChain(["STRIKE", "the", "HANDS"]) + ". The Words tab lists them all."));
+    f.appendChild(el("h3", "", "Stack words to change the number."));
+    f.appendChild(para("Adjectives go before the noun and add to the number (or shrink it). A number or adverb at the very end repeats the whole effect. ", sentenceEl(["BURN", "the", F, "twice"]), ": " + explainChain(["BURN", "the", F, "twice"]) + "."));
+    f.appendChild(el("h3", "", "Then the foe answers."));
+    f.appendChild(para("After you cast, the foe hits you back for its reply, and you get 12 fresh words. Empty the foe's bar to win the page; empty yours and you lose. Four foes, then one more. You recover a little between fights."));
+    f.appendChild(el("h3", "", "Controls"));
+    f.appendChild(para("Click a card, or press 1-9, 0, - and = for the 12 slots. Backspace undoes, Esc clears, Enter casts, H opens this help. Hover a card (or long-press on a phone) to see what it does."));
+    return f;
+  }
+
+  function helpWords() {
+    const f = document.createDocumentFragment();
+    const groups = [
+      { title: "Verbs", blurb: "Start the effect. They set the number and the kind.", pos: ["VERB"] },
+      { title: "Nouns", blurb: "The LAST noun is who it lands on. The foe card shows the name of the foe in front of you.", pos: ["NOUN"] },
+      { title: "Adjectives", blurb: "Go before a noun and change the number.", pos: ["ADJ"] },
+      { title: "Repeats", blurb: "Adverbs and numbers go at the very end and repeat the effect.", pos: ["ADV", "NUM"] },
+      { title: "Articles", blurb: "Glue. They open a noun phrase and do nothing else.", pos: ["ART"] },
+    ];
+    groups.forEach((g) => {
+      f.appendChild(el("h3", "", g.title));
+      f.appendChild(el("p", "blurb", g.blurb));
+      const rows = [], byVal = {};
+      POOL.forEach((d) => {
+        if (g.pos.indexOf(d.pos) < 0 || d.part) return;   // body parts get their own lines below
+        let val = cardValueText(d);
+        if (d.pos === "NOUN") val = d.target === "player" ? "lands on YOU" : "the foe, a plain hit";
+        if (!byVal[val]) { byVal[val] = { val, words: [] }; rows.push(byVal[val]); }
+        byVal[val].words.push(d.word);
+      });
+      const list = el("div", "rows");
+      rows.forEach((r) => {
+        const row = el("div", "row");
+        row.appendChild(el("span", "val", r.val));
+        const w = el("span", "words");
+        r.words.forEach((x) => w.appendChild(chipFor(x)));
+        row.appendChild(w);
+        list.appendChild(row);
+      });
+      f.appendChild(list);
+      if (g.pos[0] === "NOUN") {
+        // Body parts: one line each, straight from PARTS so the numbers can't drift.
+        POOL.forEach((d) => {
+          if (!d.part) return;
+          const row = el("div", "row");
+          const v = el("span", "val"); v.appendChild(chipFor(d.word));
+          row.appendChild(v);
+          row.appendChild(el("span", "words", PARTS[d.part].row));
+          list.appendChild(row);
+        });
+        f.appendChild(para("Body parts only do their trick with a damage verb. Healing one just heals the foe, and repeats (twice, 3...) repeat the number but apply the trick once."));
+      }
+    });
+    f.appendChild(el("h3", "", "Key words"));
+    f.appendChild(para("Hit and fire are damage. Fire goes straight through armor. Heal restores HP to the last noun: SAVE ME heals you, SAVE the foe heals the foe. Repeat means the whole effect happens that many times."));
+    return f;
+  }
+
+  // Built on demand: the foe card's word is whichever foe you are facing.
+  function helpExampleList() {
+    const F = foeName();
+    return [
+      { words: ["BURN", "the", F] },
+      { words: ["BURN", "the", F, "twice"] },
+      { words: ["STRIKES", "the", "CRUEL", F] },
+      { words: ["BREAK", "the", "WEAK", F], note: "WEAK halves the number, rounded." },
+      { words: ["ENDS", "the", "SAVAGE", F, "thrice"] },
+      { words: ["BREAK", "the", "HEART"], note: "A weak point: +" + HEART_BONUS + " before adjectives." },
+      { words: ["STRIKE", "the", "HANDS"], note: "Its next reply to you is halved." },
+      { words: ["STRIKE", "the", "EYES"], note: "Its next reply misses you, but this hit is 2 weaker." },
+      { words: ["BURN", "the", "MOUTH"], note: "Silences its trick (thorns, armor or ward) for this cast." },
+      { words: ["SAVE", "ME", "twice"], note: "Healing yourself is fine. Aim a heal at a foe or a body part and you heal the foe." },
+      { words: ["the", F, "STRIKES", "YOU"], note: "The LAST noun takes it. This one hits YOU, not the foe." },
+      { words: ["the", "HANDS", "STRIKE", "the", F], note: "The first noun is just for show. The foe takes the hit." },
+    ];
+  }
+  function helpNotLegal() {
+    return [
+      ["the", "the"],
+      ["BURN", "CRUEL", "SAVAGE"],
+      ["BURN", foeName(), "BURN"],
+      ["twice"],
+    ];
+  }
+  function helpExamples() {
+    const f = document.createDocumentFragment();
+    f.appendChild(el("h3", "", "Sentences that work"));
+    helpExampleList().forEach((ex) => {
+      const line = explainChain(ex.words);
+      if (!line) return;
+      const box = el("div", "ex");
+      box.appendChild(sentenceEl(ex.words));
+      box.appendChild(el("div", "exline", line));
+      if (ex.note) box.appendChild(el("div", "exnote", ex.note));
+      f.appendChild(box);
+    });
+    f.appendChild(el("h3", "", "Sentences that don't"));
+    helpNotLegal().forEach((words) => {
+      // Build the prefix with the real grammar, then confirm the last card is refused.
+      const ch = [];
+      for (let i = 0; i < words.length - 1; i++) ch.push(makeCard(defOf(words[i])));
+      const last = makeCard(defOf(words[words.length - 1]));
+      if (canAttach(ch, last)) return;   // the rules changed: drop a stale example
+      const box = el("div", "ex");
+      box.appendChild(sentenceEl(words));
+      box.appendChild(el("div", "exline bad", whyRefused(ch, last)));
+      f.appendChild(box);
+    });
+    return f;
+  }
+
+  function helpFoes() {
+    const f = document.createDocumentFragment();
+    f.appendChild(para("Four foes, then one more. Each has its own trick."));
+    ENEMY_ROSTER.forEach((e) => {
+      const box = el("div", "foe");
+      box.appendChild(el("div", "foename", e.name));
+      box.appendChild(el("div", "foestats", e.hp + " HP · replies for " + e.reply + " each turn"));
+      box.appendChild(el("div", "", wrinkleText(e)));
+      f.appendChild(box);
+    });
+    return f;
+  }
+
+  function renderHelp() {
+    const nav = document.getElementById("help-tabs");
+    const body = document.getElementById("help-body");
+    nav.textContent = "";
+    HELP_TABS.forEach((t) => {
+      const b = el("button", "tab", t[1]);
+      b.type = "button";
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", t[0] === helpTab ? "true" : "false");
+      b.addEventListener("click", () => { helpTab = t[0]; renderHelp(); nav.querySelector("[aria-selected=true]").focus(); });
+      nav.appendChild(b);
+    });
+    body.textContent = "";
+    body.appendChild({ how: helpHow, words: helpWords, examples: helpExamples, foes: helpFoes }[helpTab]());
+    body.scrollTop = 0;
+    // Replay link for the guided first page.
+    const act = document.getElementById("help-actions");
+    act.textContent = "";
+    if (state === STATE.TITLE || practice) {
+      const b = el("button", "link", "Play the first page (the guided intro)");
+      b.type = "button";
+      b.addEventListener("click", () => { closeHelp(); startPractice(); });
+      act.appendChild(b);
+    } else {
+      act.appendChild(el("span", "", "You can replay the guided intro from the title screen."));
+    }
+  }
+  function openHelp() {
+    if (helpOpen) return;
+    helpOpen = true;
+    tip = null; hoverCard = null; hoverEnemy = false; cancelPress();
+    renderHelp();
+    helpEl.hidden = false;
+    const x = document.getElementById("help-close");
+    if (x && x.focus) x.focus();
+  }
+  function closeHelp() {
+    if (!helpOpen) return;
+    helpOpen = false;
+    helpEl.hidden = true;
+    try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
+  }
+  if (helpEl) {
+    document.getElementById("help-close").addEventListener("click", closeHelp);
+    helpEl.addEventListener("click", (e) => { if (e.target === helpEl) closeHelp(); });
+    document.getElementById("help-tabs").addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const i = HELP_TABS.findIndex((t) => t[0] === helpTab);
+      const n = (i + (e.key === "ArrowRight" ? 1 : HELP_TABS.length - 1)) % HELP_TABS.length;
+      helpTab = HELP_TABS[n][0]; renderHelp();
+      document.querySelector("#help-tabs [aria-selected=true]").focus();
+    });
+  }
+
+  // =====================================================================
   // INPUT
   // =====================================================================
   // Hit-testable rects for the current frame's hand + buttons.
   let handRects = [];
-  let btnRects = {}; // {cast, clear, undo}
+  let btnRects = {}; // {cast, clear, undo, skip, help}
+  let titleRects = {};
+  let modalRects = {};
+  let tip = null;                       // touch tooltip {kind, card, until}
+  let hoverCard = null, hoverEnemy = false;
+  let press = null;                     // touch long-press in flight
+  const HAND_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="];
+  const LONG_PRESS_MS = 420;
+
+  function startFromTitle() {
+    if (!introSeen) startPractice(); else startRun();
+  }
+
+  function cancelPress() {
+    if (press) { clearTimeout(press.timer); press = null; }
+  }
+  function startPress(card) {
+    cancelPress();
+    const pr = { card, fired: false, timer: 0 };
+    pr.timer = setTimeout(() => {
+      pr.fired = true;
+      tip = { kind: "card", card, until: performance.now() + 4500 };
+    }, LONG_PRESS_MS);
+    press = pr;
+  }
+  function onPointerUp() {
+    if (!press) return;
+    const pr = press;
+    clearTimeout(pr.timer);
+    press = null;
+    if (pr.fired || helpOpen || state !== STATE.RUN || bossPending) return;
+    const idx = hand.indexOf(pr.card);
+    if (idx >= 0) tryPlaceCard(idx);
+  }
+
+  function practiceModalAction(key) {
+    if (key === "skip" || (key === "primary" && practice.beat === 7)) { finishIntro(); return; }
+    if (key === "primary" && practice.beat === 0) { practice.beat = 1; }
+  }
 
   function onPointerDown(e) {
     unlockAudio();
+    if (helpOpen) return;
     const p = eventToCanvas(e);
+    tip = null;
 
-    if (state === STATE.TITLE) { startRun(); return; }
+    if (state === STATE.TITLE) {
+      for (const key in titleRects) {
+        if (!hit(p, titleRects[key])) continue;
+        if (key === "begin") startFromTitle();
+        else if (key === "howto") openHelp();
+        else if (key === "replay") startPractice();
+        return;
+      }
+      startFromTitle();
+      return;
+    }
     if (state === STATE.WIN || state === STATE.LOSE) { state = STATE.TITLE; return; }
+
+    // RUN: the help button always works (even mid-reveal).
+    if (btnRects.help && hit(p, btnRects.help)) { openHelp(); return; }
+
+    // The guided intro's welcome / done cards.
+    if (practiceModal()) {
+      for (const key in modalRects) {
+        if (hit(p, modalRects[key])) { practiceModalAction(key); return; }
+      }
+      return;
+    }
 
     // RUN: ignore input while the reveal cinematic plays.
     if (bossPending) return;
@@ -1040,12 +1658,19 @@
         else if (key === "clear") clearChain();
         else if (key === "undo") undoLast();
         else if (key === "mis") toggleMisGrammar();
+        else if (key === "skip") finishIntro();
         return;
       }
     }
-    // Hand cards.
+    // The enemy panel explains its trick.
+    if (hit(p, ENEMY_RECT)) { tip = { kind: "enemy", until: performance.now() + 4500 }; return; }
+    // Hand cards. Touch waits for pointerup so a long-press can show the tooltip.
     for (let i = 0; i < handRects.length; i++) {
-      if (hit(p, handRects[i])) { tryPlaceCard(handRects[i].idx); return; }
+      if (hit(p, handRects[i])) {
+        if (e.pointerType === "touch") startPress(hand[handRects[i].idx]);
+        else tryPlaceCard(handRects[i].idx);
+        return;
+      }
     }
   }
 
@@ -1053,10 +1678,46 @@
     return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
   }
 
+  function onPointerMove(e) {
+    if (e.pointerType && e.pointerType !== "mouse") return;
+    const p = eventToCanvas(e);
+    hoverCard = null; hoverEnemy = false;
+    let cur = "default";
+    if (helpOpen) { canvas.style.cursor = cur; return; }
+    if (state === STATE.TITLE) {
+      for (const key in titleRects) if (hit(p, titleRects[key])) cur = "pointer";
+    } else if (state === STATE.RUN && !bossPending) {
+      if (practiceModal()) {
+        for (const key in modalRects) if (hit(p, modalRects[key])) cur = "pointer";
+      } else {
+        for (const key in btnRects) if (btnRects[key] && hit(p, btnRects[key])) cur = "pointer";
+        if (hit(p, ENEMY_RECT)) { hoverEnemy = true; }
+        for (let i = 0; i < handRects.length; i++) {
+          if (hit(p, handRects[i])) {
+            const hc = hand[handRects[i].idx];
+            const blocked = practice && !practiceAllows(hc);
+            hoverCard = blocked ? null : hc;   // no tooltip over the coach note for "not yet" cards
+            cur = blocked ? "not-allowed" : "pointer";
+          }
+        }
+      }
+    } else if (state === STATE.RUN && btnRects.help && hit(p, btnRects.help)) cur = "pointer";
+    canvas.style.cursor = cur;
+  }
+  function onPointerLeave() { hoverCard = null; hoverEnemy = false; }
+
   function onKeyDown(e) {
     unlockAudio();
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const isHelpKey = e.key === "h" || e.key === "H" || e.key === "?";
+    if (helpOpen) {
+      // Esc closes help only; it never clears the chain underneath.
+      if (isHelpKey || e.key === "Escape") { e.preventDefault(); closeHelp(); }
+      return;
+    }
+    if (isHelpKey) { e.preventDefault(); openHelp(); return; }
     if (state === STATE.TITLE) {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); startRun(); }
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); startFromTitle(); }
       return;
     }
     if (state === STATE.WIN || state === STATE.LOSE) {
@@ -1064,14 +1725,21 @@
       return;
     }
     // RUN
+    if (practiceModal()) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); practiceModalAction("primary"); }
+      return;
+    }
     if (bossPending) return;
     if (e.key === "Enter") { e.preventDefault(); castChain(); }
     else if (e.key === "Backspace") { e.preventDefault(); undoLast(); }
     else if (e.key === "Escape") { e.preventDefault(); clearChain(); }
     else if (e.key === "Tab") { e.preventDefault(); toggleMisGrammar(); }
-    else if (e.key >= "1" && e.key <= "9") {
-      const idx = parseInt(e.key, 10) - 1;
-      if (idx < hand.length) tryPlaceCard(idx);
+    else {
+      const slot = HAND_KEYS.indexOf(e.key);
+      if (slot >= 0 && slot < handCols) {
+        const idx = hand.findIndex((c) => c.slot === slot);
+        if (idx >= 0) tryPlaceCard(idx);
+      }
     }
   }
 
@@ -1082,6 +1750,10 @@
   }
 
   canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("pointermove", onPointerMove);
+  canvas.addEventListener("pointerleave", onPointerLeave);
+  window.addEventListener("pointerup", onPointerUp);
+  window.addEventListener("pointercancel", cancelPress);
   window.addEventListener("keydown", onKeyDown);
 
   // =====================================================================
@@ -1202,12 +1874,35 @@
     ctx.fill();
   }
 
+  // Shrink a font until `text` fits `maxW`; returns the size used.
+  function fitFont(text, maxW, px, bold, minPx) {
+    let sz = px;
+    ctx.font = serif(sz, bold);
+    while (ctx.measureText(text).width > maxW && sz > (minPx || 9)) { sz -= 1; ctx.font = serif(sz, bold); }
+    return sz;
+  }
+  // Word-wrap `text` to `maxW` with the current ctx.font.
+  function wrapText(text, maxW) {
+    const lines = [];
+    let ln = "";
+    for (const wd of text.split(" ")) {
+      const test = ln ? ln + " " + wd : wd;
+      if (ctx.measureText(test).width > maxW && ln) { lines.push(ln); ln = wd; }
+      else ln = test;
+    }
+    if (ln) lines.push(ln);
+    return lines;
+  }
+
   function drawCard(x, y, w, h, card, opts) {
     opts = opts || {};
+    // dim = "not yet" in the guided intro; legal === false = doesn't fit the socket.
+    const baseA = opts.dim ? 0.3 : (opts.legal === false ? 0.5 : 1);
     ctx.save();
     if (card.shake && card.shake > 0) {
       ctx.translate(Math.sin(card.shake * 60) * 4, 0);
     }
+    ctx.globalAlpha = baseA;
     const corrupt = !!card.corrupt;
     const seed = card.id || 1;
     // Drop shadow for the chit lying on the page.
@@ -1225,16 +1920,14 @@
     tornChit(x, y, w, h, seed);
     ctx.stroke();
 
-    if (opts.legal === false) ctx.globalAlpha = 0.5;
-
     // POS header band + socket plug shape on the left edge.
     const tag = POS_TAG[card.pos] || { c: COLORS.faded, t: card.pos, shape: "round" };
     ctx.fillStyle = tag.c;
-    ctx.globalAlpha *= 0.92;
+    ctx.globalAlpha = baseA * 0.92;
     roundRect(x + 5, y + 5, w - 10, 15, 2); ctx.fill();
-    ctx.globalAlpha = opts.legal === false ? 0.5 : 1;
+    ctx.globalAlpha = baseA;
     ctx.fillStyle = "#f6efdd";
-    ctx.font = serif(9, true);
+    ctx.font = serif(Math.min(12, fsz(9)), true);
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillText(tag.t, x + 10, y + 13);
     // Socket plug on the band's right.
@@ -1249,7 +1942,14 @@
       fs -= 1; ctx.font = serif(fs, true);
     }
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(card.word, x + w / 2, y + h / 2 + 8);
+    ctx.fillText(card.word, x + w / 2, y + h / 2 + (opts.value ? 4 : 8));
+
+    // What the card is worth (fire 3, +2, x2 ...), printed under the word.
+    if (opts.value) {
+      ctx.fillStyle = danger ? COLORS.ribbon : "#5b5244";
+      ctx.font = serif(Math.min(15, fsz(11)), false);
+      ctx.fillText(cardValueText(card), x + w / 2, y + h - 22);
+    }
 
     // Corrupted cards get a crossing-out strike.
     if (corrupt) {
@@ -1259,12 +1959,12 @@
       ctx.stroke();
     }
 
-    // index hint for keyboard play.
+    // index hint for keyboard play (bottom-left, clear of the value line).
     if (opts.index != null) {
       ctx.fillStyle = COLORS.faded;
-      ctx.font = serif(9, false);
-      ctx.textAlign = "right"; ctx.textBaseline = "alphabetic";
-      ctx.fillText(String(opts.index), x + w - 6, y + h - 6);
+      ctx.font = serif(Math.min(13, fsz(10)), false);
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+      ctx.fillText(String(opts.index), x + 7, y + h - 6);
     }
     ctx.globalAlpha = 1;
     ctx.restore();
@@ -1299,52 +1999,82 @@
     ctx.fillRect(x, y - h + 2, Math.max(7, h * 0.5), h);
   }
 
+  // A rounded button whose rect is stored for hit-testing.
+  function rectButton(store, key, label, x, y, w, h, bg, fg, px) {
+    store[key] = { x, y, w, h };
+    ctx.fillStyle = bg;
+    roundRect(x, y, w, h, 5); ctx.fill();
+    ctx.fillStyle = fg;
+    fitFont(label, w - 16, px, true, 10);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(label, x + w / 2, y + h / 2 + 1);
+    ctx.textBaseline = "alphabetic";
+  }
+
+  let titleExample = null;
   function drawTitle() {
     drawPaper();
-    ctx.textAlign = "center";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
 
-    // Title struck in two inks, like a letterhead.
-    ctx.fillStyle = COLORS.carbon;
+    // Title struck in two inks, like a letterhead. Measured, so it can't overlap.
     ctx.font = serif(66, true);
-    ctx.fillText("LAST", W / 2 - 92, 196);
+    const wl = ctx.measureText("LAST").width, wr = ctx.measureText("WORDS").width, gap = 24;
+    const x0 = W / 2 - (wl + gap + wr) / 2;
+    ctx.fillStyle = COLORS.carbon;
+    ctx.fillText("LAST", x0, 130);
     ctx.fillStyle = COLORS.ribbon;
-    ctx.fillText("WORDS", W / 2 + 88, 196);
+    ctx.fillText("WORDS", x0 + wl + gap, 130);
     // underline rule
     ctx.strokeStyle = COLORS.faded; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(W / 2 - 220, 214); ctx.lineTo(W / 2 + 220, 214); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W / 2 - 220, 148); ctx.lineTo(W / 2 + 220, 148); ctx.stroke();
 
+    ctx.textAlign = "center";
     ctx.fillStyle = COLORS.ribbon;
-    ctx.font = serif(18, false);
-    ctx.fillText("Chain word-cards into a sentence. It is cast LITERALLY.", W / 2, 256);
+    ctx.font = serif(Math.min(20, fsz(19)), false);
+    ctx.fillText("Chain word cards into a sentence. It happens, literally.", W / 2, 192);
 
     ctx.fillStyle = COLORS.carbon;
-    ctx.font = serif(15, false);
-    ctx.fillText("Click cards (or 1-9) to chain   ·   Backspace undo   ·   Esc clear   ·   Enter to cast", W / 2, 320);
-    ctx.fillText("Example:  BURN the GUARD twice   = fire 3 ×2 = 6 to the GUARD", W / 2, 352);
+    ctx.font = serif(Math.min(20, fsz(15)), false);
+    ctx.fillText("Each page deals 12 fresh random words. Use what you like; the rest are discarded.", W / 2, 224);
+    if (!titleExample) {
+      const fx = computeEffect(chainOf(["BURN", "the", "GUARD", "twice"]));
+      titleExample = "Example:  BURN the GUARD twice   =   " + (fx ? "fire " + fx.amount + " x" + fx.reps + " = " + fx.total + " to the GUARD" : "");
+    }
+    ctx.fillText(titleExample, W / 2, 256);
     ctx.fillStyle = COLORS.faded;
-    ctx.fillText('Beware:  "the GUARD STRIKES YOU"  hits YOU, not the enemy.', W / 2, 380);
+    ctx.fillText("Beware:  the LAST noun takes the effect.  “the GUARD STRIKES YOU” hits YOU.", W / 2, 284);
 
-    // Persisted progression (ONBOARD-03): best mark + how far you got + win.
+    // Persisted progression (ONBOARD-03): best run + how far you got + win.
     ctx.fillStyle = COLORS.carbon;
-    ctx.font = serif(14, false);
+    ctx.font = serif(Math.min(20, fsz(14)), false);
     const depthLabel = bestDepth >= totalEncounters()
       ? "all the way to the end"
-      : ("encounter " + Math.max(1, bestDepth) + " of " + totalEncounters());
-    ctx.fillText("Deepest mark left on the page: " + best + "    ·    Reached: " + depthLabel, W / 2, 444);
+      : ("foe " + Math.max(1, bestDepth) + " of " + totalEncounters());
+    ctx.fillText("Best run: " + best + " damage dealt    ·    Furthest: " + depthLabel, W / 2, 336);
     if (everWon) {
       ctx.fillStyle = COLORS.snap;
-      ctx.font = serif(14, true);
-      ctx.fillText("✦ You have unwritten the note once. Could you do it again?", W / 2, 470);
+      ctx.font = serif(Math.min(20, fsz(14)), true);
+      ctx.fillText("✦ You have unwritten the note once. Could you do it again?", W / 2, 362);
     } else {
       ctx.fillStyle = COLORS.faded;
-      ctx.font = serif(13, false);
-      ctx.fillText("Four enemies stand before the thing you spell by accident.", W / 2, 470);
+      ctx.font = serif(Math.min(20, fsz(13)), false);
+      ctx.fillText("Four foes stand in your way. And one more.", W / 2, 362);
     }
 
-    ctx.fillStyle = COLORS.ribbon;
-    ctx.font = serif(20, true);
-    const blink = (performance.now() / 600 | 0) % 2 === 0;
-    ctx.fillText("CLICK or press ENTER to begin" + (blink ? " _" : "  "), W / 2, 524);
+    // Buttons: big BEGIN, then the two helpers.
+    titleRects = {};
+    rectButton(titleRects, "begin", touchUI ? "BEGIN" : "BEGIN  ·  Enter", W / 2 - 150, 396, 300, 54, COLORS.ribbon, "#f6efdd", 22);
+    rectButton(titleRects, "howto", touchUI ? "How to play" : "How to play  ·  H", W / 2 - 230, 466, 220, 40, COLORS.carbon, "#f6efdd", 16);
+    rectButton(titleRects, "replay", "Play the first page", W / 2 + 10, 466, 220, 40, COLORS.carbon, "#f6efdd", 16);
+    ctx.fillStyle = COLORS.faded;
+    ctx.font = serif(Math.min(20, fsz(13)), false);
+    ctx.textAlign = "center";
+    ctx.fillText(introSeen ? "The first page is a short guided practice fight." : "New here? BEGIN starts with a short guided practice fight.", W / 2, 532);
+
+    ctx.fillStyle = COLORS.faded;
+    ctx.font = serif(Math.min(20, fsz(13)), false);
+    ctx.fillText("Content note: this story touches on suicide.", W / 2, 586);
   }
 
   function drawEndScreen() {
@@ -1397,7 +2127,7 @@
     ctx.fillStyle = COLORS.carbon;
     ctx.font = serif(14, false);
     ctx.textAlign = "center";
-    ctx.fillText("Deepest mark: " + runDamage + "    ·    Best: " + best, W / 2, H - 56);
+    ctx.fillText("Damage dealt this run: " + runDamage + "    \u00b7    Best run: " + best, W / 2, H - 56);
 
     ctx.fillStyle = COLORS.ribbon;
     ctx.font = serif(17, true);
@@ -1463,6 +2193,128 @@
     }
   }
 
+  const ENEMY_RECT = { x: NOTE_X, y: 40, w: NOTE_W, h: 70 };
+
+  // A small paper popover (card / enemy tooltips). `below` hangs it under the anchor.
+  function drawPopover(ax, ay, below, head, text) {
+    const w = 280, pad = 10;
+    const hp = Math.min(17, fsz(13)), tp = Math.min(16, fsz(12));
+    ctx.font = serif(tp, false);
+    const lines = wrapText(text, w - pad * 2);
+    const lh = tp + 4;
+    const h = pad + hp + 6 + lines.length * lh + pad - 2;
+    const x = Math.max(8, Math.min(W - w - 8, ax - w / 2));
+    const y = below ? ay : Math.max(8, ay - h);
+    ctx.save();
+    ctx.shadowColor = "rgba(40,28,16,0.4)"; ctx.shadowBlur = 8; ctx.shadowOffsetY = 3;
+    ctx.fillStyle = "#fff7e4";
+    roundRect(x, y, w, h, 4); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = COLORS.ribbon; ctx.lineWidth = 1.2;
+    roundRect(x, y, w, h, 4); ctx.stroke();
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = COLORS.ribbon;
+    ctx.font = serif(hp, true);
+    ctx.fillText(head, x + pad, y + pad + hp - 2);
+    ctx.fillStyle = COLORS.carbon;
+    ctx.font = serif(tp, false);
+    lines.forEach((ln, i) => ctx.fillText(ln, x + pad, y + pad + hp + 6 + (i + 1) * lh - 4));
+  }
+  function drawTips() {
+    const now = performance.now();
+    if (tip && now > tip.until) tip = null;
+    let card = null, enemyTip = false;
+    if (tip) { if (tip.kind === "card") card = tip.card; else enemyTip = true; }
+    else if (hoverCard) card = hoverCard;
+    else if (hoverEnemy) enemyTip = true;
+    if (card) {
+      const i = hand.indexOf(card);
+      if (i < 0 || !handRects[i]) { tip = null; hoverCard = null; }
+      else {
+        const r = handRects[i], d = describeCard(card);
+        drawPopover(r.x + r.w / 2, r.y - 6, false, d.head, d.text);
+      }
+    } else if (enemyTip && enemy) {
+      drawPopover(NOTE_X + NOTE_W / 2, ENEMY_RECT.y + ENEMY_RECT.h + 4, true, enemy.name, wrinkleText(enemy));
+    }
+  }
+
+  function drawHelpButton() {
+    const cx = W - 30, cy = 22, r = 15;
+    btnRects.help = { x: cx - r - 2, y: cy - r - 2, w: r * 2 + 4, h: r * 2 + 4 };
+    ctx.fillStyle = COLORS.carbon;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#f6efdd";
+    ctx.font = serif(20, true);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("?", cx, cy + 1);
+    ctx.textBaseline = "alphabetic";
+  }
+
+  // The guided intro's coach note: sits in the free space below the buttons.
+  function drawCoach() {
+    const bx = 28, by0 = 386, bw = 662, bh = 102;
+    ctx.save();
+    ctx.shadowColor = "rgba(40,28,16,0.3)"; ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
+    ctx.fillStyle = "#fff7e4";
+    roundRect(bx, by0, bw, bh, 4); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = COLORS.ribbon; ctx.lineWidth = 1.4;
+    roundRect(bx, by0, bw, bh, 4); ctx.stroke();
+    ctx.fillStyle = COLORS.ribbon;
+    ctx.font = serif(Math.min(16, fsz(12)), true);
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    ctx.fillText("✎ a note to a new hand", bx + 14, by0 + 22);
+    rectButton(btnRects, "skip", "Skip intro", bx + bw - 118, by0 + 6, 108, 24, COLORS.faded, "#f6efdd", Math.min(15, fsz(12)));
+
+    const full = practiceCoach();
+    if (full !== practice.coachFull) { practice.coachFull = full; practice.coachShown = 0; }
+    let px = Math.min(18, Math.max(15, fsz(15))), lines;
+    do { ctx.font = serif(px, false); lines = wrapText(full, bw - 28); px--; } while (lines.length > 3 && px >= 12);
+    px++;
+    ctx.fillStyle = COLORS.carbon;
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    let left = Math.floor(practice.coachShown), yy = by0 + 50;
+    for (const ln of lines) {
+      if (left <= 0) break;
+      ctx.fillText(ln.slice(0, left), bx + 14, yy);
+      left -= ln.length + 1;
+      yy += px + 6;
+    }
+  }
+
+  function drawPracticeModal() {
+    ctx.fillStyle = "rgba(30,22,14,0.55)";
+    ctx.fillRect(0, 0, W, H);
+    const w = 580, h = 276, x = (W - w) / 2, y = 140;
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.5)"; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6;
+    ctx.fillStyle = "#f6efdd";
+    roundRect(x, y, w, h, 6); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = COLORS.ribbon; ctx.lineWidth = 2;
+    roundRect(x, y, w, h, 6); ctx.stroke();
+    const welcome = practice.beat === 0;
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = COLORS.ribbon;
+    ctx.font = serif(32, true);
+    ctx.fillText(welcome ? "The First Page" : "That's the whole trick.", W / 2, y + 56);
+    ctx.fillStyle = COLORS.carbon;
+    const px = Math.max(17, fsz(16));
+    ctx.font = serif(px, false);
+    const body = welcome
+      ? "Every card is a word. Chain them into a sentence and it happens, literally. Let's write one. It takes about a minute, and nothing here is saved."
+      : "Four foes are waiting, and one more. Press ? or H any time to see the word list.";
+    wrapText(body, w - 70).forEach((ln, i) => ctx.fillText(ln, W / 2, y + 100 + i * (px + 7)));
+    modalRects = {};
+    if (welcome) {
+      rectButton(modalRects, "primary", "BEGIN THE FIRST PAGE", W / 2 - 160, y + 170, 320, 44, COLORS.ribbon, "#f6efdd", 18);
+      rectButton(modalRects, "skip", "I know how to play (skip)", W / 2 - 130, y + 228, 260, 32, COLORS.faded, "#f6efdd", 14);
+    } else {
+      rectButton(modalRects, "primary", "START", W / 2 - 110, y + 170, 220, 44, COLORS.ribbon, "#f6efdd", 18);
+    }
+  }
+
   function drawRun() {
     drawPaper();
 
@@ -1472,33 +2324,52 @@
 
     // Header — the document title, struck in two inks.
     ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
     ctx.fillStyle = COLORS.carbon;
     ctx.font = serif(15, true);
     ctx.fillText("LAST WORDS", 24, 30);
     ctx.fillStyle = COLORS.faded;
     ctx.font = serif(12, false);
-    ctx.fillText("· page " + turnNo, 132, 30);
+    ctx.fillText(practice ? "· the first page (practice)" : "· page " + turnNo, 132, 30);
 
     // Enemy panel (red ink). The meaning-boss is named after your own words.
     drawHPBar(NOTE_X, 64, NOTE_W, enemy.name, enemy.hp, enemy.max, COLORS.ribbon);
     ctx.fillStyle = COLORS.ribbon;
-    ctx.font = serif(11, false);
     ctx.textAlign = "left";
-    if (enemy.kind === "meaning") {
-      ctx.fillText("the meaning you spelled · feeds on clean words", NOTE_X, 94);
-    } else {
-      ctx.fillText(enemy.sub || ("replies: " + enemy.reply + " each turn"), NOTE_X, 94);
+    const subTxt = enemy.dummy ? "practice dummy · never hits back"
+      : enemy.kind === "meaning" ? "the meaning you spelled · feeds on clean words"
+      : enemySub(enemy);
+    fitFont(subTxt, NOTE_W - 22, fsz(11), false, 9);
+    ctx.fillText(subTxt, NOTE_X, 94);
+    // a tiny "i": hover or tap the panel for the plain-language trick
+    ctx.strokeStyle = COLORS.ribbon; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(NOTE_X + NOTE_W - 7, 90, 7, 0, Math.PI * 2); ctx.stroke();
+    ctx.font = serif(10, true); ctx.textAlign = "center";
+    ctx.fillText("i", NOTE_X + NOTE_W - 7, 94);
+    // Status badge: HANDS / EYES leave the foe "halved" or "blinded" for its next
+    // reply. The reply lands right after the cast, so the badge stays until the next cast.
+    if (enemy.badge) {
+      const bt = enemy.badge.toUpperCase();
+      ctx.font = serif(11, true);
+      const bw = ctx.measureText(bt).width + 14;
+      ctx.fillStyle = COLORS.ribbon;
+      roundRect(NOTE_X + NOTE_W - bw, 46, bw, 16, 8); ctx.fill();
+      ctx.fillStyle = "#f6efdd"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(bt, NOTE_X + NOTE_W - bw / 2, 54.5);
+      ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
     }
     // Encounter progress dots (CONTENT-02) — how deep into the run you are.
-    const dotN = totalEncounters();
-    const cur = enemy.kind === "meaning" ? dotN - 1 : encIndex;
-    for (let i = 0; i < dotN; i++) {
-      const dx = NOTE_X + 6 + i * 14;
-      ctx.beginPath(); ctx.arc(dx, 104, 4, 0, Math.PI * 2);
-      const isBoss = i === dotN - 1;
-      ctx.fillStyle = i < cur ? COLORS.faded : (i === cur ? (isBoss ? COLORS.bleed : COLORS.ribbon) : "rgba(60,48,30,0.18)");
-      ctx.fill();
-      if (isBoss && i !== cur) { ctx.strokeStyle = "rgba(107,20,16,0.4)"; ctx.lineWidth = 1; ctx.stroke(); }
+    if (!practice) {
+      const dotN = totalEncounters();
+      const cur = enemy.kind === "meaning" ? dotN - 1 : encIndex;
+      for (let i = 0; i < dotN; i++) {
+        const dx = NOTE_X + 6 + i * 14;
+        ctx.beginPath(); ctx.arc(dx, 104, 4, 0, Math.PI * 2);
+        const isBoss = i === dotN - 1;
+        ctx.fillStyle = i < cur ? COLORS.faded : (i === cur ? (isBoss ? COLORS.bleed : COLORS.ribbon) : "rgba(60,48,30,0.18)");
+        ctx.fill();
+        if (isBoss && i !== cur) { ctx.strokeStyle = "rgba(107,20,16,0.4)"; ctx.lineWidth = 1; ctx.stroke(); }
+      }
     }
 
     // Player panel (carbon).
@@ -1519,9 +2390,9 @@
     ctx.beginPath(); ctx.arc(20, platenY - 6 + (platenH + 12) / 2, 9, 0, Math.PI * 2); ctx.fill();
 
     ctx.fillStyle = COLORS.faded;
-    ctx.font = serif(10, true);
+    ctx.font = serif(Math.min(14, fsz(10)), true);
     ctx.textAlign = "left";
-    ctx.fillText("PLATEN — open socket: " + openSocketLabel(chain), 38, platenY + 16);
+    ctx.fillText("THE PLATEN · your sentence builds here, left to right", 38, platenY + 16);
 
     // Chain cards laid left-to-right.
     const cw = 82, ch = 58, gap = 8;
@@ -1530,24 +2401,27 @@
       drawCard(cx, platenY + 24, cw, ch, c, {});
       cx += cw + gap;
     }
-    // Ghosted next-socket hint (ONBOARD-02) — diegetic dotted chit.
+    // Ghosted next-socket hint (ONBOARD-02) — diegetic dotted chit, in words.
     const canExtend = misGrammar && misGrammarUnlocked
       ? true
       : (!isCastable(chain) || chainPhase(chain) === "MOD");
     if (canExtend && cx + cw < platenW + 28) {
       ctx.save();
-      ctx.globalAlpha = 0.45;
+      ctx.globalAlpha = 0.6;
       ctx.strokeStyle = misGrammar ? COLORS.bleed : COLORS.ribbon;
       ctx.setLineDash([5, 4]);
       roundRect(cx, platenY + 24, cw, ch, 4); ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = misGrammar ? COLORS.bleed : COLORS.ribbon;
-      ctx.font = serif(10, false);
-      ctx.textAlign = "center";
-      const ph = chainPhase(chain);
-      const hintMap = { START: "VERB / NOUN", SUBJ: "ADJ / NOUN", VERB: "VERB", OBJ: "the / ADJ / NOUN", MOD: "ADV / NUM?", DONE: "—" };
-      ctx.fillText(misGrammar ? "anything (break it)" : (hintMap[ph] || ""), cx + cw / 2, platenY + 24 + ch / 2);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const lines = misGrammar ? ["anything,", "break it"] : socketLines(chainPhase(chain));
+      const lh = Math.max(13, Math.min(16, fsz(12)));
+      lines.forEach((ln, i) => {
+        fitFont(ln, cw - 8, Math.min(14, fsz(11)), false, 9);
+        ctx.fillText(ln, cx + cw / 2, platenY + 24 + ch / 2 + (i - (lines.length - 1) / 2) * lh);
+      });
       ctx.restore();
+      ctx.textBaseline = "alphabetic";
     }
 
     // ---- Live preview (CORE-04) — typed character by character --------
@@ -1571,18 +2445,26 @@
     }
 
     const fx = chainCorrupted ? null : computeEffect(chain);
-    ctx.font = serif(14, false);
+    ctx.font = serif(Math.min(19, fsz(14)), false);
     if (chainCorrupted) {
       ctx.fillStyle = COLORS.bleed;
       ctx.fillText("EFFECT:  broken phrase — only the meaning fears this", 28, previewY + 26);
     } else if (fx) {
       const feedsBoss = enemy.kind === "meaning" && !fx.heal && fx.target === "enemy";
-      ctx.fillStyle = feedsBoss ? COLORS.snap : (fx.target === "player" ? COLORS.ribbon : COLORS.snap);
-      const note2 = feedsBoss ? "   (!! this FEEDS the meaning)" : (fx.target === "player" ? "   (!! hits YOU)" : "");
-      ctx.fillText("EFFECT:  " + fx.summary + note2, 28, previewY + 26);
+      let col = COLORS.snap, tail = "";
+      if (feedsBoss) { tail = "   (!! this FEEDS the meaning)"; }
+      else if (fx.heal) {
+        if (fx.target === "player") tail = "   (heals you)";
+        else { col = COLORS.ribbon; tail = "   (!! heals the enemy)"; }
+      } else if (fx.target === "player") { col = COLORS.ribbon; tail = "   (!! hits YOU)"; }
+      else if (fx.tail) tail = "   (" + fx.tail + ")";
+      ctx.fillStyle = col;
+      const effLine = "EFFECT:  " + fx.summary + tail;
+      fitFont(effLine, 670, Math.min(19, fsz(14)), false, 10);
+      ctx.fillText(effLine, 28, previewY + 26);
     } else {
       ctx.fillStyle = COLORS.faded;
-      ctx.fillText("EFFECT:  (need subject + verb + object)", 28, previewY + 26);
+      ctx.fillText("EFFECT:  (add a verb and a noun for it to land on)", 28, previewY + 26);
     }
 
     // ---- Buttons -------------------------------------------------------
@@ -1596,7 +2478,7 @@
       roundRect(bx, by, bw, bh, 4); ctx.fill();
       if (on) { ctx.strokeStyle = "#f6efdd"; ctx.lineWidth = 1.5; roundRect(bx + 2, by + 2, bw - 4, bh - 4, 3); ctx.stroke(); }
       ctx.fillStyle = "#f6efdd";
-      ctx.font = serif(13, true);
+      fitFont(label, bw - 12, Math.min(16, fsz(13)), true, 10);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(label, bx + bw / 2, by + bh / 2 + 1);
       ctx.textBaseline = "alphabetic";
@@ -1604,89 +2486,89 @@
     }
     let bx = 28;
     const castColor = chainCorrupted ? COLORS.bleed : (isCastable(chain) ? COLORS.ribbon : COLORS.faded);
-    bx = button("cast", "CAST · Enter", bx, castColor);
-    bx = button("undo", "UNDO · ⌫", bx, COLORS.carbon);
-    bx = button("clear", "CLEAR · Esc", bx, COLORS.carbon);
+    bx = button("cast", touchUI ? "CAST" : "CAST · Enter", bx, castColor);
+    bx = button("undo", touchUI ? "UNDO" : "UNDO · ⌫", bx, COLORS.carbon);
+    bx = button("clear", touchUI ? "CLEAR" : "CLEAR · Esc", bx, COLORS.carbon);
     if (misGrammarUnlocked) {
-      bx = button("mis", misGrammar ? "MIS-GRAMMAR ✓" : "MIS-GRAMMAR", bx, misGrammar ? COLORS.bleed : "#5a4d3a", misGrammar);
+      const ml = "MIS-GRAMMAR" + (touchUI ? (misGrammar ? " ✓" : "") : " · Tab");
+      bx = button("mis", ml, bx, misGrammar ? COLORS.bleed : "#5a4d3a", misGrammar);
     }
 
     // ---- Resolution log (typed) ---------------------------------------
-    ctx.fillStyle = COLORS.carbon;
-    ctx.font = serif(13, false);
+    // Priority: a refusal reason, then the typed result of the last cast (empty
+    // chain), then the next-step hint for the chain being built.
     ctx.textAlign = "left";
-    // The log shares the typer only when not building a chain.
-    const logText = (chain.length === 0) ? typedText() : lastLog;
-    if (logText) ctx.fillText(logText, 28, by + 58);
+    let logText, logCol = COLORS.carbon;
+    const nt = activeNotice();
+    if (nt) { logText = nt; logCol = COLORS.ribbon; }
+    else if (chain.length === 0) logText = typedText();
+    else if (chainCorrupted) logText = "Broken on purpose. Cast it and see what the words do.";
+    else if (misGrammar && misGrammarUnlocked) logText = "MIS-GRAMMAR is armed: any card goes in, in any order.";
+    else if (fx && fx.target === "enemy" && !fx.heal && subjectHints < 2 && parseChain(chain).subj)
+      logText = "The first noun is only for show: the LAST noun takes the effect.";
+    else if (practice && isCastable(chain)) logText = "Done! Cast it.";
+    else logText = nextStepText(chain);
+    ctx.fillStyle = logCol;
+    if (logText) { fitFont(logText, 670, Math.min(17, fsz(13)), false, 10); ctx.fillText(logText, 28, by + 58); }
     if (lastDelta) {
       ctx.fillStyle = COLORS.ribbon;
-      ctx.fillText(lastDelta, 28, by + 78);
+      fitFont(lastDelta, 670, Math.min(16, fsz(13)), false, 10);
+      ctx.fillText(lastDelta, 28, by + 80);
     }
 
-    // ---- Onboarding tutorial margin-note (ONBOARD-02) -----------------
-    // First-timers get a diegetic, hand-written guide that tracks their
-    // progress through the very first sentence. It retires after one cast.
-    if (tutorialActive()) {
-      const tw = 300, th = 86;
-      const handTop = H - 128; // mirrors the hand row's Y below
-      const tx = W - 24 - tw, ty = handTop - 10 - th - 8;
-      ctx.save();
-      ctx.shadowColor = "rgba(40,28,16,0.3)"; ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
-      ctx.fillStyle = "#fff7e4";
-      roundRect(tx, ty, tw, th, 4); ctx.fill();
-      ctx.restore();
-      ctx.strokeStyle = COLORS.ribbon; ctx.lineWidth = 1.4;
-      roundRect(tx, ty, tw, th, 4); ctx.stroke();
-      ctx.fillStyle = COLORS.ribbon;
-      ctx.font = serif(12, true);
-      ctx.textAlign = "left";
-      ctx.fillText("✎ a note to a new hand", tx + 14, ty + 20);
-      ctx.fillStyle = COLORS.carbon;
-      ctx.font = serif(12, false);
-      const line = TUTORIAL_LINES[Math.max(0, Math.min(TUTORIAL_LINES.length - 1, tutorialStep))];
-      // simple word-wrap inside the card
-      const words = line.split(" ");
-      let ln = "", yy = ty + 42;
-      for (const wd of words) {
-        const test = ln ? ln + " " + wd : wd;
-        if (ctx.measureText(test).width > tw - 28) { ctx.fillText(ln, tx + 14, yy); yy += 16; ln = wd; }
-        else ln = test;
-      }
-      if (ln) ctx.fillText(ln, tx + 14, yy);
-    }
+    // ---- The guided intro's coach note ---------------------------------
+    if (practice && !practiceModal()) drawCoach();
 
     // ---- Hand ----------------------------------------------------------
     const handY = H - 128;
     ctx.fillStyle = COLORS.carbon;
     ctx.textAlign = "left";
-    ctx.font = serif(11, false);
-    ctx.fillText(
-      misGrammar
-        ? "HAND — MIS-GRAMMAR armed: any card forces on, breaking the words"
-        : "HAND — outlined chits can attach; greyed ones don't fit the open socket",
-      28, handY - 10
-    );
+    const handLabel = misGrammar
+      ? "HAND — MIS-GRAMMAR armed: any card forces on, breaking the words"
+      : (practice ? "HAND — outlined cards fit the open socket; greyed ones don't (yet)"
+                  : "HAND — 12 new words each page; unused ones are discarded. Outlined cards fit the open socket.");
+    fitFont(handLabel, W - 56, Math.min(15, fsz(11)), false, 9);
+    ctx.fillText(handLabel, 28, handY - 10);
 
     handRects = [];
     const hcw = 70, hch = 90, hgap = 6;
-    const totalW = hand.length * (hcw + hgap) - hgap;
-    let hx = Math.max(20, (W - totalW) / 2);
+    const totalW = handCols * (hcw + hgap) - hgap;
+    const hx0 = Math.max(10, (W - totalW) / 2);
+    // Fixed slots: an empty slot stays empty, so the row never shuffles.
+    ctx.save();
+    ctx.globalAlpha = 0.22; ctx.strokeStyle = COLORS.faded; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+    for (let sl = 0; sl < handCols; sl++) {
+      if (!hand.some((c) => c.slot === sl)) { roundRect(hx0 + sl * (hcw + hgap), handY, hcw, hch, 4); ctx.stroke(); }
+    }
+    ctx.restore();
     for (let i = 0; i < hand.length; i++) {
       const c = hand[i];
+      const hx = hx0 + c.slot * (hcw + hgap);
       const legal = canAttach(chain, c);
       const playable = legal || (misGrammar && misGrammarUnlocked);
-      drawCard(hx, handY, hcw, hch, c, { legal: playable, highlight: legal, index: i + 1 });
+      const dim = !!practice && !practiceAllows(c);
+      drawCard(hx, handY, hcw, hch, c, { legal: playable, highlight: legal && !dim, dim, value: true,
+        index: touchUI ? null : HAND_KEYS[c.slot] });
       handRects.push({ x: hx, y: handY, w: hcw, h: hch, idx: i });
-      hx += hcw + hgap;
     }
 
     ctx.restore(); // end pageShift translate
 
     // ---- The note (drawn unshifted, pinned to the page edge) ----------
     drawNotePanel();
+    if (practice && note.length === 0) {
+      ctx.fillStyle = COLORS.faded;
+      ctx.font = serif(Math.min(15, fsz(12)), false);
+      ctx.textAlign = "left";
+      wrapText("Practice: nothing here is recorded.", NOTE_W - 28).forEach((ln, i) => ctx.fillText(ln, NOTE_X + 14, NOTE_Y + 56 + i * 18));
+    }
 
     // ---- Ink stains + droplets + flung letters ------------------------
     drawInkFx();
+
+    drawHelpButton();
+    if (practiceModal()) drawPracticeModal();
+    else drawTips();
 
     // ---- Reveal cinematic overlay -------------------------------------
     if (bossPending) drawReveal();
@@ -1781,8 +2663,10 @@
   // =====================================================================
   let lastT = performance.now();
   function frame(now) {
-    const dt = Math.min(0.05, (now - lastT) / 1000);
+    // Help pauses the game: no time passes while the overlay is open.
+    const dt = helpOpen ? 0 : Math.min(0.05, (now - lastT) / 1000);
     lastT = now;
+    if (practice) practice.coachShown += dt * 90;
 
     // Update card shakes.
     for (const c of hand) if (c.shake) { c.shake -= dt; if (c.shake < 0) c.shake = 0; }
@@ -1854,9 +2738,18 @@
       get noteRevealed() { return noteRevealed; },
       get misGrammar() { return misGrammar; },
       get bossPending() { return bossPending; },
-      get tutorialStep() { return tutorialStep; },
+      get practice() { return practice; },
+      get helpOpen() { return helpOpen; },
+      get introSeen() { return introSeen; },
+      get handCols() { return handCols; },
+      get runDamage() { return runDamage; },
+      startPractice, openHelp, closeHelp, dealHand, practiceCoach, describeCard, whyRefused,
       STATE,
       startRun, castChain, tryPlaceCard, clearChain,
+      POOL, ENEMY_ROSTER, chainOf, computeEffect, parseChain, makeCard, defOf, foeName, meaningFromNote,
+      setChain(words) { chain = chainOf(words); },
+      setEnemy(i) { encIndex = i; enemy = newEnemy(); },
+      setNote(lines) { note = lines; },
       canAttach, isCastable, chainPhase,
       forceReveal() { while (bossPending || !noteRevealed) { /* no-op */ break; } },
       finishReveal() { revealAnim = 1; updateReveal(10); },

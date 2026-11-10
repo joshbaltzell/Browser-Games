@@ -149,7 +149,7 @@ const GAMES = [
   {
     title: "Knit One",
     description:
-      "You ARE the yarn. Drag your head to pay out thread, wrap it around the peg, loop back through your own bight, and cinch a knot that has to honestly hold a felted weight — a loose loop drops it. Cozy physics, finite yarn.",
+      "You are the yarn. Lay it around the posts, tie a real knot, then drop the ball and see if it holds. Ten tutorial rooms, then 20 puzzles where heavy balls need two or three strands.",
     path: "games/knit-one/index.html",
     tags: ["physics", "puzzle", "cozy"],
     accent: "#d98c6a",
@@ -159,9 +159,9 @@ const GAMES = [
   {
     title: "Last Words",
     description:
-      "A deckbuilder where every card is a word. Chain them into a grammatically valid sentence, cast it LITERALLY — \"BURN the GUARD twice\" scorches the enemy. Press Tab to arm MIS-GRAMMAR: break the rules on purpose and wield the resulting chaos.",
+      "Chain word cards into a sentence and it happens, literally. Each page deals 12 fresh random words. Careful: the last noun takes the blow.",
     path: "games/last-words/index.html",
-    tags: ["deckbuilder", "card combat", "word puzzle"],
+    tags: ["word puzzle", "card combat", "story"],
     accent: "#b3261e",
     art: `
       <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg"><rect width="120" height="80" fill="#ede4cf"/><rect x="10" y="14" width="30" height="22" rx="2" fill="#f5eedd" stroke="#8a8174"/><rect x="13" y="17" width="24" height="6" rx="1" fill="#7a3b12"/><text x="25" y="33" font-family="monospace" font-size="8" font-weight="bold" fill="#221e1a" text-anchor="middle">BURN</text><rect x="45" y="14" width="30" height="22" rx="2" fill="#f5eedd" stroke="#8a8174"/><rect x="48" y="17" width="24" height="6" rx="1" fill="#1f4a6b"/><text x="60" y="33" font-family="monospace" font-size="7" font-weight="bold" fill="#221e1a" text-anchor="middle">GUARD</text><rect x="80" y="14" width="30" height="22" rx="2" fill="#f5eedd" stroke="#8a8174"/><rect x="83" y="17" width="24" height="6" rx="1" fill="#2f6b4a"/><text x="95" y="33" font-family="monospace" font-size="7" font-weight="bold" fill="#221e1a" text-anchor="middle">twice</text><text x="60" y="56" font-family="monospace" font-size="9" font-weight="bold" fill="#221e1a" text-anchor="middle">BURN the GUARD</text><text x="60" y="68" font-family="monospace" font-size="8" fill="#b3261e" text-anchor="middle">fire 3 x2 = 6</text></svg>`,
