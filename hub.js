@@ -149,7 +149,7 @@ const GAMES = [
   {
     title: "Knit One",
     description:
-      "You are the yarn. Lay it around the posts, tie a real knot, then drop the ball and see if it holds. Ten cozy rooms, from your first stitch to unravelling your first knot.",
+      "You are the yarn. Lay it around the posts, tie a real knot, then drop the ball and see if it holds. Ten tutorial rooms, then 20 puzzles where heavy balls need two or three strands.",
     path: "games/knit-one/index.html",
     tags: ["physics", "puzzle", "cozy"],
     accent: "#d98c6a",
