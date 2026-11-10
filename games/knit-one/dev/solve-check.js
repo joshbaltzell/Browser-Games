@@ -114,6 +114,25 @@ for (const room of K.ROOMS) {
   check("loop size / speed / direction variations win", ok === tot, ok + "/" + tot);
 }
 
+// Post to Post: wrapping order doesn't matter, and one big loop around both posts counts
+{
+  const room = K.ROOMS.find(r => r.id === "post-to-post");
+  const a = [900 * room.pegs[0][0], 640 * room.pegs[0][1]], b = [900 * room.pegs[1][0], 640 * room.pegs[1][1]];
+  const t = [900 * room.target[0], 640 * room.target[1]];
+  const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
+  const big = [[220, 190], [cx - 165, cy]].concat(K.spiral(cx, cy, 165, 165, 180, 400, 1)).concat([t]);
+  const rb = K.runScript(room, [{ drag: big, speed: 600 }, { wait: 1 }]);
+  console.log("post-to-post, one big loop");
+  check("one loop around both posts wins", rb.w.status === "won", "yarn left=" + rb.w.yarn);
+  const rev = [[220, 190], [b[0] - 44, b[1]]].concat(K.spiral(b[0], b[1], 44, 44, 180, 250, 1))
+    .concat([[a[0] - 44, a[1]]]).concat(K.spiral(a[0], a[1], 44, 44, 180, 250, 1)).concat([t]);
+  const rr = K.runScript(room, [{ drag: rev, speed: 600 }, { wait: 1 }]);
+  check("post 2 first, then post 1, wins", rr.w.status === "won", "yarn left=" + rr.w.yarn);
+  const one = [[220, 190], [a[0] - 44, a[1]]].concat(K.spiral(a[0], a[1], 44, 44, 180, 250, 1)).concat([t]);
+  const r1 = K.runScript(room, [{ drag: one, speed: 600 }, { wait: 1 }]);
+  check("only one post wrapped does NOT win", r1.w.status !== "won");
+}
+
 // the finale must also work with the smallest possible saved knot
 {
   const room = K.ROOMS.find(r => r.finale);

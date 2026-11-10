@@ -2,7 +2,7 @@
  * KNIT ONE
  * ========
  * You are a single thread. Drag to lay yarn from the spool, loop it round a
- * wooden post and cross your own line, press TIE to cinch the loop into a knot,
+ * wooden post and cross your own line, hold still (or press TIE) to cinch the loop into a knot,
  * then DROP a felt ball onto it. A knot tied to a post holds the ball with your
  * hands off; a loose line does not.
  *
@@ -735,7 +735,7 @@ function coach() {
     if (w.lost) return "It slipped! Your yarn goes back as you laid it.";
     if (w.phase === "DROPPED") return w.hold > 0.05 ? "Holding... keep your hands off." : "";
     if (w.yarn <= 0) return "Out of yarn. Hold UNRAVEL to take back what you laid.";
-    if (cinchHint) return cinchHint.peg >= 0 ? "Loop round a post: press TIE." : "A loop, but no post inside it. Loop round a post.";
+    if (cinchHint) return cinchHint.peg >= 0 ? "Loop round a post: now hold still to tie it." : "A loop, but no post inside it. Loop round a post.";
     if (w.knots.some(k => !(w.ghost && k.i <= w.ghost.to))) return "Tied. Now press DROP.";
     if (w.nodes.length <= 3 && !w.down) return "Press and drag to lay yarn from the spool.";
     if (w.fails > 0) return "It slipped. Change the yarn, then DROP AGAIN.";
@@ -746,7 +746,7 @@ function coach() {
   if (room.wraps) {
     const got = w.wrapIdx.filter(i => i >= 0).length;
     if (w.wrapsOk && got === room.wraps.length) return "Wrapped. Now reach the stitch.";
-    return "Wrapped " + got + " of " + room.wraps.length + (room.wraps.length > 1 ? " in order" : "") + ".";
+    return "Wrapped " + got + " of " + room.wraps.length + " posts.";
   }
   return "";
 }
@@ -781,6 +781,7 @@ function update(dt) {
       cinchAge = 0;
       cinchHint = world.phase === "BUILD" ? S.findCinch(world) : null;
     }
+    updateHoldTie(dt);
     if (world.lost) { failTimer += dt; if (failTimer > 1.6) { S.toBuild(world); failTimer = 0; } }
     if (world.fails === 2 && world.lost && failTimer < 0.05 && !showHint) showToast("Stuck? Tap HINT to see one way.", 4);
   }
@@ -790,6 +791,21 @@ function update(dt) {
   }
 }
 let cinchAge = 0;
+// Hold to tie: keep the yarn's end still over a loop round a post and a ring fills; when it's full
+// the knot ties. Space and the TIE button still work, but nobody has to know about them.
+const HOLD_TIE = 1.5;      // seconds of stillness
+const HOLD_SLOP = 9;       // world px the end may drift and still count as still
+const holdTie = { t: 0, x: 0, y: 0, spent: false };   // spent: tied; move before the next one
+function updateHoldTie(dt) {
+  if (Math.hypot(pointer.x - holdTie.x, pointer.y - holdTie.y) > HOLD_SLOP) {
+    holdTie.x = pointer.x; holdTie.y = pointer.y; holdTie.t = 0; holdTie.spent = false;
+    return;
+  }
+  const ready = cinchHint && cinchHint.peg >= 0 && world.phase === "BUILD" && pointer.down && !holdTie.spent;
+  if (!ready) { holdTie.t = 0; return; }
+  holdTie.t += dt;
+  if (holdTie.t >= HOLD_TIE) { holdTie.t = 0; holdTie.spent = true; act("tie"); }
+}
 
 // The knit-textured background is expensive to draw stitch-by-stitch every
 // frame, so we bake it once to an offscreen canvas and blit it.
@@ -937,7 +953,7 @@ function roundRect(x, y, w, h, r) {
 // ----------------------------------------------------------------------------
 // Render: the board (world space)
 // ----------------------------------------------------------------------------
-// Pegs with an order badge when a room asks for posts in sequence.
+// Pegs that need wrapping get a badge that turns into a check mark once the yarn goes round them.
 function drawPegs() {
   const room = ROOMS[roomIndex];
   world.pegs.forEach(drawPeg);
@@ -952,7 +968,7 @@ function drawPegs() {
       ctx.fillStyle = done ? "#20300f" : COLORS.text;
       ctx.font = "bold " + wpx(14) + "px system-ui, sans-serif";
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(String(k + 1), bx, by + 0.5);
+      ctx.fillText(done ? "\u2713" : "", bx, by + 0.5);
     });
     ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   }
@@ -1108,7 +1124,8 @@ function drawCinchHint() {
     ctx.beginPath(); ctx.arc(pg.x, pg.y, pg.r + 7 + pulse * 3, 0, TAU); ctx.stroke();
   }
   ctx.font = "bold " + wpx(15) + "px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  const ty = c.y - 46 - pulse * 3, label = !good ? "no post inside" : COARSE ? "TIE here" : "TIE here (Space)";
+  const near = Math.hypot(pointer.x - c.x, pointer.y - c.y) < 90;   // keep clear of the cursor's ring
+  const ty = (near ? Math.min(c.y, pointer.y) - 70 : c.y - 46) - pulse * 3, label = !good ? "no post inside" : "hold still to tie";
   const tw = ctx.measureText(label).width + 18;
   ctx.fillStyle = "rgba(28,22,15,0.85)"; roundRect(c.x - tw / 2, ty - wpx(11), tw, wpx(22), 10); ctx.fill();
   ctx.fillStyle = tone; ctx.fillText(label, c.x, ty);
@@ -1137,6 +1154,19 @@ function drawHintPath() {
     ctx.fillText("first: hold UNRAVEL until the plum yarn is gone", VW / 2, VH * 0.9);
   }
   ctx.restore(); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+}
+
+// The hold-to-tie timer: a ring around the cursor that fills while you hold still
+function drawHoldTie() {
+  if (holdTie.t < 0.15 || !cinchHint) return;
+  const k = Math.min(1, holdTie.t / HOLD_TIE), r = wpx(22);
+  ctx.save();
+  ctx.lineCap = "round"; ctx.lineWidth = 5;
+  ctx.strokeStyle = "rgba(28,22,15,0.7)";
+  ctx.beginPath(); ctx.arc(pointer.x, pointer.y, r, 0, TAU); ctx.stroke();
+  ctx.strokeStyle = COLORS.threadStrain; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(pointer.x, pointer.y, r, -Math.PI / 2, -Math.PI / 2 + k * TAU); ctx.stroke();
+  ctx.restore();
 }
 
 function drawCinchPop() {
@@ -1195,6 +1225,7 @@ function drawBoard() {
     drawThread();
     drawHintPath();
     drawCinchPop();
+    drawHoldTie();
     drawPointer();
     drawParticles();
     drawTeach();

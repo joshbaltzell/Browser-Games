@@ -32,18 +32,18 @@
       id: "post-to-post", chapter: 0, name: "Post to Post",
       anchor: [0.12, 0.20], pegs: [[0.36, 0.40, 24], [0.62, 0.58, 24]], target: [0.86, 0.28],
       wraps: [0, 1], yarn: 130,
-      goal: "Wrap post 1, then post 2, then reach the stitch.",
+      goal: "Wrap the yarn around both posts, then reach the stitch. One big loop works too.",
     },
     {
       id: "first-knot", chapter: 1, name: "Your First Knot",
       anchor: [0.12, 0.30], pegs: [[0.72, 0.45, 26]], balls: [[0.42, 0.17, 22]], yarn: 80,
       goal: "Tie the yarn to the post so it holds the ball.",
-      teach: { text: "loop round the post, cross your line, then TIE", at: [0.72, 0.70] },
+      teach: { text: "loop round the post, cross your line, then hold still", at: [0.72, 0.70] },
     },
     {
       id: "around-the-corner", chapter: 1, name: "Around the Corner",
       anchor: [0.08, 0.22], pegs: [[0.28, 0.40, 24], [0.62, 0.40, 24]], balls: [[0.45, 0.17, 22]], yarn: 110,
-      goal: "Bend the yarn round post 1, then tie it to post 2 to catch the ball.",
+      goal: "Bend the yarn round the left post, then tie it to the right post to catch the ball.",
     },
     {
       id: "heavy-drop", chapter: 1, name: "Heavy Drop",
@@ -64,7 +64,7 @@
       id: "wind-up", chapter: 3, name: "Wind Up",
       anchor: [0.08, 0.22], pegs: [[0.28, 0.40, 24], [0.50, 0.64, 24], [0.72, 0.40, 24]], target: [0.90, 0.80],
       wraps: [0, 1, 2], yarn: 150,
-      goal: "Wrap posts 1, 2 and 3 in order, then reach the stitch.",
+      goal: "Wrap the yarn around all three posts, then reach the stitch.",
     },
     {
       id: "unravel-the-first", chapter: 3, name: "Unravel the First",

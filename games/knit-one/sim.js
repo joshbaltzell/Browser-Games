@@ -528,7 +528,8 @@
   }
 
   // --------------------------------------------------------------------------
-  // wraps (reach rooms): which posts the yarn has gone around, in what order
+  // wraps (reach rooms): which posts the yarn has gone around. Any order counts, and so does one
+  // big loop around several posts at once (players reasonably try that)
   // --------------------------------------------------------------------------
   function wrapIndexFor(w, peg) {
     let total = 0, prev = null;
@@ -548,13 +549,12 @@
 
   function updateWraps(w, silent) {
     const list = w.room.wraps || [];
-    let ok = true, last = -1;
+    let ok = true;
     w.wrapIdx = [];
     for (let k = 0; k < list.length; k++) {
       const idx = wrapIndexFor(w, w.pegs[list[k]]);
       w.wrapIdx.push(idx);
-      if (idx < 0 || idx <= last) ok = false;
-      if (idx >= 0) last = idx;
+      if (idx < 0) ok = false;
       if (idx >= 0 && !w.wrapSeen[k] && !silent) {
         w.wrapSeen[k] = true;
         w.events.push({ type: "wrap", peg: list[k] });
