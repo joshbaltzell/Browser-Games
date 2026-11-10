@@ -77,7 +77,7 @@ button.primary:hover { filter: brightness(1.08); }
   grid-row: 2;
   align-self: start; justify-self: start;
   max-height: 100%; overflow-y: auto;   /* seven parts can outgrow the space above the tray */
-  width: 270px; max-width: 100%;
+  width: 300px; max-width: 100%;
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px;
   display: grid; gap: 10px;
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
@@ -339,3 +339,63 @@ button.link { background: none; border: 0; padding: 0; color: var(--ember); text
 
 .touch-hint { display: none; }
 @media (pointer: coarse) { .touch-hint { display: block; } }
+
+/* --- JAM ON IT --- */
+.jam-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.jam-block { display: grid; gap: 8px; align-content: start; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.jam-block .lbl { min-width: 0; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.perf { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.perf button, .note { display: grid; gap: 2px; justify-items: center; padding: 8px 4px; font-size: 0.8rem; touch-action: none; user-select: none; -webkit-user-select: none; }
+.perf kbd, .note kbd { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-dim); }
+.perf button.held, .note.held { background: var(--accent); color: #140d06; border-color: transparent; }
+.perf button.held kbd, .note.held kbd { color: #140d06; }
+.perf button[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.filter {
+  position: relative; display: flex; justify-content: space-between; align-items: center; height: 40px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 999px; font-size: 0.72rem; color: var(--ink-dim); cursor: ew-resize;
+  background: linear-gradient(90deg, rgba(80, 120, 255, 0.18), transparent 40%, transparent 60%, rgba(255, 220, 120, 0.18));
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.filter .knob { position: absolute; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 10px var(--accent); transition: left 0.12s ease-out; pointer-events: none; }
+.chip .yours { font-size: 0.65rem; color: var(--good); text-transform: uppercase; letter-spacing: 0.06em; }
+.notes-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.note { font-family: var(--font-mono); }
+.note.ct { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+button.rec-on { border-color: #ff5a5a; color: #ff8a8a; }
+.toast {
+  position: fixed; left: 50%; top: 38%; transform: translate(-50%, 8px); z-index: 20; pointer-events: none;
+  padding: 8px 14px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line);
+  font-family: var(--font-display); font-weight: 700; opacity: 0; transition: opacity 0.2s, transform 0.2s;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+#jamBtn[aria-pressed="true"] { border-color: var(--ember); color: var(--ember); }
+.meta .title { color: var(--ink); }
+.meta .clock { color: var(--ember); margin-left: 6px; }
+/* Shake and busier/calmer on each part */
+.layer .acts { flex-wrap: wrap; }
+.layer .acts button.icon { padding: 4px 6px; line-height: 1; }
+.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.bars i { display: block; width: 3px; border-radius: 1px; background: var(--ink-dim); opacity: 0.35; }
+.bars i:nth-child(1) { height: 5px; } .bars i:nth-child(2) { height: 8px; } .bars i:nth-child(3) { height: 12px; }
+.bars[data-n="0"] i:nth-child(1), .bars[data-n="1"] i:nth-child(-n+2), .bars[data-n="2"] i { opacity: 1; background: var(--ink); }
+button:disabled { opacity: 0.4; cursor: default; }
+/* Prompt cards */
+.prompt-card { display: grid; gap: 6px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.prompt-card .lbl { font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.prompt-card .ptext { font-family: var(--font-display); font-weight: 700; font-size: 1.35rem; }
+.prompt-card .sub { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-dim); }
+@media (max-width: 820px) { .jam-grid { grid-template-columns: 1fr; } }
+@media (orientation: landscape) and (max-height: 500px) {
+  body[data-tray="jam"] .layers { display: none; }
+  body[data-tray="jam"] .tray { grid-row: 2 / 4; }
+  .jam-grid { grid-template-columns: 1fr; gap: 8px; }
+  .jam-block { padding: 8px; }
+  .notes-row .note { min-height: 44px; }
+  .prompt-card .ptext { font-size: 1.05rem; }
+  body[data-tray="jam"] .tray-head p { display: none; }
+  .perf button { padding: 6px 4px; }
+}
+@media (pointer: coarse) { .perf kbd, .note kbd { display: none; } }

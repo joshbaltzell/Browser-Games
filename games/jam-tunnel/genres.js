@@ -882,7 +882,7 @@ window.JT = window.JT || {};
 
     boombap: {
       id: 'boombap', name: 'Classic hip hop', grid: 0.25, editScale: [0, 2, 3, 5, 7, 9, 10],  blurb: 'Boom bap swing, jazzy minor 7th chords',
-      key: 2, keyName: 'D minor', minor: true, verseKeepsChords: true, bpm: 90, tempo: [80, 100], swing: 0.7, trim: 1.0,
+      key: 2, keyName: 'D minor', minor: true, verseKeepsChords: true, bpm: 90, tempo: [80, 100], swing: 0.7, trim: -1.0,
       tint: [0.95, 0.75, 0.35], fog: [0.02, 0.016, 0.01], accent: '#e8c15a',
       progressions: [
         { roman: 'i7 - i7 - iv7 - iv7', bright: 0.15, mood: 'A hypnotic two-chord loop', chords: [[0, 'm7'], [0, 'm7'], [5, 'm7'], [5, 'm7']] },
@@ -902,7 +902,7 @@ window.JT = window.JT || {};
           { id: 'busy', name: 'Busy sixteenths', why: 'Swung sixteenth hats and ghost snares.', gen: bbDrums('busy') },
           { id: 'halftime', name: 'Trap half-time', clash: 'A straight half-time snare drags against the head-nod swing.', why: 'A trap-style beat.', gen: bbDrums('halftime') },
         ] },
-        bass: { label: 'Electric bass', voice: 'bass', range: [28, 50], sounds: [{ id: 'bass', name: 'Electric bass' }, { id: 'upright', name: 'Upright bass' }], styles: [
+        bass: { label: 'Sub bass', voice: 'subbass', range: [28, 50], sounds: [{ id: 'subbass', name: 'Sub bass' }, { id: 'upright', name: 'Upright bass' }, { id: 'bass', name: 'Electric bass' }], styles: [
           { id: 'kick', name: 'Follows the kick', why: 'Root notes locked to the kick drum.', gen: bbBass('kick') },
           { id: 'walking', name: 'Jazz walk', why: 'One note per beat walking into each chord.', gen: bbBass('walking') },
           { id: 'sparse', name: 'Sparse roots', why: 'Long roots with lots of space.', gen: bbBass('sparse') },
@@ -1024,6 +1024,86 @@ window.JT = window.JT || {};
     song.prog = g.progressions[progIndex];
     song.chords = T.chordsOf(g.key, song.prog.chords, g.sharps);
   }
+
+  // A progression of your own (from a genre flip or a saved jam): chords relative to the genre's key
+  JT.setCustomProgression = function(song, chords, mood) {
+    const g = JT.GENRES[song.genre];
+    song.progIndex = -1;   // "try different chords" moves on to the genre's first progression
+    song.prog = { roman: '', bright: song.bright != null ? song.bright : 0.5, mood, chords, custom: true };
+    song.chords = T.chordsOf(g.key, chords, g.sharps);
+  };
+
+  // --- GENRE FLIP: your song played as another genre ---
+  // Chords and melodies keep their scale degrees (the 4th chord stays the 4th chord, the tune keeps
+  // its shape) and move into the new genre's key and scale, so a major song turns minor in trap.
+  // Drums, bass and chords are rewritten in the new genre's most typical styles.
+  const SCALE_OF = g => g.minor ? T.SCALE.minor : T.SCALE.major;
+  function degreeOf(rel, scale) {
+    const pc = mod12(rel);
+    let idx = scale.indexOf(pc), off = 0;
+    if (idx < 0) { idx = scale.indexOf(mod12(pc - 1)); off = 1; }
+    return { idx, off, oct: Math.floor(rel / 12) };
+  }
+  JT.remix = function(src, toGenre) {
+    const from = JT.GENRES[src.genre], to = JT.GENRES[toGenre];
+    const sFrom = SCALE_OF(from), sTo = SCALE_OF(to);
+    const song = { genre: toGenre, seed: src.seed, key: to.key, layers: {}, id: src.id, title: src.title };
+    // The same place in the new genre's tempo range
+    const pace = Math.max(0, Math.min(1, (src.bpm - from.tempo[0]) / (from.tempo[1] - from.tempo[0])));
+    song.pace = pace;
+    song.bright = src.bright;
+    song.bpm = Math.round(to.tempo[0] + (to.tempo[1] - to.tempo[0]) * pace);
+
+    // Chords: diatonic ones move by degree and take the new scale's quality; borrowed ones keep
+    // their distance from the key. Genres built on seventh chords get sevenths.
+    const sig = to.progressions[0].chords;
+    const dominant = sig.filter(c => c[1] === '7').length >= sig.length / 2;
+    const jazzy = sig.filter(c => c[1] === 'm7' || c[1] === 'maj7').length >= sig.length / 2;
+    const chords = src.prog.chords.map(([deg, q]) => {
+      const idx = sFrom.indexOf(mod12(deg));
+      let nd = deg, nq = q.startsWith('m') && q !== 'maj7' ? 'min' : 'maj';
+      if (idx >= 0) {
+        nd = sTo[idx];
+        const third = mod12(sTo[(idx + 2) % 7] - sTo[idx]);
+        nq = third === 4 ? 'maj' : 'min';
+      }
+      if (dominant) nq = nq === 'maj' ? '7' : 'm7';
+      else if (jazzy) nq = nq === 'maj' ? (mod12(nd) === 7 ? '7' : 'maj7') : 'm7';
+      return [nd, nq];
+    });
+    JT.setCustomProgression(song, chords, `Your chords, played as ${to.name.toLowerCase()}`);
+
+    // A pitched part keeps its tune: each note's scale degree in the new key, moved by octaves into range
+    const mapNotes = (notes, range) => {
+      const moved = notes.map(n => {
+        if (typeof n.p !== 'number') return Object.assign({}, n);
+        const d = degreeOf(n.p - from.key, sFrom);
+        return Object.assign({}, n, { p: to.key + d.oct * 12 + sTo[d.idx] + d.off, glideTo: undefined });
+      });
+      const ps = moved.filter(n => typeof n.p === 'number').map(n => n.p).sort((a, b) => a - b);
+      if (ps.length && range) {
+        const mid = ps[ps.length >> 1], want = (range[0] + range[1]) / 2;
+        const k = Math.round((want - mid) / 12) * 12;
+        moved.forEach(n => { if (typeof n.p === 'number') n.p += k; });
+      }
+      return moved;
+    };
+    JT.ROLES.forEach(role => {
+      const L = src.layers[role];
+      const R = to.roles[role];
+      if (!L || !R) return;
+      const pitched = !['drums', 'perc', 'fx'].includes(role);
+      if (pitched && (role === 'lead' || L.edited)) {
+        // Your melody, and anything you wrote by hand, comes along note for note
+        song.layers[role] = { styleId: R.styles[0].id, name: role === 'lead' && !L.edited ? 'Your melody' : L.name, seed: L.seed, busy: L.busy, edited: true, notes: mapNotes(L.notes, R.range) };
+        return;
+      }
+      const style = R.styles.find(st => st.id === L.styleId) || R.styles[0];
+      song.layers[role] = { styleId: style.id, name: style.name, seed: L.seed, busy: L.busy };
+      song.layers[role].notes = JT.generate(song, role, style.id, L.seed, L.busy);
+    });
+    return song;
+  };
 
   // Regenerate a kept or previewed part from its recipe
   // override: { chords, layers } to write the part over other chords or against other parts (song sections)
