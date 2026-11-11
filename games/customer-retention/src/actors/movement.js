@@ -1,0 +1,156 @@
+import { TUNING } from '../tuning.js';
+import { moveCapsule } from '../world/collide.js';
+
+const TAU = Math.PI * 2;
+export const forwardOf = yaw => [Math.sin(yaw), 0, Math.cos(yaw)];
+export const rightOf = yaw => [-Math.cos(yaw), 0, Math.sin(yaw)];
+export const rollOffset = (u, distance, ease) => distance * (1 - (1 - u) ** ease);
+const wrap = a => a - TAU * Math.round(a / TAU);
+
+function tiltOf(intent) { return Math.min(1, Math.hypot(intent.moveX, intent.moveY)); }
+// Camera-relative stick direction, written into out as [x, z]; returns tilt.
+function wishOf(intent, out) {
+  const s = Math.sin(intent.camYaw), c = Math.cos(intent.camYaw);
+  let x = -intent.moveY * s - intent.moveX * c;
+  let z = -intent.moveY * c + intent.moveX * s;
+  const len = Math.hypot(x, z);
+  if (len > 1) { x /= len; z /= len; }
+  out[0] = x; out[1] = z;
+  return Math.min(1, len);
+}
+const wish = [0, 0];
+
+// Moves vel toward (tx, tz): faster rate when slowing, slower when speeding up or turning.
+function steer(m, tx, tz, top, dt, t) {
+  const v = m.vel;
+  const rate = (Math.hypot(tx, tz) < Math.hypot(v[0], v[2]) ? top / t.stopTime : top / t.accelTime) * dt;
+  const dx = tx - v[0], dz = tz - v[2], d = Math.hypot(dx, dz);
+  if (d <= rate) { v[0] = tx; v[2] = tz; } else { v[0] += dx / d * rate; v[2] += dz / d * rate; }
+}
+function turnToward(angle, target, maxStep) {
+  const d = wrap(target - angle);
+  return angle + Math.max(-maxStep, Math.min(maxStep, d));
+}
+function canSprint(m, intent, t) {
+  return intent.sprint && !intent.aim && tiltOf(intent) >= t.stickSprintMin;
+}
+
+export const STATES = {
+  move: {
+    acceptsTap: true,
+    enter() {},
+    update(m, intent, dt) {
+      const t = m.tuning;
+      if (canSprint(m, intent, t)) return 'sprint';
+      m.aiming = intent.aim;
+      const top = intent.aim ? t.aimWalk : t.jog;
+      wishOf(intent, wish);
+      steer(m, wish[0] * top, wish[1] * top, top, dt, t);
+      if (intent.aim) m.facing = intent.camYaw + TAU * Math.round((m.facing - intent.camYaw) / TAU);
+      else if (m.speed() > 0.2) m.facing = turnToward(m.facing, Math.atan2(m.vel[0], m.vel[2]), t.turnRate * dt);
+      m.heading = m.facing;
+      return null;
+    },
+    exit() {},
+  },
+  sprint: {
+    acceptsTap: true,
+    enter(m, intent) {
+      m.aiming = false;
+      if (m.speed() > 0.5) m.heading = Math.atan2(m.vel[0], m.vel[2]);
+      else if (wishOf(intent, wish) > 0.01) m.heading = Math.atan2(wish[0], wish[1]);
+      else m.heading = m.facing;
+    },
+    update(m, intent, dt) {
+      const t = m.tuning;
+      if (!canSprint(m, intent, t)) return 'move';
+      wishOf(intent, wish);
+      m.heading = turnToward(m.heading, Math.atan2(wish[0], wish[1]), t.sprintTurnRate * dt);
+      steer(m, Math.sin(m.heading) * t.sprint, Math.cos(m.heading) * t.sprint, t.sprint, dt, t);
+      m.facing = m.heading;
+      return null;
+    },
+    exit() {},
+  },
+  roll: {
+    acceptsTap: false,
+    selfMoves: true,
+    enter(m, intent) {
+      m.aiming = false;
+      if (wishOf(intent, wish) > 0.01) { m.rollDir[0] = wish[0]; m.rollDir[1] = wish[1]; const l = Math.hypot(wish[0], wish[1]); m.rollDir[0] /= l; m.rollDir[1] /= l; }
+      else { m.rollDir[0] = Math.sin(m.facing); m.rollDir[1] = Math.cos(m.facing); }
+      m.rollStart[0] = m.pos[0]; m.rollStart[1] = m.pos[2];
+      m.rollQueued = false;
+      m.heading = Math.atan2(m.rollDir[0], m.rollDir[1]);
+      m.facing = m.facing + wrap(m.heading - m.facing);
+    },
+    update(m, intent, dt) {
+      const t = m.tuning;
+      if (intent.tap && m.stateTime >= t.rollTime - t.rollBuffer) m.rollQueued = true;
+      const done = m.stateTime >= t.rollTime - 1e-9;
+      const u = done ? 1 : m.stateTime / t.rollTime;
+      const off = rollOffset(u, t.rollDistance, t.rollEase);
+      const dx = m.rollStart[0] + m.rollDir[0] * off - m.pos[0];
+      const dz = m.rollStart[1] + m.rollDir[1] * off - m.pos[2];
+      m.rollDelta[0] = dx; m.rollDelta[1] = 0; m.rollDelta[2] = dz;
+      m.moveBy(m.rollDelta, dt, false);
+      if (!done) return null;
+      if (m.rollQueued) return 'roll';
+      if (canSprint(m, intent, t)) return 'sprint';
+      m.vel[0] = m.vel[1] = m.vel[2] = 0;
+      return 'move';
+    },
+    exit() {},
+  },
+};
+
+export const CONTEXT_ACTIONS = [{ name: 'roll', when: () => true, state: 'roll' }];
+
+export function createMovement({ boxes, spawn, tuning = TUNING.move, states = STATES, contextActions = CONTEXT_ACTIONS }) {
+  const m = {
+    state: 'move', stateTime: 0, entries: 0,
+    pos: [spawn[0], spawn[1], spawn[2]], prevPos: [spawn[0], spawn[1], spawn[2]],
+    vel: [0, 0, 0], facing: 0, prevFacing: 0, aiming: false, heading: 0,
+    tuning, boxes,
+    rollDir: [0, 1], rollStart: [0, 0], rollDelta: [0, 0, 0], rollQueued: false,
+    speed() { return Math.hypot(m.vel[0], m.vel[2]); },
+    // Moves by delta through the colliders. slideVel true: remove velocity into what was hit. False: set velocity from the actual travel.
+    moveBy(delta, dt, slideVel = true) {
+      const p = m.pos, r = moveCapsule(boxes, p, delta, tuning.radius, tuning.height);
+      if (!slideVel) {
+        m.vel[0] = (r.pos[0] - p[0]) / dt; m.vel[2] = (r.pos[2] - p[2]) / dt;
+      } else if (r.hit) {
+        const n = r.normal, d = m.vel[0] * n[0] + m.vel[1] * n[1] + m.vel[2] * n[2];
+        if (d < 0) { m.vel[0] -= n[0] * d; m.vel[1] -= n[1] * d; m.vel[2] -= n[2] * d; }
+      }
+      p[0] = r.pos[0]; p[1] = r.pos[1]; p[2] = r.pos[2];
+    },
+    go(name, intent) {
+      states[m.state].exit?.(m);
+      m.state = name; m.stateTime = 0; m.entries++;
+      states[name].enter(m, intent);
+    },
+    place(pos, yaw) {
+      m.pos[0] = m.prevPos[0] = pos[0]; m.pos[1] = m.prevPos[1] = pos[1]; m.pos[2] = m.prevPos[2] = pos[2];
+      m.vel[0] = m.vel[1] = m.vel[2] = 0;
+      if (yaw !== undefined) m.facing = m.prevFacing = m.heading = yaw;
+      else m.prevFacing = m.facing;
+    },
+    update(intent, dt) {
+      m.prevPos[0] = m.pos[0]; m.prevPos[1] = m.pos[1]; m.prevPos[2] = m.pos[2];
+      m.prevFacing = m.facing;
+      if (intent.tap && states[m.state].acceptsTap) {
+        for (const a of contextActions) if (a.when(m, intent)) { m.go(a.state, intent); break; }
+      }
+      m.stateTime += dt;
+      const next = states[m.state].update(m, intent, dt);
+      // Velocity-driven states move here; a state with selfMoves (roll) moves itself.
+      if (!states[m.state].selfMoves) {
+        m.moveBy([m.vel[0] * dt, 0, m.vel[2] * dt], dt, true);
+      }
+      if (next) m.go(next, intent);
+    },
+  };
+  states[m.state].enter(m, { moveX: 0, moveY: 0, camYaw: 0 });
+  return m;
+}
