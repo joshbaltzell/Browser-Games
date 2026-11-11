@@ -40,6 +40,12 @@ export function createTuningPanel({ storage = defaultStorage() } = {}) {
     if (a && a !== document.body && el.contains(a) && a.blur) a.blur();
   }
 
+  // Folder titles are buttons that keep focus after a click, so Space would toggle the folder again.
+  el.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && t.closest && t.closest('.lil-title') && t.blur !== undefined) blurPanel();
+  });
+
   const folders = new Map();
   function folderFor(chain) {
     let parent = gui, key = '';

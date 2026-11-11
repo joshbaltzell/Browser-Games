@@ -125,3 +125,28 @@ test('isTypingTarget is true for text and number fields and textareas, false for
   assert.equal(isTypingTarget(null), false);
   assert.equal(isTypingTarget({}), false);
 });
+
+import { createContextButton } from '../src/core/contextButton.js';
+test('real key path with the panel open (unlocked, focus on body): W gives forward move, Space tap fires, Space+W hold sprints', async () => {
+  await withFakeDom((fire) => {
+    const canvas = fakeCanvas();
+    const input = createInput(canvas);
+    document.activeElement = { tagName: 'BODY' };
+    const key = (type, code) => fire('w' + type, { code, key: code, repeat: false, target: document.activeElement, preventDefault() {} });
+    key('keydown', 'KeyW');
+    let s = input.poll();
+    assert.deepEqual([s.moveX, s.moveY], [0, -1]);
+    key('keyup', 'KeyW');
+    assert.equal(input.poll().moveY, 0);
+    // The same snapshot-to-intent steps play.js takes, through the context button.
+    const button = createContextButton();
+    let pending = false;
+    const tick = () => { const sn = input.poll(); if (sn.pressed.cover) pending = true; const tap = button.update(sn.held.cover, pending, 1 / 60, 0.18); pending = false; return { tap, sprint: sn.held.sprint || button.holding() }; };
+    key('keydown', 'Space'); tick(); key('keyup', 'Space');
+    assert.equal(tick().tap, true);
+    key('keydown', 'KeyW'); key('keydown', 'Space');
+    let r; for (let i = 0; i < 15; i++) r = tick();
+    assert.equal(r.sprint, true);
+    assert.equal(r.tap, false);
+  });
+});
