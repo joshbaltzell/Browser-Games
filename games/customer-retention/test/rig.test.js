@@ -199,6 +199,52 @@ test('idling and talking, seen from the front, no arm crosses the belly', () => 
   }
 });
 
+// The forearm is the second half of the arm tube: rings rings/2..rings are
+// centred on the Bezier from the elbow (t = 0.5) to the wrist. With the hand,
+// it must stay on its own side of the body's centreline, so no forearm folds
+// across the chest or belly, seen from any side.
+test('idling, talking and aiming, no forearm or hand crosses the centreline', () => {
+  for (const name of ['idle', 'talk', 'aim']) {
+    let worst = Infinity;
+    const rig = buildRig(S);
+    const anim = createAnimator(rig);
+    anim.play(name, { fade: 0 });
+    const hips = rig.root.getObjectByName('hips');
+    const inv = new THREE.Matrix4(), v = new THREE.Vector3(), c = new THREE.Vector3();
+    const N = 24, dt = CLIPS[name].duration / N;
+    for (let f = 0; f < N + 30; f++) {
+      anim.update(dt); rig.update(dt);
+      if (f < 30) continue;
+      rig.root.updateMatrixWorld(true);
+      inv.copy(hips.matrixWorld).invert();
+      for (const [arm, hand, side] of [['armL', 'handL', 1], ['armR', 'handR', -1]]) {
+        const a = rig.root.getObjectByName(arm), h = rig.root.getObjectByName(hand);
+        const pos = a.geometry.getAttribute('position');
+        for (let ring = 4; ring <= 8; ring++) { // 8 rings of 8 sides
+          c.set(0, 0, 0);
+          for (let k = 0; k < 8; k++) c.add(v.fromBufferAttribute(pos, ring * 8 + k));
+          c.multiplyScalar(1 / 8).applyMatrix4(a.matrixWorld).applyMatrix4(inv);
+          worst = Math.min(worst, side * c.x);
+        }
+        const hp = h.geometry.getAttribute('position');
+        for (let i = 0; i < hp.count; i++) {
+          v.fromBufferAttribute(hp, i).applyMatrix4(h.matrixWorld).applyMatrix4(inv);
+          worst = Math.min(worst, side * v.x);
+        }
+      }
+    }
+    assert.ok(worst > 0.03, `${name}: a forearm or hand reaches ${worst.toFixed(3)} past the centreline`);
+  }
+});
+
+test('a hand-built Pose without elbows is treated as elbows 0, not NaN', () => {
+  const rig = buildRig(S);
+  const p = samplePose('idle', 0, S);
+  delete p.elbows;
+  rig.setPose(p); rig.update(1 / 60);
+  assert.ok(Array.from(rig.root.getObjectByName('armL').geometry.getAttribute('position').array).every(Number.isFinite));
+});
+
 test('running, the rig keeps up with the clip: no visible spring lag', () => {
   const rig = buildRig(S);
   const anim = createAnimator(rig);

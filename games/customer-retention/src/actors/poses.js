@@ -185,21 +185,22 @@ function aim(t, spec, p) {
   const f = frame(spec);
   const ph = (TAU * t) / CLIPS.aim.duration;
   const H = spec.hipHeight;
-  // A braced, bladed stance: the left shoulder turned toward the target, the
-  // head turned back to face it and dipped to the sights.
+  // A braced "hands ready" stance, knees soft, leaning in, head level on the
+  // target. No rifle yet, so each hand stays on its own side of the body: the
+  // right (trigger) hand forward and out at chest height, the left (support)
+  // hand a little lower and further forward. Elbows out. Nothing folds across
+  // the chest from any side.
   p.hipsY = H - 0.05 + 0.005 * Math.sin(ph);
-  p.lean = 0.1 + 0.01 * Math.sin(ph);
-  p.twist = -0.38;
-  p.headYaw = 0.34;
+  p.lean = 0.12 + 0.01 * Math.sin(ph);
+  p.twist = -0.1;
+  p.headYaw = 0.08;
   p.headPitch = 0.04 + 0.012 * Math.sin(2 * ph);
   p.squash = 1;
   p.elbows = 1;
-  // Both hands well out in front at chest height, on a rifle that is not there
-  // yet: the left on the foregrip, the right on the grip by the right
-  // shoulder. Elbows out and down. They sway together, a slow figure 8.
+  // They sway together, a slow figure 8.
   const dx = 0.012 * Math.sin(ph), dy = 0.008 * Math.sin(2 * ph);
-  set3(p.handL, 0.05 + dx, f.sy - 0.05 + dy, 0.56);
-  set3(p.handR, -f.sx * 1.25 + dx, f.sy - 0.07 + dy, 0.34);
+  set3(p.handL, f.sx * 1.2 + dx, f.sy - 0.12 + dy, 0.56);
+  set3(p.handR, -f.sx * 1.25 + dx, f.sy - 0.06 + dy, 0.52);
   set3(p.footL, f.fx + 0.02, 0, 0.15);
   set3(p.footR, -f.fx - 0.03, 0, -0.13);
   return p;

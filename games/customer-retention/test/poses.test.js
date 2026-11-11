@@ -104,12 +104,11 @@ test('aiming puts both hands forward, within reach', () => {
   assert.ok(dist(p.handR, S.shoulderR) <= S.armLength * 1.15);
 });
 
-test('aiming holds the hands well out at chest height, uncrossed', () => {
+test('aiming holds the hands well out in front at chest height', () => {
   for (let i = 0; i <= 20; i++) {
     const p = samplePose('aim', (i / 20) * CLIPS.aim.duration, S);
-    assert.ok(p.handL[2] >= 0.5 && p.handR[2] >= 0.3, 'well out in front');
-    for (const h of [p.handL, p.handR]) assert.ok(h[1] >= S.shoulderL[1] - 0.12 && h[1] <= S.shoulderL[1], 'chest height');
-    assert.ok(p.handL[0] - p.handR[0] >= 0.2, 'left hand stays left of the right');
+    assert.ok(p.handL[2] >= 0.45 && p.handR[2] >= 0.45, 'well out in front');
+    for (const h of [p.handL, p.handR]) assert.ok(h[1] >= S.shoulderL[1] - 0.15 && h[1] <= S.shoulderL[1], 'chest height');
     assert.equal(p.elbows, 1);
   }
 });

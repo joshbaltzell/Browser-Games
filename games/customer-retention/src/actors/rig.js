@@ -387,7 +387,7 @@ export function buildRig(spec) {
     if (halfLife >= 0) ease = halfLife;
     target.hipsY = pose.hipsY; target.lean = pose.lean; target.twist = pose.twist;
     target.headYaw = pose.headYaw; target.headPitch = pose.headPitch; target.squash = pose.squash;
-    target.elbows = pose.elbows;
+    target.elbows = pose.elbows >= 0 ? pose.elbows : 0; // a hand-built Pose may leave it out
     for (let k = 0; k < 4; k++) {
       const a = pose[POINTS[k]], o = target[POINTS[k]];
       o[0] = a[0]; o[1] = a[1]; o[2] = a[2];
