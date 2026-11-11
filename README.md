@@ -2,7 +2,7 @@
 
 A growing arcade of tiny, **dependency-free** browser games. No frameworks, no
 build step, no `node_modules` — just plain HTML, CSS, and Canvas (plus WebGL
-for the Tank Yard games). Open the landing page and play.
+for the Tank Yard games). One exception: Customer Retention is written in games/customer-retention/src and bundled with esbuild. The built game.js is committed, so it still opens by double-click. Open the landing page and play.
 
 ## Play
 
