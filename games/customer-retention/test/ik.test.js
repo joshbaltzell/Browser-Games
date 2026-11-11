@@ -48,3 +48,14 @@ test('within reach, the lower bone keeps its length', () => {
     assert.ok(Math.abs(dist(r.mid, r.end) - 0.35) < 1e-6);
   }
 });
+test('an `out` result is filled in place and matches a fresh solve', () => {
+  const out = { mid: [0, 0, 0], end: [0, 0, 0], stretch: 0 };
+  const { mid, end } = out;
+  for (const [target, pole] of [[[0.3, 0.6, 0.2], [0, 0, -1]], [[5, 0, 0], [0, 1, 0]], [[0, 1, 0], [0, 0, 1]], [[0.66, 0, 0], [0, 1, 0]]]) {
+    const fresh = solveTwoBone([0, 1, 0], target, 0.3, 0.3, pole);
+    assert.equal(solveTwoBone([0, 1, 0], target, 0.3, 0.3, pole, out), out);
+    assert.equal(out.mid, mid); assert.equal(out.end, end);
+    assert.deepEqual(out.mid, fresh.mid); assert.deepEqual(out.end, fresh.end);
+    assert.equal(out.stretch, fresh.stretch);
+  }
+});

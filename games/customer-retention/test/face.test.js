@@ -130,3 +130,33 @@ test('the uni brow is one shape: six vertices, shared apex', () => {
   const uni = createFace({ ...OPTS, brow: 'uni' }), pair = createFace(OPTS);
   assert.equal(featurePositions(pair).length - featurePositions(uni).length, 2 * 3);
 });
+
+test('fixedSmile keeps the mouth smiling in every expression but dead; off by default', () => {
+  // The middle of the mouth's top edge sits lower than its corners in a smile.
+  const sag = (face) => {
+    const p = featurePositions(face);
+    const top = (k) => p[p.length - 78 + k * 6 + 1]; // y of column k's top vertex
+    return (top(0) + top(12)) / 2 - top(6);
+  };
+  for (const name of Object.keys(EXPRESSIONS)) {
+    const fixed = createFace({ ...OPTS, fixedSmile: 0.7 });
+    const plain = createFace(OPTS);
+    const reference = createFace(OPTS);
+    fixed.setExpression(name); plain.setExpression(name); reference.setExpression(name);
+    settle(fixed, 90); settle(plain, 90); settle(reference, 90);
+    if (name === 'dead') {
+      assert.deepEqual(featurePositions(fixed), featurePositions(plain), 'dead drops the smile');
+    } else {
+      assert.ok(sag(fixed) > 0.01, `${name} smiles`);
+      assert.ok(sag(fixed) >= sag(plain) - 1e-9, `${name} smiles at least as much as without`);
+    }
+    assert.deepEqual(featurePositions(plain), featurePositions(reference));
+  }
+  // A fresh face starts on its smile instead of easing into it.
+  const fresh = createFace({ ...OPTS, fixedSmile: 0.7 });
+  const before = featurePositions(fresh);
+  fresh.update(1 / 60);
+  const after = featurePositions(fresh);
+  const mouthMove = before.slice(-78).reduce((s, v, i) => s + Math.abs(v - after.slice(-78)[i]), 0);
+  assert.ok(mouthMove < 1e-3, 'no ease-in at spawn');
+});

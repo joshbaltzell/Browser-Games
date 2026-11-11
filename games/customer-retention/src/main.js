@@ -5,6 +5,9 @@ import { createInput } from './core/input.js';
 import { createRenderer } from './render/renderer.js';
 import { createSky } from './render/sky.js';
 import { buildLookCorner } from './world/lookCorner.js';
+import { buildRig } from './actors/rig.js';
+import { createAnimator } from './actors/animator.js';
+import { ASSOCIATE } from './actors/associate.js';
 
 const MESSAGES = {
   webgl: 'Customer Retention needs WebGL 2, which this browser or device has switched off. Try the latest Chrome.',
@@ -57,6 +60,13 @@ function boot() {
   const corner = buildLookCorner();
   scene.add(corner.group);
 
+  // An Associate idles at the corner's spawn point, facing the camera.
+  const associate = buildRig(ASSOCIATE);
+  associate.root.position.fromArray(corner.spawn);
+  associate.root.rotation.y = 0.6;
+  scene.add(associate.root);
+  const anim = createAnimator(associate);
+
   function resize() {
     const r = gfx.resize();
     camera.aspect = r.aspect;
@@ -84,6 +94,8 @@ function boot() {
       prevSpin = spin;
       spin += dt;
       corner.update(dt);
+      anim.update(dt);
+      associate.update(dt);
     },
     render(alpha, realSeconds) {
       input.poll(); // once per frame; nothing consumes the snapshot yet

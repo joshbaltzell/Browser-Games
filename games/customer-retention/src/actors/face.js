@@ -56,7 +56,7 @@ const smooth01 = (t) => { const c = t < 0 ? 0 : t > 1 ? 1 : t; return c * c * (3
 
 export function createFace({
   eyeRadius = 0.1, eyeSpacing = 0.26, eyeY = 0.05, eyeZ = 0.3, mouthY = -0.12, mouthWidth = 0.22,
-  mouthZ = eyeZ, brow = 'pair', seed = 1, lidColor = PALETTE.ink,
+  mouthZ = eyeZ, brow = 'pair', seed = 1, lidColor = PALETTE.ink, fixedSmile = 0,
 } = {}) {
   const R = eyeRadius;
   const half = eyeSpacing / 2;
@@ -154,12 +154,16 @@ export function createFace({
   group.add(eyes, features);
 
   // Expression state: one spring per field, plus the dead-cross blend and the
-  // talking blend.
+  // talking blend. fixedSmile > 0 is the least mouthCurve in every expression
+  // but dead: a smile that never leaves, whatever the brows and eyes do.
+  let target = EXPRESSIONS.neutral;
+  const smileFloor = fixedSmile > 0 ? fixedSmile : -Infinity;
+  let curveFloor = smileFloor;
+  const goal = (f) => (f === 'mouthCurve' && target.mouthCurve < curveFloor ? curveFloor : target[f]);
   const springs = {};
-  for (const f of FIELDS) springs[f] = { x: EXPRESSIONS.neutral[f], v: 0 };
+  for (const f of FIELDS) springs[f] = { x: goal(f), v: 0 };
   const cross = { x: 0, v: 0 };
   const talk = { x: 0, v: 0 };
-  let target = EXPRESSIONS.neutral;
   let crossTarget = 0;
   let talking = false;
   let time = 0;
@@ -313,7 +317,7 @@ export function createFace({
 
   function update(dt) {
     time += dt;
-    for (let i = 0; i < FIELDS.length; i++) springStep(springs[FIELDS[i]], target[FIELDS[i]], EASE_HALF_LIFE, dt);
+    for (let i = 0; i < FIELDS.length; i++) springStep(springs[FIELDS[i]], goal(FIELDS[i]), EASE_HALF_LIFE, dt);
     springStep(cross, crossTarget, EASE_HALF_LIFE, dt);
     springStep(talk, talking ? 1 : 0, EASE_HALF_LIFE, dt);
     write();
@@ -326,6 +330,7 @@ export function createFace({
     setExpression(name) {
       target = Object.prototype.hasOwnProperty.call(EXPRESSIONS, name) ? EXPRESSIONS[name] : EXPRESSIONS.neutral;
       crossTarget = name === 'dead' ? 1 : 0;
+      curveFloor = name === 'dead' ? -Infinity : smileFloor;
     },
     setTalking(on) { talking = !!on; },
     update,

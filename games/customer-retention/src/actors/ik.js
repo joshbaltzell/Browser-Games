@@ -6,7 +6,9 @@ const MAX_STRETCH = 1.15;
 // root -> mid -> end with fixed upper length lenA and lower length lenB. The
 // elbow/knee bends toward `pole`. A target out of reach is reached by
 // stretching, up to 15 percent, then the end is clamped along the same line.
-export function solveTwoBone(root, target, lenA, lenB, pole) {
+// `out` is optional: pass { mid: [], end: [], stretch } to fill instead of
+// allocating a new result (the rig solves four limbs a frame per character).
+export function solveTwoBone(root, target, lenA, lenB, pole, out) {
   const total = lenA + lenB;
   let dx = target[0] - root[0];
   let dy = target[1] - root[1];
@@ -16,19 +18,17 @@ export function solveTwoBone(root, target, lenA, lenB, pole) {
   else { dx /= dist; dy /= dist; dz /= dist; }
 
   const maxReach = MAX_STRETCH * total;
-  let end;
+  let ex = target[0], ey = target[1], ez = target[2];
   if (dist > maxReach) {
     dist = maxReach;
-    end = [root[0] + dx * dist, root[1] + dy * dist, root[2] + dz * dist];
-  } else {
-    end = [target[0], target[1], target[2]];
+    ex = root[0] + dx * dist; ey = root[1] + dy * dist; ez = root[2] + dz * dist;
   }
   const stretch = dist > total ? dist / total : 1;
 
   if (dist >= total) {  // also covers lenA = lenB = 0
     // Straight: the joint sits along the line in proportion to the bone lengths.
     const m = dist * (total > 0 ? lenA / total : 0.5);
-    return { mid: [root[0] + dx * m, root[1] + dy * m, root[2] + dz * m], end, stretch };
+    return result(out, root[0] + dx * m, root[1] + dy * m, root[2] + dz * m, ex, ey, ez, stretch);
   }
 
   // Law of cosines: how far along the line the joint's foot is, and how far
@@ -50,11 +50,18 @@ export function solveTwoBone(root, target, lenA, lenB, pole) {
   }
   bx /= bl; by /= bl; bz /= bl;
 
-  return {
-    mid: [root[0] + dx * along + bx * h, root[1] + dy * along + by * h, root[2] + dz * along + bz * h],
-    end,
-    stretch,
-  };
+  return result(out,
+    root[0] + dx * along + bx * h, root[1] + dy * along + by * h, root[2] + dz * along + bz * h,
+    ex, ey, ez, stretch);
+}
+
+function result(out, mx, my, mz, ex, ey, ez, stretch) {
+  if (!out) return { mid: [mx, my, mz], end: [ex, ey, ez], stretch };
+  const m = out.mid, e = out.end;
+  m[0] = mx; m[1] = my; m[2] = mz;
+  e[0] = ex; e[1] = ey; e[2] = ez;
+  out.stretch = stretch;
+  return out;
 }
 
 // Control point of the quadratic Bezier that passes through `mid` at t = 0.5.
