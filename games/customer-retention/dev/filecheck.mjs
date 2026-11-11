@@ -40,11 +40,13 @@ function dump(flags) {
     timeout: 60000,
   });
   if (r.error) fail(`could not run Chrome: ${r.error.message}`);
+  if (r.status !== 0) fail(`Chrome exited with status ${r.status}${r.signal ? ` (signal ${r.signal})` : ''}: ${(r.stderr || '').trim().slice(-500)}`);
   return r.stdout || '';
 }
 
 const run1 = dump(['--enable-unsafe-swiftshader', '--use-angle=swiftshader']);
 if (!run1.includes('data-cr-ready="1"')) fail('run 1 (with WebGL) did not reach data-cr-ready="1"');
+if (run1.includes('data-cr-error')) fail('run 1 (with WebGL) set data-cr-error');
 console.log('run 1 ok: boots with WebGL');
 
 const run2 = dump(['--disable-gpu', '--disable-3d-apis']);
