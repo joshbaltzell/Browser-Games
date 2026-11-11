@@ -1,0 +1,17 @@
+{
+  "name": "customer-retention",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node dev/build.mjs",
+    "dev": "node dev/build.mjs --watch",
+    "test": "node --test \"test/**/*.test.js\"",
+    "check": "node dev/check.mjs",
+    "filecheck": "node dev/filecheck.mjs",
+    "smoke": "bash dev/smoke.sh"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "three": "0.187.0"
+  }
+}
