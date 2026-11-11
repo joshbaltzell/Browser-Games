@@ -216,3 +216,40 @@ test('dt 0 and dt 5 in every cover state: finite, never inside a box, ends in a 
     if (m.state === 'cover') assert.notEqual(m.cover, null);
   }
 });
+test('tuning set to 0 mid-state: finite, outside boxes, known state, never stuck', () => {
+  const boxes = [FLOOR, A, B], nonFloor = boxes.filter(b => b.kind !== 'floor');
+  const zero = ct => { for (const k of ['vaultTime', 'popTime', 'swapSpeed', 'slideMinTime', 'slideMaxTime']) ct[k] = 0; };
+  const start = () => { const m = mover({ boxes, spawn: [-3.7, 0, 0.4] }); m.coverTuning = { ...TUNING.cover }; return m; };
+  const check = (m, label) => {
+    assert.ok(m.pos.every(Number.isFinite), label);
+    assert.equal(pointInBoxes(nonFloor, [m.pos[0], 0.9, m.pos[2]], 0.33), false, label);
+    assert.ok(Object.keys(STATES).includes(m.state), label);
+    if (m.cover) assert.ok(Number.isFinite(m.cover.pop), label);
+  };
+  for (const dt of [0, DT]) {
+    // slide
+    let m = start(); zero(m.coverTuning); m.update(I({ moveY: -1, tap: true }), DT);
+    m.update(I(), 0); check(m, 'slide dt0'); step(m, I(), 3); check(m, 'slide'); assert.equal(m.state, 'cover');
+    // popped cover
+    m = start(); m.update(I({ moveY: -1, tap: true }), DT); step(m, I(), 20); step(m, I({ aim: true }), 3); zero(m.coverTuning);
+    m.update(I({ aim: true }), dt); check(m, 'pop'); m.update(I({ aim: true }), DT); check(m, 'pop2'); assert.equal(m.cover.pop, 1);
+    // vault
+    m = start(); m.update(I({ moveY: -1, tap: true }), DT); step(m, I(), 20); m.update(I({ moveY: -1, tap: true }), DT);
+    assert.equal(m.state, 'vault'); zero(m.coverTuning); m.update(I(), dt); check(m, 'vault'); step(m, I(), 3); check(m, 'vault');
+    assert.equal(m.state, 'move');
+    // swap
+    m = start(); m.update(I({ moveY: -1, tap: true }), DT); step(m, I(), 20);
+    let n = 0; while (m.cover.t < m.cover.edge.length - 1e-6 && n++ < 400) m.update(I({ moveX: -1 }), DT);
+    m.update(I({ moveX: -1, tap: true }), DT); assert.equal(m.state, 'coverSwap'); zero(m.coverTuning);
+    m.update(I(), dt); check(m, 'swap'); step(m, I(), 200); check(m, 'swap'); assert.notEqual(m.state, 'coverSwap');
+  }
+  // swapSpeed 0 set before the swap begins: duration is capped, not infinite
+  const k = start(); k.update(I({ moveY: -1, tap: true }), DT); step(k, I(), 20);
+  let n2 = 0; while (k.cover.t < k.cover.edge.length - 1e-6 && n2++ < 400) k.update(I({ moveX: -1 }), DT);
+  k.coverTuning.swapSpeed = 0; k.update(I({ moveX: -1, tap: true }), DT);
+  step(k, I(), 200); assert.notEqual(k.state, 'coverSwap'); check(k, 'swap speed 0');
+});
+test('endPush resets while popped, so a stale value cannot walk the player off early', () => {
+  const m = inCover(); toEnd(m); step(m, I({ moveX: -1 }), 10); assert.ok(m.cover.endPush > 0);
+  step(m, I({ aim: true }), 10); assert.equal(m.cover.endPush, 0);
+});

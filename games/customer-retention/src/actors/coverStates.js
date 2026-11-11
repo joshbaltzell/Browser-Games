@@ -10,6 +10,7 @@ export const COVER_STATE_NAMES = ['coverSlide', 'cover', 'vault', 'coverSwap'];
 
 const RAD = Math.PI / 180;
 const wish = [0, 0], dir = [0, 0], delta = [0, 0, 0];
+const MIN_DUR = 1e-3, MAX_SWAP_TIME = 2;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Unit stick direction when the stick is tilted enough, else the way the character faces.
@@ -66,7 +67,8 @@ function startTravel(m, speed, minTime, maxTime) {
   sc.from = [m.pos[0], m.pos[1], m.pos[2]];
   sc.to = [tg.point[0], m.pos[1], tg.point[1]];
   const dist = Math.hypot(sc.to[0] - sc.from[0], sc.to[2] - sc.from[2]);
-  sc.dur = clamp(dist / speed, minTime, maxTime);
+  // Tuning the panel can set to 0: floor the speed and the duration so dur stays finite and positive.
+  sc.dur = Math.max(MIN_DUR, clamp(dist / Math.max(speed, 1e-6), minTime, maxTime));
   m.aiming = false;
 }
 function travel(m, dt, turnRate, faceYaw) {
@@ -101,7 +103,7 @@ const STATE_DEFS = {
     enter(m) {
       const c = m.coverTuning;
       m.cover = null;
-      startTravel(m, c.swapSpeed, 1e-3, Infinity);
+      startTravel(m, c.swapSpeed, 0, MAX_SWAP_TIME);
       const sc = m.scratch;
       m.heading = yawOf(sc.to[0] - sc.from[0], sc.to[2] - sc.from[2]);
       m.facing = m.facing + wrap(m.heading - m.facing);
@@ -121,7 +123,7 @@ const STATE_DEFS = {
     },
     update(m, intent, dt) {
       const sc = m.scratch, c = m.coverTuning;
-      const u = Math.min(1, m.stateTime / c.vaultTime + 1e-9);
+      const u = Math.min(1, m.stateTime / Math.max(c.vaultTime, MIN_DUR) + 1e-9);
       // Passes over the box with no collision: the landing was checked when the vault began.
       m.pos[0] = sc.from[0] + (sc.landing[0] - sc.from[0]) * u;
       m.pos[2] = sc.from[1] + (sc.landing[2] - sc.from[1]) * u;
@@ -165,15 +167,16 @@ const STATE_DEFS = {
       const end = atEnd(e, k.t, c);
       const canPop = e.kind === 'low' || (end !== 0 && isOpen(e, end));
       const goal = intent.aim && canPop ? 1 : 0;
-      k.pop = k.pop < goal ? Math.min(goal, k.pop + dt / c.popTime) : Math.max(goal, k.pop - dt / c.popTime);
+      const popStep = c.popTime > 0 ? dt / c.popTime : 1;
+      k.pop = k.pop < goal ? Math.min(goal, k.pop + popStep) : Math.max(goal, k.pop - popStep);
       k.popEnd = k.pop > 0 && e.kind !== 'low' ? end : 0;
       k.exposed = k.pop >= 0.5;
       m.aiming = k.exposed;
 
       // 4. along: only while tucked.
+      let pushedOut = false;
       if (k.pop === 0) {
         const a = wish[0] * e.tangent[0] + wish[1] * e.tangent[1];
-        let pushedOut = false;
         if (Math.abs(a) >= c.alongDeadzone) {
           const nt = k.t + a * c.moveSpeed * dt;
           k.t = clamp(nt, 0, e.length);
@@ -183,8 +186,8 @@ const STATE_DEFS = {
             if (k.endPush >= c.endLeaveTime) return leaveWith(e.tangent[0] * Math.sign(a), e.tangent[1] * Math.sign(a));
           }
         }
-        if (!pushedOut) k.endPush = 0;
       }
+      if (!pushedOut) k.endPush = 0;
 
       // 5. place: on the stand line, shifted past the corner while a tall pop is out.
       const p = edgePoint(e, k.t), shift = k.popEnd * c.popShift * k.pop;
