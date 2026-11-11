@@ -8,11 +8,14 @@ import { rng } from '../core/random.js';
 // Nothing in this file touches the DOM at load time: only makeSign needs a canvas.
 
 // A deterministic shear and taper so nothing is perfectly square. Every vertex
-// moves by less than amount x the bounding-box diagonal. The offset is a smooth
-// function of position, so vertices that share a position move together and
-// merged parts stay joined.
-export function wonk(geometry, seed, amount = 0.03) {
+// moves by less than min(amount x bounding-box diagonal, maxOffset metres).
+// The offset is a smooth function of position, so vertices that share a
+// position move together and merged parts stay joined. The vertical term is
+// zero at the lowest y, so a base resting on the floor stays flat on it. Normals
+// are corrected by the inverse transpose of the offset's Jacobian.
+export function wonk(geometry, seed, amount = 0.03, maxOffset = 0.04) {
   const pos = geometry.getAttribute('position');
+  const nrm = geometry.getAttribute('normal');
   geometry.computeBoundingBox();
   const bb = geometry.boundingBox;
   const size = bb.getSize(new THREE.Vector3());
@@ -22,18 +25,37 @@ export function wonk(geometry, seed, amount = 0.03) {
   const a = [];
   for (let i = 0; i < 8; i++) a.push(next() * 2 - 1);
   // Each component is within [-1, 1], so the offset's length is within sqrt(3).
-  const k = (amount * diag * 0.99) / Math.sqrt(3);
+  const k = (Math.min(amount * diag, maxOffset) * 0.99) / Math.sqrt(3);
   const norm = (v, s) => (s > 1e-9 ? (2 * v) / s : 0);
+  const inv = [size.x, size.y, size.z].map((s) => (s > 1e-9 ? 2 / s : 0));
+  const J = new THREE.Matrix3();
+  const n = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
     const u = norm(pos.getX(i) - mid.x, size.x);
     const v = norm(pos.getY(i) - mid.y, size.y);
     const w = norm(pos.getZ(i) - mid.z, size.z);
+    const lift = (v + 1) / 2; // 0 on the base, 1 on top
     const dx = (a[0] * v + a[1] * u * v) / 2;
-    const dy = (a[2] * u + a[3] * w) / 2;
+    const dy = ((a[2] * u + a[3] * w) / 2) * lift;
     const dz = (a[4] * v + a[5] * w * v) / 2;
+    if (nrm) {
+      // Rows: d(offset_i) / d(u, v, w), times 2 / size to get per metre.
+      const jx = [a[1] * v / 2, (a[0] + a[1] * u) / 2, 0];
+      const jy = [a[2] / 2 * lift, ((a[2] * u + a[3] * w) / 2) * 0.5, a[3] / 2 * lift];
+      const jz = [0, (a[4] + a[5] * w) / 2, a[5] * v / 2];
+      J.set(
+        1 + k * jx[0] * inv[0], k * jx[1] * inv[1], k * jx[2] * inv[2],
+        k * jy[0] * inv[0], 1 + k * jy[1] * inv[1], k * jy[2] * inv[2],
+        k * jz[0] * inv[0], k * jz[1] * inv[1], 1 + k * jz[2] * inv[2],
+      );
+      J.invert().transpose();
+      n.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i)).applyMatrix3(J).normalize();
+      nrm.setXYZ(i, n.x, n.y, n.z);
+    }
     pos.setXYZ(i, pos.getX(i) + k * dx, pos.getY(i) + k * dy, pos.getZ(i) + k * dz);
   }
   pos.needsUpdate = true;
+  if (nrm) nrm.needsUpdate = true;
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return geometry;
@@ -58,7 +80,7 @@ const _s = new THREE.Vector3();
 
 // Collects painted parts and merges them into one geometry. Each part is
 // wonked on its own (partAmount) and the whole once more (wholeAmount).
-function builder(seed = 1, partAmount = 0.02) {
+function builder(seed = 1, partAmount = 0.02, name = 'prop') {
   const parts = [];
   let n = 0;
 
@@ -113,6 +135,7 @@ function builder(seed = 1, partAmount = 0.02) {
 
   function finish(wholeAmount = 0) {
     const geometry = mergeGeometries(parts, false);
+    if (!geometry) throw new Error(`${name}: parts have different attributes and cannot be merged`);
     if (wholeAmount > 0) wonk(geometry, seed, wholeAmount);
     return computeOutlineNormals(geometry);
   }
@@ -132,7 +155,7 @@ function propFrom(geometry) {
 const flat = (hex) => () => new THREE.Color(hex);
 
 export function makeFloor({ w, d, tile = 1, colors = [PALETTE.cream, PALETTE.tealLight] }) {
-  const b = builder(1, 0);
+  const b = builder(1, 0, 'floor');
   const depth = 0.15;
   // The slab sits just under y = 0; the tiles are flat quads on top of it.
   b.span(-w / 2, w / 2, -depth, -0.002, -d / 2, d / 2, PALETTE.lilac, { top: new THREE.Color(PALETTE.lilac) });
@@ -152,8 +175,8 @@ export function makeFloor({ w, d, tile = 1, colors = [PALETTE.cream, PALETTE.tea
 
 // A wall standing on the floor, centred on its own origin, front face toward +z.
 // opening { x, y, w, h }: a hole (x is the centre along the wall, y the bottom).
-export function makeWall({ w, h, color = PALETTE.cream, stripe = PALETTE.hotPink, opening = null }) {
-  const b = builder(2, 0);
+export function makeWall({ w, h, color = PALETTE.cream, stripe = PALETTE.hotPink, opening = null, seed = 2 }) {
+  const b = builder(seed, 0, 'wall');
   const t = 0.2;
   const front = t / 2;
   const x0 = -w / 2, x1 = w / 2, below = -0.3;
@@ -194,8 +217,10 @@ export function makeWall({ w, h, color = PALETTE.cream, stripe = PALETTE.hotPink
 
 // Draws the sign face to a canvas: the only place the kit touches the DOM.
 function signTexture(text, bg, fg, aspect) {
-  const W = 1024;
-  const H = Math.max(64, Math.round(W / aspect));
+  // Longest side 1024 px, shortest at least 64: never beyond 2048 either way.
+  const clamp = (v) => Math.min(2048, Math.max(64, Math.round(v)));
+  const W = clamp(aspect >= 1 ? 1024 : 1024 * aspect);
+  const H = clamp(aspect >= 1 ? 1024 / aspect : 1024);
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
@@ -243,10 +268,14 @@ function signTexture(text, bg, fg, aspect) {
 }
 
 // A board with a lit-from-nowhere printed face. Faces +z, origin at its centre.
-export function makeSign({ text, w, h, bg = PALETTE.hotPink, fg = PALETTE.cream, tilt = 0.04 }) {
+export function makeSign({ text, w, h, bg = PALETTE.hotPink, fg = PALETTE.cream, tilt = 0.04, seed = 3 }) {
   const rim = 0.14;
-  const b = builder(3, 0.012);
-  b.box(w, h, 0.14, fg);
+  // The board is not wonked, so its front is exactly at z = depth / 2 and the
+  // face can sit a clear margin in front of it at any size; the tilt supplies
+  // the crooked look.
+  const depth = 0.14;
+  const b = builder(seed, 0, 'sign');
+  b.box(w, h, depth, fg, { wonk: 0 });
   const group = propFrom(b.finish());
   const faceW = w - rim * 2, faceH = h - rim * 2;
   const face = new THREE.Mesh(
@@ -254,15 +283,15 @@ export function makeSign({ text, w, h, bg = PALETTE.hotPink, fg = PALETTE.cream,
     new THREE.MeshBasicMaterial({ map: signTexture(text, bg, fg, faceW / faceH), toneMapped: false }),
   );
   face.name = 'signFace';
-  face.position.z = 0.075;
+  face.position.z = depth / 2 + 0.008;
   group.add(face);
   group.rotation.z = tilt;
   return group;
 }
 
-export function makeWindow({ w, h }) {
+export function makeWindow({ w, h, seed = 4 }) {
   // Origin at the middle of the sill; the frame sits inside the opening.
-  const b = builder(4, 0.012);
+  const b = builder(seed, 0.012, 'window');
   const bw = 0.15, d = 0.34;
   b.span(-w / 2, -w / 2 + bw, 0, h, -d / 2, d / 2, PALETTE.teal);
   b.span(w / 2 - bw, w / 2, 0, h, -d / 2, d / 2, PALETTE.teal);
@@ -280,8 +309,8 @@ function pretzel(b, x, y, z, tiltX, tiltY) {
   b.add(g, flat(PALETTE.planet), { wonk: 0.04, x, y, z, rx: -Math.PI / 2 + tiltX, ry: tiltY });
 }
 
-export function makeShopFront({ w, h, name, signColor = PALETTE.hotPink }) {
-  const b = builder(5, 0.012);
+export function makeShopFront({ w, h, name, signColor = PALETTE.hotPink, seed = 5 }) {
+  const b = builder(seed, 0.012, 'shopFront');
   const d = 0.5;
   const pillar = 0.5;
   const headTop = h, headBottom = h - 1.4;
@@ -315,14 +344,14 @@ export function makeShopFront({ w, h, name, signColor = PALETTE.hotPink }) {
     b.box(aw, 0.22, 0.06, c, { x, y: headBottom - 0.24, z: d / 2 + 0.8, rx: 0.1 });
   }
   const group = propFrom(b.finish(0.006));
-  const sign = makeSign({ text: name, w: w - 0.7, h: 1.15, bg: signColor, fg: PALETTE.cream });
+  const sign = makeSign({ text: name, w: w - 0.7, h: 1.15, bg: signColor, fg: PALETTE.cream, seed: seed + 1 });
   sign.position.set(0, headBottom + 0.7, d / 2 + 0.01);
   group.add(sign);
   return group;
 }
 
 export function makeKiosk({ w = 2, d = 1, h = 0.9, color = PALETTE.teal, seed = 7 } = {}) {
-  const b = builder(seed, 0.018);
+  const b = builder(seed, 0.018, 'kiosk');
   b.span(-w / 2 + 0.03, w / 2 - 0.03, 0, 0.16, -d / 2 + 0.03, d / 2 - 0.03, PALETTE.lilac);
   b.span(-w / 2, w / 2, 0.16, h - 0.08, -d / 2, d / 2, color);
   b.span(-w / 2 - 0.07, w / 2 + 0.07, h - 0.08, h, -d / 2 - 0.07, d / 2 + 0.07, PALETTE.cream);
@@ -343,10 +372,10 @@ export function makeKiosk({ w = 2, d = 1, h = 0.9, color = PALETTE.teal, seed = 
 }
 
 export function makeBench({ w = 1.8, seed = 11 } = {}) {
-  const b = builder(seed, 0.02);
+  const b = builder(seed, 0.02, 'bench');
   const d = 0.5;
   b.box(w, 0.1, d, PALETTE.lilac, { y: 0.46 });
-  b.box(w, 0.42, 0.08, PALETTE.hotPink, { y: 0.86, z: -d / 2 + 0.04, rx: -0.14 });
+  b.box(w, 0.42, 0.08, PALETTE.glorpPurple, { y: 0.86, z: -d / 2 + 0.04, rx: -0.14 });
   for (const s of [-1, 1]) {
     b.box(0.1, 0.46, d - 0.06, PALETTE.teal, { x: s * (w / 2 - 0.2), y: 0.23 });
     b.box(0.08, 0.5, 0.08, PALETTE.teal, { x: s * (w / 2 - 0.2), y: 0.7, z: -d / 2 + 0.05, rx: -0.14 });
@@ -356,8 +385,21 @@ export function makeBench({ w = 1.8, seed = 11 } = {}) {
   return group;
 }
 
+// A leaf blade pointing +y from the origin: wide along z, thin along x, tapering
+// to a point, with the tip bent toward +x (which droops once the leaf is tilted).
+function frond(length, width, droop) {
+  const g = new THREE.BoxGeometry(0.035, length, width, 1, 5, 1).toNonIndexed();
+  const pos = g.getAttribute('position');
+  for (let i = 0; i < pos.count; i++) {
+    const t = (pos.getY(i) + length / 2) / length;
+    pos.setXYZ(i, pos.getX(i) + droop * t * t, pos.getY(i) + length / 2, pos.getZ(i) * (1 - 0.9 * t));
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
 export function makePlanter({ seed = 21 } = {}) {
-  const b = builder(seed, 0.02);
+  const b = builder(seed, 0.02, 'planter');
   const next = rng(seed);
   b.add(new THREE.CylinderGeometry(0.42, 0.32, 0.55, 16), flat(PALETTE.teal), { y: 0.275 });
   b.add(new THREE.CylinderGeometry(0.47, 0.44, 0.12, 16), flat(PALETTE.hotPink), { y: 0.6 });
@@ -371,21 +413,61 @@ export function makePlanter({ seed = 21 } = {}) {
       flat(i % 2 ? lighter(trunk, 0.2) : trunk), { x: tx, y: ty + hgt / 2, rz: -0.12, wonk: 0.03 });
     tx += 0.05; ty += hgt * 0.98;
   }
-  // Fronds fan out from the crown.
-  const leaves = 8;
+  // Fronds fan out from the crown: flat, tapered blades that droop at the tips.
+  const leaves = 10;
   for (let i = 0; i < leaves; i++) {
     const yaw = (i / leaves) * Math.PI * 2 + next() * 0.3;
-    const tilt = i % 2 ? 1.0 + next() * 0.3 : 1.7 + next() * 0.3;
-    const g = new THREE.ConeGeometry(0.16, 1.2, 6);
-    g.translate(0, 0.6, 0);
+    const tilt = i % 2 ? 0.95 + next() * 0.25 : 1.45 + next() * 0.25;
     const m = new THREE.Matrix4().makeTranslation(tx, ty, 0)
       .multiply(new THREE.Matrix4().makeRotationY(yaw))
       .multiply(new THREE.Matrix4().makeRotationZ(-tilt));
-    b.add(g, flat(i % 2 ? PALETTE.gel : PALETTE.teal), { sz: 0.3, m, wonk: 0.03 });
+    b.add(frond(0.95, 0.24, i % 2 ? 0.22 : 0.4), flat(i % 2 ? PALETTE.gel : PALETTE.teal), { m, wonk: 0.03 });
   }
   b.add(new THREE.SphereGeometry(0.1, 10, 8), flat(PALETTE.planet), { x: tx, y: ty - 0.05, z: 0.08 });
   b.add(new THREE.SphereGeometry(0.1, 10, 8), flat(PALETTE.planet), { x: tx + 0.07, y: ty - 0.1, z: -0.07 });
   const group = propFrom(b.finish());
   group.userData.footprint = { w: 0.95, d: 0.95 };
   return group;
+}
+
+// A soft purple blob for the floor: a disc whose alpha fades from the middle
+// outward (vertex alpha, so no texture and no DOM). Lies just above y = 0.
+let shadowMaterial = null;
+export function makeBlobShadow({ rx, rz, opacity = 0.35 }) {
+  const rings = 8, segs = 28;
+  const shade = new THREE.Color(PALETTE.shadowTint);
+  const pos = [0, 0, 0];
+  const col = [shade.r, shade.g, shade.b, opacity];
+  for (let r = 1; r <= rings; r++) {
+    const f = r / rings;
+    const alpha = opacity * (1 - f * f * (3 - 2 * f)); // smoothstep falloff
+    for (let i = 0; i < segs; i++) {
+      const a = (i / segs) * Math.PI * 2;
+      pos.push(Math.cos(a) * rx * f, 0, Math.sin(a) * rz * f);
+      col.push(shade.r, shade.g, shade.b, alpha);
+    }
+  }
+  const index = [];
+  for (let i = 0; i < segs; i++) index.push(0, 1 + ((i + 1) % segs), 1 + i);
+  for (let r = 1; r < rings; r++) {
+    const a = 1 + (r - 1) * segs, b = 1 + r * segs;
+    for (let i = 0; i < segs; i++) {
+      const j = (i + 1) % segs;
+      index.push(a + i, a + j, b + i, a + j, b + j, b + i);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  g.setIndex(index);
+  if (!shadowMaterial) {
+    shadowMaterial = new THREE.MeshBasicMaterial({
+      vertexColors: true, transparent: true, depthWrite: false, toneMapped: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    });
+  }
+  const mesh = new THREE.Mesh(g, shadowMaterial);
+  mesh.name = 'blobShadow';
+  mesh.position.y = 0.012;
+  return mesh;
 }

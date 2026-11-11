@@ -51,6 +51,8 @@ function boot() {
 
   const sky = createSky();
   scene.add(sky.mesh);
+  // Turn the sky so the ringed planet hangs in the corner's window.
+  sky.mesh.rotation.set(-0.2, 0.68, 0);
 
   const corner = buildLookCorner();
   scene.add(corner.group);
