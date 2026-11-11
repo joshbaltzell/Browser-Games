@@ -13,13 +13,20 @@ export function modeParams(cam, mode, out = {}) {
   return out;
 }
 
+export function shakeWeightOf(tuning, mode) {
+  const m = mode && mode !== 'normal' ? tuning[mode] : null;
+  return m && typeof m === 'object' && m.shakeWeight > 0 ? m.shakeWeight : 0;
+}
+
 export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } = {}) {
   const sp = { fov: { x: 0, v: 0 }, right: { x: 0, v: 0 }, up: { x: 0, v: 0 }, back: { x: 0, v: 0 } };
   const side = { x: 1, v: 0 };
+  const shakeW = { x: 0, v: 0 };   // mode shake weight, blended like the other mode params
   const piv = [{ x: 0, v: 0 }, { x: 0, v: 0 }, { x: 0, v: 0 }];
   const goal = {};
   const head = [0, 0, 0], shoulder = [0, 0, 0], want = [0, 0, 0];
   const pos = [0, 0, 0], dir = [0, 0, 1];
+  // update() returns this one object every frame; copy pos/dir if you keep them.
   const result = { pos, dir, fov: 70 };
   let ratio = 1;       // fraction of `back` the walls currently allow
   let clock = 0;
@@ -38,11 +45,12 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       if (this.pitch < tuning.pitchMin) this.pitch = tuning.pitchMin;
       if (this.pitch > tuning.pitchMax) this.pitch = tuning.pitchMax;
     },
-    snap(target, yaw, mode = 'normal', side_ = 1) {
+    snap(target, yaw, mode = 'normal', sideArg = 1) {
       if (yaw !== undefined) this.yaw = yaw;
       modeParams(tuning, mode, goal);
       for (const k of KEYS) { sp[k].x = goal[k]; sp[k].v = 0; }
-      side.x = side_; side.v = 0;
+      side.x = sideArg; side.v = 0;
+      shakeW.x = shakeWeightOf(tuning, mode); shakeW.v = 0;
       for (let i = 0; i < 3; i++) { piv[i].x = target[i]; piv[i].v = 0; }
       ratio = 1; ready = true;
     },
@@ -52,11 +60,12 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       clock += dt;
       modeParams(tuning, mode, goal);
       for (const k of KEYS) springStep(sp[k], goal[k], tuning.blendHalfLife, dt);
+      springStep(shakeW, shakeWeightOf(tuning, mode), tuning.blendHalfLife, dt);
       springStep(side, sideTarget, tuning.sideHalfLife, dt);
       for (let i = 0; i < 3; i++) springStep(piv[i], target[i], tuning.followHalfLife, dt);
 
       const yaw = this.yaw, pitch = this.pitch;
-      const sy = Math.sin(yaw), cy = Math.cos(yaw), sp_ = Math.sin(pitch), cp = Math.cos(pitch);
+      const sy = Math.sin(yaw), cy = Math.cos(yaw), sinP = Math.sin(pitch), cp = Math.cos(pitch);
       const r = tuning.probeRadius;
       const back = sp.back.x;
       // 1. head, then out to the shoulder as far as the walls allow
@@ -66,7 +75,7 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       const ts = sweepSphere(boxes, head, shoulder, r);
       for (let i = 0; i < 3; i++) shoulder[i] = head[i] + (shoulder[i] - head[i]) * ts;
       // 2. back along the view direction
-      dir[0] = sy * cp; dir[1] = sp_; dir[2] = cy * cp;
+      dir[0] = sy * cp; dir[1] = sinP; dir[2] = cy * cp;
       for (let i = 0; i < 3; i++) want[i] = shoulder[i] - dir[i] * back;
       const tb = sweepSphere(boxes, shoulder, want, r);
       // 3. pull in at once, ease back out
@@ -75,22 +84,21 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       if (allowed < ratio) ratio = allowed;
       else ratio += (allowed - ratio) * (tuning.wallReturnHalfLife > 0 ? 1 - Math.pow(2, -dt / tuning.wallReturnHalfLife) : 1);
       for (let i = 0; i < 3; i++) pos[i] = shoulder[i] - dir[i] * back * ratio;
+      // the minBack floor must never win against a wall: keep the lens a full
+      // probe radius from every face by sweeping the head out to it
+      const tl = sweepSphere(boxes, head, pos, r);
+      if (tl < 1) for (let i = 0; i < 3; i++) pos[i] = head[i] + (pos[i] - head[i]) * tl;
       // 4. sprint shake
-      const sh = tuning.shake, sprintFov = tuning.sprint && tuning.sprint.fov !== undefined ? tuning.sprint.fov : tuning.fov;
-      const span = sprintFov - tuning.fov;
-      if (sh && sh.amp && span > 0) {
-        let k = (sp.fov.x - tuning.fov) / span;
-        k = k < 0 ? 0 : k > 1 ? 1 : k;
-        if (k > 0) {
-          const a = sh.amp * k;
-          const sx = Math.sin(TAU * sh.hz * clock) * a;
-          const sy2 = Math.sin(TAU * sh.hz * 1.3 * clock + 1) * a;
-          // camera right = (-cy, 0, sy); camera up = right x dir
-          const rx = -cy, rz = sy;
-          pos[0] += rx * sx + (rz * 0 - 0) * 0 + (0 * dir[2] - rz * dir[1]) * sy2;
-          pos[1] += (rz * dir[0] - rx * dir[2]) * sy2;
-          pos[2] += rz * sx + (rx * dir[1] - 0 * dir[0]) * sy2;
-        }
+      const sh = tuning.shake;
+      if (sh && sh.amp && shakeW.x > 0) {
+        const a = sh.amp * (shakeW.x > 1 ? 1 : shakeW.x);
+        const sx = Math.sin(TAU * sh.hz * clock) * a;
+        const shakeUp = Math.sin(TAU * sh.hz * 1.3 * clock + 1) * a;
+        // camera right = (-cy, 0, sy); camera up = right x dir
+        const rx = -cy, rz = sy;
+        pos[0] += rx * sx - rz * dir[1] * shakeUp;
+        pos[1] += (rz * dir[0] - rx * dir[2]) * shakeUp;
+        pos[2] += rz * sx + rx * dir[1] * shakeUp;
       }
       result.fov = sp.fov.x;
       return result;

@@ -66,7 +66,7 @@ test('in a 1.4 m corridor with the right wall close, the camera stays inside the
   for (const yaw of [0, 0.5, -0.5, 1.5]) {
     const c = rig(); c.snap(T0, yaw); c.yaw = yaw;
     const r = run(c, 120, {}, B);
-    assert.ok(!pointInBoxes(B, r.pos, 0.02), `yaw ${yaw}: ${r.pos}`);
+    assert.ok(!pointInBoxes(B, r.pos, 0.1), `yaw ${yaw}: ${r.pos}`);
     assert.ok(Math.abs(r.pos[0]) < 0.7);
   }
 });
@@ -91,6 +91,26 @@ test('no shake outside sprint; shake stays within amp in sprint', () => {
     worst = Math.max(worst, dist(p, q));
   }
   assert.ok(worst <= 0.025 * Math.SQRT2 + 1e-9 && worst > 0.005, `${worst}`);
+});
+test('shoulder jammed against a wall: lens stays at least probeRadius from every face', () => {
+  const B = [FLOOR, makeBox([-0.62, 0, -50], [-5, 5, 50]), makeBox([-5, 0, -0.6], [5, 5, -3])];
+  for (const yaw of [0, 0.3, 0.5, 1.0, -0.4, 3]) {
+    const c = rig(); c.snap(T0, yaw); c.yaw = yaw;
+    const r = run(c, 120, {}, B);
+    for (const b of B) {
+      const d = [0, 1, 2].map(i => Math.max(b.min[i] - r.pos[i], 0, r.pos[i] - b.max[i]));
+      assert.ok(Math.hypot(...d) >= 0.22 - 1e-6, `yaw ${yaw}: ${r.pos} ${Math.hypot(...d)}`);
+    }
+  }
+});
+test('a mode without shakeWeight (hypothetical cover, fov 75) gets zero shake', () => {
+  const t = { ...clone(), cover: { fov: 75 } };
+  const c = createCameraRig({ tuning: t, look: TUNING.look }); c.snap(T0, 0);
+  const q = createCameraRig({ tuning: { ...t, shake: { amp: 0, hz: 9 } }, look: TUNING.look }); q.snap(T0, 0);
+  for (let i = 0; i < 120; i++) {
+    const a = c.update(DT, { target: T0, mode: 'cover', side: 1 }, OPEN), b = q.update(DT, { target: T0, mode: 'cover', side: 1 }, OPEN);
+    assert.deepEqual(a.pos, b.pos);
+  }
 });
 test('a 5 s dt gives finite numbers', () => {
   const c = rig(); c.snap(T0, 0);
