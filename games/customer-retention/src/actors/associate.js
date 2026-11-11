@@ -42,7 +42,6 @@ export const ASSOCIATE = deepFreeze({
   hipL: [0.1, 0.665, 0],
   hipR: [-0.1, 0.665, 0],
   ankleHeight: 0.1,     // the leg ends this far above the sole
-  belly: 0.19,          // front of the belly at rest, for where hands rest
 
   // Used by the rig.
   neckY: 1.19,          // the head bone, at rest, in rig space

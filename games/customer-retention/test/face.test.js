@@ -131,7 +131,7 @@ test('the uni brow is one shape: six vertices, shared apex', () => {
   assert.equal(featurePositions(pair).length - featurePositions(uni).length, 2 * 3);
 });
 
-test('fixedSmile keeps the mouth smiling in every expression but dead; off by default', () => {
+test('fixedSmile keeps the smile in neutral and smug, gives way in angry, scared and dead; off by default', () => {
   // The middle of the mouth's top edge sits lower than its corners in a smile.
   const sag = (face) => {
     const p = featurePositions(face);
@@ -144,14 +144,23 @@ test('fixedSmile keeps the mouth smiling in every expression but dead; off by de
     const reference = createFace(OPTS);
     fixed.setExpression(name); plain.setExpression(name); reference.setExpression(name);
     settle(fixed, 90); settle(plain, 90); settle(reference, 90);
-    if (name === 'dead') {
-      assert.deepEqual(featurePositions(fixed), featurePositions(plain), 'dead drops the smile');
-    } else {
+    if (name === 'neutral' || name === 'smug') {
       assert.ok(sag(fixed) > 0.01, `${name} smiles`);
       assert.ok(sag(fixed) >= sag(plain) - 1e-9, `${name} smiles at least as much as without`);
+    } else {
+      assert.deepEqual(featurePositions(fixed), featurePositions(plain), `${name} drops the smile`);
+      assert.ok(sag(fixed) < 0, `${name} does not smile`);
     }
     assert.deepEqual(featurePositions(plain), featurePositions(reference));
   }
+  // Talking keeps it, and it comes back after angry.
+  const talker = createFace({ ...OPTS, fixedSmile: 0.7 });
+  talker.setTalking(true);
+  for (let i = 0; i < 90; i++) { talker.update(1 / 60); assert.ok(sag(talker) > 0.01, 'talking smiles'); }
+  talker.setTalking(false);
+  talker.setExpression('angry'); settle(talker, 90);
+  talker.setExpression('neutral'); settle(talker, 90);
+  assert.ok(sag(talker) > 0.01, 'smiles again after angry');
   // A fresh face starts on its smile instead of easing into it.
   const fresh = createFace({ ...OPTS, fixedSmile: 0.7 });
   const before = featurePositions(fresh);
@@ -159,4 +168,18 @@ test('fixedSmile keeps the mouth smiling in every expression but dead; off by de
   const after = featurePositions(fresh);
   const mouthMove = before.slice(-78).reduce((s, v, i) => s + Math.abs(v - after.slice(-78)[i]), 0);
   assert.ok(mouthMove < 1e-3, 'no ease-in at spawn');
+});
+
+test('an angry mouth is an open frown shaped like a lens: corners down, lower lip bowed below them', () => {
+  const face = createFace(OPTS);
+  face.setExpression('angry');
+  settle(face, 90);
+  const p = featurePositions(face).slice(-78);
+  const top = (k) => p[k * 6 + 1], bottom = (k) => p[k * 6 + 4];
+  const cornerY = (top(0) + top(12)) / 2;
+  assert.ok(top(6) > cornerY + 0.005, 'top lip arches up over the corners');
+  assert.ok(bottom(6) < cornerY - 0.02, 'lower lip bows down below the corners');
+  // A lens, not a box: the opening tapers toward the corners.
+  const h = (k) => top(k) - bottom(k);
+  assert.ok(h(1) < 0.6 * h(6) && h(3) < h(6), `heights ${h(1)} ${h(3)} ${h(6)}`);
 });

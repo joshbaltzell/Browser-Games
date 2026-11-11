@@ -24,13 +24,20 @@ import { bodyPoint, makePose, samplePose } from './poses.js';
 // Draw calls: 6 rigid meshes and 4 limbs, each outlined (20), the face (3) and
 // the shadow (1): 24.
 //
-// setPose() stores a target; update(dt) eases toward it, solves the limbs and
-// updates the face. update() allocates nothing.
+// setPose(pose, halfLife) stores a target and how quickly to ease toward it;
+// update(dt) eases, solves the limbs and updates the face. update() allocates
+// nothing.
 
-const EASE_HALF_LIFE = 0.05;
-const SCALARS = ['hipsY', 'lean', 'twist', 'headYaw', 'headPitch', 'squash'];
+const EASE_HALF_LIFE = 0.05; // until setPose says otherwise
+const SCALARS = ['hipsY', 'lean', 'twist', 'headYaw', 'headPitch', 'squash', 'elbows'];
 const POINTS = ['handL', 'handR', 'footL', 'footR'];
 const CHANNELS = SCALARS.length + POINTS.length * 3;
+// Elbow bend directions in body space (left arm; x flips for the right). The
+// pose's elbows value mixes them: 0 bends back (a runner's arms), 1 out and
+// down, so hands held in front hang under the elbows instead of folding across
+// the chest, and hands at the sides bow the arms out from the belly.
+const ELBOW_BACK = [0.35, -0.2, -0.8];
+const ELBOW_OUT = [0.75, -0.85, -0.15];
 
 // ---------------------------------------------------------------- geometry
 
@@ -369,15 +376,18 @@ export function buildRig(spec) {
   const springs = [];
   for (let i = 0; i < CHANNELS; i++) springs.push({ x: 0, v: 0 });
   let snapped = false;
+  let ease = EASE_HALF_LIFE;
   const readChannel = (p, i) => (i < SCALARS.length ? p[SCALARS[i]] : p[POINTS[((i - SCALARS.length) / 3) | 0]][(i - SCALARS.length) % 3]);
   function writeChannel(p, i, v) {
     if (i < SCALARS.length) p[SCALARS[i]] = v;
     else p[POINTS[((i - SCALARS.length) / 3) | 0]][(i - SCALARS.length) % 3] = v;
   }
 
-  function setPose(pose) {
+  function setPose(pose, halfLife) {
+    if (halfLife >= 0) ease = halfLife;
     target.hipsY = pose.hipsY; target.lean = pose.lean; target.twist = pose.twist;
     target.headYaw = pose.headYaw; target.headPitch = pose.headPitch; target.squash = pose.squash;
+    target.elbows = pose.elbows;
     for (let k = 0; k < 4; k++) {
       const a = pose[POINTS[k]], o = target[POINTS[k]];
       o[0] = a[0]; o[1] = a[1]; o[2] = a[2];
@@ -412,9 +422,14 @@ export function buildRig(spec) {
 
     for (let k = 0; k < 2; k++) {
       const side = k === 0 ? 1 : -1;
-      // Arm: elbow bends back and out.
+      // Arm: the elbow bends toward the pose's mix of ELBOW_BACK and ELBOW_OUT.
       bodyPoint(spec, cur, k === 0 ? spec.shoulderL : spec.shoulderR, shoulder);
-      setPole(side * 0.35, -0.2, -0.8);
+      const e = cur.elbows < 0 ? 0 : cur.elbows > 1 ? 1 : cur.elbows;
+      setPole(
+        side * (ELBOW_BACK[0] + (ELBOW_OUT[0] - ELBOW_BACK[0]) * e),
+        ELBOW_BACK[1] + (ELBOW_OUT[1] - ELBOW_BACK[1]) * e,
+        ELBOW_BACK[2] + (ELBOW_OUT[2] - ELBOW_BACK[2]) * e,
+      );
       solveTwoBone(shoulder, k === 0 ? cur.handL : cur.handR, armLen, armLen, pole, solved);
       arms[k].set(shoulder, solved.mid, solved.end, solved.stretch);
       // Hand: +Y along the forearm, +X toward the middle of the body.
@@ -448,7 +463,7 @@ export function buildRig(spec) {
   function update(dt) {
     if (snapped) {
       for (let i = 0; i < CHANNELS; i++) {
-        springStep(springs[i], readChannel(target, i), EASE_HALF_LIFE, dt);
+        springStep(springs[i], readChannel(target, i), ease, dt);
         writeChannel(cur, i, springs[i].x);
       }
     }

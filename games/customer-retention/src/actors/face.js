@@ -18,11 +18,16 @@ import { springStep } from '../core/spring.js';
 // fraction of half the mouth width. mouthCurve is positive for a smile.
 export const EXPRESSIONS = Object.freeze({
   neutral: Object.freeze({ browAngle: 0, browY: 0, lid: 0, pupilScale: 1, mouthCurve: 0.4, mouthOpen: 0 }),
-  angry: Object.freeze({ browAngle: 0.5, browY: -0.2, lid: 0.3, pupilScale: 0.8, mouthCurve: -0.55, mouthOpen: 0.45 }),
+  angry: Object.freeze({ browAngle: 0.5, browY: -0.2, lid: 0.3, pupilScale: 0.8, mouthCurve: -0.55, mouthOpen: 0.6 }),
   scared: Object.freeze({ browAngle: -0.4, browY: 0.7, lid: 0, pupilScale: 0.4, mouthCurve: -0.45, mouthOpen: 1 }),
   smug: Object.freeze({ browAngle: 0.1, browY: 0.3, lid: 0.45, pupilScale: 1, mouthCurve: 0.8, mouthOpen: 0 }),
   dead: Object.freeze({ browAngle: -0.3, browY: 0.1, lid: 0, pupilScale: 0, mouthCurve: -0.15, mouthOpen: 0 }),
 });
+
+// How much of a fixedSmile each expression keeps: the floor on mouthCurve is
+// fixedSmile x this. 0 drops it, so the expression's own mouth shows. Angry,
+// scared and dead are genuine (a smile held in scared read as delight).
+const SMILE_KEPT = Object.freeze({ neutral: 1, smug: 1, scared: 0, angry: 0, dead: 0 });
 
 const FIELDS = ['browAngle', 'browY', 'lid', 'pupilScale', 'mouthCurve', 'mouthOpen'];
 const EASE_HALF_LIFE = 0.04; // settles in about 0.12 s
@@ -154,11 +159,15 @@ export function createFace({
   group.add(eyes, features);
 
   // Expression state: one spring per field, plus the dead-cross blend and the
-  // talking blend. fixedSmile > 0 is the least mouthCurve in every expression
-  // but dead: a smile that never leaves, whatever the brows and eyes do.
+  // talking blend. fixedSmile > 0 is the least mouthCurve in neutral and smug
+  // (and talking in them): a customer-service smile that stays whatever the
+  // brows and eyes do. It gives way in angry, scared and dead (SMILE_KEPT).
   let target = EXPRESSIONS.neutral;
-  const smileFloor = fixedSmile > 0 ? fixedSmile : -Infinity;
-  let curveFloor = smileFloor;
+  const floorFor = (name) => {
+    const k = fixedSmile > 0 ? SMILE_KEPT[name] : 0;
+    return k > 0 ? fixedSmile * k : -Infinity;
+  };
+  let curveFloor = floorFor('neutral');
   const goal = (f) => (f === 'mouthCurve' && target.mouthCurve < curveFloor ? curveFloor : target[f]);
   const springs = {};
   for (const f of FIELDS) springs[f] = { x: goal(f), v: 0 };
@@ -300,9 +309,15 @@ export function createFace({
     w = O_MOUTH;
     const open = ex.mouthOpen.x + talk.x * (0.55 + 0.45 * Math.sin((time + seed * 0.37) * TALK_HZ * Math.PI * 2)) * 0.8;
     const openC = open > 0 ? (open < 1.2 ? open : 1.2) : 0;
-    const mw = (mouthWidth / 2) * (1 - 0.35 * (openC < 1 ? openC : 1));
+    // An open frown is a shout: it stays wide, the top lip arches harder and
+    // the lower lip bows down instead of following it, so the opening is a
+    // lens with points at the corners rather than a box.
+    const frownK = -ex.mouthCurve.x / 0.5;
+    const shout = (frownK > 1 ? 1 : frownK > 0 ? frownK : 0) * (openC < 0.4 ? openC / 0.4 : 1);
+    const mw = (mouthWidth / 2) * (1 - 0.35 * (openC < 1 ? openC : 1) * (1 - 0.7 * shout));
     const smirk = smirkOf(ex.lid.x, ex.mouthCurve.x);
-    const sag = ex.mouthCurve.x * mw * 0.5 * (1 - 0.4 * smirk);
+    const sag = ex.mouthCurve.x * mw * 0.5 * (1 - 0.4 * smirk) * (1 + 0.6 * shout);
+    const openPow = 0.55 + 0.5 * shout;
     const openH = openC * mw * 0.9;
     for (let k = 0; k < MOUTH_COLS; k++) {
       const u = (k / (MOUTH_COLS - 1)) * 2 - 1;
@@ -310,7 +325,7 @@ export function createFace({
       const x = u * mw * (1 - 0.25 * smirk) + smirk * mw * 0.2;
       const yu = mouthY - sag * arc + smirk * mw * 0.45 * u + cross.x * BAR * 0.6 * Math.sin(u * Math.PI * 3);
       vert(x, yu, mouthZ);
-      vert(x, yu - BAR - openH * Math.pow(arc, 0.55), mouthZ);
+      vert(x, yu - BAR - openH * Math.pow(arc, openPow) + sag * arc * shout, mouthZ);
     }
     posAttr.needsUpdate = true;
   }
@@ -330,7 +345,7 @@ export function createFace({
     setExpression(name) {
       target = Object.prototype.hasOwnProperty.call(EXPRESSIONS, name) ? EXPRESSIONS[name] : EXPRESSIONS.neutral;
       crossTarget = name === 'dead' ? 1 : 0;
-      curveFloor = name === 'dead' ? -Infinity : smileFloor;
+      curveFloor = floorFor(Object.prototype.hasOwnProperty.call(EXPRESSIONS, name) ? name : 'neutral');
     },
     setTalking(on) { talking = !!on; },
     update,

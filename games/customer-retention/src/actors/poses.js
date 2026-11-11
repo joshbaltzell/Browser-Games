@@ -1,13 +1,15 @@
 // Procedural pose clips. A Pose is plain data in rig space (metres, the
 // character faces +Z so its left side is +X, the floor is y = 0):
-//   { hipsY, lean, twist, headYaw, headPitch, handL, handR, footL, footR, squash }
+//   { hipsY, lean, twist, headYaw, headPitch, elbows, handL, handR, footL, footR, squash }
 // hipsY is the height of the hips bone. lean tips the body forward about the
 // hips (radians), twist turns it about the vertical, the head turns on top of
 // that. Hands are wrist points. Feet are sole points: the floor under the
-// ankle, so a foot at y = 0 is standing. squash is 1 at rest.
+// ankle, so a foot at y = 0 is standing. squash is 1 at rest. elbows says
+// which way the elbows bend: 0 back (a runner's arms), 1 out and down (a
+// rifle hold; arms bowed clear of the belly).
 //
-// Every value is a smooth function of t (sines and smoothsteps, no random
-// numbers), so sampling is repeatable and looping clips are periodic.
+// Every value is a function of t (sines, smoothsteps and cubic curves, no
+// random numbers), so sampling is repeatable and looping clips are periodic.
 // Nothing here touches three.js or the DOM.
 
 const TAU = Math.PI * 2;
@@ -15,7 +17,7 @@ const LIMBS = ['handL', 'handR', 'footL', 'footR'];
 
 export function makePose() {
   return {
-    hipsY: 0, lean: 0, twist: 0, headYaw: 0, headPitch: 0,
+    hipsY: 0, lean: 0, twist: 0, headYaw: 0, headPitch: 0, elbows: 0,
     handL: [0, 0, 0], handR: [0, 0, 0], footL: [0, 0, 0], footR: [0, 0, 0],
     squash: 1,
   };
@@ -24,6 +26,7 @@ export function makePose() {
 function copyPose(src, out) {
   out.hipsY = src.hipsY; out.lean = src.lean; out.twist = src.twist;
   out.headYaw = src.headYaw; out.headPitch = src.headPitch; out.squash = src.squash;
+  out.elbows = src.elbows;
   for (let i = 0; i < 4; i++) {
     const a = src[LIMBS[i]], o = out[LIMBS[i]];
     o[0] = a[0]; o[1] = a[1]; o[2] = a[2];
@@ -64,20 +67,21 @@ function onBody(spec, pose, x, y, z, out) {
 
 // Stance numbers derived from the spec, written into one scratch object so
 // sampling allocates nothing. Left is +x: side = +1 for left, -1 for right.
-const F = { sx: 0, sy: 0, fx: 0, belly: 0 };
+const F = { sx: 0, sy: 0, fx: 0 };
 function frame(spec) {
   F.sx = Math.abs(spec.shoulderL[0]);
   F.sy = spec.shoulderL[1];
   F.fx = Math.abs(spec.hipL[0]) + 0.035;
-  F.belly = spec.belly === undefined ? 0.2 : spec.belly;
   return F;
 }
 const handOf = (p, side) => (side > 0 ? p.handL : p.handR);
 
-// Hands clasped in front of the belly: the patient "how can I help" stance.
-function clasp(spec, pose, f, out, side) {
-  return onBody(spec, pose, side * 0.05, spec.hipHeight + 0.14, f.belly + 0.1, out);
+// Hands resting at the sides, a little out and forward, elbows bowed out: the
+// eager "how can I help" stance. The arms clear the belly from every side.
+function rest(spec, pose, f, out, side) {
+  return onBody(spec, pose, side * (f.sx + 0.16), spec.hipHeight + 0.0, 0.1, out);
 }
+const REST_ELBOWS = 0.55;
 
 function idle(t, spec, p) {
   const f = frame(spec);
@@ -92,56 +96,86 @@ function idle(t, spec, p) {
   p.headYaw = 0.03 * Math.sin(ph) + 0.3 * look;
   p.headPitch = -0.02 + 0.03 * Math.sin(2 * ph + 1) + 0.1 * look;
   p.squash = 1 + 0.008 * Math.sin(ph);
-  clasp(spec, p, f, p.handL, 1);
-  clasp(spec, p, f, p.handR, -1);
-  p.handL[1] += 0.006 * Math.sin(ph - 0.5);
-  p.handR[1] += 0.006 * Math.sin(ph - 0.5);
+  p.elbows = REST_ELBOWS;
+  rest(spec, p, f, p.handL, 1);
+  rest(spec, p, f, p.handR, -1);
+  // The hands sway a touch with the breath, out of step with each other.
+  p.handL[1] += 0.008 * Math.sin(ph - 0.5);
+  p.handR[1] += 0.008 * Math.sin(ph + 0.4);
+  p.handL[2] += 0.01 * Math.sin(ph + 1.1);
+  p.handR[2] += 0.01 * Math.sin(ph - 0.7);
   set3(p.footL, f.fx, 0, 0.015);
   set3(p.footR, -f.fx, 0, -0.015);
   return p;
 }
 
-// How high a running foot lifts at phase ph (0 when planted). The foot swings
-// forward while cos(ph) > 0 and is planted the rest of the time; the peak
-// comes a little early, a heel kick. Normalised so the peak is exactly 1.
-const liftShape = (ph) => {
-  const c = Math.cos(ph);
-  return c > 0 ? Math.pow(c, 1.3) * (1 - 0.35 * Math.sin(ph)) : 0;
-};
-const LIFT_PEAK = (() => {
-  let m = 0;
-  for (let i = 0; i <= 4000; i++) m = Math.max(m, liftShape(-Math.PI / 2 + (i / 4000) * Math.PI));
-  return m;
-})();
+// The run is a cartoon sprint. Each foot is planted for STANCE of the cycle and
+// swings the rest, so for a moment after each push-off both feet are in the
+// air (the flight phase, when the hips are highest). The left foot strikes at
+// u = 0 and the right at u = 0.5. A planted foot slides back under the body
+// at running speed; a swinging foot kicks its heel up behind, drives the knee
+// up through the middle and reaches forward to strike.
+const STANCE = 0.34;
+const STRIKE_Z = 0.25;    // planted foot lands this far ahead of the hips
+const TOE_OFF_Z = -0.33;  // and pushes off this far behind
+const LIFT = 0.4;         // highest sole point in the swing
+const RUN_LEAN = 0.37;
+const RUN_BOB = 0.035;    // hips rise and fall by twice this
+const GROUND = (STRIKE_Z - TOE_OFF_Z) / STANCE; // planted foot speed, z per cycle
 
-const STRIDE = 0.9, LIFT = 0.18, BOB = 0.05, RUN_LEAN = 0.25;
+// A foot at cycle fraction u (0 = strike), as [y, z] in `out`.
+function runFoot(u, out) {
+  if (u < STANCE) {
+    out[0] = 0;
+    out[1] = STRIKE_Z - GROUND * u;
+    return out;
+  }
+  const s = (u - STANCE) / (1 - STANCE);
+  // z: a cubic Hermite from toe-off to strike that leaves at the ground speed
+  // (the foot keeps travelling back for a moment) and arrives drawing back a
+  // little (a paw back into the strike).
+  const m0 = -GROUND * (1 - STANCE), m1 = -0.35 * GROUND * (1 - STANCE);
+  const s2 = s * s, s3 = s2 * s;
+  out[1] = (2 * s3 - 3 * s2 + 1) * TOE_OFF_Z + (s3 - 2 * s2 + s) * m0
+    + (-2 * s3 + 3 * s2) * STRIKE_Z + (s3 - s2) * m1;
+  // y: up fast (the heel kick), down late and steep into the strike.
+  out[0] = LIFT * Math.sin(Math.PI * Math.pow(s, 0.8));
+  return out;
+}
 
+const _f = [0, 0];
 function run(t, spec, p) {
   const f = frame(spec);
-  const ph = (TAU * t) / CLIPS.run.duration;
-  const s = Math.sin(ph);
-  const c2 = Math.cos(2 * ph);
+  const c = t / CLIPS.run.duration;
+  const u = c - Math.floor(c); // so a whole cycle lands exactly on a strike
   const H = spec.hipHeight;
-  // Hips are highest as the feet pass (ph = 0, pi) and lowest at full stride.
-  p.hipsY = H - 0.06 + (BOB / 2) * c2;
-  p.lean = RUN_LEAN + 0.02 * c2;
-  // The shoulder opposite the forward foot comes forward (right, -x, while the
-  // left foot leads); the head turns back to keep looking ahead.
-  p.twist = 0.14 * s;
-  p.headYaw = -0.1 * s;
-  p.headPitch = -0.17 + 0.03 * c2;
-  p.squash = 1 + 0.025 * c2;
-  // Left foot fully forward at a quarter cycle; the right mirrors it.
-  set3(p.footL, f.fx * 0.8, (LIFT * liftShape(ph)) / LIFT_PEAK, (STRIDE / 2) * s);
-  set3(p.footR, -f.fx * 0.8, (LIFT * liftShape(ph + Math.PI)) / LIFT_PEAK, -(STRIDE / 2) * s);
-  // Arms swing opposite to the legs, elbows bent: forward and up across the
-  // chest, or back and down past the hip. Placed on the leaning body.
+  // Hips lowest mid-stance (u = 0.17, 0.67), highest mid-flight (0.42, 0.92).
+  const flightPh = 2 * TAU * (u - (STANCE + 0.5) / 2);
+  p.hipsY = H - 0.06 + RUN_BOB * Math.cos(flightPh);
+  // Squash just after each landing, stretch at push-off.
+  p.squash = 1 + 0.045 * Math.cos(2 * TAU * (u - STANCE - 0.03));
+  p.lean = RUN_LEAN + 0.03 * Math.cos(2 * TAU * (u - STANCE));
+  // How far forward the left foot is, about -1..1, a little ahead of its strike.
+  const legs = Math.cos(TAU * (u + 0.03));
+  // The shoulder opposite the leading foot comes forward (twist > 0 brings the
+  // right shoulder forward); the head turns back to keep looking ahead.
+  p.twist = 0.2 * legs;
+  p.headYaw = -0.15 * legs;
+  p.headPitch = -0.28 + 0.04 * Math.cos(flightPh);
+  p.elbows = 0;
+  runFoot(u, _f);
+  set3(p.footL, f.fx * 0.75, _f[0], _f[1]);
+  runFoot(u < 0.5 ? u + 0.5 : u - 0.5, _f);
+  set3(p.footR, -f.fx * 0.75, _f[0], _f[1]);
+  // Arms pump opposite to the legs, elbows bent: the hand comes forward and up
+  // to the chest, then back and down beside the hip with the elbow driven back
+  // behind the body. It swings wide, clear of the belly and hips.
   for (let side = -1; side <= 1; side += 2) {
-    const k = (1 - side * s) / 2; // 1 = this hand fully forward
+    const k = (1 - side * legs) / 2; // 1 = this hand fully forward
     onBody(spec, p,
-      side * f.sx * (1.55 - 1.0 * k),
-      f.sy - 0.42 + 0.29 * k,
-      -0.13 + 0.43 * k,
+      side * (f.sx + 0.13 - 0.1 * k + 0.12 * Math.sin(Math.PI * k)), // swings wide of the body
+      f.sy - 0.34 + 0.28 * k + 0.05 * Math.sin(Math.PI * k),
+      -0.14 + 0.46 * k,
       handOf(p, side));
   }
   return p;
@@ -151,21 +185,23 @@ function aim(t, spec, p) {
   const f = frame(spec);
   const ph = (TAU * t) / CLIPS.aim.duration;
   const H = spec.hipHeight;
-  // A braced stance, the left shoulder turned toward the target, the head
-  // turned back to face it and dipped to the sights.
-  p.hipsY = H - 0.045 + 0.005 * Math.sin(ph);
+  // A braced, bladed stance: the left shoulder turned toward the target, the
+  // head turned back to face it and dipped to the sights.
+  p.hipsY = H - 0.05 + 0.005 * Math.sin(ph);
   p.lean = 0.1 + 0.01 * Math.sin(ph);
-  p.twist = -0.18;
-  p.headYaw = 0.16;
-  p.headPitch = 0.05 + 0.012 * Math.sin(2 * ph);
+  p.twist = -0.38;
+  p.headYaw = 0.34;
+  p.headPitch = 0.04 + 0.012 * Math.sin(2 * ph);
   p.squash = 1;
-  // Both hands on an imaginary rifle held to the right shoulder: the left on
-  // the foregrip, the right on the grip. They sway together, a slow figure 8.
+  p.elbows = 1;
+  // Both hands well out in front at chest height, on a rifle that is not there
+  // yet: the left on the foregrip, the right on the grip by the right
+  // shoulder. Elbows out and down. They sway together, a slow figure 8.
   const dx = 0.012 * Math.sin(ph), dy = 0.008 * Math.sin(2 * ph);
-  set3(p.handL, 0.0 + dx, f.sy - 0.01 + dy, 0.5);
-  set3(p.handR, -f.sx * 0.55 + dx, f.sy - 0.08 + dy, 0.3);
-  set3(p.footL, f.fx + 0.01, 0, 0.13);
-  set3(p.footR, -f.fx - 0.02, 0, -0.12);
+  set3(p.handL, 0.05 + dx, f.sy - 0.05 + dy, 0.56);
+  set3(p.handR, -f.sx * 1.25 + dx, f.sy - 0.07 + dy, 0.34);
+  set3(p.footL, f.fx + 0.02, 0, 0.15);
+  set3(p.footR, -f.fx - 0.03, 0, -0.13);
   return p;
 }
 
@@ -195,9 +231,10 @@ function flinch(t, spec, p) {
   p.headYaw = -0.12 * a;
   p.headPitch = -0.02 - 0.32 * a;
   p.squash = 1 - 0.15 * flinchBounce(t);
+  p.elbows = REST_ELBOWS + (1 - REST_ELBOWS) * a;
   for (let side = -1; side <= 1; side += 2) {
     const out = handOf(p, side);
-    clasp(spec, p, f, out, side);
+    rest(spec, p, f, out, side);
     const cx = out[0], cy = out[1], cz = out[2];
     onBody(spec, p, side * f.sx * 1.75, f.sy + 0.08, 0.14, out);
     out[0] = cx + (out[0] - cx) * a;
@@ -222,20 +259,27 @@ function talk(t, spec, p) {
   const beat = Math.sin(3 * ph);
   p.headPitch += 0.05 * Math.sin(4 * ph) - 0.04 * (gR + gL);
   p.headYaw += -0.12 * gR + 0.12 * gL;
-  onBody(spec, p, -(f.sx + 0.13), f.sy - 0.16 + 0.03 * beat, f.belly + 0.16, _g);
+  // A talking hand comes up and out in front of the chest, wide of the body.
+  p.elbows += (0.85 - p.elbows) * Math.max(gR, gL);
+  onBody(spec, p, -(f.sx + 0.19), f.sy - 0.1 + 0.03 * beat, 0.36, _g);
   for (let k = 0; k < 3; k++) p.handR[k] += (_g[k] - p.handR[k]) * gR;
-  onBody(spec, p, f.sx + 0.1, f.sy - 0.2 - 0.03 * beat, f.belly + 0.13, _g);
+  onBody(spec, p, f.sx + 0.19, f.sy - 0.12 - 0.03 * beat, 0.34, _g);
   for (let k = 0; k < 3; k++) p.handL[k] += (_g[k] - p.handL[k]) * gL;
   return p;
 }
 
-function clip(duration, loop, fn) {
-  return Object.freeze({ duration, loop, sample: (t, spec, out = makePose()) => fn(t, spec, out) });
+// ease is the half-life (seconds) of the rig's springs while the clip plays:
+// they smooth the cross-fades and the hits. The run is a fast cycle that the
+// default 0.05 s would lag (about 45 degrees) and flatten, so its springs are
+// nearly stiff.
+const EASE = 0.05;
+function clip(duration, loop, fn, ease = EASE) {
+  return Object.freeze({ duration, loop, ease, sample: (t, spec, out = makePose()) => fn(t, spec, out) });
 }
 
 export const CLIPS = Object.freeze({
   idle: clip(2.4, true, idle),
-  run: clip(0.56, true, run),
+  run: clip(0.56, true, run, 0.008),
   aim: clip(1.6, true, aim),
   flinch: clip(FLINCH, false, flinch),
   talk: clip(2.4, true, talk),
@@ -262,6 +306,7 @@ export function blendPose(a, b, k, out = makePose()) {
   out.headYaw = a.headYaw * j + b.headYaw * k;
   out.headPitch = a.headPitch * j + b.headPitch * k;
   out.squash = a.squash * j + b.squash * k;
+  out.elbows = a.elbows * j + b.elbows * k;
   for (let i = 0; i < 4; i++) {
     const pa = a[LIMBS[i]], pb = b[LIMBS[i]], o = out[LIMBS[i]];
     o[0] = pa[0] * j + pb[0] * k;

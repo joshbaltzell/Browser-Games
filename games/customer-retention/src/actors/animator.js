@@ -2,7 +2,8 @@ import { CLIPS, makePose, samplePose, blendPose } from './poses.js';
 
 // Plays pose clips on a rig, cross-fading between them. update(dt) samples the
 // clip, blends from the pose that was showing when the clip started, and hands
-// the result to rig.setPose(); call rig.update(dt) after it. Allocates nothing
+// the result to rig.setPose() with the clip's spring half-life (eased from the
+// last clip's over the fade); call rig.update(dt) after it. Allocates nothing
 // per frame.
 //
 // play('flinch') runs the one-shot and then returns to the clip it interrupted.
@@ -23,6 +24,7 @@ export function createAnimator(rig) {
   let resume = 'idle';
   let fade = 0;
   let fadeTime = 0;
+  let fromEase = CLIPS[name].ease;
   const from = makePose();
   const sample = makePose();
   const out = samplePose(name, 0, spec);
@@ -33,11 +35,17 @@ export function createAnimator(rig) {
     if (next === name && CLIPS[next].loop) return;
     if (next === 'flinch' && name !== 'flinch') resume = name;
     blendPose(out, out, 1, from); // fade from whatever is showing now
+    fromEase = easeNow();
     fade = f === undefined ? (next === 'flinch' ? HIT_FADE : DEFAULT_FADE) : Math.max(f, 0);
     fadeTime = 0;
     name = next;
     time = 0;
     rig.face.setTalking(next === 'talk');
+  }
+
+  function easeNow() {
+    const k = fade > 0 ? smooth01(fadeTime / fade) : 1;
+    return fromEase + (CLIPS[name].ease - fromEase) * k;
   }
 
   function update(dt) {
@@ -52,7 +60,7 @@ export function createAnimator(rig) {
     }
     samplePose(name, time, spec, sample);
     blendPose(from, sample, fade > 0 ? smooth01(fadeTime / fade) : 1, out);
-    rig.setPose(out);
+    rig.setPose(out, easeNow());
   }
 
   return { play, update, current: () => name };
