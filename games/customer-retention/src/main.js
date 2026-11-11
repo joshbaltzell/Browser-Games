@@ -53,20 +53,28 @@ function boot() {
   const sky = createSky();
   scene.add(sky.mesh);
 
-  // Look test: a hard-edged box (outline corners) and a smooth sphere.
+  // Look test: a hard-edged box (outline corners), a smooth sphere and a cream
+  // capsule, so the shadow colour can be judged on orange, teal and cream.
   const box = new THREE.Mesh(
     computeOutlineNormals(new THREE.BoxGeometry(0.8, 0.8, 0.8)),
     createToonMaterial({ color: PALETTE.playerOrange }),
   );
-  box.position.set(-0.55, 1, 0);
+  box.position.set(-0.65, 1, 0);
   addOutline(box);
   const ball = new THREE.Mesh(
-    new THREE.SphereGeometry(0.42, 32, 16),
+    new THREE.SphereGeometry(0.38, 32, 16),
     createToonMaterial({ color: PALETTE.teal }),
   );
-  ball.position.set(0.6, 0.95, -0.2);
+  ball.position.set(0.3, 0.95, -0.1);
   addOutline(ball);
-  scene.add(box, ball);
+  const pill = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.26, 0.5, 8, 24),
+    createToonMaterial({ color: PALETTE.cream }),
+  );
+  pill.position.set(1.25, 1.05, -0.5);
+  pill.rotation.z = 0.35;
+  addOutline(pill);
+  scene.add(box, ball, pill);
 
   function resize() {
     const r = gfx.resize();

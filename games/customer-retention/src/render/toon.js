@@ -9,6 +9,7 @@ export const TOON_SHARED = {
   lightDir: { value: new THREE.Vector3(...TUNING.lightDir).normalize() },
   shadowTint: { value: new THREE.Color(PALETTE.shadowTint) },
   bandEdge: { value: 0.15 },
+  shadowLift: { value: TUNING.shadowLift },
 };
 
 const vertexShader = /* glsl */ `
@@ -35,6 +36,7 @@ uniform vec3 baseColor;
 uniform vec3 lightDir;
 uniform vec3 shadowTint;
 uniform float bandEdge;
+uniform float shadowLift;
 uniform float shadowMix;
 uniform float rim;
 
@@ -56,7 +58,10 @@ void main() {
 
   vec3 base = baseColor * vTint;
   bool lit = dot(n, l) > bandEdge;
-  vec3 col = lit ? base : mix(base, base * shadowTint, shadowMix);
+  // Shadow: darken through the tint, then lift toward the tint itself so warm
+  // colours go plum instead of brown.
+  vec3 shade = mix(mix(base, base * shadowTint, shadowMix), shadowTint, shadowLift);
+  vec3 col = lit ? base : shade;
   if (lit && dot(n, v) < RIM_EDGE && curvature > RIM_MIN_CURVATURE) col = mix(col, vec3(1.0), rim);
 
   gl_FragColor = vec4(col, 1.0);
@@ -65,7 +70,7 @@ void main() {
 `;
 
 // Two-tone cartoon material: one hard step between the lit colour and the
-// purple-tinted shadow colour, plus a thin light rim on the lit side.
+// purple shadow colour, plus a thin light rim on the lit side.
 export function createToonMaterial({ color = '#ffffff', vertexColors = false, shadowMix = 0.55, rim = 0.25 } = {}) {
   return new THREE.ShaderMaterial({
     name: 'toon',
@@ -76,6 +81,7 @@ export function createToonMaterial({ color = '#ffffff', vertexColors = false, sh
       lightDir: TOON_SHARED.lightDir,
       shadowTint: TOON_SHARED.shadowTint,
       bandEdge: TOON_SHARED.bandEdge,
+      shadowLift: TOON_SHARED.shadowLift,
     },
     vertexShader,
     fragmentShader,
