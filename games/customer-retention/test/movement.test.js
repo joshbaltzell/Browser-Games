@@ -97,6 +97,7 @@ test('a context action ahead of roll wins the tap and enters its own state', () 
 test('place() teleports and clears velocity; prevPos equals pos after place', () => {
   const m = mover(); step(m, fwd, 20); m.place([3, 0, 4], 1);
   assert.deepEqual(m.pos, [3, 0, 4]); assert.deepEqual(m.prevPos, [3, 0, 4]); assert.equal(m.speed(), 0);
+  const r = mover(); r.update(I({ tap: true }), DT); assert.equal(r.state, 'roll'); r.place([0, 0, 0], 0); assert.equal(r.state, 'move');
 });
 test('rollOffset is 0 at 0, the distance at 1, and rises monotonically', () => {
   assert.equal(rollOffset(0, 5, 1.6), 0); near(rollOffset(1, 5, 1.6), 5, 1e-12);

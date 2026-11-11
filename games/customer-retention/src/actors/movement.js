@@ -1,23 +1,12 @@
 import { TUNING } from '../tuning.js';
 import { moveCapsule } from '../world/collide.js';
+import { wrap, tiltOf, wishOf, turnToward } from './moveMath.js';
+import { COVER_STATES, coverAction } from './coverStates.js';
 
-const TAU = Math.PI * 2;
 export const forwardOf = yaw => [Math.sin(yaw), 0, Math.cos(yaw)];
 export const rightOf = yaw => [-Math.cos(yaw), 0, Math.sin(yaw)];
 export const rollOffset = (u, distance, ease) => distance * (1 - (1 - u) ** ease);
-const wrap = a => a - TAU * Math.round(a / TAU);
 
-function tiltOf(intent) { return Math.min(1, Math.hypot(intent.moveX, intent.moveY)); }
-// Camera-relative stick direction, written into out as [x, z]; returns tilt.
-function wishOf(intent, out) {
-  const s = Math.sin(intent.camYaw), c = Math.cos(intent.camYaw);
-  let x = -intent.moveY * s - intent.moveX * c;
-  let z = -intent.moveY * c + intent.moveX * s;
-  const len = Math.hypot(x, z);
-  if (len > 1) { x /= len; z /= len; }
-  out[0] = x; out[1] = z;
-  return Math.min(1, len);
-}
 const wish = [0, 0], rollDelta = [0, 0, 0];
 
 // Moves vel toward (tx, tz): faster rate when slowing, slower when speeding up or turning.
@@ -26,10 +15,6 @@ function steer(m, tx, tz, top, dt, t) {
   const rate = (Math.hypot(tx, tz) < Math.hypot(v[0], v[2]) ? top / t.stopTime : top / t.accelTime) * dt;
   const dx = tx - v[0], dz = tz - v[2], d = Math.hypot(dx, dz);
   if (d <= rate) { v[0] = tx; v[2] = tz; } else { v[0] += dx / d * rate; v[2] += dz / d * rate; }
-}
-function turnToward(angle, target, maxStep) {
-  const d = wrap(target - angle);
-  return angle + Math.max(-maxStep, Math.min(maxStep, d));
 }
 function canSprint(m, intent, t) {
   return intent.sprint && !intent.aim && tiltOf(intent) >= t.stickSprintMin;
@@ -105,16 +90,21 @@ export const STATES = {
     },
     exit() {},
   },
+  ...COVER_STATES,
 };
 
-export const CONTEXT_ACTIONS = [{ name: 'roll', when: () => true, state: 'roll' }];
+export const CONTEXT_ACTIONS = [coverAction, { name: 'roll', when: () => true, state: 'roll' }];
 
-export function createMovement({ boxes, spawn, tuning = TUNING.move, states = STATES, contextActions = CONTEXT_ACTIONS }) {
+export function createMovement({
+  boxes, spawn, tuning = TUNING.move, coverTuning = TUNING.cover, coverEdges = [],
+  states = STATES, contextActions = CONTEXT_ACTIONS, onState,
+}) {
   const m = {
     state: 'move', stateTime: 0, entries: 0,
     pos: [spawn[0], spawn[1], spawn[2]], prevPos: [spawn[0], spawn[1], spawn[2]],
     vel: [0, 0, 0], facing: 0, prevFacing: 0, aiming: false, heading: 0,
-    tuning, boxes,
+    tuning, boxes, coverTuning, coverEdges, onState,
+    cover: null, coverTarget: null, slams: 0,
     scratch: {},
     speed() { return Math.hypot(m.vel[0], m.vel[2]); },
     // Moves by delta through the colliders. slideVel true: remove velocity into what was hit. False: set velocity from the actual travel.
@@ -135,11 +125,15 @@ export function createMovement({ boxes, spawn, tuning = TUNING.move, states = ST
       p[0] = r.pos[0]; p[1] = r.pos[1]; p[2] = r.pos[2];
     },
     go(name, intent) {
-      states[m.state].exit?.(m);
+      const prev = m.state;
+      states[prev].exit?.(m);
       m.state = name; m.stateTime = 0; m.entries++; m.scratch = {};
       states[name].enter(m, intent);
+      m.onState?.(name, prev, intent);
     },
     place(pos, yaw) {
+      states[m.state].exit?.(m);
+      m.state = 'move'; m.stateTime = 0; m.cover = null; m.coverTarget = null; m.scratch = {};
       m.pos[0] = m.prevPos[0] = pos[0]; m.pos[1] = m.prevPos[1] = pos[1]; m.pos[2] = m.prevPos[2] = pos[2];
       m.vel[0] = m.vel[1] = m.vel[2] = 0;
       if (yaw !== undefined) m.facing = m.prevFacing = m.heading = yaw;
