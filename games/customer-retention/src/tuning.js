@@ -4,7 +4,18 @@ export const TUNING = {
   // How far the shadow side is pulled toward the purple shadow tint, so warm
   // colours go plum rather than brown.
   shadowLift: 0.45,
-  camera: { fov: 70, right: 0.55, up: 1.55, back: 2.6 },
+  camera: {
+    fov: 70, right: 0.55, up: 1.55, back: 2.6,
+    aim: { fov: 50, back: 1.4 },
+    sprint: { fov: 80, up: 1.25, back: 2.9 },
+    blendHalfLife: 0.07,       // mode changes: offsets and fov
+    followHalfLife: 0.04,      // pivot trailing the player (0 = rigid)
+    sideHalfLife: 0.12,        // shoulder swap
+    shake: { amp: 0.025, hz: 9 }, // sprint only
+    probeRadius: 0.22, minBack: 0.35, wallReturnHalfLife: 0.18,
+    pitchMin: -1.1, pitchMax: 1.2,
+  },
+  look: { mouse: 0.0022, pad: { yawRate: 3.2, pitchRate: 2.2, expo: 1.8 }, aimScale: 0.6, invertY: false },
   move: {
     radius: 0.35, height: 1.8,
     jog: 4.5, aimWalk: 2.2, sprint: 7.5,
