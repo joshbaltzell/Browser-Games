@@ -64,6 +64,32 @@ function boxGeometry(list) {
   return mergeGeometries(parts, false);
 }
 
+// Distance cues on the room's inside wall faces: a dark skirting band at the floor and a
+// vertical panel line every 2 m, merged into one mesh (one draw call, no outline).
+const TRIM_DEPTH = 0.03, SKIRT_H = 0.3, STRIPE_W = 0.12, STRIPE_STEP = 2;
+export function wallTrim(room = GREY_ROOM) {
+  const floor = room.boxes.find(b => b.kind === 'floor');
+  if (!floor) return [];
+  const [x0, , z0] = floor.min, [x1, , z1] = floor.max, top = 4;
+  const out = [];
+  const add = (min, max) => out.push({ min, max });
+  // Skirting, full length of each wall.
+  add([x0, 0, z0], [x1, SKIRT_H, z0 + TRIM_DEPTH]);
+  add([x0, 0, z1 - TRIM_DEPTH], [x1, SKIRT_H, z1]);
+  add([x0, 0, z0], [x0 + TRIM_DEPTH, SKIRT_H, z1]);
+  add([x1 - TRIM_DEPTH, 0, z0], [x1, SKIRT_H, z1]);
+  // Panel lines every 2 m, away from the corners.
+  for (let x = x0 + STRIPE_STEP; x < x1 - 0.5; x += STRIPE_STEP) {
+    add([x - STRIPE_W / 2, SKIRT_H, z0], [x + STRIPE_W / 2, top, z0 + TRIM_DEPTH]);
+    add([x - STRIPE_W / 2, SKIRT_H, z1 - TRIM_DEPTH], [x + STRIPE_W / 2, top, z1]);
+  }
+  for (let z = z0 + STRIPE_STEP; z < z1 - 0.5; z += STRIPE_STEP) {
+    add([x0, SKIRT_H, z - STRIPE_W / 2], [x0 + TRIM_DEPTH, top, z + STRIPE_W / 2]);
+    add([x1 - TRIM_DEPTH, SKIRT_H, z - STRIPE_W / 2], [x1, top, z + STRIPE_W / 2]);
+  }
+  return out;
+}
+
 export function buildGreyRoom(room = GREY_ROOM) {
   const group = new THREE.Group();
   group.add(makeFloor({ w: 24, d: 24 }));
@@ -74,6 +100,12 @@ export function buildGreyRoom(room = GREY_ROOM) {
     mesh.name = `grey-${kind}`;
     addOutline(mesh);
     group.add(mesh);
+  }
+  const trim = wallTrim(room);
+  if (trim.length) {
+    const tm = new THREE.Mesh(boxGeometry(trim), createToonMaterial({ color: PALETTE.shadowTint }));
+    tm.name = 'grey-wall-trim';
+    group.add(tm);
   }
   if (room.marks.length) {
     const mk = new THREE.Mesh(boxGeometry(room.marks), createToonMaterial({ color: PALETTE.hotPink }));

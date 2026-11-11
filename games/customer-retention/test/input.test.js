@@ -111,3 +111,17 @@ test('a refused pointer lock leaves no unhandled rejection, not locked, nothing 
   process.off('unhandledRejection', onUnhandled);
   assert.equal(unhandled, 0);
 });
+
+import { isTypingTarget } from '../src/core/input.js';
+test('isTypingTarget is true for text and number fields and textareas, false for buttons, checkboxes and the canvas', () => {
+  assert.equal(isTypingTarget({ tagName: 'INPUT', type: 'text' }), true);
+  assert.equal(isTypingTarget({ tagName: 'INPUT', type: 'number' }), true);
+  assert.equal(isTypingTarget({ tagName: 'input' }), true);
+  assert.equal(isTypingTarget({ tagName: 'TEXTAREA' }), true);
+  assert.equal(isTypingTarget({ tagName: 'DIV', isContentEditable: true }), true);
+  assert.equal(isTypingTarget({ tagName: 'INPUT', type: 'checkbox' }), false);
+  assert.equal(isTypingTarget({ tagName: 'BUTTON' }), false);
+  assert.equal(isTypingTarget({ tagName: 'CANVAS' }), false);
+  assert.equal(isTypingTarget(null), false);
+  assert.equal(isTypingTarget({}), false);
+});

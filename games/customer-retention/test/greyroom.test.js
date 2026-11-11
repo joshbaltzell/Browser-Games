@@ -45,3 +45,11 @@ test('buildGreyRoom draws in at most 12 meshes, outlines included', () => {
   assert.ok(n <= 12, `${n} meshes`);
   assert.equal(room.boxes, GREY_ROOM.boxes);
 });
+
+import { wallTrim, buildGreyRoom as _b } from '../src/world/greyRoom.js';
+test('wallTrim gives a skirting band and a panel line every 2 m on each wall, inside the room', () => {
+  const t = wallTrim();
+  assert.ok(t.length >= 4 + 4 * 10);
+  for (const b of t) for (let i = 0; i < 3; i++) { assert.ok(b.min[i] >= -12 - 1e-9 && b.max[i] <= 12 + 1e-9 || i === 1); }
+  assert.ok(t.some(b => b.max[1] - b.min[1] > 3), 'tall panel lines');
+});

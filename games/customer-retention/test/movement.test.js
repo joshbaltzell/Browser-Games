@@ -141,3 +141,37 @@ test('dt = 5 mid-roll and mid-sprint is finite and stays inside the room walls',
     }
   }
 });
+
+// ---- final review fixes ----
+const roomMover = (pos) => createMovement({ boxes: GREY_ROOM.boxes, spawn: pos });
+const inRoom = (m) => m.pos.every(Number.isFinite) && m.pos[0] >= -12 + TUNING.move.radius - 1e-6 && m.pos[2] >= -12 + TUNING.move.radius - 1e-6;
+
+test('jogging diagonally into an inside corner stops: speed drops to about 0', () => {
+  const m = roomMover([-10, 0, -10]);
+  step(m, I({ moveX: 1, moveY: 1 }), 120);
+  assert.ok(m.pos[0] < -11.5 && m.pos[2] < -11.5, 'reached the corner');
+  step(m, I({ moveX: 1, moveY: 1 }), 5);
+  assert.ok(m.speed() < 0.1, `speed ${m.speed()}`);
+});
+test('an oblique roll into a corner ends finite, inside the walls, and nearly still', () => {
+  const m = roomMover([-10.5, 0, -11]);
+  step(m, I({ moveX: 1, moveY: 0.6, tap: true }), 1);
+  assert.equal(m.state, 'roll');
+  step(m, I({ moveX: 1, moveY: 0.6 }), 60);
+  assert.ok(inRoom(m), `pos ${m.pos}`);
+  assert.ok(m.speed() < 0.1, `speed ${m.speed()}`);
+  const m2 = roomMover([-9, 0, -9]);
+  step(m2, I({ moveX: 1, moveY: 1, tap: true }), 1);
+  step(m2, I({ moveX: 1, moveY: 1 }), 60);
+  assert.ok(inRoom(m2), `pos ${m2.pos}`);
+  assert.ok(m2.speed() < 0.1, `speed ${m2.speed()}`);
+});
+test('movement thresholds live in TUNING.move and are read when used', () => {
+  const m = mover();
+  assert.equal(typeof m.tuning.faceMinSpeed, 'number');
+  assert.equal(typeof m.tuning.sprintHeadingMinSpeed, 'number');
+  m.tuning.faceMinSpeed = 100; // never turn to face
+  step(m, I({ moveX: 1 }), 30);
+  assert.equal(m.facing, 0);
+  m.tuning.faceMinSpeed = 0.2;
+});

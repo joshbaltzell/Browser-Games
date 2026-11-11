@@ -14,12 +14,12 @@ const wrap = a => a - TAU * Math.round(a / TAU);
 const TUMBLE_Y = 0.5; // the roll spins about this height
 
 // Which clip a mover state plays and how fast.
-export function pickClip(mover, tuning = TUNING.move) {
+export function pickClip(mover, tuning = mover.tuning || TUNING.move) {
   const s = mover.state, v = mover.speed();
   if (s === 'roll') return { name: 'roll', rate: CLIPS.roll.duration / tuning.rollTime };
-  if (s === 'sprint') return { name: 'sprint', rate: clamp(v / RUN_SPEED, 0.8, 2.2) };
+  if (s === 'sprint') return { name: 'sprint', rate: clamp(v / RUN_SPEED, tuning.sprintRateMin, tuning.sprintRateMax) };
   if (s === 'move') {
-    if (v > 0.3) return { name: 'run', rate: clamp(v / RUN_SPEED, 0.5, 2.2) };
+    if (v > tuning.runClipMinSpeed) return { name: 'run', rate: clamp(v / RUN_SPEED, tuning.runRateMin, tuning.runRateMax) };
     if (mover.aiming) return { name: 'aim', rate: 1 };
   }
   return { name: 'idle', rate: 1 };

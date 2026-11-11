@@ -34,6 +34,12 @@ export function createTuningPanel({ storage = defaultStorage() } = {}) {
   Object.assign(el.style, { position: 'fixed', left: '12px', top: '52px', zIndex: '6', maxHeight: 'calc(100vh - 64px)', overflowY: 'auto' });
   document.body.appendChild(el);
 
+  // After a panel click or edit, give focus back to the page so the next Space does not re-click the control.
+  function blurPanel() {
+    const a = document.activeElement;
+    if (a && a !== document.body && el.contains(a) && a.blur) a.blur();
+  }
+
   const folders = new Map();
   function folderFor(chain) {
     let parent = gui, key = '';
@@ -54,6 +60,7 @@ export function createTuningPanel({ storage = defaultStorage() } = {}) {
     const owner = getPath(TUNING, keys.slice(0, -1).join('.'));
     const c = typeof getPath(DEFAULTS, p.path) === 'boolean' ? folderFor(folderChain(p.path)).add(owner, leaf) : folderFor(folderChain(p.path)).add(owner, leaf, p.min, p.max, p.step);
     c.onChange(save);
+    c.onFinishChange(blurPanel);
   }
 
   let box = null;
@@ -80,9 +87,10 @@ export function createTuningPanel({ storage = defaultStorage() } = {}) {
   }
 
   const actions = {
-    copyChanges() { copy(JSON.stringify(diffFromDefaults(), null, 2)); },
-    copyForFile() { copy(formatForTuningFile()); },
+    copyChanges() { blurPanel(); copy(JSON.stringify(diffFromDefaults(), null, 2)); },
+    copyForFile() { blurPanel(); copy(formatForTuningFile()); },
     resetAll() {
+      blurPanel();
       for (const p of PANEL) setPath(TUNING, p.path, getPath(DEFAULTS, p.path));
       write(null);
       gui.controllersRecursive().forEach(c => c.updateDisplay());

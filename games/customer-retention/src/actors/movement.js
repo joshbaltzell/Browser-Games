@@ -51,7 +51,7 @@ export const STATES = {
       wishOf(intent, wish);
       steer(m, wish[0] * top, wish[1] * top, top, dt, t);
       if (intent.aim) m.facing = turnToward(m.facing, intent.camYaw, t.aimTurnRate * dt);
-      else if (m.speed() > 0.2) m.facing = turnToward(m.facing, Math.atan2(m.vel[0], m.vel[2]), t.turnRate * dt);
+      else if (m.speed() > t.faceMinSpeed) m.facing = turnToward(m.facing, Math.atan2(m.vel[0], m.vel[2]), t.turnRate * dt);
       m.heading = m.facing;
       return null;
     },
@@ -61,7 +61,7 @@ export const STATES = {
     acceptsTap: true,
     enter(m, intent) {
       m.aiming = false;
-      if (m.speed() > 0.5) m.heading = Math.atan2(m.vel[0], m.vel[2]);
+      if (m.speed() > m.tuning.sprintHeadingMinSpeed) m.heading = Math.atan2(m.vel[0], m.vel[2]);
       else if (wishOf(intent, wish) > 0.01) m.heading = Math.atan2(wish[0], wish[1]);
       else m.heading = m.facing;
     },
@@ -123,8 +123,14 @@ export function createMovement({ boxes, spawn, tuning = TUNING.move, states = ST
       if (!slideVel) {
         if (dt > 0) { m.vel[0] = (r.pos[0] - p[0]) / dt; m.vel[2] = (r.pos[2] - p[2]) / dt; }
       } else if (r.hit) {
-        const n = r.normal, d = m.vel[0] * n[0] + m.vel[1] * n[1] + m.vel[2] * n[2];
-        if (d < 0) { m.vel[0] -= n[0] * d; m.vel[1] -= n[1] * d; m.vel[2] -= n[2] * d; }
+        // A hit may be a corner (more than one wall), and moveCapsule reports one normal.
+        // Take the velocity from the distance actually travelled: sliding keeps its
+        // tangential speed, a wedge gives zero.
+        if (dt > 0) { m.vel[0] = (r.pos[0] - p[0]) / dt; m.vel[2] = (r.pos[2] - p[2]) / dt; }
+        else {
+          const n = r.normal, d = m.vel[0] * n[0] + m.vel[1] * n[1] + m.vel[2] * n[2];
+          if (d < 0) { m.vel[0] -= n[0] * d; m.vel[1] -= n[1] * d; m.vel[2] -= n[2] * d; }
+        }
       }
       p[0] = r.pos[0]; p[1] = r.pos[1]; p[2] = r.pos[2];
     },

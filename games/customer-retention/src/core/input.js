@@ -19,6 +19,15 @@ const PAD_BUTTONS = {
 };
 const MOVE_KEYS = { KeyW: [0, -1], KeyS: [0, 1], KeyA: [-1, 0], KeyD: [1, 0] };
 
+// True when keyboard focus is in a field the player types into (text, number, search...), so game keys must not act.
+const NON_TEXT_INPUTS = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file', 'image']);
+export function isTypingTarget(el) {
+  if (!el || typeof el.tagName !== 'string') return false;
+  const tag = el.tagName.toUpperCase();
+  if (tag === 'TEXTAREA') return true;
+  if (tag === 'INPUT') return !NON_TEXT_INPUTS.has(String(el.type || 'text').toLowerCase());
+  return !!el.isContentEditable;
+}
 export function mapKey(code) { return KEYS[code] || null; }
 export function mapMouseButton(button) { return MOUSE[button] || null; }
 
@@ -89,6 +98,7 @@ export function createInput(canvas) {
   function releaseEverything() { releaseAll(state); }
 
   function onKeyDown(e) {
+    if (isTypingTarget(e.target)) return;
     const action = mapKey(e.code);
     if (action || e.code in MOVE_KEYS) {
       if (active() && (e.code === 'Tab' || e.code === 'Space')) e.preventDefault();

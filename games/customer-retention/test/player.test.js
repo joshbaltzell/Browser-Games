@@ -72,3 +72,10 @@ test('during a roll the blob shadow stays flat on the floor', () => {
   assert.ok(Math.abs(pos.y) < 0.02); assert.ok(up.y > 0.999);
   assert.notEqual(v.group.children[0].rotation.x, 0);
 });
+
+test('pickClip reads the mover tuning, not the module default', () => {
+  const tuning = { ...TUNING.move, rollTime: 1.1, runClipMinSpeed: 2 };
+  assert.deepEqual(pickClip(fake({ state: 'roll', tuning })), { name: 'roll', rate: 0.5 });
+  assert.equal(pickClip(fake({ v: 1, tuning })).name, 'idle');
+  assert.equal(pickClip(fake({ v: 1 })).name, 'run');
+});

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TUNING } from './tuning.js';
 import { createLoop } from './core/loop.js';
-import { createInput } from './core/input.js';
+import { createInput, isTypingTarget } from './core/input.js';
 import { createContextButton } from './core/contextButton.js';
 import { createRenderer } from './render/renderer.js';
 import { createSky } from './render/sky.js';
@@ -76,7 +76,7 @@ export function startPlay({ canvas, gl, params }) {
   document.addEventListener('pointerlockchange', () => { if (!input.isLocked()) button.reset(); });
 
   window.addEventListener('keydown', (e) => {
-    if (e.repeat) return;
+    if (e.repeat || isTypingTarget(e.target)) return;
     if (e.code === 'Backquote') {
       panel.toggle();
       if (panel.isOpen() && document.exitPointerLock) document.exitPointerLock();

@@ -28,5 +28,10 @@ export const TUNING = {
     rollBuffer: 0.15,     // a tap this close to a roll's end rolls again
     tapMax: 0.18,         // context button: released sooner is a tap
     stickSprintMin: 0.5,  // stick tilt needed to sprint
+    faceMinSpeed: 0.2,    // m/s, below this the character does not turn to face its motion
+    sprintHeadingMinSpeed: 0.5, // m/s, above this a sprint starts along the current motion
+    runClipMinSpeed: 0.3, // m/s, above this the run clip plays
+    runRateMin: 0.5, runRateMax: 2.2,       // run clip playback rate clamp
+    sprintRateMin: 0.8, sprintRateMax: 2.2, // sprint clip playback rate clamp
   },
 };

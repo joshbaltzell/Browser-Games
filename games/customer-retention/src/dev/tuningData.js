@@ -12,6 +12,9 @@ export const PANEL = Object.freeze([
   n('move.turnRate', 1, 40, 0.5), n('move.aimTurnRate', 1, 40, 0.5), n('move.sprintTurnRate', 0.2, 20, 0.1),
   n('move.rollDistance', 1, 12, 0.1), n('move.rollTime', 0.2, 1.5, 0.01), n('move.rollEase', 1, 4, 0.05),
   n('move.rollBuffer', 0, 0.5, 0.01), n('move.tapMax', 0.05, 0.5, 0.01), n('move.stickSprintMin', 0, 1, 0.05),
+  n('move.faceMinSpeed', 0, 2, 0.05), n('move.sprintHeadingMinSpeed', 0, 3, 0.05), n('move.runClipMinSpeed', 0, 2, 0.05),
+  n('move.runRateMin', 0.1, 2, 0.05), n('move.runRateMax', 0.5, 4, 0.05),
+  n('move.sprintRateMin', 0.1, 2, 0.05), n('move.sprintRateMax', 0.5, 4, 0.05),
 
   n('camera.fov', 40, 110, 1), n('camera.right', -1.5, 1.5, 0.01), n('camera.up', 0.5, 3, 0.01), n('camera.back', 0.5, 6, 0.05),
   n('camera.aim.fov', 20, 90, 1), n('camera.aim.back', 0.3, 5, 0.05),
