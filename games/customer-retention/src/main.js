@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { TUNING } from './tuning.js';
+import { createLoop } from './core/loop.js';
+import { createInput } from './core/input.js';
+import { createRenderer } from './render/renderer.js';
 
 const MESSAGES = {
   webgl: 'Customer Retention needs WebGL 2, which this browser or device has switched off. Try the latest Chrome.',
@@ -28,13 +31,14 @@ window.addEventListener('error', (e) => {
 
 function boot() {
   const canvas = document.getElementById('cr-canvas');
-  const gl = canvas.getContext('webgl2', { antialias: true });
+  const gl = canvas.getContext('webgl2', { antialias: true, powerPreference: 'high-performance' });
   if (!gl) {
     fail('webgl');
     return;
   }
-  const renderer = new THREE.WebGLRenderer({ canvas, context: gl });
-  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  const gfx = createRenderer(canvas, gl);
+  const renderer = gfx.renderer;
+  const input = createInput(canvas);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x2a2150);
@@ -55,30 +59,45 @@ function boot() {
   scene.add(box);
 
   function resize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
+    const r = gfx.resize();
+    camera.aspect = r.aspect;
     camera.updateProjectionMatrix();
   }
   resize();
   window.addEventListener('resize', resize);
 
-  function frame(t) {
-    box.rotation.y = t * 0.001;
-    box.rotation.x = t * 0.0007;
+  let spin = 0;
+  let prevSpin = 0;
+  let calls = 0;
+  let tris = 0;
+  window.__cr.stats = () => ({ calls, tris, scale: gfx.scale() });
+
+  function draw(alpha) {
+    const t = prevSpin + (spin - prevSpin) * alpha;
+    box.rotation.y = t;
+    box.rotation.x = t * 0.7;
     renderer.render(scene, camera);
+    calls = renderer.info.render.calls;
+    tris = renderer.info.render.triangles;
   }
 
-  frame(0);
+  const loop = createLoop({
+    step(dt) {
+      prevSpin = spin;
+      spin += dt;
+    },
+    render(alpha, realSeconds) {
+      input.poll(); // once per frame; nothing consumes the snapshot yet
+      draw(alpha);
+      gfx.frameDone(realSeconds * 1000);
+    },
+  });
+
+  draw(0);
   window.__cr.ready = true;
   document.documentElement.dataset.crReady = '1';
 
-  function loop(t) {
-    frame(t);
-    requestAnimationFrame(loop);
-  }
-  requestAnimationFrame(loop);
+  loop.start();
 }
 
 try {
