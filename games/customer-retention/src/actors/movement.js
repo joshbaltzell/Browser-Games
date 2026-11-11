@@ -18,7 +18,7 @@ function wishOf(intent, out) {
   out[0] = x; out[1] = z;
   return Math.min(1, len);
 }
-const wish = [0, 0];
+const wish = [0, 0], rollDelta = [0, 0, 0];
 
 // Moves vel toward (tx, tz): faster rate when slowing, slower when speeding up or turning.
 function steer(m, tx, tz, top, dt, t) {
@@ -35,6 +35,10 @@ function canSprint(m, intent, t) {
   return intent.sprint && !intent.aim && tiltOf(intent) >= t.stickSprintMin;
 }
 
+// State contract: { enter(m, intent), update(m, intent, dt) -> nextName | null, exit(m),
+// acceptsTap, selfMoves }. Per-state working data goes in m.scratch, which go() replaces with
+// a fresh {} before enter, so a state never leaks values into the next one. A state with
+// selfMoves moves m.pos itself through m.moveBy; otherwise the mover moves it from m.vel.
 export const STATES = {
   move: {
     acceptsTap: true,
@@ -46,7 +50,7 @@ export const STATES = {
       const top = intent.aim ? t.aimWalk : t.jog;
       wishOf(intent, wish);
       steer(m, wish[0] * top, wish[1] * top, top, dt, t);
-      if (intent.aim) m.facing = intent.camYaw + TAU * Math.round((m.facing - intent.camYaw) / TAU);
+      if (intent.aim) m.facing = turnToward(m.facing, intent.camYaw, t.aimTurnRate * dt);
       else if (m.speed() > 0.2) m.facing = turnToward(m.facing, Math.atan2(m.vel[0], m.vel[2]), t.turnRate * dt);
       m.heading = m.facing;
       return null;
@@ -77,25 +81,24 @@ export const STATES = {
     selfMoves: true,
     enter(m, intent) {
       m.aiming = false;
-      if (wishOf(intent, wish) > 0.01) { m.rollDir[0] = wish[0]; m.rollDir[1] = wish[1]; const l = Math.hypot(wish[0], wish[1]); m.rollDir[0] /= l; m.rollDir[1] /= l; }
-      else { m.rollDir[0] = Math.sin(m.facing); m.rollDir[1] = Math.cos(m.facing); }
-      m.rollStart[0] = m.pos[0]; m.rollStart[1] = m.pos[2];
-      m.rollQueued = false;
-      m.heading = Math.atan2(m.rollDir[0], m.rollDir[1]);
+      const sc = m.scratch;
+      sc.dir = [Math.sin(m.facing), Math.cos(m.facing)];
+      if (wishOf(intent, wish) > 0.01) { const l = Math.hypot(wish[0], wish[1]); sc.dir[0] = wish[0] / l; sc.dir[1] = wish[1] / l; }
+      sc.prevOff = 0; sc.queued = false;
+      m.heading = Math.atan2(sc.dir[0], sc.dir[1]);
       m.facing = m.facing + wrap(m.heading - m.facing);
     },
     update(m, intent, dt) {
-      const t = m.tuning;
-      if (intent.tap && m.stateTime >= t.rollTime - t.rollBuffer) m.rollQueued = true;
+      const t = m.tuning, sc = m.scratch;
+      if (intent.tap && m.stateTime >= t.rollTime - t.rollBuffer) sc.queued = true;
       const done = m.stateTime >= t.rollTime - 1e-9;
-      const u = done ? 1 : m.stateTime / t.rollTime;
-      const off = rollOffset(u, t.rollDistance, t.rollEase);
-      const dx = m.rollStart[0] + m.rollDir[0] * off - m.pos[0];
-      const dz = m.rollStart[1] + m.rollDir[1] * off - m.pos[2];
-      m.rollDelta[0] = dx; m.rollDelta[1] = 0; m.rollDelta[2] = dz;
-      m.moveBy(m.rollDelta, dt, false);
+      const off = rollOffset(done ? 1 : m.stateTime / t.rollTime, t.rollDistance, t.rollEase);
+      // Advance by this step's share only: distance a wall blocks is lost, not owed.
+      const inc = off - sc.prevOff; sc.prevOff = off;
+      rollDelta[0] = sc.dir[0] * inc; rollDelta[1] = 0; rollDelta[2] = sc.dir[1] * inc;
+      m.moveBy(rollDelta, dt, false);
       if (!done) return null;
-      if (m.rollQueued) return 'roll';
+      if (sc.queued) return 'roll';
       if (canSprint(m, intent, t)) return 'sprint';
       m.vel[0] = m.vel[1] = m.vel[2] = 0;
       return 'move';
@@ -112,13 +115,13 @@ export function createMovement({ boxes, spawn, tuning = TUNING.move, states = ST
     pos: [spawn[0], spawn[1], spawn[2]], prevPos: [spawn[0], spawn[1], spawn[2]],
     vel: [0, 0, 0], facing: 0, prevFacing: 0, aiming: false, heading: 0,
     tuning, boxes,
-    rollDir: [0, 1], rollStart: [0, 0], rollDelta: [0, 0, 0], rollQueued: false,
+    scratch: {},
     speed() { return Math.hypot(m.vel[0], m.vel[2]); },
     // Moves by delta through the colliders. slideVel true: remove velocity into what was hit. False: set velocity from the actual travel.
     moveBy(delta, dt, slideVel = true) {
       const p = m.pos, r = moveCapsule(boxes, p, delta, tuning.radius, tuning.height);
       if (!slideVel) {
-        m.vel[0] = (r.pos[0] - p[0]) / dt; m.vel[2] = (r.pos[2] - p[2]) / dt;
+        if (dt > 0) { m.vel[0] = (r.pos[0] - p[0]) / dt; m.vel[2] = (r.pos[2] - p[2]) / dt; }
       } else if (r.hit) {
         const n = r.normal, d = m.vel[0] * n[0] + m.vel[1] * n[1] + m.vel[2] * n[2];
         if (d < 0) { m.vel[0] -= n[0] * d; m.vel[1] -= n[1] * d; m.vel[2] -= n[2] * d; }
@@ -127,7 +130,7 @@ export function createMovement({ boxes, spawn, tuning = TUNING.move, states = ST
     },
     go(name, intent) {
       states[m.state].exit?.(m);
-      m.state = name; m.stateTime = 0; m.entries++;
+      m.state = name; m.stateTime = 0; m.entries++; m.scratch = {};
       states[name].enter(m, intent);
     },
     place(pos, yaw) {

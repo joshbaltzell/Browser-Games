@@ -22,6 +22,7 @@ export const TUNING = {
     accelTime: 0.12,      // rest to full speed
     stopTime: 0.08,       // full speed to rest
     turnRate: 14,         // rad/s, facing toward motion when not aiming
+    aimTurnRate: 20,      // rad/s, facing toward the camera while aiming
     sprintTurnRate: 3,    // rad/s, how fast a sprint can change direction
     rollDistance: 5, rollTime: 0.55, rollEase: 1.6,
     rollBuffer: 0.15,     // a tap this close to a roll's end rolls again

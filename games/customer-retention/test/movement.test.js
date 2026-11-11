@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createMovement, STATES, CONTEXT_ACTIONS, rollOffset, forwardOf, rightOf } from '../src/actors/movement.js';
 import { TUNING } from '../src/tuning.js';
 import { makeBox } from '../src/world/collide.js';
+import { GREY_ROOM } from '../src/world/greyRoom.js';
 
 const DT = 1 / 60;
 const FLOOR = makeBox([-100, -1, -100], [100, 0, 100], 'floor');
@@ -30,7 +31,7 @@ test('half stick tilt jogs at half speed', () => {
 });
 test('aiming caps speed at 2.2 and faces the camera (strafe)', () => {
   const m = mover(); step(m, I({ aim: true, camYaw: 1.0, moveX: 1 }), 12);
-  near(m.speed(), 2.2, 1e-9); assert.equal(m.facing, 1.0);
+  near(m.speed(), 2.2, 1e-9); near(m.facing, 1.0, 1e-9);
 });
 test('not aiming, facing turns toward motion at turnRate', () => {
   const m = mover(); const it = I({ moveX: -1 }); // -X input is +X world at yaw 0
@@ -100,4 +101,43 @@ test('place() teleports and clears velocity; prevPos equals pos after place', ()
 test('rollOffset is 0 at 0, the distance at 1, and rises monotonically', () => {
   assert.equal(rollOffset(0, 5, 1.6), 0); near(rollOffset(1, 5, 1.6), 5, 1e-12);
   let p = -1; for (let u = 0; u <= 1; u += 0.05) { const v = rollOffset(u, 5, 1.6); assert.ok(v > p); p = v; }
+});
+
+test('aiming turns facing toward the camera at a capped rate and converges', () => {
+  const m = mover(); m.update(I({ aim: true, camYaw: 2 }), DT);
+  assert.ok(m.facing <= TUNING.move.aimTurnRate * DT + 1e-9);
+  step(m, I({ aim: true, camYaw: 2 }), 10); near(m.facing, 2, 1e-9);
+});
+test('a roll along a wall that ends does not release blocked distance in one step', () => {
+  const wall = makeBox([-5, 0, 1], [2, 4, 1.2]); // ends at x = 2
+  const m = mover({ boxes: [FLOOR, wall] });
+  m.place([0, 0, 0.3], 0);
+  const it = I({ moveX: -1, moveY: -1 }); // toward +X and +Z, into the wall
+  m.update({ ...it, tap: true }, DT);
+  let prev = m.pos[0];
+  for (let i = 0; i < 40; i++) {
+    m.update(it, DT);
+    assert.ok(Math.hypot(m.pos[0] - m.prevPos[0], m.pos[2] - m.prevPos[2]) < 0.3, 'jump at step ' + i);
+  }
+  assert.ok(m.pos[0] > prev);
+});
+test('dt = 0 mid-roll gives no NaN', () => {
+  const m = mover(); m.update(I({ moveY: -1, tap: true }), DT); step(m, I({ moveY: -1 }), 5);
+  m.update(I({ moveY: -1 }), 0);
+  assert.ok(m.pos.every(Number.isFinite) && m.vel.every(Number.isFinite) && Number.isFinite(m.facing));
+});
+test('dt = 5 mid-roll and mid-sprint is finite and stays inside the room walls', () => {
+  const solid = b => b.kind === 'wall';
+  for (const mode of ['roll', 'sprint']) {
+    const m = mover({ boxes: GREY_ROOM.boxes, spawn: GREY_ROOM.spawn.pos });
+    const it = I({ moveY: -1, sprint: mode === 'sprint' });
+    if (mode === 'roll') m.update({ ...it, tap: true }, DT);
+    step(m, it, 10);
+    m.update(it, 5);
+    assert.ok(m.pos.every(Number.isFinite) && m.vel.every(Number.isFinite), mode);
+    for (const b of GREY_ROOM.boxes.filter(solid)) {
+      const inside = m.pos[0] > b.min[0] && m.pos[0] < b.max[0] && m.pos[2] > b.min[2] && m.pos[2] < b.max[2];
+      assert.ok(!inside, mode + ' centre inside a wall');
+    }
+  }
 });
