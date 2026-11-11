@@ -25,9 +25,9 @@ export function solveTwoBone(root, target, lenA, lenB, pole) {
   }
   const stretch = dist > total ? dist / total : 1;
 
-  if (dist >= total) {
+  if (dist >= total) {  // also covers lenA = lenB = 0
     // Straight: the joint sits along the line in proportion to the bone lengths.
-    const m = dist * (lenA / total);
+    const m = dist * (total > 0 ? lenA / total : 0.5);
     return { mid: [root[0] + dx * m, root[1] + dy * m, root[2] + dz * m], end, stretch };
   }
 

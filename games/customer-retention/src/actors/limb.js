@@ -14,7 +14,8 @@ import { addOutline } from '../render/outline.js';
 // The outline reads the plain `normal` attribute, which set() keeps current.
 
 const CAP_ANGLES = [0.65, 1.2]; // radians from the tube wall toward the tip
-const THIN_PER_STRETCH = 1;     // radius shrinks as 1 / stretch^this
+const BOW = 0.8; // sideways bow of a limb that doubles back, as a fraction of its upper length
+// Radius shrinks as 1 / sqrt(stretch): volume-preserving, 7 percent at +15.
 
 export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffffff' } = {}) {
   const ringCount = rings + 1;
@@ -63,7 +64,10 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
 
   const mesh = new THREE.Mesh(geometry, createToonMaterial({ color }));
   mesh.name = 'limb';
-  mesh.frustumCulled = false; // the bounding sphere would go stale every frame
+  // The bounding sphere is refreshed in set() (and shared by the outline, which
+  // uses the same geometry), so culling stays on and is correct.
+  const sphere = new THREE.Sphere(new THREE.Vector3(), radius * 2);
+  geometry.boundingSphere = sphere;
   addOutline(mesh);
 
   const cosA = new Float64Array(sides);
@@ -97,13 +101,49 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
     }
   }
 
+  // Roll reference: the tube's side vector at the root from the previous call.
+  let hasRef = false;
+  let refx = 1, refy = 0, refz = 0;
+
   function set(root, mid, end, stretch = 1) {
-    const r = radius / Math.pow(Math.max(stretch, 1), THIN_PER_STRETCH);
-    const cx = 2 * mid[0] - (root[0] + end[0]) / 2;
-    const cy = 2 * mid[1] - (root[1] + end[1]) / 2;
-    const cz = 2 * mid[2] - (root[2] + end[2]) / 2;
+    const r = radius / Math.sqrt(stretch > 1 ? stretch : 1);
+    let cx = 2 * mid[0] - (root[0] + end[0]) / 2;
+    let cy = 2 * mid[1] - (root[1] + end[1]) / 2;
+    let cz = 2 * mid[2] - (root[2] + end[2]) / 2;
     const r0x = root[0], r0y = root[1], r0z = root[2];
     const e0x = end[0], e0y = end[1], e0z = end[2];
+
+    // Roll reference: the normal of the bend plane, kept on the same side as
+    // last time. A straight limb has no bend plane, so it keeps the last one.
+    let bnx = (mid[1] - r0y) * (e0z - mid[2]) - (mid[2] - r0z) * (e0y - mid[1]);
+    let bny = (mid[2] - r0z) * (e0x - mid[0]) - (mid[0] - r0x) * (e0z - mid[2]);
+    let bnz = (mid[0] - r0x) * (e0y - mid[1]) - (mid[1] - r0y) * (e0x - mid[0]);
+    const bnl = Math.hypot(bnx, bny, bnz);
+    const m1x = mid[0] - r0x, m1y = mid[1] - r0y, m1z = mid[2] - r0z;
+    const m1 = Math.hypot(m1x, m1y, m1z);
+    const m2x = e0x - mid[0], m2y = e0y - mid[1], m2z = e0z - mid[2];
+    let haveBend = false;
+    if (bnl > 1e-4 * m1 * Math.hypot(m2x, m2y, m2z) && bnl > 1e-12) {
+      bnx /= bnl; bny /= bnl; bnz /= bnl;
+      if (hasRef && bnx * refx + bny * refy + bnz * refz < 0) { bnx = -bnx; bny = -bny; bnz = -bnz; }
+      haveBend = true;
+    } else if (m1 > 1e-9 && m1x * m2x + m1y * m2y + m1z * m2z < 0) {
+      // A straight limb that doubles back (the target is closer than the bones
+      // differ) would fold into a true cusp, where the tube turns inside out.
+      // Draw it straight from root to end instead: a bunched-up noodle.
+      cx = (r0x + e0x) / 2; cy = (r0y + e0y) / 2; cz = (r0z + e0z) / 2;
+    }
+
+    // The curve lies inside the triangle root / control / end, so its centroid
+    // and the farthest corner bound it; add the tube and a margin for the outline.
+    const gx = (r0x + cx + e0x) / 3, gy = (r0y + cy + e0y) / 3, gz = (r0z + cz + e0z) / 3;
+    const far = Math.max(
+      Math.hypot(r0x - gx, r0y - gy, r0z - gz),
+      Math.hypot(cx - gx, cy - gy, cz - gz),
+      Math.hypot(e0x - gx, e0y - gy, e0z - gz),
+    );
+    sphere.center.set(gx, gy, gz);
+    sphere.radius = far + radius * 1.5 + 0.02;
 
     for (let i = 0; i < ringCount; i++) {
       const t = i / rings;
@@ -122,12 +162,20 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
       else if (i === 0) { tx = 0; ty = -1; tz = 0; }
 
       if (i === 0) {
-        // Seed the side vector from the axis least aligned with the tangent.
-        // cross(T, helper): x axis gives (0, tz, -ty); y axis gives (-tz, 0, tx).
-        if (Math.abs(tx) < 0.9) { nx = 0; ny = tz; nz = -ty; }
-        else { nx = -tz; ny = 0; nz = tx; }
-        const nl = Math.hypot(nx, ny, nz) || 1;
+        // Seed the side vector from the bend normal, else the previous roll,
+        // else a fixed axis; always made perpendicular to the tangent.
+        if (haveBend) { nx = bnx; ny = bny; nz = bnz; }
+        else if (hasRef) { nx = refx; ny = refy; nz = refz; }
+        else { nx = 1; ny = 0; nz = 0; }
+        let k = nx * tx + ny * ty + nz * tz;
+        nx -= tx * k; ny -= ty * k; nz -= tz * k;
+        let nl = Math.hypot(nx, ny, nz);
+        if (nl < 1e-6) {
+          if (Math.abs(tx) < 0.9) { nx = 0; ny = tz; nz = -ty; } else { nx = -tz; ny = 0; nz = tx; }
+          nl = Math.hypot(nx, ny, nz) || 1;
+        }
         nx /= nl; ny /= nl; nz /= nl;
+        refx = nx; refy = ny; refz = nz; hasRef = true;
       } else {
         // Parallel transport: drop the part of N along the new tangent.
         const k = nx * tx + ny * ty + nz * tz;

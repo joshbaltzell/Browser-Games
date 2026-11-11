@@ -36,3 +36,15 @@ test('the curve passes through the middle joint', () => {
   assert.ok(dist(p, m) < 1e-9);
   assert.ok(dist(limbPoint(a, limbControl(a, m, b), b, 0), a) < 1e-9);
 });
+test('zero bone lengths and a zero pole stay finite', () => {
+  const a = solveTwoBone([0, 0, 0], [1, 0, 0], 0, 0, [0, 1, 0]);
+  const b = solveTwoBone([0, 0, 0], [0, 0, 0], 0, 0, [0, 0, 0]);
+  const c = solveTwoBone([0, 0, 0], [0.3, 0.2, 0], 0.3, 0.3, [0, 0, 0]);
+  for (const r of [a, b, c]) assert.ok([...r.mid, ...r.end, r.stretch].every(Number.isFinite));
+});
+test('within reach, the lower bone keeps its length', () => {
+  for (const target of [[0.3, 0.4, 0.2], [0.1, 0.2, 0.05], [0.5, 0, 0.1]]) {
+    const r = solveTwoBone([0, 0, 0], target, 0.3, 0.35, [0, 1, 0]);
+    assert.ok(Math.abs(dist(r.mid, r.end) - 0.35) < 1e-6);
+  }
+});

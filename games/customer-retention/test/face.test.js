@@ -64,7 +64,9 @@ test('an unknown expression behaves like neutral', () => {
   a.setExpression('no-such-face');
   b.setExpression('neutral');
   settle(a, 120); settle(b, 130);
-  assert.deepEqual(featurePositions(a), featurePositions(b));
+  const pa = featurePositions(a), pb = featurePositions(b);
+  assert.equal(pa.length, pb.length);
+  pa.forEach((v, i) => assert.ok(Math.abs(v - pb[i]) < 1e-9, `vertex value ${i}`)); // spring residue is below 1e-9
 });
 
 test('expressions change the face, and ease rather than snap', () => {
@@ -85,4 +87,46 @@ test('talking moves the mouth', () => {
   loud.setTalking(true);
   settle(quiet, 20); settle(loud, 20);
   assert.notDeepEqual(featurePositions(quiet).slice(-78), featurePositions(loud).slice(-78));
+});
+
+const featuresOf = (face) => meshesOf(face.group).find((m) => m.name === 'features');
+
+test('features keep culling on and stay inside their fixed bounding sphere', () => {
+  for (const brow of ['pair', 'uni']) {
+    for (const name of Object.keys(EXPRESSIONS)) {
+      const face = createFace({ ...OPTS, brow });
+      face.setExpression(name);
+      face.setTalking(true);
+      for (let i = 0; i < 40; i++) face.update(1 / 60);
+      const m = featuresOf(face);
+      assert.equal(m.frustumCulled, true);
+      const s = m.geometry.boundingSphere;
+      const p = m.geometry.getAttribute('position').array;
+      for (let i = 0; i < p.length; i += 3) {
+        assert.ok(Math.hypot(p[i] - s.center.x, p[i + 1] - s.center.y, p[i + 2] - s.center.z) <= s.radius, `${brow} ${name}`);
+      }
+    }
+  }
+});
+
+test('lidColor tints the lid only; the default keeps every shape ink', () => {
+  const colours = (face) => Array.from(featuresOf(face).geometry.getAttribute('color').array);
+  const plain = createFace(OPTS);
+  const skin = createFace({ ...OPTS, lidColor: '#f4b6a6' });
+  const rgbSets = (c) => { const set = new Set(); for (let i = 0; i < c.length; i += 3) set.add(c[i].toFixed(4) + c[i + 1].toFixed(4) + c[i + 2].toFixed(4)); return set; };
+  assert.equal(rgbSets(colours(plain)).size, 1);
+  assert.equal(rgbSets(colours(skin)).size, 2);
+});
+
+test('talking faces with different seeds do not flap in step', () => {
+  const a = createFace({ ...OPTS, seed: 1 }), b = createFace({ ...OPTS, seed: 2 });
+  a.setTalking(true); b.setTalking(true);
+  settle(a, 20); settle(b, 20);
+  const mouth = (f) => featurePositions(f).slice(-78).filter((_, i) => i % 3 === 1);
+  assert.notDeepEqual(mouth(a), mouth(b));
+});
+
+test('the uni brow is one shape: six vertices, shared apex', () => {
+  const uni = createFace({ ...OPTS, brow: 'uni' }), pair = createFace(OPTS);
+  assert.equal(featurePositions(pair).length - featurePositions(uni).length, 2 * 3);
 });
