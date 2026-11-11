@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { GREY_ROOM, buildGreyRoom } from '../src/world/greyRoom.js';
 import { pointInBoxes, sweepSphere } from '../src/world/collide.js';
 import { TUNING } from '../src/tuning.js';
+import { deriveCoverEdges, edgeOptions, findCoverTarget, findSwapTarget } from '../src/world/cover.js';
 
 const KINDS = ['floor', 'wall', 'low', 'tall', 'pillar'];
 const count = (k) => GREY_ROOM.boxes.filter(b => b.kind === k).length;
@@ -52,4 +53,38 @@ test('wallTrim gives a skirting band and a panel line every 2 m on each wall, in
   assert.ok(t.length >= 4 + 4 * 10);
   for (const b of t) for (let i = 0; i < 3; i++) { assert.ok(b.min[i] >= -12 - 1e-9 && b.max[i] <= 12 + 1e-9 || i === 1); }
   assert.ok(t.some(b => b.max[1] - b.min[1] > 3), 'tall panel lines');
+});
+
+const roomEdges = () => deriveCoverEdges(GREY_ROOM.boxes, { ...edgeOptions(), exclude: GREY_ROOM.coverExclude });
+test('cover: every low, tall and pillar box yields at least one edge; wall boxes none', () => {
+  const edges = roomEdges();
+  GREY_ROOM.boxes.forEach((b, i) => {
+    const n = edges.filter(e => e.boxIndex === i).length;
+    if (b.kind === 'low' || b.kind === 'tall' || b.kind === 'pillar') assert.ok(n >= 1, `box ${i} ${b.kind}`);
+    else assert.equal(n, 0, `box ${i} ${b.kind}`);
+  });
+});
+test('cover: the swap row is two low walls in line with 2.4 m between stand ends', () => {
+  const edges = roomEdges(), boxes = GREY_ROOM.boxes;
+  const iA = boxes.findIndex(b => b.kind === 'low' && b.min[0] === -9 && b.min[2] === 6.5);
+  const a = edges.find(e => e.boxIndex === iA && e.normal[1] === 1);
+  const r = findSwapTarget(edges, boxes, a, a.length, 1, TUNING.cover, TUNING.move.radius);
+  assert.ok(r);
+  assert.equal(r.edge.boxIndex, iA + 1); assert.deepEqual(r.edge.normal, a.normal);
+  assert.ok(Math.abs(r.dist - 2.4) <= 0.01, `${r.dist}`);
+});
+test('cover: the long tall wall has edges open at both ends; the west low box edge is closed at the wall', () => {
+  const edges = roomEdges(), boxes = GREY_ROOM.boxes;
+  const iT = boxes.findIndex(b => b.kind === 'tall' && b.min[0] === 6 && b.max[0] === 10);
+  assert.ok(edges.filter(e => e.boxIndex === iT).every(e => e.openA && e.openB));
+  const iW = boxes.findIndex(b => b.kind === 'low' && b.min[0] === -12);
+  const w = edges.find(e => e.boxIndex === iW && e.normal[1] === 1);
+  assert.equal(w.openA, false); assert.equal(w.openB, true);
+});
+test('cover: from features.coverRow and features.coverTall, a tap straight ahead targets cover within 2.5 m', () => {
+  const edges = roomEdges();
+  for (const f of [GREY_ROOM.features.coverRow, GREY_ROOM.features.coverTall]) {
+    const r = findCoverTarget(edges, GREY_ROOM.boxes, f.pos, [Math.sin(f.yaw), Math.cos(f.yaw)], f.yaw, TUNING.cover, TUNING.move.radius);
+    assert.ok(r && r.dist <= 2.5);
+  }
 });

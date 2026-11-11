@@ -1,7 +1,7 @@
 import { TUNING } from '../tuning.js';
 
 // The tunable numbers: every number in TUNING.move (but radius and height),
-// TUNING.camera and TUNING.look, with a slider range, plus look.invertY.
+// TUNING.camera, TUNING.look and TUNING.cover, with a slider range, plus look.invertY.
 // Pure data and helpers; no DOM.
 
 const n = (path, min, max, step) => ({ path, min, max, step });
@@ -29,6 +29,20 @@ export const PANEL = Object.freeze([
   n('look.pad.yawRate', 0.5, 10, 0.1), n('look.pad.pitchRate', 0.5, 10, 0.1), n('look.pad.expo', 1, 3, 0.05),
   n('look.aimScale', 0.1, 1.5, 0.01),
   { path: 'look.invertY' },
+
+  n('cover.grabRange', 0, 5, 0.05), n('cover.grabAngle', 0, 180, 1), n('cover.grabViewAngle', 0, 180, 1),
+  n('cover.grabSlack', 0, 5, 0.05), n('cover.grabMinTilt', 0, 1, 0.05),
+  n('cover.gap', 0, 5, 0.01), n('cover.endInset', 0, 5, 0.01), n('cover.minLength', 0, 5, 0.05),
+  n('cover.slideSpeed', 0, 30, 0.5), n('cover.slideMinTime', 0, 2, 0.01), n('cover.slideMaxTime', 0, 2, 0.01),
+  n('cover.slideTurnRate', 1, 60, 0.5),
+  n('cover.moveSpeed', 0, 30, 0.1), n('cover.alongDeadzone', 0, 1, 0.05),
+  n('cover.leaveTilt', 0, 1, 0.05), n('cover.leaveAngle', 0, 180, 1), n('cover.endLeaveTime', 0, 2, 0.01),
+  n('cover.cornerZone', 0, 5, 0.05), n('cover.popTime', 0, 2, 0.01), n('cover.popShift', 0, 5, 0.05),
+  n('cover.pushAngle', 0, 180, 1), n('cover.vaultTime', 0, 2, 0.01), n('cover.vaultMaxDepth', 0, 5, 0.05),
+  n('cover.vaultHop', 0, 5, 0.05), n('cover.vaultExitSpeed', 0, 30, 0.1),
+  n('cover.swapRange', 0, 5, 0.05), n('cover.swapSpeed', 0, 30, 0.5), n('cover.swapAngle', 0, 180, 1),
+  n('cover.swapMaxOffset', 0, 5, 0.05),
+  n('cover.slamSquash', 0, 1, 0.01), n('cover.slamSquashTime', 0, 2, 0.01), n('cover.thudVolume', 0, 1, 0.05),
 ]);
 
 const PANEL_BY_PATH = new Map(PANEL.map(p => [p.path, p]));
@@ -89,7 +103,7 @@ function text(v, indent) {
   return `{\n${lines.join('\n')}\n${'  '.repeat(indent)}}`;
 }
 
-// The move, camera and look blocks as object-literal text to paste into src/tuning.js.
+// The move, camera, look and cover blocks as object-literal text to paste into src/tuning.js.
 export function formatForTuningFile(current = TUNING) {
-  return ['camera', 'look', 'move'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
+  return ['camera', 'cover', 'look', 'move'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
 }

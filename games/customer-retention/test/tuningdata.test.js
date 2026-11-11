@@ -24,9 +24,9 @@ test('every PANEL path exists in TUNING, and its default is inside its range', (
   assert.equal(new Set(PANEL.map(p => p.path)).size, PANEL.length);
 });
 
-test('PANEL covers every number in move (but radius and height), camera and look', () => {
+test('PANEL covers every number in move (but radius and height), camera, look and cover', () => {
   const paths = new Set(PANEL.map(p => p.path));
-  for (const block of ['move', 'camera', 'look']) {
+  for (const block of ['move', 'camera', 'look', 'cover']) {
     for (const p of leaves(TUNING[block], block)) {
       if (p === 'move.radius' || p === 'move.height') assert.ok(!paths.has(p), p);
       else assert.ok(paths.has(p), `${p} missing from PANEL`);
@@ -63,5 +63,10 @@ test('formatForTuningFile round-trips: evaluating it gives the same numbers', ()
   const t = structuredClone(DEFAULTS);
   t.move.jog = 5.5; t.camera.shake.amp = 0.031; t.look.invertY = true;
   const got = new Function(`return ({\n${formatForTuningFile(t)}\n});`)();
-  assert.deepEqual(got, { camera: t.camera, look: t.look, move: t.move });
+  assert.deepEqual(got, { camera: t.camera, cover: t.cover, look: t.look, move: t.move });
+});
+
+test('formatForTuningFile includes the cover block', () => {
+  const got = new Function(`return ({\n${formatForTuningFile(TUNING)}\n});`)();
+  assert.equal(got.cover.grabRange, 2.5);
 });

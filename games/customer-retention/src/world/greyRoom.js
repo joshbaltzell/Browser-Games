@@ -36,6 +36,12 @@ const boxes = [
   // Pillars.
   makeBox([-9.4, 0, 0.6], [-8.6, 4, 1.4], 'pillar'),
   makeBox([8.6, 0, 3.6], [9.4, 4, 4.4], 'pillar'),
+  // Cover: a swap row of two low walls in line (2 m gap), a long tall wall open at both
+  // ends, and a low box against the west wall.
+  makeBox([-9, 0, 6.5], [-6, 1, 7.1], 'low'),
+  makeBox([-4, 0, 6.5], [-1, 1, 7.1], 'low'),
+  makeBox([6, 0, 6], [10, 2.2, 6.6], 'tall'),
+  makeBox([-12, 0, -1], [-10, 1, -0.4], 'low'),
 ];
 
 // The speed lane runs along the south wall (x from -10 to 2, z about 10.5).
@@ -45,11 +51,14 @@ for (let i = 0; i <= 12; i++) marks.push({ min: [-10 + i - 0.05, 0, 10], max: [-
 export const GREY_ROOM = deepFreeze({
   boxes,
   marks,
+  coverExclude: [],
   spawn: { pos: [0, 0, 0], yaw: 0 },
   features: {
     corridor: { pos: [6, 0, -6], yaw: 0 },
     wall: { pos: [0, 0, -10.5], yaw: Math.PI },
     lane: { pos: [-10.5, 0, 10.5], yaw: Math.PI / 2 },
+    coverRow: { pos: [-7.5, 0, 9], yaw: Math.PI },
+    coverTall: { pos: [8, 0, 8.5], yaw: Math.PI },
   },
 });
 

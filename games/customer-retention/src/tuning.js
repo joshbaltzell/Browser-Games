@@ -34,4 +34,38 @@ export const TUNING = {
     runRateMin: 0.5, runRateMax: 2.2,       // run clip playback rate clamp
     sprintRateMin: 0.8, sprintRateMax: 2.2, // sprint clip playback rate clamp
   },
+  // Cover. Distances in m, angles in degrees, times in s, speeds in m/s.
+  cover: {
+    grabRange: 2.5,       // m, furthest stand point a tap will slide to
+    grabAngle: 50,        // deg, widest approach angle off the face normal
+    grabViewAngle: 80,    // deg, widest angle between camera forward and the stand point
+    grabSlack: 0.5,       // m, an aim point this far past an end still clamps onto it
+    grabMinTilt: 0.2,     // stick tilt needed to count as approaching
+    gap: 0.03,            // m, space between a capsule on the stand line and the face
+    endInset: 0.2,        // m, stand line stops this far short of an open end
+    minLength: 0.3,       // m, shortest stand line that counts as cover
+    slideSpeed: 10,       // m/s, slide into cover
+    slideMinTime: 0.06, slideMaxTime: 0.25, // s, slide duration clamp
+    slideTurnRate: 20,    // rad/s, turn to face away from the cover
+    moveSpeed: 3,         // m/s, shuffle along cover
+    alongDeadzone: 0.2,   // stick component along the edge below which we stay put
+    leaveTilt: 0.5,       // stick tilt away from the cover that leaves it
+    leaveAngle: 45,       // deg, stick angle off the outward normal that leaves it
+    endLeaveTime: 0.3,    // s, pushing past an open end this long leaves cover
+    cornerZone: 0.3,      // m, near an end counts as at the corner
+    popTime: 0.12,        // s, rise to peek or fire over or around cover
+    popShift: 0.55,       // m, sideways shift of a corner pop
+    pushAngle: 45,        // deg, stick angle into the face that starts a vault
+    vaultTime: 0.5,       // s, vault duration
+    vaultMaxDepth: 1.0,   // m, deepest low cover that can be vaulted
+    vaultHop: 0.6,        // m, peak height of a vault
+    vaultExitSpeed: 3,    // m/s, speed carried out of a vault
+    swapRange: 3,         // m, furthest gap a cover swap crosses
+    swapSpeed: 9,         // m/s, cover swap
+    swapAngle: 30,        // deg, widest difference between facing normals
+    swapMaxOffset: 0.6,   // m, widest sideways stagger between the two stand lines
+    slamSquash: 0.12,     // squash fraction on arriving at cover
+    slamSquashTime: 0.15, // s, squash duration
+    thudVolume: 0.5,      // 0 to 1
+  },
 };
