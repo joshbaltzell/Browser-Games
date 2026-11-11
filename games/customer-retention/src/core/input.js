@@ -50,7 +50,12 @@ export function mapPad(pad) {
   return { ok: true, moveX, moveY, lookX, lookY, held };
 }
 
+// The one release path: createInput's event handlers use it on blur and pointer-lock loss.
+// Also empties the key/button/pending-press sets when the state has them.
 export function releaseAll(state) {
+  if (state.downCodes) state.downCodes.clear();
+  if (state.downButtons) state.downButtons.clear();
+  if (state.latched) state.latched.clear();
   state.held = state.held || {};
   for (const a of ACTIONS) state.held[a] = false;
   for (const a in state.held) state.held[a] = false;
@@ -64,10 +69,14 @@ export function releaseAll(state) {
 // pixels since the last poll, lookX/lookY are the pad's right stick after the deadzone,
 // held is { [action]: boolean }, pressed is true only for the poll in which an action went down.
 export function createInput(canvas) {
-  const downCodes = new Set();   // keyboard codes currently down
-  const downButtons = new Set(); // mouse buttons currently down
-  const latched = new Set();     // actions that went down since the last poll
-  let lookDX = 0, lookDY = 0;
+  const state = {
+    downCodes: new Set(),   // keyboard codes currently down
+    downButtons: new Set(), // mouse buttons currently down
+    latched: new Set(),     // actions that went down since the last poll
+    held: emptyHeld(),
+    lookDX: 0, lookDY: 0, lookX: 0, lookY: 0, moveX: 0, moveY: 0,
+  };
+  const { downCodes, downButtons, latched } = state;
   let device = 'kbm';
   let padStatus = 'none';
   let padHeldPrev = emptyHeld();
@@ -77,12 +86,7 @@ export function createInput(canvas) {
   const locked = () => document.pointerLockElement === canvas;
   const active = () => locked() || document.activeElement === canvas;
 
-  function releaseEverything() {
-    downCodes.clear();
-    downButtons.clear();
-    latched.clear();
-    lookDX = 0; lookDY = 0;
-  }
+  function releaseEverything() { releaseAll(state); }
 
   function onKeyDown(e) {
     const action = mapKey(e.code);
@@ -106,8 +110,8 @@ export function createInput(canvas) {
   function onMouseMove(e) {
     if (!locked()) return;
     device = 'kbm';
-    lookDX += e.movementX || 0;
-    lookDY += e.movementY || 0;
+    state.lookDX += e.movementX || 0;
+    state.lookDY += e.movementY || 0;
   }
   function onWheel(e) {
     if (!active() || !e.deltaY) return;
@@ -139,8 +143,8 @@ export function createInput(canvas) {
   }
 
   function poll() {
-    const snap = { moveX: 0, moveY: 0, lookDX, lookDY, lookX: 0, lookY: 0, held: emptyHeld(), pressed: emptyHeld() };
-    lookDX = 0; lookDY = 0;
+    const snap = { moveX: 0, moveY: 0, lookDX: state.lookDX, lookDY: state.lookDY, lookX: 0, lookY: 0, held: emptyHeld(), pressed: emptyHeld() };
+    state.lookDX = 0; state.lookDY = 0;
 
     for (const code of downCodes) {
       const a = mapKey(code);
@@ -179,7 +183,13 @@ export function createInput(canvas) {
 
   return {
     poll,
-    requestLock() { if (canvas.requestPointerLock) canvas.requestPointerLock(); },
+    requestLock() {
+      // Chrome returns a promise that rejects without a gesture or right after Escape.
+      try {
+        const p = canvas.requestPointerLock && canvas.requestPointerLock();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (_) { /* refused: stay unlocked */ }
+    },
     isLocked: locked,
     device: () => device,
     padStatus: () => padStatus,

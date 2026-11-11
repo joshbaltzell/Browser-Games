@@ -23,9 +23,14 @@ export function createLoop({ step, render, hz = 60, maxSteps = 5 }) {
 
   function onFrame(t) {
     if (!running) return;
-    rafId = requestAnimationFrame(onFrame);
-    if (last !== null) advance((t - last) / 1000);
+    try {
+      if (last !== null) advance((t - last) / 1000);
+    } catch (err) {
+      stop(); // one failure, reported once by the page's error handling
+      throw err;
+    }
     last = t;
+    if (running) rafId = requestAnimationFrame(onFrame);
   }
 
   function onVisibility() {

@@ -24,3 +24,22 @@ test('zero, negative and NaN time do nothing', () => {
   for (const t of [0, -1, NaN]) loop.advance(t);
   assert.equal(n, 0);
 });
+
+test('start() stops on the first exception and rethrows it', () => {
+  const queue = [];
+  const saved = { raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame, doc: globalThis.document };
+  globalThis.requestAnimationFrame = cb => { queue.push(cb); return queue.length; };
+  globalThis.cancelAnimationFrame = () => {};
+  globalThis.document = { addEventListener() {}, removeEventListener() {}, visibilityState: 'visible' };
+  try {
+    const loop = createLoop({ step: () => { throw new Error('boom'); }, render: () => {} });
+    loop.start();
+    queue.shift()(0);                       // first frame only records the time
+    assert.equal(queue.length, 1);
+    assert.throws(() => queue.shift()(20), /boom/);
+    assert.equal(queue.length, 0);          // nothing rescheduled
+  } finally {
+    globalThis.requestAnimationFrame = saved.raf; globalThis.cancelAnimationFrame = saved.caf;
+    if (saved.doc === undefined) delete globalThis.document; else globalThis.document = saved.doc;
+  }
+});
