@@ -3,10 +3,8 @@ import { TUNING } from './tuning.js';
 import { createLoop } from './core/loop.js';
 import { createInput } from './core/input.js';
 import { createRenderer } from './render/renderer.js';
-import { PALETTE } from './render/palette.js';
-import { createToonMaterial } from './render/toon.js';
-import { addOutline, computeOutlineNormals } from './render/outline.js';
 import { createSky } from './render/sky.js';
+import { buildLookCorner } from './world/lookCorner.js';
 
 const MESSAGES = {
   webgl: 'Customer Retention needs WebGL 2, which this browser or device has switched off. Try the latest Chrome.',
@@ -45,36 +43,17 @@ function boot() {
   const input = createInput(canvas);
 
   const scene = new THREE.Scene();
-  const cam = TUNING.camera;
-  const camera = new THREE.PerspectiveCamera(cam.fov, 1, 0.1, 100);
-  camera.position.set(cam.right, cam.up, cam.back);
-  camera.lookAt(0, 1, 0);
+  // Look-test camera: fixed, from the open front corner toward the back corner,
+  // so both walls, the sign, the window and the spawn point are all in view.
+  const camera = new THREE.PerspectiveCamera(TUNING.camera.fov, 1, 0.1, 100);
+  camera.position.set(4.4, 1.8, 5.4);
+  camera.lookAt(-1.1, 1.5, -2.3);
 
   const sky = createSky();
   scene.add(sky.mesh);
 
-  // Look test: a hard-edged box (outline corners), a smooth sphere and a cream
-  // capsule, so the shadow colour can be judged on orange, teal and cream.
-  const box = new THREE.Mesh(
-    computeOutlineNormals(new THREE.BoxGeometry(0.8, 0.8, 0.8)),
-    createToonMaterial({ color: PALETTE.playerOrange }),
-  );
-  box.position.set(-0.65, 1, 0);
-  addOutline(box);
-  const ball = new THREE.Mesh(
-    new THREE.SphereGeometry(0.38, 32, 16),
-    createToonMaterial({ color: PALETTE.teal }),
-  );
-  ball.position.set(0.3, 0.95, -0.1);
-  addOutline(ball);
-  const pill = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.26, 0.5, 8, 24),
-    createToonMaterial({ color: PALETTE.cream }),
-  );
-  pill.position.set(1.25, 1.05, -0.5);
-  pill.rotation.z = 0.35;
-  addOutline(pill);
-  scene.add(box, ball, pill);
+  const corner = buildLookCorner();
+  scene.add(corner.group);
 
   function resize() {
     const r = gfx.resize();
@@ -92,9 +71,6 @@ function boot() {
 
   function draw(alpha) {
     const t = prevSpin + (spin - prevSpin) * alpha;
-    // Turn about the vertical, tipped toward the camera: at most angles a lit
-    // top, a lit side and a shadow side are all in view.
-    box.rotation.set(0.35, t * 0.6, 0);
     sky.update(t);
     renderer.render(scene, camera);
     calls = renderer.info.render.calls;
@@ -105,6 +81,7 @@ function boot() {
     step(dt) {
       prevSpin = spin;
       spin += dt;
+      corner.update(dt);
     },
     render(alpha, realSeconds) {
       input.poll(); // once per frame; nothing consumes the snapshot yet
