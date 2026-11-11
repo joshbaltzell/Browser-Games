@@ -188,7 +188,7 @@ function flinch(t, spec, p) {
   const H = spec.hipHeight;
   const a = flinchHit(t);
   // Snap back from the hit: body tipped back, head thrown back, knees give,
-  // hands fly up beside the head.
+  // hands fly up to shoulder height.
   p.hipsY = H - 0.012 - 0.05 * a;
   p.lean = 0.03 - 0.4 * a;
   p.twist = 0.12 * a;

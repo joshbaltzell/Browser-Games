@@ -11,6 +11,7 @@ PORT=8765
 SESSION="cr-smoke-$$"
 SHOT_DIR="${CR_SHOT_DIR:-$(mktemp -d)}"
 mkdir -p "$SHOT_DIR"
+SHOT_DIR="$(cd "$SHOT_DIR" && pwd)" # absolute: the script changes directory below
 echo "screenshots: $SHOT_DIR"
 
 # playwright-cli writes .playwright-cli/ into its working directory: keep that out of the game folder.

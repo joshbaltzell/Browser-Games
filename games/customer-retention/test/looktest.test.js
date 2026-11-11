@@ -29,3 +29,13 @@ test('game camera turns with the character', () => {
   near(pos[0], 2 - TUNING.camera.back);
   near(pos[2], 3 + TUNING.camera.right);
 });
+
+test('createSky places the planet by a normalised world direction and leaves the mesh unrotated', async () => {
+  const { createSky } = await import('../src/render/sky.js');
+  const sky = createSky({ planetDir: [0, 3, -4] });
+  const d = sky.mesh.material.uniforms.planetDir.value;
+  assert.ok(Math.abs(d.length() - 1) < 1e-9);
+  assert.ok(Math.abs(d.y - 0.6) < 1e-9 && Math.abs(d.z + 0.8) < 1e-9);
+  assert.deepEqual([sky.mesh.rotation.x, sky.mesh.rotation.y, sky.mesh.rotation.z], [0, 0, 0]);
+  assert.ok(createSky().mesh.material.uniforms.planetDir.value.z < 0);
+});

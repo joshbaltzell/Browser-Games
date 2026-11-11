@@ -2,7 +2,7 @@ import { startLookTest } from './dev/lookTest.js';
 
 const MESSAGES = {
   webgl: 'Customer Retention needs WebGL 2, which this browser or device has switched off. Try the latest Chrome.',
-  boot: 'Something broke while starting the game.',
+  boot: 'Something broke in the game.',
 };
 
 window.__cr = { ready: false, error: null };

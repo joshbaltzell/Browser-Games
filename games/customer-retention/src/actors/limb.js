@@ -14,7 +14,6 @@ import { addOutline } from '../render/outline.js';
 // The outline reads the plain `normal` attribute, which set() keeps current.
 
 const CAP_ANGLES = [0.65, 1.2]; // radians from the tube wall toward the tip
-const BOW = 0.8; // sideways bow of a limb that doubles back, as a fraction of its upper length
 // Radius shrinks as 1 / sqrt(stretch): volume-preserving, 7 percent at +15.
 
 export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffffff' } = {}) {

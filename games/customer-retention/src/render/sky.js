@@ -4,7 +4,7 @@ import { TOON_SHARED } from './toon.js';
 
 const RADIUS = 400;
 // Where the ringed planet hangs: ahead of the default camera, up and to the left.
-const PLANET_DIR = new THREE.Vector3(-0.45, 0.22, -1).normalize();
+const PLANET_DIR = [-0.45, 0.22, -1];
 
 const vertexShader = /* glsl */ `
 varying vec3 vDir;
@@ -143,8 +143,10 @@ void main() {
 }
 `;
 
-// The nebula sky: an inward-facing sphere drawn behind everything.
-export function createSky() {
+// The nebula sky: an inward-facing sphere drawn behind everything. The sky
+// is never rotated (the planet is lit by the world-space scene light), so
+// planetDir, a world direction, is how a scene places the planet.
+export function createSky({ planetDir = PLANET_DIR } = {}) {
   const c = (hex) => new THREE.Color(hex);
   const material = new THREE.ShaderMaterial({
     name: 'sky',
@@ -161,7 +163,7 @@ export function createSky() {
       shadowLift: TOON_SHARED.shadowLift,
       bandEdge: TOON_SHARED.bandEdge,
       lightDir: TOON_SHARED.lightDir,
-      planetDir: { value: PLANET_DIR.clone() },
+      planetDir: { value: new THREE.Vector3(...planetDir).normalize() },
       time: { value: 0 },
     },
     vertexShader,

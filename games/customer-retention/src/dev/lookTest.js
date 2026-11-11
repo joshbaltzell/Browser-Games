@@ -20,6 +20,8 @@ const ZOOM_MAX = 8;
 const PITCH_MIN = -0.2;
 const PITCH_MAX = 1.3;
 const FACING = 0.6;          // the Associate's yaw
+const GAME_CAM_FACING = Math.atan2(1.3, -4); // yaw toward the shop front, so the game camera looks into the corner
+const PLANET_DIR = new THREE.Vector3(-0.45, 0.22, -1).applyEuler(new THREE.Euler(-0.2, 0.68, 0)).toArray();
 const EXTRAS = 10;           // the performance test adds this many more
 const EXTRAS_SPACING = 0.8;
 const MAX_DT = 0.05;
@@ -57,10 +59,9 @@ export function startLookTest({ canvas, gl }) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(TUNING.camera.fov, 1, 0.1, 100);
 
-  const sky = createSky();
+  // The ringed planet hangs in the corner's window.
+  const sky = createSky({ planetDir: PLANET_DIR });
   scene.add(sky.mesh);
-  // Turn the sky so the ringed planet hangs in the corner's window.
-  sky.mesh.rotation.set(-0.2, 0.68, 0);
 
   const corner = buildLookCorner();
   scene.add(corner.group);
@@ -106,7 +107,11 @@ export function startLookTest({ canvas, gl }) {
     outlinesOn = !!on;
     setOutlinesVisible(scene, outlinesOn);
   }
-  function setGameCam(on) { gameCamOn = !!on; }
+  function setGameCam(on) {
+    gameCamOn = !!on;
+    // The game camera looks where the Associate faces: into the corner.
+    hero.rig.root.rotation.y = gameCamOn ? GAME_CAM_FACING : FACING;
+  }
   function setPerf(on) {
     on = !!on;
     if (on === perfOn) return;
@@ -160,9 +165,10 @@ export function startLookTest({ canvas, gl }) {
     else if (e.code === 'KeyO') setOutlines(!outlinesOn);
     else if (e.code === 'KeyP') setPerf(!perfOn);
     else if (e.code === 'KeyL') input.requestLock();
+    else if (e.code === 'KeyH') readout.style.display = readout.style.display === 'none' ? '' : 'none';
   });
 
-  // Frame rate: a one-second rolling average.
+  // Frame rate: the average over each second, updated once a second.
   let fps = 0;
   let ms = 0;
   let accFrames = 0;
@@ -212,7 +218,7 @@ export function startLookTest({ canvas, gl }) {
       '1 2 3 4 5: idle run aim flinch talk',
       'E: next expression    G: game camera',
       'O: outlines    P: ten more, running',
-      'L: lock pointer (Esc releases)',
+      'L: lock pointer (Esc releases)    H: hide panel',
       '',
       `${hero.anim.current()} / ${EXPRESSION_NAMES[expressionIndex]}   camera: ${gameCamOn ? 'game' : 'orbit'}   outlines: ${outlinesOn ? 'on' : 'off'}`,
       `${Math.round(fps)} fps   ${f1(ms)} ms   scale ${gfx.scale()}`,
