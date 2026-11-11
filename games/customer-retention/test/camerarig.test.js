@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createCameraRig, modeParams } from '../src/render/cameraRig.js';
+import { createCameraRig, modeParams, shakeWeightOf, CAMERA_MODES } from '../src/render/cameraRig.js';
 import { TUNING } from '../src/tuning.js';
 import { makeBox, pointInBoxes } from '../src/world/collide.js';
 
@@ -103,13 +103,74 @@ test('shoulder jammed against a wall: lens stays at least probeRadius from every
     }
   }
 });
-test('a mode without shakeWeight (hypothetical cover, fov 75) gets zero shake', () => {
-  const t = { ...clone(), cover: { fov: 75 } };
+test('a mode without shakeWeight (coverTall, fov 75) gets zero shake', () => {
+  const t = { ...clone(), coverTall: { fov: 75 } };
   const c = createCameraRig({ tuning: t, look: TUNING.look }); c.snap(T0, 0);
   const q = createCameraRig({ tuning: { ...t, shake: { amp: 0, hz: 9 } }, look: TUNING.look }); q.snap(T0, 0);
   for (let i = 0; i < 120; i++) {
-    const a = c.update(DT, { target: T0, mode: 'cover', side: 1 }, OPEN), b = q.update(DT, { target: T0, mode: 'cover', side: 1 }, OPEN);
+    const a = c.update(DT, { target: T0, mode: 'coverTall', side: 1 }, OPEN), b = q.update(DT, { target: T0, mode: 'coverTall', side: 1 }, OPEN);
     assert.deepEqual(a.pos, b.pos);
+  }
+});
+test('only CAMERA_MODES are modes: shake, bump, look and unknown names give normal', () => {
+  const t = clone();
+  assert.deepEqual([...CAMERA_MODES], ['normal', 'aim', 'sprint', 'coverLow', 'coverTall']);
+  for (const m of ['shake', 'bump', 'look', 'nope']) {
+    assert.deepEqual(modeParams(t, m), modeParams(t, 'normal'));
+    assert.equal(shakeWeightOf({ ...t, [m]: { shakeWeight: 1 } }, m), 0);
+  }
+  assert.deepEqual(modeParams(t, 'coverLow'), { fov: 70, right: 0.6, up: 1.2, back: 2.4 });
+  assert.deepEqual(modeParams(t, 'coverTall'), { fov: 70, right: 0.7, up: 1.5, back: 2.3 });
+});
+test('coverLow and coverTall blend in within 0.5 s and have zero shake', () => {
+  for (const [mode, p] of [['coverLow', { right: 0.6, up: 1.2, back: 2.4 }], ['coverTall', { right: 0.7, up: 1.5, back: 2.3 }]]) {
+    const c = rig(); c.snap(T0, 0);
+    const q = createCameraRig({ tuning: { ...clone(), shake: { amp: 0, hz: 9 } }, look: TUNING.look }); q.snap(T0, 0);
+    let r;
+    for (let i = 0; i < 30; i++) {
+      r = c.update(DT, { target: T0, mode, side: 1 }, OPEN);
+      assert.deepEqual(r.pos, q.update(DT, { target: T0, mode, side: 1 }, OPEN).pos);
+    }
+    near(r.pos[0], -p.right, 0.02); near(r.pos[1], p.up, 0.02); near(r.pos[2], -p.back, 0.02); near(r.fov, 70, 0.1);
+  }
+});
+test('bump pulls the lens toward the player by about amount, and it is back within 0.3 s', () => {
+  const c = rig(); c.snap(T0, 0); run(c, 120);
+  const head = [0, 1.55, 0];
+  const d0 = dist(run(c, 1).pos, head);
+  c.bump();
+  const d1 = dist(run(c, 1).pos, head);
+  const amt = TUNING.camera.bump.amount;
+  assert.ok(d0 - d1 >= 0.5 * amt && d0 - d1 <= 1.05 * amt, `${d0 - d1}`);
+  near(dist(run(c, 18).pos, head), d0, 0.01);
+  // capped at twice amount, and snap clears it
+  for (let i = 0; i < 10; i++) c.bump(1);
+  const d2 = dist(run(c, 1).pos, head);
+  assert.ok(d0 - d2 <= 2.05 * amt, `${d0 - d2}`);
+  c.bump(); c.snap(T0, 0); near(dist(run(c, 1).pos, head), d0, 1e-6);
+});
+test('passing a pillar corner at jog: the lens never comes within minBack of the head and is never inside a box', () => {
+  const B = [FLOOR, makeBox([-0.4, 0, -0.4], [0.4, 4, 0.4], 'pillar')];
+  const up = TUNING.camera.up;
+  const c = rig(); const tg = [-0.8, 0, -3.7]; c.snap(tg, 0);
+  let worst = Infinity, t = 0;
+  for (let i = 0; i < 400 && tg[0] <= 3; i++) {
+    t += DT;
+    if (tg[2] < 0.8) { tg[2] = Math.min(0.8, tg[2] + 4.5 * DT); if (tg[2] >= 0.8) t = 0; }
+    else tg[0] += 4.5 * DT;
+    c.yaw = tg[2] < 0.8 ? 0 : Math.min(1, t / 0.3) * Math.PI / 2;
+    const r = c.update(DT, { target: tg, mode: 'normal', side: 1 }, B);
+    assert.ok(!pointInBoxes(B, r.pos, 0), `inside at ${i}: ${r.pos}`);
+    worst = Math.min(worst, dist(r.pos, [tg[0], tg[1] + up, tg[2]]));
+  }
+  assert.ok(worst >= 0.34, `closest ${worst}`);
+});
+test('a fast move across a wall: the trailing pivot is stopped at the wall, so the lens stays on the player side', () => {
+  const B = [FLOOR, makeBox([-0.1, 0, -50], [0.1, 5, 50], 'wall')];
+  const c = rig(); c.snap([-1.5, 0, 0], 0); run(c, 30, { target: [-1.5, 0, 0] }, B);
+  for (let i = 0; i < 6; i++) {
+    const r = c.update(DT, { target: [1.5, 0, 0], mode: 'normal', side: 1 }, B);
+    assert.ok(r.pos[0] > 0, `frame ${i}: lens x ${r.pos[0]}`);
   }
 });
 test('a 5 s dt gives finite numbers', () => {

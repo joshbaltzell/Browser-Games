@@ -8,6 +8,9 @@ export const TUNING = {
     fov: 70, right: 0.55, up: 1.55, back: 2.6,
     aim: { fov: 50, back: 1.4 },
     sprint: { fov: 80, up: 1.25, back: 2.9, shakeWeight: 1 },
+    coverLow: { fov: 70, right: 0.6, up: 1.2, back: 2.4 },
+    coverTall: { fov: 70, right: 0.7, up: 1.5, back: 2.3 },
+    bump: { amount: 0.18, halfLife: 0.07 }, // slam kick toward the player, m and s
     blendHalfLife: 0.07,       // mode changes: offsets and fov
     followHalfLife: 0.04,      // pivot trailing the player (0 = rigid)
     sideHalfLife: 0.12,        // shoulder swap
