@@ -3,6 +3,10 @@ import { TUNING } from './tuning.js';
 import { createLoop } from './core/loop.js';
 import { createInput } from './core/input.js';
 import { createRenderer } from './render/renderer.js';
+import { PALETTE } from './render/palette.js';
+import { createToonMaterial } from './render/toon.js';
+import { addOutline, computeOutlineNormals } from './render/outline.js';
+import { createSky } from './render/sky.js';
 
 const MESSAGES = {
   webgl: 'Customer Retention needs WebGL 2, which this browser or device has switched off. Try the latest Chrome.',
@@ -41,22 +45,28 @@ function boot() {
   const input = createInput(canvas);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x2a2150);
   const cam = TUNING.camera;
   const camera = new THREE.PerspectiveCamera(cam.fov, 1, 0.1, 100);
   camera.position.set(cam.right, cam.up, cam.back);
   camera.lookAt(0, 1, 0);
 
-  const light = new THREE.DirectionalLight(0xffffff, 2.5);
-  light.position.set(...TUNING.lightDir);
-  scene.add(light, new THREE.AmbientLight(0x8877cc, 1));
+  const sky = createSky();
+  scene.add(sky.mesh);
 
+  // Look test: a hard-edged box (outline corners) and a smooth sphere.
   const box = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshStandardMaterial({ color: 0xff7a59 }),
+    computeOutlineNormals(new THREE.BoxGeometry(0.8, 0.8, 0.8)),
+    createToonMaterial({ color: PALETTE.playerOrange }),
   );
-  box.position.y = 1;
-  scene.add(box);
+  box.position.set(-0.55, 1, 0);
+  addOutline(box);
+  const ball = new THREE.Mesh(
+    new THREE.SphereGeometry(0.42, 32, 16),
+    createToonMaterial({ color: PALETTE.teal }),
+  );
+  ball.position.set(0.6, 0.95, -0.2);
+  addOutline(ball);
+  scene.add(box, ball);
 
   function resize() {
     const r = gfx.resize();
@@ -74,8 +84,10 @@ function boot() {
 
   function draw(alpha) {
     const t = prevSpin + (spin - prevSpin) * alpha;
-    box.rotation.y = t;
-    box.rotation.x = t * 0.7;
+    // Turn about the vertical, tipped toward the camera: at most angles a lit
+    // top, a lit side and a shadow side are all in view.
+    box.rotation.set(0.35, t * 0.6, 0);
+    sky.update(t);
     renderer.render(scene, camera);
     calls = renderer.info.render.calls;
     tris = renderer.info.render.triangles;

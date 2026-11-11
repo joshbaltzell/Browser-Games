@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createGovernor, nextResolutionScale } from './governor.js';
+import { OUTLINE_SHARED } from './outline.js';
 
 export { nextResolutionScale };
 
@@ -23,6 +24,7 @@ export function createRenderer(canvas, gl) {
     const s = resizeState(window.innerWidth, window.innerHeight, window.devicePixelRatio, governor.scale());
     renderer.setPixelRatio(s.pixelRatio);
     renderer.setSize(s.width, s.height, false);
+    OUTLINE_SHARED.viewportHeight.value = canvas.height; // drawing-buffer pixels
     return s;
   }
 
