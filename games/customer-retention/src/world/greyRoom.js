@@ -1,0 +1,84 @@
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { PALETTE } from '../render/palette.js';
+import { createToonMaterial } from '../render/toon.js';
+import { addOutline, computeOutlineNormals } from '../render/outline.js';
+import { makeFloor } from './kit.js';
+import { makeBox } from './collide.js';
+
+const deepFreeze = (o) => {
+  if (o && typeof o === 'object' && !Object.isFrozen(o)) {
+    Object.freeze(o);
+    Object.values(o).forEach(deepFreeze);
+  }
+  return o;
+};
+
+const T = 0.3;
+const boxes = [
+  makeBox([-12, -1, -12], [12, 0, 12], 'floor'),
+  // Outer walls, 4 m high, open to the sky.
+  makeBox([-12 - T, 0, -12 - T], [12 + T, 4, -12]),
+  makeBox([-12 - T, 0, 12], [12 + T, 4, 12 + T]),
+  makeBox([-12 - T, 0, -12], [-12, 4, 12]),
+  makeBox([12, 0, -12], [12 + T, 4, 12]),
+  // Narrow corridor, 1.4 m wide and 6 m long, along z at x = 6.
+  makeBox([5, 0, -9], [5.3, 4, -3]),
+  makeBox([6.7, 0, -9], [7, 4, -3]),
+  // Inside corner at (-6, -7).
+  makeBox([-11, 0, -7.3], [-6, 3, -7]),
+  makeBox([-6.3, 0, -11], [-6, 3, -7]),
+  // Low (1 m) and tall (2.2 m) boxes, standing apart.
+  makeBox([-4, 0, -3], [-2, 1, -2.4], 'low'),
+  makeBox([3, 0, 3], [3.6, 1, 5], 'low'),
+  makeBox([-5, 0, 3], [-3.8, 2.2, 3.6], 'tall'),
+  makeBox([1, 0, -6], [1.6, 2.2, -4], 'tall'),
+  // Pillars.
+  makeBox([-9.4, 0, 0.6], [-8.6, 4, 1.4], 'pillar'),
+  makeBox([8.6, 0, 3.6], [9.4, 4, 4.4], 'pillar'),
+];
+
+// The speed lane runs along the south wall (x from -10 to 2, z about 10.5).
+const marks = [];
+for (let i = 0; i <= 12; i++) marks.push({ min: [-10 + i - 0.05, 0, 10], max: [-10 + i + 0.05, 0.02, 11] });
+
+export const GREY_ROOM = deepFreeze({
+  boxes,
+  marks,
+  spawn: { pos: [0, 0, 0], yaw: 0 },
+  features: {
+    corridor: { pos: [6, 0, -6], yaw: 0 },
+    wall: { pos: [0, 0, -10.5], yaw: Math.PI },
+    lane: { pos: [-10.5, 0, 10.5], yaw: Math.PI / 2 },
+  },
+});
+
+const KIND_COLOR = { wall: PALETTE.lilac, low: PALETTE.teal, tall: PALETTE.hotPink, pillar: PALETTE.cream };
+
+function boxGeometry(list) {
+  const parts = list.map((b) => {
+    const g = new THREE.BoxGeometry(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]);
+    g.translate((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2);
+    return g;
+  });
+  return mergeGeometries(parts, false);
+}
+
+export function buildGreyRoom(room = GREY_ROOM) {
+  const group = new THREE.Group();
+  group.add(makeFloor({ w: 24, d: 24 }));
+  for (const kind of Object.keys(KIND_COLOR)) {
+    const list = room.boxes.filter(b => b.kind === kind);
+    if (!list.length) continue;
+    const mesh = new THREE.Mesh(computeOutlineNormals(boxGeometry(list)), createToonMaterial({ color: KIND_COLOR[kind] }));
+    mesh.name = `grey-${kind}`;
+    addOutline(mesh);
+    group.add(mesh);
+  }
+  if (room.marks.length) {
+    const mk = new THREE.Mesh(boxGeometry(room.marks), createToonMaterial({ color: PALETTE.hotPink }));
+    mk.name = 'grey-marks';
+    group.add(mk);
+  }
+  return { group, boxes: room.boxes, update(dt) {} };
+}

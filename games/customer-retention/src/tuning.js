@@ -5,4 +5,5 @@ export const TUNING = {
   // colours go plum rather than brown.
   shadowLift: 0.45,
   camera: { fov: 70, right: 0.55, up: 1.55, back: 2.6 },
+  move: { radius: 0.35, height: 1.8 },
 };
