@@ -485,5 +485,5 @@ export function buildRig(spec) {
     root.removeFromParent();
   }
 
-  return { root, spec, face, setPose, update, dispose };
+  return { root, spec, face, setPose, update, dispose, shadow };
 }

@@ -269,6 +269,46 @@ function talk(t, spec, p) {
   return p;
 }
 
+
+// The roll: a forward tumble. The player view spins the whole body (see
+// player.js); this clip is the tuck. Eases into a ball by 0.15 of the clip,
+// holds, opens out from 0.75. Feet drawn up under the hips, hands at the
+// shins, wide of the knees (nothing crosses the belly).
+const _b = makePose();
+function roll(t, spec, p) {
+  const u = t / CLIPS.roll.duration;
+  const e = pulse(u, 0, 0.15, 0.75, 1);
+  const f = frame(spec);
+  idle(0, spec, _b);
+  const lerp = (a, b) => a + (b - a) * e;
+  p.hipsY = lerp(_b.hipsY, 0.45);
+  p.lean = lerp(_b.lean, 1.3);
+  p.twist = 0;
+  p.headYaw = 0;
+  p.headPitch = lerp(_b.headPitch, 0.35);
+  p.squash = lerp(1, 0.9);
+  p.elbows = 1;
+  for (let side = -1; side <= 1; side += 2) {
+    const h = handOf(p, side), r = handOf(_b, side);
+    h[0] = lerp(r[0], side * (f.sx + 0.2));
+    h[1] = lerp(r[1], 0.2);
+    h[2] = lerp(r[2], 0.3);
+    const ft = side > 0 ? p.footL : p.footR, fr = side > 0 ? _b.footL : _b.footR;
+    ft[0] = lerp(fr[0], side * f.fx);
+    ft[1] = lerp(fr[1], 0.18);
+    ft[2] = lerp(fr[2], -0.05);
+  }
+  return p;
+}
+
+// The sprint is the run, crouched: hips lower, more lean, the flight phase kept.
+function sprint(t, spec, p) {
+  run(t, spec, p);
+  p.hipsY -= 0.12;
+  p.lean += 0.15;
+  return p;
+}
+
 // ease is the half-life (seconds) of the rig's springs while the clip plays:
 // they smooth the cross-fades and the hits. The run is a fast cycle that the
 // default 0.05 s would lag (about 45 degrees) and flatten, so its springs are
@@ -284,7 +324,12 @@ export const CLIPS = Object.freeze({
   aim: clip(1.6, true, aim),
   flinch: clip(FLINCH, false, flinch),
   talk: clip(2.4, true, talk),
+  roll: clip(0.55, false, roll, 0.02),
+  sprint: clip(0.56, true, sprint, 0.008),
 });
+
+// The run clip's planted-foot speed in m/s, so a footfall matches the ground at this speed.
+export const RUN_SPEED = GROUND / CLIPS.run.duration;
 
 // `out` is optional: pass a pose to fill instead of allocating one. A one-shot
 // clip holds its first and last poses outside its duration.

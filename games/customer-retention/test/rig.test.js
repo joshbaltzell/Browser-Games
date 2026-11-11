@@ -272,3 +272,14 @@ test('setPose eases with the half-life it is given', () => {
   rig.setPose(a, 0.05); rig.update(1 / 60);
   assert.ok(Math.abs(hips.position.y - a.hipsY) > 0.01, 'half-life 0.05 eases');
 });
+
+test('buildRig returns the blob shadow, a mesh and a child of root', () => {
+  const rig = buildRig(S);
+  assert.ok(rig.shadow.isMesh);
+  assert.equal(rig.shadow.parent, rig.root);
+});
+test('the Doc placeholder stays within 26 meshes', async () => {
+  const { DOC_PLACEHOLDER } = await import('../src/actors/docPlaceholder.js');
+  const rig = buildRig(DOC_PLACEHOLDER);
+  assert.ok(visibleMeshes(rig.root) <= 26);
+});

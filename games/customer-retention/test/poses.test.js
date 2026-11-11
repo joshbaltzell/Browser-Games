@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CLIPS, samplePose, blendPose, bodyPoint } from '../src/actors/poses.js';
+import { CLIPS, RUN_SPEED, samplePose, blendPose, bodyPoint } from '../src/actors/poses.js';
 import { ASSOCIATE as S } from '../src/actors/associate.js';
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const flat = p => [p.hipsY, p.lean, p.twist, p.headYaw, p.headPitch, p.squash, p.elbows, ...p.handL, ...p.handR, ...p.footL, ...p.footR];
@@ -173,10 +173,43 @@ test('samplePose with `out` reuses it and matches a fresh sample', () => {
 
 test('clips are frozen, with the brief\'s durations and their spring half-lives', () => {
   assert.ok(Object.isFrozen(CLIPS));
-  assert.deepEqual(Object.keys(CLIPS), ['idle', 'run', 'aim', 'flinch', 'talk']);
+  assert.deepEqual(Object.keys(CLIPS), ['idle', 'run', 'aim', 'flinch', 'talk', 'roll', 'sprint']);
   const d = Object.fromEntries(Object.entries(CLIPS).map(([k, c]) => [k, [c.duration, c.loop, c.ease]]));
   // The run is too fast for the default 0.05 s springs, which lag it ~45 degrees.
   assert.deepEqual(d, {
-    idle: [2.4, true, 0.05], run: [0.56, true, 0.008], aim: [1.6, true, 0.05], flinch: [0.35, false, 0.05], talk: [2.4, true, 0.05],
+    idle: [2.4, true, 0.05], run: [0.56, true, 0.008], aim: [1.6, true, 0.05], flinch: [0.35, false, 0.05], talk: [2.4, true, 0.05], roll: [0.55, false, 0.02], sprint: [0.56, true, 0.008],
   });
+});
+
+test('roll: starts and ends near standing, tucked in the middle, one-shot', () => {
+  const H = S.hipHeight;
+  assert.equal(CLIPS.roll.loop, false);
+  assert.equal(CLIPS.roll.duration, 0.55);
+  assert.ok(samplePose('roll', 0, S).hipsY > H - 0.1);
+  assert.ok(samplePose('roll', 0.275, S).hipsY < 0.5);
+  assert.ok(samplePose('roll', 0.55, S).hipsY > H - 0.1);
+});
+test('sprint: hips lower and lean greater than run at every sample; loops', () => {
+  assert.equal(CLIPS.sprint.loop, true);
+  assert.equal(CLIPS.sprint.duration, 0.56);
+  assert.equal(CLIPS.sprint.ease, CLIPS.run.ease);
+  for (let i = 0; i < 50; i++) {
+    const t = (i / 50) * 0.56, a = samplePose('sprint', t, S), b = samplePose('run', t, S);
+    assert.ok(Math.abs(b.hipsY - a.hipsY - 0.12) < 1e-9);
+    assert.ok(Math.abs(a.lean - b.lean - 0.15) < 1e-9);
+  }
+});
+test('RUN_SPEED is the run clip planted-foot speed, about 3.05 m/s', () => {
+  // the left foot is planted for the first 0.34 of the cycle
+  const D = CLIPS.run.duration, t0 = 0.05 * D, dt = 0.05;
+  const a = samplePose('run', t0, S), b = samplePose('run', t0 + dt, S);
+  assert.ok(Math.abs((b.footL[2] - a.footL[2]) / dt + RUN_SPEED) < 0.01);
+  assert.ok(Math.abs(RUN_SPEED - 3.05) < 0.02);
+});
+test('roll and sprint sample finite at 50 points, arms clear of the belly', () => {
+  for (const n of ['roll', 'sprint']) for (let i = 0; i <= 50; i++) {
+    const p = samplePose(n, (i / 50) * CLIPS[n].duration, S);
+    assert.ok(flat(p).every(Number.isFinite), n);
+    assert.ok(Math.abs(p.handL[0]) > 0.2 && Math.abs(p.handR[0]) > 0.2 || n === 'sprint', n);
+  }
 });
