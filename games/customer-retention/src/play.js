@@ -8,6 +8,7 @@ import { createSky } from './render/sky.js';
 import { createCameraRig } from './render/cameraRig.js';
 import { buildGreyRoom, GREY_ROOM } from './world/greyRoom.js';
 import { pointInBoxes } from './world/collide.js';
+import { createTuningPanel } from './dev/tuningPanel.js';
 import { createMovement } from './actors/movement.js';
 import { createPlayerView } from './actors/player.js';
 
@@ -30,6 +31,9 @@ export function startPlay({ canvas, gl, params }) {
   const pauseBox = document.getElementById('cr-pause');
   const hooks = { panelOpen: () => false };
   window.__cr.hooks = hooks;
+  // Created first so stored overrides are in TUNING before anything reads them.
+  const panel = createTuningPanel();
+  hooks.panelOpen = panel.isOpen;
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(TUNING.camera.fov, 1, 0.05, 100);
@@ -73,7 +77,10 @@ export function startPlay({ canvas, gl, params }) {
 
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
-    if (e.code === 'KeyH') readout.style.display = readout.style.display === 'none' ? '' : 'none';
+    if (e.code === 'Backquote') {
+      panel.toggle();
+      if (panel.isOpen() && document.exitPointerLock) document.exitPointerLock();
+    } else if (e.code === 'KeyH') readout.style.display = readout.style.display === 'none' ? '' : 'none';
   });
 
   function modeOf() {
@@ -183,6 +190,7 @@ export function startPlay({ canvas, gl, params }) {
     },
   });
 
+  if (params && params.has('tune')) panel.toggle();
   snap = input.poll();
   cam.update(0, { target: spawn.pos, mode: 'normal', side: 1 }, boxes);
   writePanel();

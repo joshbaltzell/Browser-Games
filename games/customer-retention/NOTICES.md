@@ -1,13 +1,14 @@
 # Third-party notices
 
-Both packages are MIT licensed and are bundled into `game.js` (three.js) or used to build it (esbuild).
+The packages below are MIT licensed and are bundled into `game.js` (three.js, lil-gui) or used to build it (esbuild).
 
 - three.js 0.187.0: Copyright © 2010-2026 three.js authors
+- lil-gui 0.21.0: Copyright (c) 2019 George Michael Brower
 - esbuild 0.28.2 (build tool only): Copyright (c) 2020 Evan Wallace
 
 ## MIT License text
 
-Both packages above are distributed under this licence. The bundle strips legal comments, so the permission notice is reproduced here.
+The packages above are distributed under this licence. The bundle strips legal comments, so the permission notice is reproduced here.
 
 ```
 Permission is hereby granted, free of charge, to any person obtaining a copy

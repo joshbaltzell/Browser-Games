@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "esbuild": "0.28.2",
+    "lil-gui": "0.21.0",
     "three": "0.187.0"
   }
 }
