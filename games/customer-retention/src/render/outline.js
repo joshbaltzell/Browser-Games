@@ -70,9 +70,11 @@ void main() {
 
   // The normal's direction on screen, found by projecting a point a short
   // step along it. Exact at any position on screen, not only at the centre.
+  // This is (step NDC - vertex NDC) scaled by clip.w * clipStep.w, which never
+  // divides, so a vertex on the camera plane (w = 0) cannot produce NaN.
   float eps = 0.001 * max(-mvPosition.z, 0.1);
   vec4 clipStep = projectionMatrix * vec4(mvPosition.xyz + viewNormal * eps, 1.0);
-  vec2 ndcDir = clipStep.xy / clipStep.w - clip.xy / clip.w;
+  vec2 ndcDir = clipStep.xy * clip.w - clip.xy * clipStep.w;
 
   // Pixel space: width from the projection's aspect, height from the viewport.
   float aspect = projectionMatrix[1][1] / projectionMatrix[0][0];
@@ -81,9 +83,10 @@ void main() {
   float len = length(pixelDir);
   pixelDir = len > 1e-9 ? pixelDir / len : vec2(0.0);
 
-  // Thickness is TUNING.outlinePx at 1080 lines and scales with the viewport.
-  // Multiplying by w keeps it the same on screen at any distance.
-  float thickness = px * (viewportHeight / 1080.0);
+  // Thickness is TUNING.outlinePx at 1080 lines and scales with the viewport,
+  // but never thinner than one pixel. Multiplying by w keeps it the same on
+  // screen at any distance.
+  float thickness = max(px * (viewportHeight / 1080.0), 1.0);
   clip.xy += pixelDir * (2.0 * thickness / viewport) * clip.w;
   gl_Position = clip;
 }
@@ -118,11 +121,27 @@ export function createOutlineMaterial({ px = TUNING.outlinePx, color = PALETTE.i
 
 function ignoreRaycast() {}
 
+// Outline materials shared between meshes with the same settings, so a scene
+// full of props does not compile and bind one material per mesh.
+const sharedOutlineMaterials = new Map();
+
+function sharedOutlineMaterial(px, color, outlineNormal) {
+  const key = px + '|' + new THREE.Color(color).getHexString() + '|' + outlineNormal;
+  let material = sharedOutlineMaterials.get(key);
+  if (!material) {
+    material = createOutlineMaterial({ px, color, outlineNormal });
+    sharedOutlineMaterials.set(key, material);
+  }
+  return material;
+}
+
 // Adds a child mesh named `outline` that shares the parent's geometry and
 // follows its transform. Uses `outlineNormal` when the geometry has it.
-export function addOutline(mesh, { px } = {}) {
+// Outlines with the same settings share one material: do not dispose it.
+export function addOutline(mesh, { px = TUNING.outlinePx } = {}) {
   const outlineNormal = !!mesh.geometry.getAttribute('outlineNormal');
-  const outline = new THREE.Mesh(mesh.geometry, createOutlineMaterial({ px, outlineNormal }));
+  const material = sharedOutlineMaterial(px, PALETTE.ink, outlineNormal);
+  const outline = new THREE.Mesh(mesh.geometry, material);
   outline.name = 'outline';
   outline.userData.isOutline = true;
   outline.raycast = ignoreRaycast;

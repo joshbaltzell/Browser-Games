@@ -50,19 +50,34 @@ const float RIM_EDGE = 0.3;
 // edge-on (a floor, a wall, a box side) would otherwise lighten all over.
 const float RIM_MIN_CURVATURE = 0.5;
 
+// A hard step at edge, softened over about one pixel so it does not crawl
+// on moving meshes. The width is capped so a 2x2 pixel block that straddles a
+// sharp crease (a box edge) is not smeared into a visible gradient.
+float pixelStep(float edge, float x, float w) {
+  float h = 0.5 * clamp(w, 1e-4, 0.1);
+  return smoothstep(edge - h, edge + h, x);
+}
+
 void main() {
   vec3 n = normalize(vViewNormal);
   vec3 l = normalize((viewMatrix * vec4(lightDir, 0.0)).xyz);
   vec3 v = isOrthographic ? vec3(0.0, 0.0, 1.0) : normalize(-vViewPos);
+  float ndl = dot(n, l);
+  float facing = dot(n, v);
+  // All derivatives up front, in uniform control flow.
   float curvature = length(fwidth(n)) / max(length(fwidth(vViewPos)), 1e-6);
+  float ndlWidth = fwidth(ndl);
+  float facingWidth = fwidth(facing);
 
   vec3 base = baseColor * vTint;
-  bool lit = dot(n, l) > bandEdge;
   // Shadow: darken through the tint, then lift toward the tint itself so warm
   // colours go plum instead of brown.
   vec3 shade = mix(mix(base, base * shadowTint, shadowMix), shadowTint, shadowLift);
-  vec3 col = lit ? base : shade;
-  if (lit && dot(n, v) < RIM_EDGE && curvature > RIM_MIN_CURVATURE) col = mix(col, vec3(1.0), rim);
+  float lit = pixelStep(bandEdge, ndl, ndlWidth);
+  vec3 col = mix(shade, base, lit);
+  float rimAmount = lit * (1.0 - pixelStep(RIM_EDGE, facing, facingWidth))
+    * step(RIM_MIN_CURVATURE, curvature);
+  col = mix(col, mix(col, vec3(1.0), rim), rimAmount);
 
   gl_FragColor = vec4(col, 1.0);
   #include <colorspace_fragment>

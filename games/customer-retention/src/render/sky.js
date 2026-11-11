@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PALETTE } from './palette.js';
+import { TOON_SHARED } from './toon.js';
 
 const RADIUS = 400;
 // Where the ringed planet hangs: ahead of the default camera, up and to the left.
@@ -26,6 +27,9 @@ uniform vec3 lilac;
 uniform vec3 ink;
 uniform vec3 planetColor;
 uniform vec3 shadowTint;
+uniform float shadowLift;
+uniform float bandEdge;
+uniform vec3 lightDir;
 uniform vec3 planetDir;
 uniform float time;
 
@@ -120,9 +124,15 @@ void main() {
 
   col = mix(col, ink, ring * (1.0 - ringInFront));
   float disc = (1.0 - smoothstep(1.0 - px, 1.0 + px, r)) * front;
+  // Shaded like a toon surface, by the scene light: the disc's face points back
+  // at the viewer (-planetDir), with tx and ty across it.
   vec3 sphereN = vec3(uv, sqrt(max(0.0, 1.0 - r * r)));
-  bool lit = dot(sphereN, normalize(vec3(0.6, 0.55, 0.6))) > 0.0;
-  vec3 planet = lit ? planetColor : mix(planetColor, planetColor * shadowTint, 0.55);
+  vec3 planetLight = normalize(vec3(dot(lightDir, tx), dot(lightDir, ty), -dot(lightDir, planetDir)));
+  float ndl = dot(sphereN, planetLight);
+  float ndlPx = 0.5 * clamp(fwidth(ndl), 1e-4, 0.1);
+  float lit = smoothstep(bandEdge - ndlPx, bandEdge + ndlPx, ndl);
+  vec3 planetShade = mix(mix(planetColor, planetColor * shadowTint, 0.55), shadowTint, shadowLift);
+  vec3 planet = mix(planetShade, planetColor, lit);
   float rimInk = smoothstep(0.965 - px, 0.965 + px, r);
   planet = mix(planet, ink, rimInk);
   col = mix(col, planet, disc);
@@ -145,7 +155,12 @@ export function createSky() {
       lilac: { value: c(PALETTE.lilac) },
       ink: { value: c(PALETTE.ink) },
       planetColor: { value: c(PALETTE.planet) },
-      shadowTint: { value: c(PALETTE.shadowTint) },
+      // Shared by reference with every toon material, so the planet follows
+      // the scene light and any later tuning of the shadow colour.
+      shadowTint: TOON_SHARED.shadowTint,
+      shadowLift: TOON_SHARED.shadowLift,
+      bandEdge: TOON_SHARED.bandEdge,
+      lightDir: TOON_SHARED.lightDir,
       planetDir: { value: PLANET_DIR.clone() },
       time: { value: 0 },
     },
@@ -157,7 +172,9 @@ export function createSky() {
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(RADIUS, 48, 24), material);
   mesh.name = 'sky';
   mesh.frustumCulled = false;
-  mesh.renderOrder = -1;
+  // Drawn after the opaque geometry: it sits on the far plane, so the depth
+  // test skips every pixel that geometry already covers.
+  mesh.renderOrder = 1000;
   mesh.raycast = () => {};
 
   function update(time) {
