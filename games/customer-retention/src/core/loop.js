@@ -1,7 +1,7 @@
 // Fixed-step simulation with a variable-rate render. Pure apart from start()/stop(),
 // which touch requestAnimationFrame and document only when called.
 
-export function createLoop({ step, render, hz = 60, maxSteps = 5 }) {
+export function createLoop({ step, render, before, hz = 60, maxSteps = 5 }) {
   const dt = 1 / hz;
   let acc = 0;
   let rafId = 0;
@@ -10,6 +10,7 @@ export function createLoop({ step, render, hz = 60, maxSteps = 5 }) {
 
   function advance(realSeconds) {
     if (!(realSeconds > 0) || !Number.isFinite(realSeconds)) return;
+    if (before) before(realSeconds);
     acc += realSeconds;
     let n = 0;
     while (acc >= dt && n < maxSteps) {

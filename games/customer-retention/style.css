@@ -6,3 +6,7 @@ html, body { margin: 0; height: 100%; background: #1b1f3b; overflow: hidden; fon
 #cr-error[hidden] { display: none; }
 .back { position: fixed; top: 12px; left: 12px; z-index: 5; color: #fff; background: rgba(27,31,59,.75); padding: 6px 10px; border-radius: 6px; text-decoration: none; font-size: 14px; }
 .back:hover { background: rgba(27,31,59,.95); }
+#cr-pause { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: rgba(27,31,59,.55); color: #fff; text-align: center; pointer-events: none; }
+#cr-pause[hidden] { display: none; }
+#cr-pause div { font-size: 32px; font-weight: 700; }
+#cr-pause small { font-size: 16px; opacity: .85; }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Serves the game over http, loads it in a real browser, drives the look test, checks it.
+# Serves the game over http, loads it in a real browser, drives the look test (?look) and the play scene, checks them.
 set -u
 GAME_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -35,7 +35,7 @@ trap cleanup EXIT
 sleep 1
 kill -0 "$SERVER_PID" 2>/dev/null || fail "could not start http server on port $PORT (already in use?)"
 
-pw open "http://localhost:$PORT/index.html" >/dev/null || fail "playwright-cli could not open the page"
+pw open "http://localhost:$PORT/index.html?look" >/dev/null || fail "playwright-cli could not open the page"
 pw reload >/dev/null
 sleep 1
 
@@ -97,4 +97,69 @@ THREW=$(ev "(() => { try { __cr.anim('nonsense'); __cr.expression('nonsense'); r
 [ "$THREW" = "ok" ] || fail "unknown animation or expression threw: $THREW"
 
 check_console
+
+# ---- play scene -------------------------------------------------------------
+pw goto "http://localhost:$PORT/index.html" >/dev/null || fail "could not open the play scene"
+sleep 2
+READY=$(ev "window.__cr && window.__cr.ready && !!window.__cr.drive")
+[ "$READY" = "true" ] || fail "play scene: not ready ($READY)"
+check_console
+
+expect() { # label, js expression returning 'ok' or a description
+  local r
+  r=$(ev "$2")
+  [ "$r" = "ok" ] || fail "play: $1: $(pw --raw eval "JSON.stringify([__cr.player(), __cr.camera()])") ($r)"
+}
+
+ev "__cr.place('lane')" >/dev/null
+ev "__cr.drive({ moveY: -1 })" >/dev/null
+sleep 1
+expect "jog 4.5 m/s" "(() => { const p = __cr.player(); return Math.abs(p.speed - 4.5) <= 0.1 && p.state === 'move' ? 'ok' : 'bad'; })()"
+
+ev "__cr.place('lane')" >/dev/null
+ev "__cr.drive({ moveY: -1, sprint: true })" >/dev/null
+sleep 1
+expect "sprint 7.5 m/s" "(() => { const p = __cr.player(); return Math.abs(p.speed - 7.5) <= 0.1 && p.state === 'sprint' ? 'ok' : 'bad'; })()"
+pw screenshot --filename "$SHOT_DIR/sprint.png" >/dev/null
+
+ev "__cr.drive(null)" >/dev/null
+ev "__cr.place('lane')" >/dev/null
+sleep 0.5
+ev "window.__rollStart = { pos: __cr.player().pos, entries: __cr.player().entries }" >/dev/null
+ev "__cr.drive({ moveY: -1, tap: true })" >/dev/null
+ev "__cr.drive(null)" >/dev/null
+sleep 0.25
+pw screenshot --filename "$SHOT_DIR/roll.png" >/dev/null
+sleep 1
+expect "roll 5 m" "(() => { const a = window.__rollStart, p = __cr.player(); const d = Math.hypot(p.pos[0] - a.pos[0], p.pos[2] - a.pos[2]); return p.entries > a.entries && Math.abs(d - 5) <= 0.3 ? 'ok' : 'bad d=' + d; })()"
+
+ev "__cr.place('wall')" >/dev/null
+ev "__cr.drive({ moveY: -1 })" >/dev/null
+sleep 2
+expect "stays inside the wall" "(() => { const p = __cr.player(); return !__cr.camera().inside && p.pos[2] > -12 + 0.3 ? 'ok' : 'bad'; })()"
+
+ev "__cr.place('corridor')" >/dev/null
+ev "__cr.drive({ moveX: 1 })" >/dev/null
+sleep 0.5
+ev "__cr.drive(null)" >/dev/null
+sleep 0.3
+expect "camera outside the corridor wall" "__cr.camera().inside ? 'inside' : 'ok'"
+pw screenshot --filename "$SHOT_DIR/corridor.png" >/dev/null
+
+ev "__cr.place('spawn')" >/dev/null
+ev "__cr.drive({ aim: true })" >/dev/null
+sleep 0.6
+expect "aim fov 50" "Math.abs(__cr.camera().fov - 50) <= 1 ? 'ok' : 'bad'"
+pw screenshot --filename "$SHOT_DIR/aim.png" >/dev/null
+ev "__cr.drive(null)" >/dev/null
+
+sleep 1.5
+PCALLS=$(ev "__cr.stats().calls")
+PTRIS=$(ev "__cr.stats().tris")
+PFPS=$(ev "Math.round(__cr.stats().fps)")
+[ "$PCALLS" -lt 400 ] 2>/dev/null || fail "play: draw calls '$PCALLS', expected under 400"
+[ "$PTRIS" -lt 300000 ] 2>/dev/null || fail "play: triangles '$PTRIS', expected under 300000"
+echo "play: $PFPS fps, $PCALLS calls, $PTRIS triangles"
+check_console
+
 echo "smoke ok: ready, look test driven, perf $CALLS_ON calls ($CALLS_OFF without outlines), $TRIS triangles, no console errors; screenshots at $SHOT_DIR"

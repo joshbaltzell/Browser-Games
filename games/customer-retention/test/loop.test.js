@@ -43,3 +43,17 @@ test('start() stops on the first exception and rethrows it', () => {
     if (saved.doc === undefined) delete globalThis.document; else globalThis.document = saved.doc;
   }
 });
+
+test('before runs once per advance, ahead of the first step, with the real seconds', () => {
+  const log = [];
+  const loop = createLoop({ before: s => log.push(['before', s]), step: () => log.push(['step']), render: () => log.push(['render']) });
+  loop.advance(1 / 30 + 0.004);
+  assert.deepEqual(log.map(e => e[0]), ['before', 'step', 'step', 'render']);
+  assert.ok(Math.abs(log[0][1] - (1 / 30 + 0.004)) < 1e-12);
+});
+test('before is not called for a zero or non-finite advance', () => {
+  let n = 0;
+  const loop = createLoop({ before: () => n++, step: () => {}, render: () => {} });
+  for (const t of [0, -1, NaN, Infinity]) loop.advance(t);
+  assert.equal(n, 0);
+});

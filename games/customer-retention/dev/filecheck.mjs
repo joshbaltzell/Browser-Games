@@ -34,8 +34,8 @@ if (!chrome) fail('no Chrome found (looked for Google Chrome.app, then Chromium 
 const url = pathToFileURL(fileURLToPath(new URL('../index.html', import.meta.url))).href;
 const WEBGL_COPY = 'Customer Retention needs WebGL 2, which this browser or device has switched off. Try the latest Chrome.';
 
-function dump(flags) {
-  const r = spawnSync(chrome, ['--headless=new', '--virtual-time-budget=4000', '--dump-dom', ...flags, url], {
+function dump(flags, target = url) {
+  const r = spawnSync(chrome, ['--headless=new', '--virtual-time-budget=4000', '--dump-dom', ...flags, target], {
     encoding: 'utf8',
     timeout: 60000,
   });
@@ -53,3 +53,8 @@ const run2 = dump(['--disable-gpu', '--disable-3d-apis']);
 if (!run2.includes('data-cr-error="webgl"')) fail('run 2 (WebGL disabled) did not reach data-cr-error="webgl"');
 if (!run2.includes(WEBGL_COPY)) fail('run 2 (WebGL disabled) did not show the WebGL error copy');
 console.log('run 2 ok: shows WebGL error');
+
+const run3 = dump(['--enable-unsafe-swiftshader', '--use-angle=swiftshader'], url + '?look');
+if (!run3.includes('data-cr-ready="1"')) fail('run 3 (look test, with WebGL) did not reach data-cr-ready="1"');
+if (run3.includes('data-cr-error')) fail('run 3 (look test) set data-cr-error');
+console.log('run 3 ok: look test boots with WebGL');

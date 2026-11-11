@@ -1,4 +1,5 @@
 import { startLookTest } from './dev/lookTest.js';
+import { startPlay } from './play.js';
 
 const MESSAGES = {
   webgl: 'Customer Retention needs WebGL 2, which this browser or device has switched off. Try the latest Chrome.',
@@ -32,7 +33,9 @@ function boot() {
     fail('webgl');
     return;
   }
-  startLookTest({ canvas, gl });
+  const params = new URLSearchParams(location.search);
+  if (params.has('look')) startLookTest({ canvas, gl });
+  else startPlay({ canvas, gl, params });
   window.__cr.ready = true;
   document.documentElement.dataset.crReady = '1';
 }
