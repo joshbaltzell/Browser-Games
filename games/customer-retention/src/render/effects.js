@@ -134,6 +134,13 @@ export function createEffects(scene, fb = () => TUNING.feedback) {
         papers.aux[i * 4] = rnd(3); papers.aux[i * 4 + 1] = rnd(3); papers.aux[i * 4 + 2] = rnd(3);
       }
     },
+    // Drops everything in flight, drawn or not.
+    clear() {
+      for (const e of kinds) {
+        e.k.pool.clear();
+        for (let i = 0; i < e.shown.length; i++) if (e.shown[i]) { hide(e.k, i); e.shown[i] = 0; }
+      }
+    },
     update(dt) {
       if (!(dt > 0)) return;
       for (const e of kinds) {

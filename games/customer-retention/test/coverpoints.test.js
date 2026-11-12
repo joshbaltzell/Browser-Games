@@ -74,3 +74,13 @@ test('lineOfSight is symmetric and blocked by a pillar', () => {
   assert.equal(lineOfSight(R.boxes, a, a), true);
   assert.equal(lineOfSight([makeBox([-1, 0, -1], [1, 4, 1], 'pillar')], [0, 1, -5], [0, 1, 5]), false);
 });
+
+test('coverPoints: spacing 0, negative or NaN returns a finite list (clamped to 0.2 m), and the panel cannot go below 0.2', async () => {
+  const edge = mk('low', 3, true, true);
+  for (const spacing of [0, -1, NaN, undefined]) {
+    const pts = coverPoints([edge], { spacing, cornerZone: 0.3 });
+    assert.ok(pts.length >= 2 && pts.length <= 20, `spacing ${spacing}: ${pts.length}`);
+  }
+  const { PANEL } = await import('../src/dev/tuningData.js');
+  assert.ok(PANEL.find(p => p.path === 'associate.pointSpacing').min >= 0.2);
+});

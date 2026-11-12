@@ -6,7 +6,11 @@ import { TUNING } from '../tuning.js';
 
 const HEAD_Y = 1.49;
 
+// spacing is clamped to MIN_SPACING: a 0 (the panel once allowed it) would loop forever.
+const MIN_SPACING = 0.2;
+
 export function coverPoints(edges, { spacing, cornerZone }) {
+  spacing = Math.max(MIN_SPACING, Number.isFinite(spacing) ? spacing : MIN_SPACING);
   const cover = { cornerZone };
   const out = [];
   const push = (edge, t, end) => {

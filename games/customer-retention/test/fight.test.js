@@ -2,6 +2,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sim, I, tuck, R, BOXES, DT } from './fightSim.js';
+import { createArsenal } from '../src/combat/arsenal.js';
+import { castRay, spreadDir } from '../src/combat/hits.js';
+import { fireStance, muzzleOf } from '../src/combat/stance.js';
+import { shotDamage } from '../src/combat/targets.js';
+import { rng } from '../src/core/random.js';
 import { TUNING } from '../src/tuning.js';
 
 const COVERISH = new Set(['cover', 'telegraph', 'burst', 'suppress', 'reload', 'flinch']);
@@ -274,4 +279,73 @@ test('the same seed gives the same event log; dt 0 and dt 5 stay finite; tokens 
     const moves = c.log.filter(e => e.type === 'arrive' || e.type === 'telegraph' || e.type === 'enemyShot').length;
     assert.ok(moves > 0 || k === 0, `case ${k} still does things`);
   });
+});
+
+test('tucked at mid (K3) for 30 s: no hit from behind and none at all, seeds 1..5; pushers and flankers stay in front of or beside the player', () => {
+  for (const seed of [1, 2, 3, 4, 5]) {
+    const r = sim(30, { at: 'mid', seed, intent: tuck(false) });
+    assert.equal(r.m.state, 'cover');
+    assert.equal(r.log.filter(e => e.type === 'playerHit').length, 0, `seed ${seed}`);
+    assert.equal(r.health.hp, 100);
+  }
+});
+
+test('at any instant the Associates that landed a damaging hit in the last 0.3 s number at most director.tokens (seeds 1..6, three spots, casual too)', () => {
+  for (const casual of [0, 1]) {
+    for (const [at, aim] of [['open', false], ['kioskLeft', true], ['mid', true]]) {
+      for (const seed of [1, 2, 3, 4, 5, 6]) {
+        const lastHit = new Map();
+        let peak = 0;
+        const limit = casual ? TUNING.director.casualTokens : TUNING.director.tokens;
+        sim(40, {
+          at, seed, god: true, intent: at === 'open' ? () => I() : tuck(aim), tune: t => { t.director.casual = casual; },
+          each: (i, m, f, h, ev) => {
+            for (const e of ev) if (e.type === 'playerHit') lastHit.set(e.id, f.now);
+            let n = 0;
+            for (const t of lastHit.values()) if (f.now - t <= 0.3) n++;
+            peak = Math.max(peak, n);
+            assert.ok(n <= limit, `${at} seed ${seed} casual ${casual} t ${f.now.toFixed(2)}: ${n} shooters hit within 0.3 s`);
+          },
+        });
+        assert.ok(peak <= limit);
+      }
+    }
+  }
+});
+
+test('popped at K1 with perfect aim at the chest, firing only while a clone is in telegraph or burst: the marked clone takes a chest hit in its first exposure, and it dies after needs about a second of popped fire (seeds 1..3)', () => {
+  const mu = [0, 0, 0];
+  for (const seed of [1, 2, 3]) {
+    const ars = createArsenal(), rand = rng(99 + seed);
+    let fireSteps = 0, killSecs = null, bodyHits = 0, mark = null;
+    const firstHit = new Map(), seen = new Set();
+    sim(40, {
+      at: 'kioskLeft', seed, god: true, intent: (i) => I({ moveY: i === 0 ? -1 : 0, tap: i === 0, aim: i > 0 }),
+      each: (i, m, f) => {
+        const stance = fireStance(m);
+        if (!mark || !mark.alive) mark = f.enemies.find(e => e.alive && (e.state === 'telegraph' || e.state === 'burst')) || null;
+        const t = mark && (mark.state === 'telegraph' || mark.state === 'burst') ? mark : null;
+        let dir = null;
+        if (t && stance === 'aim') {
+          if (!seen.has(t.id)) { seen.add(t.id); firstHit.set(t.id, 0); }
+          muzzleOf(m, stance, 0, TUNING.combat, mu);
+          const c = [t.pos[0], t.shapes.body.b[1], t.pos[2]];
+          const l = Math.hypot(c[0] - mu[0], c[1] - mu[1], c[2] - mu[2]);
+          dir = [(c[0] - mu[0]) / l, (c[1] - mu[1]) / l, (c[2] - mu[2]) / l];
+          fireSteps++;
+        }
+        for (const e of ars.update({ fire: !!dir, firePressed: false, reload: false, weapon: null }, stance, DT)) {
+          if (e.type !== 'shot' || !dir) continue;
+          const hit = castRay(mu, spreadDir(dir, e.spread, rand), 60, BOXES, f.enemies);
+          if (!hit.target) continue;
+          if (hit.kind === 'body') { bodyHits++; if (firstHit.has(hit.target.id)) firstHit.set(hit.target.id, firstHit.get(hit.target.id) + 1); }
+          if (f.hurt(hit.target, shotDamage(TUNING.weapons.regret, hit.kind, e.mult)) === 'kill' && killSecs === null) killSecs = fireSteps * DT;
+        }
+      },
+    });
+    console.log(`seed ${seed}: first kill after ${killSecs && killSecs.toFixed(2)} s of popped fire, ${bodyHits} chest hits`);
+    assert.ok(killSecs !== null, `seed ${seed}: a clone dies`);
+    assert.ok(killSecs <= 1.6, `seed ${seed}: ${killSecs} s of popped fire`);
+    assert.ok(bodyHits >= 7 && [...firstHit.values()][0] >= 1, `seed ${seed}: the marked clone took a chest hit in its first exposure ${[...firstHit]}`);
+  }
 });

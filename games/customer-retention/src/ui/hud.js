@@ -30,6 +30,8 @@ export function hudModel({ arsenal, stance, firing, spreadDeg, fov, viewportH, m
     reticle: { show: stance === 'aim' || !!firing, gap: feedback.reticleMinGap + reticleGap(spreadDeg, fov, viewportH) },
     reload,
     hit: { show: !!marker, kind: marker || null },
+    // The face hides while a banner owns the screen (downed, cleared); the edge glow still follows the face model.
+    faceShow: !!face && !banner && !face.downed.show,
     face, objective, bark, banner,
   };
 }
@@ -101,7 +103,7 @@ export function createHud(root = document.body) {
       set('ret.show', m.reticle.show, v => { reticle.hidden = !v; });
       set('ret.gap', Math.round(m.reticle.gap), g => { arms.forEach(a => a.style.setProperty('--gap', `${g}px`)); });
       const fc = m.face;
-      set('face.show', !!fc, v => { faceEl.hidden = !v; });
+      set('face.show', !!m.faceShow, v => { faceEl.hidden = !v; });
       if (fc) {
         set('face.op', Math.round(fc.face.opacity * 100), () => { faceEl.style.opacity = fc.face.opacity.toFixed(2); });
         set('face.frown', Math.round(fc.face.frown * 50), () => { mouth.setAttribute('d', `M 30 72 Q 50 ${(72 - 24 * fc.face.frown).toFixed(1)} 70 72`); });

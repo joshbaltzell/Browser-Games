@@ -158,7 +158,7 @@ export const TUNING = {
   // The encounter director. Times in s, distances in m, angles in deg. casual is a flag (dev switch).
   director: {
     tokens: 2, casualTokens: 1, casual: 0, tokenCooldown: 1.0, tokenMaxHold: 3.0, requestWindow: 0.25,
-    pushAfter: 6, flankAfter: 10, stayRadius: 2.5, flankAngle: 60,
+    pushAfter: 6, flankAfter: 10, stayRadius: 2.5, flankAngle: 60, flankMaxAngle: 120,
   },
   // Shot feedback. Times in s, sizes in m, speeds in m/s, volumes 0 to 1, squash and kicks as fractions or m.
   feedback: {
@@ -176,6 +176,6 @@ export const TUNING = {
     hurtVolume: 0.45,
     enemyFlashSize: 0.3, enemyTracerTime: 0.08, enemyTracerWidth: 0.04, glintSize: 0.12, // m, s, m, m (acid-green enemy fire; the glint pulses at the blaster tip)
     blasterVolume: 0.3, chargeVolume: 0.25, pickupVolume: 0.35, // 0 to 1
-    barkTime: 1.8, barkGap: 4, // s, a bark line stays this long and at most one shows per gap
+    barkTime: 2.5, barkGap: 4, // s, a bark line stays this long and a new one waits this long after the last one began
   },
 };

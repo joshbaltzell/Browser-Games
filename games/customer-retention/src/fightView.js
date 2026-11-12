@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TUNING } from './tuning.js';
 import { PALETTE } from './render/palette.js';
 import { createToonMaterial } from './render/toon.js';
-import { BARKS } from './director/barks.js';
+import { createBarkLine } from './director/barks.js';
 import { hitAngle } from './ui/damageFace.js';
 
 // The fight on screen and in the speakers: the Associates' flashes, tracers, charge whines and blaster sounds, the
@@ -27,6 +27,14 @@ function pickupGeometry() {
   return mergeGeometries([part(0.3, 0.16, 0.22, 0.08, PALETTE.cream), part(0.34, 0.07, 0.26, 0.195, PALETTE.playerOrange)], false);
 }
 
+// Where a shot's tracer and flash start, written into out. An accurate shot starts at the Associate's gun; a
+// suppression (blind) shot starts at the logic muzzle ev.from, which is above the kiosk top, not at the tucked gun.
+export function shotOrigin(ev, gunTip, out) {
+  if (ev.accurate && gunTip) { gunTip(out); return out; }
+  out[0] = ev.from[0]; out[1] = ev.from[1]; out[2] = ev.from[2];
+  return out;
+}
+
 export function createFightView({ scene, effects, sfx, fight, views }) {
   const byId = new Map(fight.enemies.map((e, i) => [e.id, views[i]]));
   const enemyById = new Map(fight.enemies.map(e => [e.id, e]));
@@ -38,16 +46,10 @@ export function createFightView({ scene, effects, sfx, fight, views }) {
   mesh.count = 0;
   scene.add(mesh);
   const dummy = new THREE.Object3D();
-  let clock = 0, sinceBark = Infinity, barkLeft = 0, barkText = null;
+  let clock = 0;
+  const barkLine = createBarkLine();
 
   const pan = (listener, from) => Math.sin(hitAngle(listener.yaw, listener.pos, from));
-
-  function showBark(key, force) {
-    const fb = TUNING.feedback;
-    if (!BARKS[key]) return;
-    if (!force && sinceBark < fb.barkGap) return;
-    barkText = BARKS[key]; barkLeft = fb.barkTime; sinceBark = 0;
-  }
 
   function nearestEnemy(from) {
     let best = null, bd = Infinity;
@@ -62,7 +64,7 @@ export function createFightView({ scene, effects, sfx, fight, views }) {
   function handle(events, listener) {
     const fb = TUNING.feedback, A = TUNING.associate;
     for (const ev of events) {
-      if (ev.type === 'bark') showBark(ev.key, false);
+      if (ev.type === 'bark') barkLine.say(ev.key, false);
       else if (ev.type === 'telegraph') {
         glints.set(ev.id, A.popTime + A.telegraphTime);
         const v = byId.get(ev.id), e = enemyById.get(ev.id);
@@ -70,7 +72,7 @@ export function createFightView({ scene, effects, sfx, fight, views }) {
         if (e) sfx.play('charge', fb.chargeVolume, pan(listener, e.pos));
       } else if (ev.type === 'shotFx') {
         const e = nearestEnemy(ev.from), v = e && byId.get(e.id);
-        if (v) v.tip(tip); else { tip[0] = ev.from[0]; tip[1] = ev.from[1]; tip[2] = ev.from[2]; }
+        shotOrigin(ev, v ? v.tip : null, tip);
         const dx = ev.to[0] - tip[0], dy = ev.to[1] - tip[1], dz = ev.to[2] - tip[2], l = Math.hypot(dx, dy, dz) || 1;
         effects.enemyFlash(tip, [dx / l, dy / l, dz / l]);
         effects.enemyTracer(tip, ev.to);
@@ -94,11 +96,13 @@ export function createFightView({ scene, effects, sfx, fight, views }) {
   return {
     handle,
     // A bark that always shows (downed), and the line on screen now as { speaker, text } or null.
-    forceBark: (key) => showBark(key, true),
-    bark: () => (barkLeft > 0 && barkText ? { speaker: 'Associate', text: barkText } : null),
+    forceBark: (key) => barkLine.say(key, true),
+    bark: () => barkLine.current(),
+    // The bark clock runs on simulation time (once per fixed step), so a line never outlives its time.
+    tick: (dt) => barkLine.tick(dt),
     update(dt) {
       if (!(dt > 0)) return;
-      clock += dt; sinceBark += dt; barkLeft -= dt;
+      clock += dt;
       for (const [id, left] of glints) {
         if (left - dt <= 0) { glints.delete(id); const v = byId.get(id); if (v) v.glint(false); } else glints.set(id, left - dt);
       }
@@ -122,7 +126,7 @@ export function createFightView({ scene, effects, sfx, fight, views }) {
     pickups: () => pickups.map(p => p.pos.slice()),
     reset() {
       pickups.length = 0; mesh.count = 0; mesh.instanceMatrix.needsUpdate = true;
-      glints.clear(); barkLeft = 0; barkText = null; sinceBark = Infinity;
+      glints.clear(); barkLine.reset();
     },
   };
 }

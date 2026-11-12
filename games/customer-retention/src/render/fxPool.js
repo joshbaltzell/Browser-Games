@@ -20,6 +20,8 @@ export function createPool(size) {
       live[slot] = 1; ages[slot] = 0; next = (slot + 1) % size;
       return slot;
     },
+    // Kills every live slot (the caller hides what was drawn).
+    clear() { live.fill(0); },
     update(dt, life) {
       for (let i = 0; i < size; i++) {
         if (!live[i]) continue;

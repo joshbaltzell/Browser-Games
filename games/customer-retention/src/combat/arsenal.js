@@ -135,6 +135,8 @@ export function createArsenal({ weapons = TUNING.weapons, combat = TUNING.combat
     a.reload = null; a.switching = 0; a.cooldown = 0; a.buffer = 0; a.dryLatched = false;
     events.length = 0;
   };
+  // Drops a reload in progress (the player went down).
+  a.cancelReload = () => { a.reload = null; };
   // A pickup: adds n rounds of reserve, capped at reserveMax. An infinite reserve ignores it.
   a.addReserve = (id, n) => {
     const am = ammo[id];

@@ -449,3 +449,14 @@ test('reset restores 50 + 250, slot 1, no reload, no boost; addReserve caps at r
   // a reserve above reserveMax (panel change) is never reduced by a pickup
   a.ammo.regret.reserve = 450; a.addReserve('regret', 10); assert.equal(a.ammo.regret.reserve, 450);
 });
+
+test('cancelReload drops a reload in progress without refilling the magazine', () => {
+  const a = createArsenal();
+  a.ammo[a.current()].mag = 2;
+  a.update(I({ reload: true }), 'aim', DT);
+  assert.ok(a.reload);
+  a.cancelReload();
+  assert.equal(a.reload, null);
+  a.update(I(), 'aim', 5);
+  assert.equal(a.ammo[a.current()].mag, 2);
+});

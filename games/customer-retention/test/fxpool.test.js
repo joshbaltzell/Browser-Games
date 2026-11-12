@@ -18,3 +18,11 @@ test('createPool: spawns into free slots, then the oldest; update frees slots pa
   assert.equal(p.alive(0) && p.alive(2), true);
   assert.equal(p.spawn(), 1);
 });
+
+test('clear: every slot is free again and the next spawns start at the first slot', () => {
+  const p = createPool(3);
+  p.spawn(); p.spawn();
+  p.clear();
+  assert.ok([0, 1, 2].every(i => !p.alive(i)));
+  assert.ok([0, 1, 2].includes(p.spawn()));
+});

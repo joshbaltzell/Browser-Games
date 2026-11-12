@@ -67,3 +67,13 @@ test('hudModel passes face, objective, bark and banner through unchanged; null b
   const none = base(a);
   assert.equal(none.face, null); assert.equal(none.objective, ''); assert.equal(none.bark, null); assert.equal(none.banner, null);
 });
+
+test('hudModel faceShow: on with a face and no banner; off while a banner (downed or cleared) owns the screen or when downed; no face means off', () => {
+  const a = createArsenal();
+  const mk = (downedShow) => ({ face: { opacity: 0.4, frown: 0.5, fill: 0.5 }, edges: { top: 0, right: 0, bottom: 0, left: 0 }, downed: { show: downedShow, seconds: 3 } });
+  assert.equal(base(a, { face: mk(false) }).faceShow, true);
+  assert.equal(base(a, { face: mk(false), banner: { title: 'KIOSK ROW CLEAR', hint: '' } }).faceShow, false);
+  assert.equal(base(a, { face: mk(true) }).faceShow, false);
+  assert.equal(base(a, { face: mk(true), banner: { title: 'DOWNED 3', hint: '' } }).faceShow, false);
+  assert.equal(base(a).faceShow, false);
+});

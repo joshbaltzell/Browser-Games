@@ -53,6 +53,14 @@ export function levelFor(params) {
   return params && params.has('room') ? 'greyRoom' : 'kioskRow';
 }
 
+// The player's input after the rules that sit above the movement: a downed player cannot reload, switch or fire, and
+// fire held through a reload or a weapon switch must not keep the blind-fire pose (busy: the arsenal cannot fire).
+export function gatePlayerInput(intent, arsenalIn, { downed = false, busy = false } = {}) {
+  if (downed) { arsenalIn.reload = false; arsenalIn.weapon = null; arsenalIn.fire = false; arsenalIn.firePressed = false; }
+  if (downed || busy) intent.fire = false;
+  return intent;
+}
+
 const TRANSITION_CAP = 2000;
 const SHOT_LOG_CAP = 500;
 const FIGHT_LOG_CAP = 500;
@@ -180,8 +188,9 @@ export function startPlay({ canvas, gl, params }) {
     arsenal.reset();
     placeAt(spawn.pos, spawn.yaw);
     stance = null; button.reset(); trigger.reset();
+    cam.recenter(); effects.clear();
     fxQueue.length = 0; hits.length = 0;
-    marker = null; reloadFlash = null;
+    marker = null; reloadFlash = null; markerT = 0; flashT = 0;
     if (fv) fv.reset();
     for (const v of views) v.reset();
   }
@@ -189,6 +198,7 @@ export function startPlay({ canvas, gl, params }) {
   // Health hit zero: the fight has already put the mover down (or this is the dev hook); the sound and the line.
   function goDown() {
     if (mover.state !== 'downed') mover.down();
+    arsenal.cancelReload();
     sfx.play('downed', TUNING.feedback.hurtVolume);
     if (fv) fv.forceBark('downed');
   }
@@ -272,7 +282,7 @@ export function startPlay({ canvas, gl, params }) {
   cr.look = (yaw, pitch) => { cam.yaw = yaw; cam.pitch = pitch; };
   cr.camera = () => {
     const r = camState;
-    return { pos: r.pos.slice(), fov: r.fov, inside: pointInBoxes(boxes, r.pos, 0.1), mode: camMode, side: camSide };
+    return { pos: r.pos.slice(), fov: r.fov, inside: pointInBoxes(boxes, r.pos, 0.1), mode: camMode, side: camSide, yaw: cam.yaw, pitch: cam.pitch };
   };
   cr.transitions = () => transitions.map(x => ({ ...x }));
   cr.clearTransitions = () => { transitions.length = 0; };
@@ -447,11 +457,13 @@ export function startPlay({ canvas, gl, params }) {
       const key = edgesKey(TUNING.cover);
       if (key !== edgeKey) { edgeKey = key; mover.coverEdges = deriveEdges(); }
       simTime += dt;
-      mover.update(buildIntent(dt), dt);
+      const inp = buildIntent(dt);
+      gatePlayerInput(inp, arsenalIn, { downed: !!fight && health.downed, busy: arsenal.reload !== null || arsenal.switching > 0 });
+      mover.update(inp, dt);
       stance = fireStance(mover);
       const events = arsenal.update(arsenalIn, stance, dt);
       for (const e of events) handleEvent(e);
-      if (fight) stepFight(dt);
+      if (fight) { fv.tick(dt); stepFight(dt); }
       for (const d of dummies) stepDummy(d, dt);
       if (crateTouch(mover.pos, LEVEL.ammoCrates, TUNING.combat.crateRadius)) arsenal.refill();
     },

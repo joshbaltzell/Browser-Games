@@ -71,6 +71,11 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       recoil.p.x = Math.max(0, cap(recoil.p.x, pitchDeg));
       recoil.y.x = cap(recoil.y.x, yawDeg);
     },
+    // Level the view and drop the gun kick (a restart): yaw stays.
+    recenter() {
+      this.pitch = 0;
+      recoil.p.x = 0; recoil.p.v = 0; recoil.y.x = 0; recoil.y.v = 0;
+    },
     snap(target, yaw, mode = 'normal', sideArg = 1) {
       if (yaw !== undefined) this.yaw = yaw;
       modeParams(tuning, mode, goal);

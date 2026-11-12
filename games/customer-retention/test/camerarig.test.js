@@ -243,3 +243,13 @@ test('downed mode: up 0.8, back 2.4; the lens is never inside a box while crawli
     }
   }
 });
+
+test('recenter levels the pitch and drops the kick; yaw stays', () => {
+  const c = rig(); c.snap(T0, 1.2);
+  run(c, 30);
+  c.pitch = 0.4; c.kick(5, 5);
+  c.recenter();
+  const r = c.update(0, { target: T0, mode: 'normal', side: 1 }, OPEN);
+  assert.equal(c.pitch, 0); assert.equal(c.yaw, 1.2);
+  near(Math.asin(r.dir[1]), 0, 1e-9);
+});

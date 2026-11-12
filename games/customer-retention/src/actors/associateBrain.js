@@ -89,8 +89,8 @@ function evalChest(e, ctx) {
 
 // Best point for e, as { point, score }, or null. The candidates are unreserved, protected from the player,
 // able to shoot at the player's standing chest (a player tucked behind low cover pops up to it) and between
-// minRange and maxRange. Ties go to the lower point index. A push must end >= 2 m closer to the player; a
-// flank must lie >= flankAngle off the direction the player's cover faces.
+// minRange and maxRange. Hold and push points must lie in front of the player (never behind their cover). Ties go to the lower point index. A push must end >= 2 m closer to the player; a
+// flank must lie >= flankAngle and <= flankMaxAngle off the direction the player's cover faces.
 export function scorePick(e, ctx) {
   const tun = ctx.tuning || TUNING, T = tun.associate, D = ctx.director || tun.director;
   const pl = ctx.player, plp = [pl.pos[0], pl.pos[2]];
@@ -101,6 +101,15 @@ export function scorePick(e, ctx) {
   const skipOwn = !!cur && (e.mustMove || role !== 'hold');
   const here = [e.pos[0], e.pos[2]];
   const cosFlank = Math.cos(D.flankAngle * Math.PI / 180);
+  const cosFlankMax = Math.cos(D.flankMaxAngle * Math.PI / 180);
+  // The direction the player faces: out from their cover, or toward the Associates when they have none.
+  let fx = 0, fz = 0;
+  if (pl.coverNormal) { fx = -pl.coverNormal[0]; fz = -pl.coverNormal[1]; } else {
+    let n = 0;
+    for (const o of ctx.others || []) if (o.alive) { fx += o.pos[0]; fz += o.pos[2]; n++; }
+    if (n) { fx = fx / n - plp[0]; fz = fz / n - plp[1]; } else { fx = e.pos[0] - plp[0]; fz = e.pos[2] - plp[1]; }
+  }
+  const fl = Math.hypot(fx, fz) || 1; fx /= fl; fz /= fl;
   const others = [];
   for (const [idx, id] of ctx.reserved) if (id !== e.id) others.push(ctx.points[idx].pos);
   let best = null, bestScore = -Infinity;
@@ -114,15 +123,16 @@ export function scorePick(e, ctx) {
     let near = false;
     for (const o of others) if (dist2(o, p.pos) < T.reserveRadius) { near = true; break; }
     if (near) continue;
+    const along = ((p.pos[0] - plp[0]) * fx + (p.pos[1] - plp[1]) * fz) / dp;
+    // Hold and push points stay in front of the player; a flank may swing round to the side but never behind.
+    if (role === 'flank' ? along < cosFlankMax : along < 0) continue;
     let bonus = 0;
     if (role === 'push') {
       const gain = curD - dp;
       if (gain < 2) continue;
       bonus = 2 * gain;
     } else if (role === 'flank') {
-      const n = pl.coverNormal;
-      if (!n) continue;
-      const along = ((p.pos[0] - plp[0]) * -n[0] + (p.pos[1] - plp[1]) * -n[1]) / dp;
+      if (!pl.coverNormal) continue;
       if (along > cosFlank) continue;
       bonus = 10;
     }
