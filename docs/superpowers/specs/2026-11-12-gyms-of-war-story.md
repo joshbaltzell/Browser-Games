@@ -148,3 +148,7 @@ After the credits, a postcard arrives: "We miss you! — GlorpFit."
   - The storefront windows get gym posters ("NEW YEAR, NEW YOU (FOREVER)").
 - Update the spec's story, cast, levels, enemy and weapon names to point at this document. Module and tuning names in code (for example `associate.*`) stay, so nothing breaks; only player-facing strings change.
 - Milestone 6 (art) gives the aliens jelly skin, glowing eyes and badly fitting staff polos. Milestone 10 (story and sound) writes the full script from this plan.
+
+## v1 scope (2026-11-12)
+
+Josh chose the cheapest finished game: see `docs/superpowers/plans/2026-11-12-gyms-of-war-v1-ship.md`. Its sequel list holds everything cut from v1 (art pass, Bulk, Spotters, extra weapons, Cardio Deck, Free Weights, mech boss, voices and music, collectibles).
