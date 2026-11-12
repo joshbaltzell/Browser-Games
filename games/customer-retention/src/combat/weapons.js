@@ -1,7 +1,7 @@
 // The parts of the arsenal that are not numbers. Every number lives in TUNING.weapons.
 export const WEAPONS = Object.freeze({
   regret: Object.freeze({ id: 'regret', name: 'The Regret' }),
-  pistol: Object.freeze({ id: 'pistol', name: 'Clearance Pistol' }),
+  pistol: Object.freeze({ id: 'pistol', name: 'Guest Pass' }),
 });
 
 // Slots 1 to 3. Slot 2 is empty until the Food Court pickup.

@@ -1,4 +1,4 @@
-// Kiosk Row: the milestone 4 arena, a 14 x 30 m grey box with the same shape as GREY_ROOM.
+// Check-in Turnstiles (code name kioskRow): the milestone 4 arena, a 14 x 30 m grey box with the same shape as GREY_ROOM.
 // The player spawns at the south end and advances toward +z. Pure data: no WebGL, no DOM.
 import { makeBox } from './collide.js';
 
@@ -65,5 +65,11 @@ export const KIOSK_ROW = deepFreeze({
   ],
   waypoints,
   ammoCrates: [{ pos: [5.5, 0, -12.5] }],
-  landmark: { pos: [0, 3, 14.7], text: 'SERVICE DESK', w: 6, h: 1.2 },
+  landmark: { pos: [0, 3, 14.7], text: 'FRONT DESK', w: 6, h: 1.2 },
+  // More wall signs (view only): pos, the way it faces (yaw 0 faces +z), size and optional colours.
+  signs: [
+    { pos: [4.3, 1.8, 14.7], yaw: Math.PI, text: 'CANCELLATIONS: TOP FLOOR \u2192', w: 4.6, h: 1.1, bg: '#2ec4b6' },
+    { pos: [-6.86, 2.0, 6], yaw: Math.PI / 2, text: 'NEW YEAR, NEW YOU (FOREVER)', w: 3.2, h: 1.5, bg: '#b9a7ff' },
+    { pos: [6.86, 2.0, -3], yaw: -Math.PI / 2, text: 'WHERE QUITTING IS NOT AN OPTION', w: 3.2, h: 1.5, bg: '#ff8a1f' },
+  ],
 });

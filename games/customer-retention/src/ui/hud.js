@@ -8,6 +8,9 @@ export function reticleGap(spreadDeg, fov, viewportH) {
   return (viewportH / 2) * Math.tan(spreadDeg * rad / 2) / Math.tan(fov * rad / 2);
 }
 
+// The reload result flash, by kind.
+export const FLASH_TEXT = Object.freeze({ perfect: 'FORM CHECK: PERFECT', good: 'Good form.', jam: 'Bad form.' });
+
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 // marker is the hit marker kind ('body' | 'head' | 'kill') or null; reloadFlash is 'perfect' | 'good' | 'jam' or null.
@@ -26,14 +29,16 @@ export function hudModel({ arsenal, stance, firing, covered = false, device = 'k
     const T = Math.max(row.reloadTime, combat.minReloadTime);
     reload = { ...reload, show: true, marker: clamp01(r.t / T), prompt: r.press === null ? `${key} again on the bright zone` : '' };
   } else if (am.mag <= 0) reload.prompt = `${key} to reload`;
-  // The alert under the reticle: low magazine and idle. Hidden while reloading (the bar's prompt takes over). With no reserve
-  // left to load it says so instead; the pistol's reserve is infinite, so it never does.
+  // The alert under the reticle: low magazine and idle. Hidden while reloading (the bar's prompt takes over). RELOAD shows only
+  // when there is a reserve to load from. NO AMMO means the magazine and the reserve are both empty; rounds still in the
+  // magazine with no reserve just say LOW AMMO. The pistol's reserve is infinite, so it never says either.
   const lowMag = am.mag <= Math.max(0, feedback.lowAmmoFrac) * row.mag;
   const noReserve = row.infiniteReserve <= 0 && am.reserve <= 0;
   const alert = { show: false, text: '', kind: '' };
   if (!r && lowMag && !banner) {
     alert.show = true;
-    if (noReserve) { alert.text = 'NO AMMO'; alert.kind = 'none'; }
+    if (noReserve && am.mag <= 0) { alert.text = 'NO AMMO'; alert.kind = 'none'; }
+    else if (noReserve) { alert.text = 'LOW AMMO'; alert.kind = 'low'; }
     else if (am.mag <= 0) { alert.text = `EMPTY \u2014 RELOAD  ${key}`; alert.kind = 'empty'; }
     else { alert.text = `RELOAD  ${key}`; alert.kind = 'low'; }
   }
@@ -121,7 +126,7 @@ export function createHud(root = document.body) {
       set('good', `${m.reload.good}`, () => zone(grey, m.reload.good));
       set('perfect', `${m.reload.perfect}`, () => zone(bright, m.reload.perfect));
       set('marker', Math.round(m.reload.marker * 500), () => { mark.style.left = pct(m.reload.marker); });
-      set('flash', m.reload.flash, v => { result.textContent = v ? v.toUpperCase().replace('JAM', 'JAMMED') : ''; result.dataset.kind = v || ''; });
+      set('flash', m.reload.flash, v => { result.textContent = v ? (FLASH_TEXT[v] || '') : ''; result.dataset.kind = v || ''; });
       set('alert', m.alert.show ? `${m.alert.kind}|${m.alert.text}` : '', () => { alertEl.hidden = !m.alert.show; alertEl.textContent = m.alert.text; alertEl.dataset.kind = m.alert.kind; });
       set('ret.show', m.reticle.show, v => { reticle.hidden = !v; });
       set('ret.op', Math.round(m.reticle.opacity * 100), () => { reticle.style.opacity = m.reticle.opacity.toFixed(2); });

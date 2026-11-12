@@ -152,5 +152,11 @@ export function buildGreyRoom(room = GREY_ROOM) {
     sign.rotation.y = Math.PI;               // the sign faces +z; turn it to face the player coming north
     group.add(sign);
   }
+  for (const S of room.signs || []) {
+    const sign = makeSign({ text: S.text, w: S.w, h: S.h, bg: S.bg, seed: 4 });
+    sign.position.set(S.pos[0], S.pos[1], S.pos[2]);
+    sign.rotation.y = S.yaw;
+    group.add(sign);
+  }
   return { group, boxes: room.boxes, update(dt) {} };
 }

@@ -358,12 +358,12 @@ export function startPlay({ canvas, gl, params }) {
   function writePanel() {
     const pad = input.padStatus();
     const lines = [
-      fight ? 'FIRST FIGHT' : 'GUNPLAY TEST',
+      fight ? 'GYMS OF WAR \u2014 CHECK-IN TURNSTILES' : 'GUNPLAY TEST',
       'Mouse + keys: WASD move, mouse look, right mouse aim, left mouse fire, R reload (press again on the bright zone), 1 / 3 or wheel switch, Space tap: take cover or roll, hold: sprint',
       'Gamepad: left stick move, right stick look, LT aim, RT fire, RB reload (again on the bright zone), D-pad switch, A tap: take cover or roll, hold: sprint',
       'In cover: aim to pop out, fire without aim to blind fire, push in + tap to vault, push toward a gap + tap to swap, pull away to leave',
     ];
-    if (fight) lines.push('E / X: give up when downed, go again when clear');
+    if (fight) lines.push('E / X: renew your membership when downed, another set when clear');
     lines.push('Sound starts after a click or key', '', `${mover.state}   ${mover.speed().toFixed(2)} m/s`, coverLine(), gunLine());
     if (fight) {
       lines.push(`fight: ${fight.enemies.filter(e => e.alive).length}/${fight.enemies.length}  tokens ${fight.tokens.held().join(',') || '-'}  hp ${health.hp.toFixed(0)}`);
@@ -513,8 +513,8 @@ export function startPlay({ canvas, gl, params }) {
         arsenal, stance, firing: intent.fire, covered, device: input.device(), spreadDeg: arsenal.spreadOf(spreadStance), fov: camera.fov,
         viewportH: canvas.clientHeight || window.innerHeight, marker, reloadFlash,
         face: fm, bark: fv ? fv.bark() : null,
-        objective: fight ? (fight.clear ? 'Kiosk Row clear' : fight.started ? 'Clear Kiosk Row' : 'Walk in') : '',
-        banner: !fight ? null : health.downed ? { title: `DOWNED ${fm.downed.seconds}`, hint: 'E / X give up' } : fight.clear ? { title: 'KIOSK ROW CLEAR', hint: 'E / X go again' } : null,
+        objective: fight ? (fight.clear ? 'Check-in Turnstiles: set complete' : fight.started ? 'Get past the front desk' : 'Walk in') : '',
+        banner: !fight ? null : health.downed ? { title: `You've hit a plateau ${fm.downed.seconds}`, hint: 'E / X renew your membership' } : fight.clear ? { title: 'SET COMPLETE', hint: 'Rest 60 seconds! E / X for another set' } : null,
       }));
       sky.update(performance.now() / 1000);
       room.update(dt);

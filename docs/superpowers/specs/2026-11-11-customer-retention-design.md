@@ -1,4 +1,6 @@
-# Customer Retention: design and build plan
+# Gyms of War: No Pain, No Cancel (was Customer Retention): design and build plan
+
+> Story re-themed 2026-11-12 to Gyms of War: No Pain, No Cancel — see 2026-11-12-gyms-of-war-story.md, which overrides the premise, cast, level names, enemy and weapon names and sample lines; mechanics and numbers here still bind.
 
 Date: 2026-11-11
 Status: draft, awaiting approval

@@ -2,7 +2,7 @@ import { startLookTest } from './dev/lookTest.js';
 import { startPlay } from './play.js';
 
 const MESSAGES = {
-  webgl: 'Customer Retention needs WebGL 2, which this browser or device has switched off. Try the latest Chrome.',
+  webgl: 'Gyms of War needs WebGL 2, which this browser or device has switched off. Try the latest Chrome.',
   boot: 'Something broke in the game.',
 };
 

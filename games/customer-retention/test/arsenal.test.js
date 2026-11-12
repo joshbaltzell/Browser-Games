@@ -35,7 +35,7 @@ test('starts on The Regret with 50 + 250; pistol 12 with infinite reserve; slot 
   assert.equal(a.ammo.pistol.mag, 12); assert.equal(W.pistol.infiniteReserve, 1);
   assert.equal(a.ammo[null], undefined);
   assert.deepEqual([...LOADOUT], ['regret', null, 'pistol']);
-  assert.equal(WEAPONS.regret.name, 'The Regret'); assert.equal(WEAPONS.pistol.name, 'Clearance Pistol');
+  assert.equal(WEAPONS.regret.name, 'The Regret'); assert.equal(WEAPONS.pistol.name, 'Guest Pass');
   assert.ok(Object.isFrozen(WEAPONS) && Object.isFrozen(LOADOUT));
 });
 

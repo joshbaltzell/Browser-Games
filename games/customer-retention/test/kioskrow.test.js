@@ -26,7 +26,7 @@ test('Kiosk Row is 14 x 30 m with 4 m walls; every box lies inside the floor', (
   assert.equal(R.boxes.length, 17);
   assert.ok(Object.isFrozen(R) && Object.isFrozen(R.boxes[0].min) && Object.isFrozen(R.waypoints[0]));
   assert.deepEqual(R.trigger, { z: -11 });
-  assert.deepEqual(R.landmark, { pos: [0, 3, 14.7], text: 'SERVICE DESK', w: 6, h: 1.2 });
+  assert.deepEqual(R.landmark, { pos: [0, 3, 14.7], text: 'FRONT DESK', w: 6, h: 1.2 });
   assert.deepEqual(R.ammoCrates, [{ pos: [5.5, 0, -12.5] }]);
   assert.equal(R.waypoints.length, 25);
 });
@@ -106,4 +106,10 @@ test('sight lines: from kioskLeft popped (head [-4, 1.5, -9.88]) to every start 
 test('from features.open, every start popped head sees the chest at 1.2 m', () => {
   const o = R.features.open.pos;
   for (const s of startHeads()) assert.equal(lineOfSight(R.boxes, [o[0], 1.2, o[2]], s.popped), true);
+});
+
+test('the wall signs are the front desk, the cancellations arrow and two posters, all inside the walls', () => {
+  assert.equal(R.landmark.text, 'FRONT DESK');
+  assert.deepEqual(R.signs.map(s => s.text), ['CANCELLATIONS: TOP FLOOR →', 'NEW YEAR, NEW YOU (FOREVER)', 'WHERE QUITTING IS NOT AN OPTION']);
+  for (const s of R.signs) assert.ok(Math.abs(s.pos[0]) <= 7 && Math.abs(s.pos[2]) <= 15 && s.pos[1] + s.h / 2 <= 4);
 });

@@ -1,5 +1,6 @@
-// Mall props drawn over the cover boxes: kiosk counters, a service desk, planters, shelving,
-// pillars with trim and plain wall slabs. View only: every prop stays inside (or a few cm
+// Gym props drawn over the cover boxes (Gyms of War): turnstile banks and supplement counters (tubs on top), the front desk,
+// weight benches and dumbbell racks, squat racks, pillars with trim and plain wall slabs. Box kinds keep their code names
+// (counter, planter, desk, shelf). View only: every prop stays inside (or a few cm
 // outside) the collision box it stands for, and never rises above that box's top, so cover
 // edges, nav and the 1 m low-cover rule are untouched. Parts are merged into one vertex-coloured
 // geometry (one draw call; the caller adds the outline).
@@ -7,7 +8,6 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE } from '../render/palette.js';
 
-const LEAF = '#3fbf7f', LEAF_DARK = '#2a9d68';
 const PRODUCTS = [PALETTE.hotPink, PALETTE.playerOrange, PALETTE.glorpPurple, PALETTE.tealLight, PALETTE.lilac];
 
 // Which prop a box becomes, from its kind and size (the boxes carry no names).
@@ -36,6 +36,13 @@ function parts() {
       g.translate((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2);
       list.push(colored(g, hex));
     },
+    // A cylinder centred at (x, yc, z), `len` long: upright for axis 'y', lying along x or z otherwise.
+    cyl(x, yc, z, r, len, hex, axis = 'y') {
+      const g = new THREE.CylinderGeometry(r, r, len, 8, 1);
+      if (axis === 'x') g.rotateZ(Math.PI / 2); else if (axis === 'z') g.rotateX(Math.PI / 2);
+      g.translate(x, yc, z);
+      list.push(colored(g, hex));
+    },
     ball(x, y, z, r, hex) {
       const g = new THREE.SphereGeometry(r, 7, 5);
       g.translate(x, y, z);
@@ -59,36 +66,102 @@ function stripes(p, b, y0, y1, inset, hex, alongX) {
   }
 }
 
-function addCounter(p, b) {
-  const h = b.max[1] - b.min[1], alongX = (b.max[0] - b.min[0]) >= (b.max[2] - b.min[2]);
-  p.box(...grow(b, -0.08, b.min[1], b.min[1] + 0.1), PALETTE.shadowTint);        // toe kick
-  p.box(...grow(b, -0.05, b.min[1] + 0.1, b.max[1] - 0.1), PALETTE.teal);         // body
-  p.box(...grow(b, 0.04, b.max[1] - 0.1, b.max[1]), PALETTE.cream);               // top slab, overhangs 4 cm
-  stripes(p, b, b.min[1] + h * 0.35, b.min[1] + h * 0.62, 0.15, PALETTE.hotPink, alongX);
+// A box seen along its long axis: u runs along it, v across it. slab and cyl take (u, v) and write world boxes.
+function frame(p, b) {
+  const w = b.max[0] - b.min[0], d = b.max[2] - b.min[2], alongX = w >= d;
+  const len = alongX ? w : d, dep = alongX ? d : w;
+  const wx = (u, v) => (alongX ? b.min[0] + u : b.min[0] + v), wz = (u, v) => (alongX ? b.min[2] + v : b.min[2] + u);
+  return {
+    len, dep, top: b.max[1], alongX,
+    slab(u0, u1, v0, v1, y0, y1, hex) {
+      const xa = wx(u0, v0), xb = wx(u1, v1), za = wz(u0, v0), zb = wz(u1, v1);
+      p.box([Math.min(xa, xb), y0, Math.min(za, zb)], [Math.max(xa, xb), y1, Math.max(za, zb)], hex);
+    },
+    // axis 'y' upright; 'u' along the long axis; 'v' across it.
+    cyl(u, v, yc, r, len, hex, axis = 'y') {
+      const a = axis === 'y' ? 'y' : axis === 'u' ? (alongX ? 'x' : 'z') : (alongX ? 'z' : 'x');
+      p.cyl(wx(u, v), yc, wz(u, v), r, len, hex, a);
+    },
+  };
 }
 
-function addPlanter(p, b, seed) {
-  const alongX = (b.max[0] - b.min[0]) >= (b.max[2] - b.min[2]);
-  p.box(...grow(b, -0.04, b.min[1], b.max[1] - 0.3), PALETTE.teal);               // trough
-  p.box(...grow(b, 0.02, b.max[1] - 0.3, b.max[1] - 0.22), PALETTE.cream);        // rim
-  stripes(p, b, b.min[1] + 0.12, b.min[1] + 0.3, 0.12, PALETTE.hotPink, alongX);
-  const len = alongX ? b.max[0] - b.min[0] : b.max[2] - b.min[2], mid = alongX ? (b.min[2] + b.max[2]) / 2 : (b.min[0] + b.max[0]) / 2;
-  const n = Math.max(2, Math.floor(len / 0.55)), r = 0.2;
-  for (let i = 0; i < n; i++) {
-    const t = (i + 0.5) / n * len + (alongX ? b.min[0] : b.min[2]);
-    const y = b.max[1] - r - 0.02 - ((i + seed) % 2) * 0.05;   // blob tops stay at or under the box top
-    const c = (i + seed) % 2 ? LEAF : LEAF_DARK;
-    if (alongX) p.ball(t, y, mid, r, c); else p.ball(mid, y, t, r, c);
+// Turnstile bank: a gate cabinet with posts, glass wings, arms and a red "ACCESS DENIED" light on each post.
+function addTurnstile(p, b) {
+  const f = frame(p, b), { len, dep } = f, pw = 0.22, lanes = Math.max(1, Math.round((len - pw) / 1.0));
+  const step = (len - pw) / lanes;
+  f.slab(0.03, len - 0.03, 0.04, dep - 0.04, 0, 0.5, PALETTE.shadowTint);              // rubber plinth under every lane
+  for (let i = 0; i <= lanes; i++) {
+    const u = i * step;
+    f.slab(u, u + pw, 0.06, dep - 0.06, 0, b.max[1], PALETTE.lilac);                        // post to the box top
+    f.slab(u + 0.03, u + pw - 0.03, 0, 0.07, 0.8, 0.94, PALETTE.hotPink);                  // light, front
+    f.slab(u + 0.03, u + pw - 0.03, dep - 0.07, dep, 0.8, 0.94, PALETTE.hotPink);          // light, back
+  }
+  for (let i = 0; i < lanes; i++) {
+    const u0 = i * step + pw, u1 = (i + 1) * step;
+    f.slab(u0, u1, dep / 2 - 0.03, dep / 2 + 0.03, 0.5, 0.94, PALETTE.tealLight);          // glass wing
+    f.slab(u0, u0 + (u1 - u0) * 0.6, dep / 2 - 0.05, dep / 2 + 0.05, 0.7, 0.76, PALETTE.cream);   // the arm
+  }
+}
+
+// Supplement counter: a cabinet with a counter top and protein tubs, all under the box top.
+function addSupplementCounter(p, b, seed) {
+  const f = frame(p, b), { len, dep } = f, top = b.max[1];
+  f.slab(0.08, len - 0.08, 0.08, dep - 0.08, 0, 0.1, PALETTE.shadowTint);                  // toe kick
+  f.slab(0.05, len - 0.05, 0.05, dep - 0.05, 0.1, 0.76, PALETTE.teal);                     // body
+  f.slab(-0.04, len + 0.04, -0.04, dep + 0.04, 0.76, 0.82, PALETTE.cream);                 // top slab, overhangs 4 cm
+  f.slab(0.15, len - 0.15, 0, 0.06, 0.25, 0.6, PALETTE.hotPink);                           // stripe, front
+  f.slab(0.15, len - 0.15, dep - 0.06, dep, 0.25, 0.6, PALETTE.hotPink);                   // stripe, back
+  const rows = dep >= 0.8 ? 2 : 1, n = Math.max(2, Math.floor(len / 0.5));
+  for (let r = 0; r < rows; r++) for (let i = 0; i < n; i++) {
+    const u = (i + 0.5 + (r % 2) * 0.25) / n * len, v = rows === 1 ? dep / 2 : dep * (0.3 + r * 0.4);
+    f.cyl(u, v, (0.82 + top - 0.02) / 2, 0.14, top - 0.84, PRODUCTS[(i + r * 2 + seed) % PRODUCTS.length]);   // tub
+    f.cyl(u, v, top - 0.01, 0.15, 0.02, PALETTE.cream);                                      // lid
+  }
+}
+
+function addCounter(p, b, ordinal) {
+  if (ordinal % 3 === 1) addSupplementCounter(p, b, ordinal); else addTurnstile(p, b);
+}
+
+// Weight bench: a rubber plinth, a padded bench and a plate tree, all under the box top.
+function addBench(p, b, seed) {
+  const f = frame(p, b), { len, dep } = f, top = b.max[1];
+  f.slab(0.04, len - 0.04, 0.04, dep - 0.04, 0, 0.42, PALETTE.shadowTint);                 // plinth
+  f.slab(0.1, len * 0.62, dep * 0.18, dep * 0.82, 0.42, 0.56, PALETTE.hotPink);            // pad
+  f.slab(0.1, len * 0.62, dep * 0.18, dep * 0.82, 0.56, 0.58, PALETTE.cream);              // pad seam
+  const u = len * 0.8;                                                                       // plate tree: a post and stacked plates
+  f.cyl(u, dep / 2, (0.42 + top) / 2, 0.05, top - 0.42, PALETTE.lilac);
+  for (let i = 0; i < 4; i++) f.cyl(u, dep / 2, 0.485 + i * 0.12, i % 2 ? 0.2 : 0.23, 0.09, i % 2 ? PALETTE.ink : PRODUCTS[(i + seed) % PRODUCTS.length]);
+}
+
+// Dumbbell rack: a cabinet with a counter top and two rows of dumbbells, all under the box top.
+function addDumbbellRack(p, b, seed) {
+  const f = frame(p, b), { len, dep } = f, top = b.max[1];
+  f.slab(0.04, len - 0.04, 0.04, dep - 0.04, 0, 0.74, PALETTE.lilac);                      // cabinet
+  f.slab(0.04, len - 0.04, 0.04, dep - 0.04, 0.3, 0.34, PALETTE.shadowTint);               // mid rail
+  f.slab(-0.02, len + 0.02, -0.02, dep + 0.02, 0.74, 0.8, PALETTE.cream);                  // top rail
+  const rows = dep >= 0.55 ? 2 : 1, n = Math.max(3, Math.floor(len / 0.32)), r = (top - 0.8) / 2 - 0.005, yc = 0.8 + r + 0.005;
+  for (let k = 0; k < rows; k++) for (let i = 0; i < n; i++) {
+    const u = (i + 0.5) / n * len, v = rows === 1 ? dep / 2 : dep * (0.3 + k * 0.4), c = PRODUCTS[(i + k + seed) % PRODUCTS.length];
+    f.cyl(u, v, yc, 0.015, 0.14, PALETTE.cream, 'u');           // handle
+    f.cyl(u - 0.07, v, yc, r, 0.06, c, 'u');                      // heads
+    f.cyl(u + 0.07, v, yc, r, 0.06, c, 'u');
   }
 }
 
 // Reception desk: a counter with a glass divider and corner posts that reach the box top.
 function addDesk(p, b) {
-  const alongX = (b.max[0] - b.min[0]) >= (b.max[2] - b.min[2]), top = b.max[1], dh = 1.1;
+  const alongX = (b.max[0] - b.min[0]) >= (b.max[2] - b.min[2]), top = b.max[1], dh = 1.1, len = alongX ? b.max[0] - b.min[0] : b.max[2] - b.min[2];
   const cmax = [b.max[0], b.min[1] + dh, b.max[2]];
   p.box(...grow({ min: b.min, max: cmax }, -0.03, b.min[1], cmax[1] - 0.1), PALETTE.teal);   // body
   p.box(...grow({ min: b.min, max: cmax }, 0, cmax[1] - 0.1, cmax[1]), PALETTE.cream);       // desk top
   stripes(p, { min: b.min, max: [b.max[0], cmax[1], b.max[2]] }, b.min[1] + 0.3, b.min[1] + 0.8, 0.3, PALETTE.hotPink, alongX);
+  // a stack of towels, a shaker and a bell on the desk
+  const cl = (u0, u1, y0, y1, hex) => p.box(alongX ? [b.min[0] + u0, y0, b.min[2] + 0.12] : [b.min[0] + 0.12, y0, b.min[2] + u0],
+    alongX ? [b.min[0] + u1, y1, b.max[2] - 0.12] : [b.max[0] - 0.12, y1, b.min[2] + u1], hex);
+  cl(0.3, 0.7, cmax[1], cmax[1] + 0.06, PALETTE.cream); cl(0.32, 0.68, cmax[1] + 0.06, cmax[1] + 0.12, PALETTE.hotPink); cl(0.3, 0.7, cmax[1] + 0.12, cmax[1] + 0.18, PALETTE.cream);
+  const mid = alongX ? (b.min[2] + b.max[2]) / 2 : (b.min[0] + b.max[0]) / 2, at = (u) => (alongX ? b.min[0] + u : b.min[2] + u);
+  if (alongX) p.cyl(at(len - 0.5), cmax[1] + 0.14, mid, 0.06, 0.28, PALETTE.gel); else p.cyl(mid, cmax[1] + 0.14, at(len - 0.5), 0.06, 0.28, PALETTE.gel);
   // posts at each end, a header bar and a glass divider between
   const pw = 0.14;
   const ends = alongX
@@ -107,31 +180,17 @@ function addDesk(p, b) {
   }
 }
 
-// Display shelving: end uprights, a back panel, shelf slabs and a few product blocks.
-function addShelf(p, b, seed) {
-  const w = b.max[0] - b.min[0], d = b.max[2] - b.min[2], alongX = w >= d, top = b.max[1];
-  const len = alongX ? w : d, dep = alongX ? d : w;
-  const at = (u, v, y) => alongX ? [b.min[0] + u, y, b.min[2] + v] : [b.min[0] + v, y, b.min[2] + u];
-  const slab = (u0, u1, v0, v1, y0, y1, hex) => {
-    const a = at(u0, v0, y0), c = at(u1, v1, y1);
-    p.box([Math.min(a[0], c[0]), y0, Math.min(a[2], c[2])], [Math.max(a[0], c[0]), y1, Math.max(a[2], c[2])], hex);
-  };
-  const up = 0.08;
-  slab(0, up, 0, dep, 0, top, PALETTE.lilac);                         // uprights
-  slab(len - up, len, 0, dep, 0, top, PALETTE.lilac);
-  slab(up, len - up, 0, 0.05, 0.15, top - 0.1, PALETTE.shadowTint);   // back panel (on the -v face)
-  slab(0, len, 0, dep, 0, 0.15, PALETTE.shadowTint);                  // base
-  slab(0, len, 0, dep, top - 0.1, top, PALETTE.hotPink);              // cap
-  const rows = Math.max(2, Math.floor((top - 0.3) / 0.55));
-  for (let r = 0; r < rows; r++) {
-    const y = 0.15 + r * ((top - 0.3) / rows) + 0.35;
-    slab(up, len - up, 0.04, dep - 0.04, y, y + 0.04, PALETTE.cream);   // shelf
-    const n = Math.max(1, Math.floor((len - 2 * up) / 0.3));
-    for (let i = 0; i < n; i++) {
-      const u0 = up + 0.03 + i * ((len - 2 * up - 0.06) / n), uw = (len - 2 * up - 0.06) / n - 0.04, bh = 0.14 + ((i + r + seed) % 3) * 0.05;
-      slab(u0, u0 + uw, 0.08, dep - 0.08, y + 0.04, Math.min(y + 0.04 + bh, y + 0.3), PRODUCTS[(i + r * 2 + seed) % PRODUCTS.length]);
-    }
-  }
+// Squat rack: four uprights, a top bar, a mirror panel between them, a loaded barbell on the hooks and safety arms.
+function addSquatRack(p, b, seed) {
+  const f = frame(p, b), { len, dep } = f, top = b.max[1], up = 0.1;
+  f.slab(0, len, 0, dep, 0, 0.12, PALETTE.shadowTint);                                      // base
+  for (const [u0, u1] of [[0, up], [len - up, len]]) for (const [v0, v1] of [[0, up], [dep - up, dep]]) f.slab(u0, u1, v0, v1, 0.12, top, PALETTE.lilac);
+  f.slab(0, len, 0, dep, top - 0.1, top, PALETTE.hotPink);                                  // top bar
+  f.slab(up, len - up, dep / 2 - 0.02, dep / 2 + 0.02, 0.12, top - 0.1, PALETTE.tealLight);   // mirror panel
+  const y = 1.35, v = dep * 0.32;
+  f.slab(up, len - up, v - 0.03, v + 0.03, 0.7, 0.76, PALETTE.cream);                       // safety bar
+  f.cyl(len / 2, v, y, 0.025, len + 0.1, PALETTE.cream, 'u');                              // barbell
+  for (const u of [0.2, 0.27, len - 0.2, len - 0.27]) f.cyl(u, v, y, u === 0.2 || u === len - 0.2 ? 0.2 : 0.17, 0.06, u === 0.2 || u === len - 0.2 ? PALETTE.ink : PRODUCTS[seed % PRODUCTS.length], 'u');
 }
 
 function addPillar(p, b) {
@@ -158,12 +217,13 @@ export function windowPanels(floor) {
 export function propGeometry(boxes, floor = null) {
   const p = parts();
   for (const w of windowPanels(floor)) p.box(w.min, w.max, PALETTE.tealLight);
+  let counters = 0;
   boxes.forEach((b, i) => {
     const k = propKind(b);
-    if (k === 'counter') addCounter(p, b);
-    else if (k === 'planter') addPlanter(p, b, i);
+    if (k === 'counter') addCounter(p, b, counters++);
+    else if (k === 'planter') (i % 2 ? addDumbbellRack : addBench)(p, b, i);
     else if (k === 'desk') addDesk(p, b);
-    else if (k === 'shelf') addShelf(p, b, i);
+    else if (k === 'shelf') addSquatRack(p, b, i);
     else if (k === 'pillar') addPillar(p, b);
     else p.box(b.min, b.max, PALETTE.lilac);
   });

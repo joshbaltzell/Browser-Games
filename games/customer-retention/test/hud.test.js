@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hudModel, reticleGap } from '../src/ui/hud.js';
+import { hudModel, reticleGap, FLASH_TEXT } from '../src/ui/hud.js';
 import { createArsenal } from '../src/combat/arsenal.js';
 import { reloadZone } from '../src/combat/weapons.js';
 import { TUNING } from '../src/tuning.js';
@@ -15,7 +15,7 @@ test('hudModel: weapon name, mag, reserve; pistol reserve is the infinity sign',
   assert.equal(m.weapon, 'The Regret'); assert.equal(m.mag, 50); assert.equal(m.reserve, 250);
   a.update({ ...idle, weapon: 3 }, 'move', 0);
   m = base(a);
-  assert.equal(m.weapon, 'Clearance Pistol'); assert.equal(m.mag, 12); assert.equal(m.reserve, '∞');
+  assert.equal(m.weapon, 'Guest Pass'); assert.equal(m.mag, 12); assert.equal(m.reserve, '∞');
 });
 
 test('hudModel: reticle hidden when not aiming or firing; gap grows with spread and shrinks with fov', () => {
@@ -138,7 +138,7 @@ test('hudModel: an empty magazine with no reload running says "R to reload" ("RB
   assert.equal(base(a).reload.prompt, 'R again on the bright zone');
 });
 
-test('hudModel alert: RELOAD at or below lowAmmoFrac, EMPTY at 0, NO AMMO with no reserve, hidden while reloading, pad names RB', () => {
+test('hudModel alert: RELOAD at or below lowAmmoFrac, EMPTY at 0, NO AMMO only with magazine and reserve both empty (LOW AMMO with rounds left and no reserve), hidden while reloading, pad names RB', () => {
   const a = createArsenal();
   assert.equal(TUNING.feedback.lowAmmoFrac, 0.2);
   a.set('regret', { mag: 11 });
@@ -155,8 +155,13 @@ test('hudModel alert: RELOAD at or below lowAmmoFrac, EMPTY at 0, NO AMMO with n
   // NO AMMO: nothing left to load.
   a.set('regret', { mag: 0, reserve: 0 });
   assert.deepEqual(base(a).alert, { show: true, text: 'NO AMMO', kind: 'none' });
+  // Rounds left in the magazine and no reserve: low ammo, but not NO AMMO and no RELOAD prompt (there is nothing to load).
   a.set('regret', { mag: 5, reserve: 0 });
-  assert.equal(base(a).alert.text, 'NO AMMO');
+  assert.deepEqual(base(a).alert, { show: true, text: 'LOW AMMO', kind: 'low' });
+  a.set('regret', { mag: 5, reserve: 30 });
+  assert.equal(base(a).alert.text, 'RELOAD  R');
+  a.set('regret', { mag: 0, reserve: 30 });
+  assert.equal(base(a).alert.text, 'EMPTY \u2014 RELOAD  R');
   // The pistol has infinite reserve: low means RELOAD, never NO AMMO.
   a.update({ ...idle, weapon: 3 }, 'move', 1);
   a.set('pistol', { mag: 2 });
@@ -165,4 +170,8 @@ test('hudModel alert: RELOAD at or below lowAmmoFrac, EMPTY at 0, NO AMMO with n
   a.set('pistol', { mag: 0 });
   a.update({ ...idle, reload: true }, 'move', 0);
   assert.ok(a.reload); assert.equal(base(a).alert.show, false);
+});
+
+test('FLASH_TEXT: the reload results read as form checks', () => {
+  assert.deepEqual({ ...FLASH_TEXT }, { perfect: 'FORM CHECK: PERFECT', good: 'Good form.', jam: 'Bad form.' });
 });

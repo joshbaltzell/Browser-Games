@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBarkLine } from '../src/director/barks.js';
+import { createBarkLine, BARKS } from '../src/director/barks.js';
 import { shotOrigin } from '../src/fightView.js';
 import { gatePlayerInput } from '../src/play.js';
 import { TUNING } from '../src/tuning.js';
@@ -13,7 +13,7 @@ test('a bark shows for barkTime, then hides; a bark inside the cooldown is ignor
   const line = createBarkLine();
   assert.equal(line.current(), null);
   assert.equal(line.say('lockdown'), true);
-  assert.equal(line.current().speaker, 'Associate');
+  assert.equal(line.current().speaker, 'PA');
   run(line, fb.barkTime - 0.2);
   assert.ok(line.current(), 'still up just before barkTime');
   run(line, 0.4);
@@ -23,6 +23,7 @@ test('a bark shows for barkTime, then hides; a bark inside the cooldown is ignor
   run(line, fb.barkGap - fb.barkTime);
   assert.equal(line.say('push'), true);
   assert.ok(line.current().text.length > 0);
+  assert.equal(line.current().speaker, 'Rep');
   run(line, 0.1);
   assert.equal(line.say('flank'), false);
   assert.equal(line.say('downed', true), true);
@@ -68,4 +69,16 @@ test('gatePlayerInput: downed blocks reload, weapon switch and fire; reloading o
   i = { fire: true }; a = mkIn();
   gatePlayerInput(i, a, {});
   assert.equal(i.fire, true); assert.deepEqual(a, mkIn());
+});
+
+test('the bark pools: about a dozen lines in all, read in turn (no immediate repeat), and no line sounds like a person being hurt', () => {
+  const all = Object.values(BARKS).flat().map(l => (typeof l === 'string' ? l : l.text));
+  assert.ok(all.length >= 10 && all.length <= 16, `${all.length} lines`);
+  const line = createBarkLine();
+  const seen = [];
+  for (let i = 0; i < 3; i++) { line.say('push', true); seen.push(line.current().text); }
+  assert.equal(new Set(seen).size, 3, 'three different lines in turn');
+  line.say('push', true);
+  assert.equal(line.current().text, seen[0], 'the pool wraps');
+  assert.ok(!all.some(t => /customer|ticket|associate|sir|ma'am/i.test(t)));
 });

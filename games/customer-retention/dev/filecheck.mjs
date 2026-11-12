@@ -32,7 +32,7 @@ const chrome = findChrome();
 if (!chrome) fail('no Chrome found (looked for Google Chrome.app, then Chromium in ~/Library/Caches/ms-playwright)');
 
 const url = pathToFileURL(fileURLToPath(new URL('../index.html', import.meta.url))).href;
-const WEBGL_COPY = 'Customer Retention needs WebGL 2, which this browser or device has switched off. Try the latest Chrome.';
+const WEBGL_COPY = 'Gyms of War needs WebGL 2, which this browser or device has switched off. Try the latest Chrome.';
 
 function dump(flags, target = url) {
   const r = spawnSync(chrome, ['--headless=new', '--virtual-time-budget=4000', '--dump-dom', ...flags, target], {
