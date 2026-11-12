@@ -12,6 +12,8 @@ import { promptText } from './ui/prompts.js';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const MOVING = new Set(['move', 'sprint']);
+// Where the interact actions (finish, revive Tobble) can start: moving, or tucked in cover (Doc steps out into the action).
+const CAN_INTERACT = new Set(['move', 'sprint', 'cover']);
 
 // The line under the reticle, first match wins: a kettlebell in hand; Tobble down in reach (the revive, with its hold ring); a downed
 // Rep in finish range; Cheat Day running; a Rep in bash range; a Rep ahead with The Regret in hand. null when nothing applies.
@@ -32,7 +34,7 @@ export function createPlayerActions({ mover, fight, arsenal, bag, cam, sfx, effe
   const arcPts = Array.from({ length: 64 }, () => [0, 0, 0]);
   const origin = [0, 0, 0], vel = [0, 0, 0], at = [0, 0, 0], dir = [0, 1, 0];
   let camYaw = 0, camPitch = 0, device = 'kbm';
-  let revLock = false, pulseT = 0, giveUpT = 0, throwBusy = 0, armed = false;
+  let revLock = false, pulseT = 0, giveUpT = 0, giveUpArmed = false, throwBusy = 0, armed = false;
   let exec = null;                  // { e, kind: 'cut' | 'stomp', gelT, sfxT }
   let arc = { count: 0, land: null, show: false };
   let prompt = null, holdFrac = 0;
@@ -111,7 +113,7 @@ export function createPlayerActions({ mover, fight, arsenal, bag, cam, sfx, effe
   }
 
   function reset() {
-    button.reset(); revLock = false; pulseT = 0; giveUpT = 0; throwBusy = 0; armed = false; exec = null;
+    button.reset(); revLock = false; pulseT = 0; giveUpT = 0; giveUpArmed = false; throwBusy = 0; armed = false; exec = null;
     arc = { count: 0, land: null, show: false }; prompt = null; holdFrac = 0;
     showArc();
   }
@@ -125,13 +127,15 @@ export function createPlayerActions({ mover, fight, arsenal, bag, cam, sfx, effe
       // Everything lets go. Holding interact gives up (a tap does not: a revive may be on its way).
       if (exec) dropExecution();
       button.reset(); revLock = false; armed = false; pulseT = 0;
-      giveUpT = inp.interactHeld ? giveUpT + dt : 0;
+      // E already held at the down (reviving Tobble, mashing) must be released once first, or the give-up fires on a stray hold.
+      if (!inp.interactHeld) giveUpArmed = true;
+      giveUpT = inp.interactHeld && giveUpArmed ? giveUpT + dt : 0;
       holdFrac = clamp01(giveUpT / Math.max(TUNING.health.giveUpHold, 1e-3));
       showArc();
       if (giveUpT >= TUNING.health.giveUpHold - 1e-9) { giveUpT = 0; restart(); }
       return;
     }
-    giveUpT = 0;
+    giveUpT = 0; giveUpArmed = false;
     if (exec && (m.state !== 'execute' || exec.e.state !== 'executed')) dropExecution();
 
     // The melee button: a tap bashes; held past holdTime with The Regret in hand (and not reloading or switching) it revs Cheat Day.
@@ -170,8 +174,8 @@ export function createPlayerActions({ mover, fight, arsenal, bag, cam, sfx, effe
     const tb = fight.tobble;
     const act = interactAction({ downed: false, clear: fight.clear, tobble: tb, pos: m.pos, yaw: m.facing, enemies: fight.enemies, boxes });
     if (act.kind === 'again' && inp.interactPressed) { restart(); return; }
-    if (act.kind === 'finish' && inp.interactPressed && MOVING.has(m.state)) { if (startExecution(act.target, k.finishTime, 'stomp')) cam.bump(0.6); }
-    if (act.kind === 'reviveTobble' && inp.interactHeld && MOVING.has(m.state)) m.reviveTobble(tb.pos);
+    if (act.kind === 'finish' && inp.interactPressed && CAN_INTERACT.has(m.state)) { if (startExecution(act.target, k.finishTime, 'stomp')) cam.bump(0.6); }
+    if (act.kind === 'reviveTobble' && inp.interactHeld && CAN_INTERACT.has(m.state)) m.reviveTobble(tb.pos);
     const reviving = m.state === 'reviveTobble';
     if (reviving) holdFrac = clamp01(m.stateTime / Math.max(reviveTimeOf(), 1e-3));
 
@@ -187,10 +191,13 @@ export function createPlayerActions({ mover, fight, arsenal, bag, cam, sfx, effe
     }
     showArc();
 
+    // A prompt shows only when its press can start the action in this state.
+    const canAct = CAN_INTERACT.has(m.state);
+    const canRev = MOVING.has(m.state) && throwBusy <= 0;
     prompt = actionPrompt({
-      device, grenadeHeld: armed && bag.count > 0, interact: act, reviving, revving: m.state === 'rev',
+      device, grenadeHeld: armed && bag.count > 0, interact: canAct ? act : null, reviving, revving: m.state === 'rev',
       bashTarget: MOVING.has(m.state) && m.bashReadyAt <= m.clock && !!meleeTarget('bash', m.pos, camYaw, fight.enemies, boxes),
-      cutterNear: cutterNear(), regretInHand: regret, holdFrac,
+      cutterNear: canRev && cutterNear(), regretInHand: regret, holdFrac,
     });
   }
 

@@ -114,14 +114,14 @@ export const ACTION_ENTRY = {
     return true;
   },
   execute(m, target, time) {
-    if (m.state !== 'move' && m.state !== 'sprint' && m.state !== 'rev') return false;
+    if (m.state !== 'move' && m.state !== 'sprint' && m.state !== 'rev' && m.state !== 'cover') return false;
     m.go('execute', {});
     m.scratch.time = Number.isFinite(time) && time > 0 ? time : 0;
     faceAt(m, target[0], target[1]);
     return true;
   },
   reviveTobble(m, pos) {
-    if (m.state !== 'move' && m.state !== 'sprint' && m.state !== 'rev') return false;
+    if (m.state !== 'move' && m.state !== 'sprint' && m.state !== 'rev' && m.state !== 'cover') return false;
     m.go('reviveTobble', {});
     faceAt(m, pos[0], pos.length > 2 ? pos[2] : pos[1]);
     return true;

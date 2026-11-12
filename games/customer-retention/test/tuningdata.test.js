@@ -76,3 +76,8 @@ test('formatForTuningFile includes weapons and combat', () => {
   assert.equal(got.weapons.regret.mag, 50);
   assert.equal(got.combat.fireBuffer, 0.12);
 });
+
+test('health.giveUpHold panel minimum is above 0 so giving up cannot be instant', () => {
+  const p = PANEL.find(x => x.path === 'health.giveUpHold');
+  assert.ok(p.min >= 0.3);
+});

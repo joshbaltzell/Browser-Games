@@ -76,7 +76,7 @@ export const PANEL = Object.freeze([
   n('combat.hitPad', 0, 0.3, 0.005), n('combat.crouchHead', 0, 3, 0.01), n('combat.crouchBodyTop', 0, 3, 0.01),
   n('combat.shoulderDrop', 0, 1, 0.01), n('combat.pickupRadius', 0.2, 3, 0.05),
   n('health.max', 1, 500, 1), n('health.regenDelay', 0, 15, 0.1), n('health.regenTime', 0, 15, 0.1), n('health.downedTime', 0, 60, 0.5),
-  n('health.standInRevive', 0, 1, 1), n('health.reviveTime', 0, 10, 0.1), n('health.reviveHealth', 0, 1, 0.05), n('health.godMode', 0, 1, 1), n('health.giveUpHold', 0, 5, 0.01),
+  n('health.standInRevive', 0, 1, 1), n('health.reviveTime', 0, 10, 0.1), n('health.reviveHealth', 0, 1, 0.05), n('health.godMode', 0, 1, 1), n('health.giveUpHold', 0.3, 5, 0.01),
   n('associate.radius', 0, 3, 0.01), n('associate.height', 0, 3, 0.01), n('associate.pointSpacing', 0.2, 3, 0.01),
   n('associate.reserveRadius', 0, 3, 0.01), n('associate.popShift', 0, 3, 0.01), n('associate.linkMax', 2, 15, 0.5),
   n('associate.health', 1, 1000, 1), n('associate.runSpeed', 0, 12, 0.1), n('associate.turnRate', 0.5, 40, 0.5), n('associate.arriveDist', 0.01, 1, 0.01), n('associate.stuckTime', 0.1, 5, 0.1),

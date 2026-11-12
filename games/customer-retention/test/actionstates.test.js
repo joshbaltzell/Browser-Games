@@ -122,3 +122,12 @@ test('place() puts the mover back to move with a ready bash and no kettlebell ai
   const m = mover(); m.bash(); step(m, I({ grenade: true }), 3); m.place([1, 0, 1], 0);
   assert.equal(m.state, 'move'); assert.equal(m.grenadeAim, false); assert.equal(m.bash(), true);
 });
+
+test('execute and reviveTobble start from cover (cover exit clears m.cover), back to move after', () => {
+  const a = mover(); a.state = 'cover'; a.cover = { edge: {} };
+  assert.equal(a.execute([0, 3], 0.5), true); assert.equal(a.state, 'execute'); assert.equal(a.cover, null);
+  step(a, I(), 40); assert.equal(a.state, 'move');
+  const b = mover(); b.state = 'cover'; b.cover = { edge: {} };
+  assert.equal(b.reviveTobble([0, 0, 2]), true); assert.equal(b.state, 'reviveTobble'); assert.equal(b.cover, null);
+  step(b, I({ interactHeld: false }), 2); assert.equal(b.state, 'move');
+});

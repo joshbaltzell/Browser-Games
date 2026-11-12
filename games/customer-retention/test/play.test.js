@@ -101,3 +101,67 @@ test('createPlayerActions: a tap bashes, a hold with the Regret revs, a hit whil
   for (let i = 0; i < 70; i++) a.step(1 / 60, inp({ interactHeld: true }));
   assert.equal(restarts, 1);
 });
+
+function actionsRig(over = {}) {
+  const calls = [];
+  const mover = {
+    state: 'move', pos: [0, 0, 0], facing: 0, grenadeAim: false, stateTime: 0, bashReadyAt: 0, clock: 0, cover: null, boxes: [],
+    bash() { return false; }, rev() { return false; },
+    execute() { calls.push('execute'); return true; }, reviveTobble() { calls.push('revive'); return true; },
+  };
+  const rep = { id: 1, alive: true, state: 'downed', pos: [0, 0, 1], head: [0, 1.7, 1] };
+  const fight = {
+    enemies: [], tobble: null, clear: false, beginExecution: () => true, releaseExecution() {}, finishExecution() {},
+    ...over,
+  };
+  let restarts = 0; const health = { downed: false };
+  const a = createPlayerActions({ mover, fight, arsenal: { current: () => 'regret', reload: null, switching: 0 }, bag: { count: 0, take: () => false }, cam: { bump() {}, kick() {} }, sfx: { play() {} }, effects: { gel() {} }, health, boxes: [], hooks: { restart: () => restarts++ } });
+  const inp = (o) => ({ meleeHeld: false, meleePressed: false, grenadeHeld: false, interactHeld: false, interactPressed: false, device: 'kbm', camYaw: 0, camPitch: 0, ...o });
+  return { a, mover, fight, calls, health, inp, rep, restarts: () => restarts };
+}
+
+test('revive Tobble: prompt and start agree in every state (shown and starts from move, sprint, cover; hidden and inert elsewhere)', () => {
+  const tb = { downed: true, pos: [0, 0, 1] };
+  for (const [state, can] of [['move', true], ['sprint', true], ['cover', true], ['roll', false], ['bash', false], ['rev', false], ['execute', false]]) {
+    const r = actionsRig({ tobble: tb }); r.mover.state = state;
+    r.a.step(1 / 60, r.inp({ interactHeld: true }));
+    const p = r.a.prompt();
+    assert.equal(!!(p && p.text === 'Hold E  revive Tobble'), can, `prompt in ${state}`);
+    assert.equal(r.calls.includes('revive'), can, `start in ${state}`);
+  }
+});
+
+test('finish: prompt and start agree in every state, including cover', () => {
+  const rep = { id: 1, alive: true, state: 'downed', pos: [0, 0, 1], head: [0, 1.7, 1], radius: 0.4 };
+  for (const [state, can] of [['move', true], ['sprint', true], ['cover', true], ['roll', false], ['bash', false]]) {
+    const r = actionsRig({ enemies: [rep] }); r.mover.state = state;
+    r.a.step(1 / 60, r.inp({ interactPressed: true, interactHeld: true }));
+    const p = r.a.prompt();
+    assert.equal(!!(p && p.text === 'E  finish'), can, `prompt in ${state}`);
+    assert.equal(r.calls.includes('execute'), can, `start in ${state}`);
+  }
+});
+
+test('rev Cheat Day prompt shows only where a hold can start the rev (move, sprint)', () => {
+  const rep = { id: 1, alive: true, state: 'cover', pos: [0, 0, 2], head: [0, 1.7, 2], radius: 0.4 };
+  for (const [state, can] of [['move', true], ['sprint', true], ['cover', false], ['roll', false]]) {
+    const r = actionsRig({ enemies: [rep] }); r.mover.state = state;
+    r.a.step(1 / 60, r.inp({}));
+    const p = r.a.prompt();
+    assert.equal(!!(p && p.text === 'Hold F  rev Cheat Day'), can, `prompt in ${state}`);
+  }
+});
+
+test('give up needs E released once after the down; E held through the down does not restart', () => {
+  const r = actionsRig();
+  r.health.downed = true;
+  for (let i = 0; i < 120; i++) r.a.step(1 / 60, r.inp({ interactHeld: true }));
+  assert.equal(r.restarts(), 0, 'held through the down');
+  r.a.step(1 / 60, r.inp({}));
+  for (let i = 0; i < 70; i++) r.a.step(1 / 60, r.inp({ interactHeld: true }));
+  assert.equal(r.restarts(), 1);
+  // after a revive and a second down the arm is cleared again
+  r.health.downed = false; r.a.step(1 / 60, r.inp({})); r.health.downed = true;
+  for (let i = 0; i < 120; i++) r.a.step(1 / 60, r.inp({ interactHeld: true }));
+  assert.equal(r.restarts(), 1);
+});
