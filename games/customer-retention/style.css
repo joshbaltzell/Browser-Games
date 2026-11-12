@@ -10,3 +10,29 @@ html, body { margin: 0; height: 100%; background: #1b1f3b; overflow: hidden; fon
 #cr-pause[hidden] { display: none; }
 #cr-pause div { font-size: 32px; font-weight: 700; }
 #cr-pause small { font-size: 16px; opacity: .85; }
+
+/* HUD (Customer Retention milestone 3) */
+#cr-hud { position: fixed; inset: 0; pointer-events: none; font-family: ui-monospace, Menlo, Consolas, monospace; color: #fff; text-shadow: 0 1px 2px rgba(27,31,59,.9); }
+#cr-hud [hidden] { display: none; }
+.cr-weapon { position: absolute; right: 24px; bottom: 24px; width: 180px; text-align: right; }
+.cr-weapon-name { font-size: 14px; opacity: .85; }
+.cr-ammo { font-size: 32px; font-weight: 700; line-height: 1.1; }
+.cr-reload { position: relative; width: 180px; height: 12px; margin-top: 8px; background: rgba(27,31,59,.7); border: 1px solid rgba(255,255,255,.5); box-sizing: border-box; }
+.cr-zone { position: absolute; top: 0; bottom: 0; }
+.cr-zone-good { background: rgba(190,190,200,.55); }
+.cr-zone-perfect { background: #ffe9a8; }
+.cr-marker { position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1px; background: #ff8a1f; }
+.cr-result { height: 18px; margin-top: 4px; font-size: 14px; font-weight: 700; }
+.cr-result[data-kind="perfect"] { color: #ffe9a8; } .cr-result[data-kind="good"] { color: #fff; } .cr-result[data-kind="jam"] { color: #ff4f9a; }
+.cr-reticle { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+.cr-arm { --gap: 6px; position: absolute; background: #fff; box-shadow: 0 0 2px rgba(27,31,59,.9); }
+.cr-arm-up, .cr-arm-down { width: 2px; height: 8px; left: -1px; }
+.cr-arm-up { top: calc(-8px - var(--gap)); } .cr-arm-down { top: var(--gap); }
+.cr-arm-left, .cr-arm-right { height: 2px; width: 8px; top: -1px; }
+.cr-arm-left { left: calc(-8px - var(--gap)); } .cr-arm-right { left: var(--gap); }
+.cr-hit { position: absolute; left: 50%; top: 50%; width: 0; height: 0; --s: 10px; --c: #fff; }
+.cr-hit[data-kind="head"] { --s: 14px; --c: #ff8a1f; } .cr-hit[data-kind="kill"] { --s: 18px; --c: #ff8a1f; }
+.cr-hit-a, .cr-hit-b { position: absolute; left: calc(var(--s) / -2); top: -1px; width: var(--s); height: 3px; background: var(--c); box-shadow: 0 0 2px rgba(27,31,59,.9); }
+.cr-hit-a { transform: rotate(45deg); } .cr-hit-b { transform: rotate(-45deg); }
+.cr-hit-ring { display: none; position: absolute; left: -16px; top: -16px; width: 32px; height: 32px; box-sizing: border-box; border: 2px solid #ff8a1f; border-radius: 50%; }
+.cr-hit[data-kind="kill"] .cr-hit-ring { display: block; }

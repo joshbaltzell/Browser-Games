@@ -11,6 +11,7 @@ export const TUNING = {
     coverLow: { fov: 70, right: 0.55, up: 1.0, back: 1.9 },
     coverTall: { fov: 70, right: 0.65, up: 1.35, back: 1.9 },
     bump: { amount: 0.18, halfLife: 0.07 }, // slam kick toward the player, m and s
+    recoil: { halfLife: 0.09, max: 6 },     // gun kick spring: s to halve, and the cap in deg
     blendHalfLife: 0.07,       // mode changes: offsets and fov
     followHalfLife: 0.04,      // pivot trailing the player (0 = rigid)
     sideHalfLife: 0.12,        // shoulder swap
@@ -20,7 +21,7 @@ export const TUNING = {
     headHideDist: 0.45,        // m, the player's head is hidden while the lens is this close to it
     headHideMargin: 0.08,      // m, the head stays hidden until the lens is this much further out
   },
-  look: { mouse: 0.0022, pad: { yawRate: 3.2, pitchRate: 2.2, expo: 1.8 }, aimScale: 0.6, invertY: false },
+  look: { mouse: 0.0022, pad: { yawRate: 3.2, pitchRate: 2.2, expo: 1.8, assist: 0.6 }, aimScale: 0.6, invertY: false },
   move: {
     radius: 0.35, height: 1.8,
     jog: 4.5, aimWalk: 2.2, sprint: 7.5,
@@ -124,4 +125,15 @@ export const TUNING = {
   },
   // Target dummies (the grey room's Associates). Health in hit points, times in s, speeds in m/s.
   dummy: { health: 100, respawnTime: 3, railSpeed: 1.5 },
+  // Shot feedback. Times in s, sizes in m, speeds in m/s, volumes 0 to 1, squash and kicks as fractions or m.
+  feedback: {
+    flashTime: 0.05, flashSize: 0.35, tracerTime: 0.05, tracerWidth: 0.025,
+    sparkTime: 0.25, sparkCount: 4, gelTime: 0.5, gelCount: 6, gelSpeed: 3,
+    killGelCount: 18, receiptCount: 8, receiptTime: 1.2, gravity: 9.8,
+    hitMarkerTime: 0.12, killMarkerTime: 0.3, reloadResultTime: 0.6,
+    reticleMinGap: 6,   // px, the reticle's arms at zero spread
+    shotVolume: 0.35, hitVolume: 0.3, killVolume: 0.45, reloadVolume: 0.35,
+    gunSquash: 0.18, gunSquashTime: 0.08, gunKick: 0.05, bodyKick: 0.04,
+    dummyBurstTime: 0.12, dummyRespawnPop: 0.2,
+  },
 };

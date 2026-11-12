@@ -191,3 +191,40 @@ test('headVisibleFor hides the head inside the distance and returns it past dist
   assert.equal(headVisibleFor(0.54, false, 0.45, 0.08), true);
   assert.equal(headVisibleFor(0.01, true, 0, 0), true);          // hide distance 0 never hides
 });
+
+test('kick raises the view by about the kick and returns within 0.4 s; cam.yaw and cam.pitch unchanged', () => {
+  const c = rig(); c.snap(T0, 0);
+  const r0 = run(c, 120); const y0 = r0.dir[1];
+  c.kick(3, 2);
+  const r1 = c.update(DT, { target: T0, mode: 'normal', side: 1 }, OPEN);
+  const lift = Math.asin(r1.dir[1]) - Math.asin(y0);
+  assert.ok(lift > 1.5 * Math.PI / 180 && lift < 3.1 * Math.PI / 180, `lift ${lift}`);
+  assert.ok(Math.abs(r1.dir[0]) > 0.01);
+  assert.equal(c.yaw, 0); assert.equal(c.pitch, 0);
+  const r2 = run(c, 24);
+  near(r2.dir[1], y0, 0.005); near(r2.dir[0], r0.dir[0], 0.005);
+  assert.equal(c.yaw, 0); assert.equal(c.pitch, 0);
+});
+
+test('kick is capped at recoil.max; snap clears it; pitch stays within pitchMax with a kick', () => {
+  const c = rig(); c.snap(T0, 0);
+  run(c, 60);
+  for (let i = 0; i < 20; i++) c.kick(5, 5);
+  const r = c.update(0, { target: T0, mode: 'normal', side: 1 }, OPEN);
+  near(Math.asin(r.dir[1]), TUNING.camera.recoil.max * Math.PI / 180, 1e-6);
+  c.snap(T0, 0);
+  const r2 = c.update(0, { target: T0, mode: 'normal', side: 1 }, OPEN);
+  near(r2.dir[1], 0, 1e-9); near(r2.dir[0], 0, 1e-9);
+  c.pitch = TUNING.camera.pitchMax; c.kick(6, 0);
+  const r3 = c.update(0, { target: T0, mode: 'normal', side: 1 }, OPEN);
+  near(Math.asin(r3.dir[1]), TUNING.camera.pitchMax, 1e-9);
+});
+
+test('look padScale 0.6 slows pad look to 0.6x; mouse look ignores it', () => {
+  const a = rig(), b = rig();
+  a.look(0, 0, 1, 0, 0.1, false); b.look(0, 0, 1, 0, 0.1, false, 0.6);
+  near(b.yaw, a.yaw * 0.6, 1e-12);
+  const m = rig(), n = rig();
+  m.look(10, 10, 0, 0, 0.1, false); n.look(10, 10, 0, 0, 0.1, false, 0.6);
+  assert.equal(m.yaw, n.yaw); assert.equal(m.pitch, n.pitch);
+});

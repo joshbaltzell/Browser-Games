@@ -4,7 +4,7 @@ import { PANEL, DEFAULTS, getPath, setPath, diffFromDefaults, applyOverrides, fo
 
 const KEY = 'cr-tuning';
 
-const LABELS = { move: 'Move', camera: 'Camera', look: 'Look', cover: 'Cover', weapons: 'Weapons', regret: 'The Regret', pistol: 'Clearance Pistol', combat: 'Combat', dummy: 'Dummies', aim: 'Aim', sprint: 'Sprint', coverLow: 'Cover low', coverTall: 'Cover tall', bump: 'Bump', shake: 'Shake', pad: 'Pad', wall: 'Wall' };
+const LABELS = { move: 'Move', camera: 'Camera', look: 'Look', cover: 'Cover', weapons: 'Weapons', regret: 'The Regret', pistol: 'Clearance Pistol', combat: 'Combat', dummy: 'Dummies', recoil: 'Recoil', feedback: 'Feedback', aim: 'Aim', sprint: 'Sprint', coverLow: 'Cover low', coverTall: 'Cover tall', bump: 'Bump', shake: 'Shake', pad: 'Pad', wall: 'Wall' };
 const WALL = new Set(['probeRadius', 'minBack', 'wallReturnHalfLife']);
 
 // Folder chain for a path: move.jog -> [Move]; camera.aim.fov -> [Camera, Aim]; camera.probeRadius -> [Camera, Wall].

@@ -1,7 +1,7 @@
 import { TUNING } from '../tuning.js';
 
 // The tunable numbers: every number in TUNING.move (but radius and height),
-// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat and TUNING.dummy, with a slider range, plus look.invertY.
+// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
 // Pure data and helpers; no DOM.
 
 const n = (path, min, max, step) => ({ path, min, max, step });
@@ -71,6 +71,15 @@ export const PANEL = Object.freeze([
   n('combat.muzzleUp', 0.5, 2, 0.01), n('combat.muzzleRight', -1, 1, 0.01), n('combat.muzzleForward', 0, 2, 0.01),
   n('combat.blindLift', 0, 1, 0.01), n('combat.blindReach', 0, 1, 0.01), n('combat.crateRadius', 0.3, 3, 0.05),
   n('dummy.health', 1, 1000, 1), n('dummy.respawnTime', 0, 30, 0.5), n('dummy.railSpeed', 0, 10, 0.1),
+  n('camera.recoil.halfLife', 0.01, 0.5, 0.01), n('camera.recoil.max', 0, 20, 0.5), n('look.pad.assist', 0.1, 1, 0.05),
+  n('feedback.flashTime', 0.01, 0.3, 0.01), n('feedback.flashSize', 0.05, 1.5, 0.05), n('feedback.tracerTime', 0.01, 0.3, 0.01), n('feedback.tracerWidth', 0.005, 0.2, 0.005),
+  n('feedback.sparkTime', 0.05, 1, 0.01), n('feedback.sparkCount', 0, 12, 1), n('feedback.gelTime', 0.1, 2, 0.05), n('feedback.gelCount', 0, 24, 1), n('feedback.gelSpeed', 0, 10, 0.1),
+  n('feedback.killGelCount', 0, 48, 1), n('feedback.receiptCount', 0, 24, 1), n('feedback.receiptTime', 0.2, 4, 0.05), n('feedback.gravity', 0, 30, 0.1),
+  n('feedback.hitMarkerTime', 0.02, 1, 0.01), n('feedback.killMarkerTime', 0.05, 1, 0.01), n('feedback.reloadResultTime', 0.1, 2, 0.05),
+  n('feedback.reticleMinGap', 0, 30, 1),
+  n('feedback.shotVolume', 0, 1, 0.05), n('feedback.hitVolume', 0, 1, 0.05), n('feedback.killVolume', 0, 1, 0.05), n('feedback.reloadVolume', 0, 1, 0.05),
+  n('feedback.gunSquash', 0, 0.6, 0.01), n('feedback.gunSquashTime', 0.01, 0.5, 0.01), n('feedback.gunKick', 0, 0.3, 0.01), n('feedback.bodyKick', 0, 0.3, 0.01),
+  n('feedback.dummyBurstTime', 0.01, 1, 0.01), n('feedback.dummyRespawnPop', 0, 1, 0.01),
 ]);
 
 const PANEL_BY_PATH = new Map(PANEL.map(p => [p.path, p]));
@@ -131,7 +140,7 @@ function text(v, indent) {
   return `{\n${lines.join('\n')}\n${'  '.repeat(indent)}}`;
 }
 
-// The move, camera, look, cover, weapons, combat and dummy blocks as object-literal text to paste into src/tuning.js.
+// The move, camera, look, cover, weapons, combat, dummy and feedback blocks as object-literal text to paste into src/tuning.js.
 export function formatForTuningFile(current = TUNING) {
-  return ['camera', 'combat', 'cover', 'dummy', 'look', 'move', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
+  return ['camera', 'combat', 'cover', 'dummy', 'feedback', 'look', 'move', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
 }

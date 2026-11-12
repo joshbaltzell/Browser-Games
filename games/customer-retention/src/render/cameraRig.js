@@ -31,6 +31,7 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
   const sp = { fov: { x: 0, v: 0 }, right: { x: 0, v: 0 }, up: { x: 0, v: 0 }, back: { x: 0, v: 0 } };
   const side = { x: 1, v: 0 };
   const kick = { x: 0, v: 0 };     // slam bump: metres of lens pull toward the player
+  const recoil = { p: { x: 0, v: 0 }, y: { x: 0, v: 0 } }; // gun kick offsets, degrees
   const free = [0, 0, 0];          // un-lagged head, where the pivot may not be dragged through a corner from
   const shakeW = { x: 0, v: 0 };   // mode shake weight, blended like the other mode params
   const piv = [{ x: 0, v: 0 }, { x: 0, v: 0 }, { x: 0, v: 0 }];
@@ -45,14 +46,14 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
 
   const cam = {
     yaw: 0, pitch: 0,
-    look(dxPx, dyPx, padX, padY, dt, aiming) {
+    look(dxPx, dyPx, padX, padY, dt, aiming, padScale = 1) {
       const s = aiming ? look.aimScale : 1;
       const inv = look.invertY ? -1 : 1;
       this.yaw -= dxPx * look.mouse * s;
       this.pitch -= dyPx * look.mouse * s * inv;
-      const p = look.pad;
-      if (padX) this.yaw -= Math.sign(padX) * Math.abs(padX) ** p.expo * p.yawRate * s * dt;
-      if (padY) this.pitch -= Math.sign(padY) * Math.abs(padY) ** p.expo * p.pitchRate * s * dt * inv;
+      const p = look.pad, ps = s * padScale;
+      if (padX) this.yaw -= Math.sign(padX) * Math.abs(padX) ** p.expo * p.yawRate * ps * dt;
+      if (padY) this.pitch -= Math.sign(padY) * Math.abs(padY) ** p.expo * p.pitchRate * ps * dt * inv;
       if (this.pitch < tuning.pitchMin) this.pitch = tuning.pitchMin;
       if (this.pitch > tuning.pitchMax) this.pitch = tuning.pitchMax;
     },
@@ -60,6 +61,15 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       const b = tuning.bump;
       if (!b || !(b.amount > 0) || !(scale > 0)) return;
       kick.x = Math.min(kick.x + b.amount * scale, 2 * b.amount);
+    },
+    // Gun kick in degrees: adds to a pitch and a yaw offset of the view (each capped at recoil.max)
+    // that spring back. cam.yaw and cam.pitch, which movement reads, never change.
+    kick(pitchDeg, yawDeg = 0) {
+      const max = tuning.recoil ? tuning.recoil.max : 0;
+      if (!(max > 0)) return;
+      const cap = (x, d) => Math.max(-max, Math.min(max, x + (Number.isFinite(d) ? d : 0)));
+      recoil.p.x = Math.max(0, cap(recoil.p.x, pitchDeg));
+      recoil.y.x = cap(recoil.y.x, yawDeg);
     },
     snap(target, yaw, mode = 'normal', sideArg = 1) {
       if (yaw !== undefined) this.yaw = yaw;
@@ -69,6 +79,7 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       shakeW.x = shakeWeightOf(tuning, mode); shakeW.v = 0;
       for (let i = 0; i < 3; i++) { piv[i].x = target[i]; piv[i].v = 0; }
       kick.x = 0; kick.v = 0;
+      recoil.p.x = 0; recoil.p.v = 0; recoil.y.x = 0; recoil.y.v = 0;
       ratio = 1; ready = true;
     },
     update(dt, { target, mode = 'normal', side: sideTarget = 1 }, boxes) {
@@ -82,7 +93,11 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       for (let i = 0; i < 3; i++) springStep(piv[i], target[i], tuning.followHalfLife, dt);
       springStep(kick, 0, tuning.bump ? tuning.bump.halfLife : 0, dt);
 
-      const yaw = this.yaw, pitch = this.pitch;
+      const rh = tuning.recoil ? tuning.recoil.halfLife : 0;
+      springStep(recoil.p, 0, rh, dt); springStep(recoil.y, 0, rh, dt);
+      const DEG = Math.PI / 180;
+      const yaw = this.yaw + recoil.y.x * DEG;
+      const pitch = Math.max(tuning.pitchMin, Math.min(tuning.pitchMax, this.pitch + recoil.p.x * DEG));
       const sy = Math.sin(yaw), cy = Math.cos(yaw), sinP = Math.sin(pitch), cp = Math.cos(pitch);
       const r = tuning.probeRadius;
       const back = sp.back.x;
