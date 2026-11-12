@@ -123,9 +123,16 @@ export const TUNING = {
     blindLift: 0.15,      // m, blind muzzle height above low cover's top
     blindReach: 0.15,     // m, blind muzzle reach past the wall face or a tall corner
     crateRadius: 1.0,     // m, walk within this of an ammo crate to refill
+    crouchHead: 0.70,     // m, head centre of a crouched character tucked behind low cover
+    crouchBodyTop: 0.45,  // m, top of a crouched character's body capsule
   },
   // Target dummies (the grey room's Associates). Health in hit points, times in s, speeds in m/s.
   dummy: { health: 100, respawnTime: 3, railSpeed: 1.5 },
+  // Associates (Kiosk Row's enemies). Distances in m.
+  associate: {
+    radius: 0.35, height: 1.8, pointSpacing: 0.8, reserveRadius: 1.0, popShift: 0.55,
+    linkMax: 7,           // m, longest waypoint link
+  },
   // Shot feedback. Times in s, sizes in m, speeds in m/s, volumes 0 to 1, squash and kicks as fractions or m.
   feedback: {
     flashTime: 0.05, flashSize: 0.35, tracerTime: 0.05, tracerWidth: 0.025,

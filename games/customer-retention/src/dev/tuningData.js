@@ -1,7 +1,7 @@
 import { TUNING } from '../tuning.js';
 
 // The tunable numbers: every number in TUNING.move (but radius and height),
-// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
+// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.associate, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
 // Pure data and helpers; no DOM.
 
 const n = (path, min, max, step) => ({ path, min, max, step });
@@ -70,6 +70,9 @@ export const PANEL = Object.freeze([
   n('combat.minRate', 0.01, 1, 0.01), n('combat.minReloadTime', 0.01, 0.5, 0.01),
   n('combat.muzzleUp', 0.5, 2, 0.01), n('combat.muzzleRight', -1, 1, 0.01), n('combat.muzzleForward', 0, 2, 0.01),
   n('combat.blindLift', 0, 1, 0.01), n('combat.blindReach', 0, 1, 0.01), n('combat.crateRadius', 0.3, 3, 0.05),
+  n('combat.crouchHead', 0, 3, 0.01), n('combat.crouchBodyTop', 0, 3, 0.01),
+  n('associate.radius', 0, 3, 0.01), n('associate.height', 0, 3, 0.01), n('associate.pointSpacing', 0, 3, 0.01),
+  n('associate.reserveRadius', 0, 3, 0.01), n('associate.popShift', 0, 3, 0.01), n('associate.linkMax', 2, 15, 0.5),
   n('dummy.health', 1, 1000, 1), n('dummy.respawnTime', 0, 30, 0.5), n('dummy.railSpeed', 0, 10, 0.1),
   n('camera.recoil.halfLife', 0.01, 0.5, 0.01), n('camera.recoil.max', 0, 20, 0.5), n('look.pad.assist', 0.1, 1, 0.05),
   n('feedback.flashTime', 0.01, 0.3, 0.01), n('feedback.flashSize', 0.05, 1.5, 0.05), n('feedback.tracerTime', 0.01, 0.3, 0.01), n('feedback.tracerWidth', 0.005, 0.2, 0.005),
@@ -140,7 +143,7 @@ function text(v, indent) {
   return `{\n${lines.join('\n')}\n${'  '.repeat(indent)}}`;
 }
 
-// The move, camera, look, cover, weapons, combat, dummy and feedback blocks as object-literal text to paste into src/tuning.js.
+// The move, camera, look, cover, weapons, combat, associate, dummy and feedback blocks as object-literal text to paste into src/tuning.js.
 export function formatForTuningFile(current = TUNING) {
-  return ['camera', 'combat', 'cover', 'dummy', 'feedback', 'look', 'move', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
+  return ['associate', 'camera', 'combat', 'cover', 'dummy', 'feedback', 'look', 'move', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
 }

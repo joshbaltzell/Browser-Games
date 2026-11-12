@@ -144,3 +144,10 @@ test('the ammo crate is clear of the lane and of every box', () => {
   for (const d of GREY_ROOM.dummies) assert.ok(Math.hypot(d.pos[0] - c[0], d.pos[2] - c[2]) > TUNING.combat.crateRadius);
   assert.ok(Object.isFrozen(GREY_ROOM.ammoCrates[0]));
 });
+
+test('GREY_ROOM unchanged: 19 boxes and the same features', () => {
+  assert.equal(GREY_ROOM.boxes.length, 19);
+  assert.deepEqual(Object.keys(GREY_ROOM.features), ['corridor', 'wall', 'lane', 'coverRow', 'coverTall', 'range']);
+  assert.equal(GREY_ROOM.landmark, undefined);
+  assert.equal(GREY_ROOM.dummies.length, 5);
+});

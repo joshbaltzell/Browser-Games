@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE } from '../render/palette.js';
 import { createToonMaterial } from '../render/toon.js';
 import { addOutline, computeOutlineNormals } from '../render/outline.js';
-import { makeFloor } from './kit.js';
+import { makeFloor, makeSign } from './kit.js';
 import { makeBox } from './collide.js';
 
 const deepFreeze = (o) => {
@@ -111,7 +111,8 @@ export function wallTrim(room = GREY_ROOM) {
 
 export function buildGreyRoom(room = GREY_ROOM) {
   const group = new THREE.Group();
-  group.add(makeFloor({ w: 24, d: 24 }));
+  const floorBox = room.boxes.find(b => b.kind === 'floor');
+  group.add(makeFloor({ w: floorBox.max[0] - floorBox.min[0], d: floorBox.max[2] - floorBox.min[2] }));
   for (const kind of Object.keys(KIND_COLOR)) {
     const list = room.boxes.filter(b => b.kind === kind);
     if (!list.length) continue;
@@ -143,6 +144,13 @@ export function buildGreyRoom(room = GREY_ROOM) {
     m.name = 'grey-crate';
     addOutline(m);
     group.add(m);
+  }
+  if (room.landmark) {
+    const L = room.landmark;
+    const sign = makeSign({ text: L.text, w: L.w, h: L.h });
+    sign.position.set(L.pos[0], L.pos[1], L.pos[2]);
+    sign.rotation.y = Math.PI;               // the sign faces +z; turn it to face the player coming north
+    group.add(sign);
   }
   return { group, boxes: room.boxes, update(dt) {} };
 }
