@@ -47,6 +47,8 @@ export const PANEL = Object.freeze([
   n('cover.swapRange', 0, 5, 0.05), n('cover.swapSpeed', 0, 30, 0.5), n('cover.swapAngle', 0, 180, 1),
   n('cover.swapMaxOffset', 0, 5, 0.05),
   n('cover.slamSquash', 0, 1, 0.01), n('cover.slamSquashTime', 0, 2, 0.01), n('cover.thudVolume', 0, 1, 0.05),
+  n('cover.autoSlam', 0, 1, 1), n('cover.autoAngle', 0, 90, 1), n('cover.autoDist', 0, 1, 0.01),
+  n('cover.autoMinTilt', 0, 1, 0.05), n('cover.autoMinSpeed', 0, 12, 0.1), n('cover.autoTime', 0, 1, 0.01),
 ]);
 
 const PANEL_BY_PATH = new Map(PANEL.map(p => [p.path, p]));

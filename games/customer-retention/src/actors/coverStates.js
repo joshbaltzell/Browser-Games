@@ -33,6 +33,21 @@ export const coverAction = {
   },
 };
 
+// Run-in slam: the stand-point target if this step's push qualifies, else null. Pure (reads m, no
+// timer): stick tilt, the speed from before contact (m.runSpeed, see movement.js), and the same
+// geometry as a tap grab with the angle and range narrowed to autoAngle and autoDist.
+const autoTune = {};
+export function autoSlamCandidate(m, intent) {
+  const c = m.coverTuning;
+  if (!c.autoSlam || intent.aim || tiltOf(intent) < c.autoMinTilt || m.runSpeed < c.autoMinSpeed) return null;
+  Object.assign(autoTune, c);
+  autoTune.grabAngle = c.autoAngle; autoTune.grabRange = c.autoDist;
+  wishOf(intent, wish);
+  const l = Math.hypot(wish[0], wish[1]);
+  dir[0] = wish[0] / l; dir[1] = wish[1] / l;
+  return findCoverTarget(m.coverEdges, m.boxes, m.pos, dir, intent.camYaw, autoTune, m.tuning.radius);
+}
+
 export function coverEdgeOf(m) {
   return m.cover ? m.cover.edge : (m.scratch.edge || null);
 }

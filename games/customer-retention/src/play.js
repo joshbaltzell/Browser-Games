@@ -63,7 +63,7 @@ export function startPlay({ canvas, gl, params }) {
   const mover = createMovement({
     boxes, spawn: spawn.pos, coverEdges: deriveEdges(),
     onState(state, from) {
-      transitions.push({ state, from, t: simTime, tapped: lastTap });
+      transitions.push({ state, from, t: simTime, tapped: lastTap, auto: state === 'coverSlide' && !lastTap && (from === 'move' || from === 'sprint') });
       if (transitions.length > TRANSITION_CAP) transitions.shift();
     },
   });
@@ -180,8 +180,8 @@ export function startPlay({ canvas, gl, params }) {
     const pad = input.padStatus();
     readout.textContent = [
       'COVER TEST',
-      'Mouse + keys: WASD move, mouse look, right mouse aim / pop out, Space tap: take cover (toward it) or roll, hold: sprint, Shift sprint',
-      'Gamepad: left stick move, right stick look, left trigger aim / pop out, A tap: take cover or roll, hold: sprint',
+      'Mouse + keys: WASD move, mouse look, right mouse aim / pop out, Space tap or run straight in: take cover, else roll, hold: sprint, Shift sprint',
+      'Gamepad: left stick move, right stick look, left trigger aim / pop out, A tap or run straight in: take cover, else roll, hold: sprint',
       'In cover: push along to move, aim to pop out, push in + tap to vault, push toward a gap + tap to swap, pull away to leave',
       '',
       `${mover.state}   ${mover.speed().toFixed(2)} m/s`,

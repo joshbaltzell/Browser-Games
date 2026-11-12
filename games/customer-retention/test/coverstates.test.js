@@ -279,3 +279,50 @@ test('keyboard diagonals decide the same way at camera yaw offsets of +-2 degree
     assert.equal(k.state, 'cover', `tap sx=${sx} d=${d}`);
   }
 });
+
+// Run-in slam (Gate B round 1): straight at a face at run speed grabs with no tap.
+const runAt = (m, intent, n) => { let first = -1; for (let i = 0; i < n; i++) { m.update(intent, DT); if (first < 0 && m.state === 'coverSlide') first = i; } return first; };
+test('run-in: jogging or sprinting straight at LOW with no tap ends in cover, slams once', () => {
+  for (const sprint of [false, true]) {
+    const m = mover({ spawn: [0, 0, -3] });
+    runAt(m, I({ moveY: -1, sprint }), 120); step(m, I({ moveY: -1, sprint }), 20);
+    assert.equal(m.state, 'cover', 'sprint ' + sprint); assert.equal(m.slams, 1);
+    near(m.pos[2], 2 - S, 1e-6);
+  }
+});
+test('run-in: the entry carries onState with no tap', () => {
+  const calls = []; const m = mover({ spawn: [0, 0, -3], onState: (n, p, i) => calls.push([n, p, i.tap]) });
+  step(m, I({ moveY: -1 }), 120);
+  assert.deepEqual(calls[0], ['coverSlide', 'move', false]);
+});
+test('run-in: never from 30 deg off the normal, parallel 0.3 m from the face, aim-walking, a slow walk, or autoSlam 0', () => {
+  const cases = [
+    ['30 deg', { spawn: [-3, 0, -3] }, I({ moveX: -Math.sin(30 * Math.PI / 180), moveY: -Math.cos(30 * Math.PI / 180) }), 0],
+    ['parallel', { spawn: [-6, 0, 2 - S - 0.3] }, I({ moveX: -1 }), 0],
+    ['aim-walk', { spawn: [0, 0, 0] }, I({ moveY: -1, aim: true }), 0],
+    ['slow walk', { spawn: [0, 0, 0] }, I({ moveY: -0.4 }), 0],
+  ];
+  for (const [name, o, intent] of cases) {
+    const m = mover(o); step(m, intent, 240);
+    assert.notEqual(m.state, 'cover', name); assert.equal(m.slams, 0, name);
+  }
+  const off = mover({ spawn: [0, 0, -3] }); off.coverTuning = { ...C, autoSlam: 0 };
+  step(off, I({ moveY: -1 }), 240); assert.equal(off.slams, 0); assert.notEqual(off.state, 'cover');
+});
+test('run-in: 30 deg off the normal grabs with a wider autoAngle (read live)', () => {
+  const m = mover({ spawn: [-1, 0, -3] }); m.coverTuning = { ...C, autoAngle: 40 };
+  step(m, I({ moveX: -Math.sin(20 * Math.PI / 180), moveY: -Math.cos(20 * Math.PI / 180) }), 200);
+  assert.equal(m.slams, 1);
+});
+test('run-in: pushing in from rest against the wall never grabs, and a roll never grabs', () => {
+  const m = mover({ spawn: [0, 0, 2 - S] });
+  step(m, I({ moveY: -1 }), 240); assert.equal(m.state, 'move'); assert.equal(m.slams, 0);
+  const r = mover({ spawn: [0, 0, -3] }); r.update(I({ moveY: -1, tap: true }), DT); assert.equal(r.state, 'roll');
+  step(r, I({ moveY: -1 }), 5); assert.equal(r.state, 'roll');
+});
+test('run-in: pulling away leaves on the same step; running straight back in grabs again', () => {
+  const m = mover({ spawn: [0, 0, -3] });
+  step(m, I({ moveY: -1 }), 140); assert.equal(m.state, 'cover');
+  m.update(I({ moveY: 1 }), DT); assert.equal(m.state, 'move');
+  step(m, I({ moveY: 1 }), 20); step(m, I({ moveY: -1 }), 120); assert.equal(m.slams, 2);
+});

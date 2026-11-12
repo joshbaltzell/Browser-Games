@@ -1,7 +1,7 @@
 import { TUNING } from '../tuning.js';
 import { moveCapsule } from '../world/collide.js';
 import { wrap, tiltOf, wishOf, turnToward } from './moveMath.js';
-import { COVER_STATES, coverAction } from './coverStates.js';
+import { COVER_STATES, coverAction, autoSlamCandidate } from './coverStates.js';
 
 export const forwardOf = yaw => [Math.sin(yaw), 0, Math.cos(yaw)];
 export const rightOf = yaw => [-Math.cos(yaw), 0, Math.sin(yaw)];
@@ -105,11 +105,16 @@ export function createMovement({
     vel: [0, 0, 0], facing: 0, prevFacing: 0, aiming: false, heading: 0,
     tuning, boxes, coverTuning, coverEdges, onState,
     cover: null, coverTarget: null, slams: 0,
+    // Run-in slam bookkeeping. runSpeed is the speed the state asked for this step, taken before
+    // moveBy can zero the into-wall part on contact; while a wall keeps blocking us it is held
+    // for 2 * autoTime so a real run-in still counts, but pushing from rest never reaches it.
+    runSpeed: 0, hitTime: 0, autoTimer: 0, hit: false,
     scratch: {},
     speed() { return Math.hypot(m.vel[0], m.vel[2]); },
     // Moves by delta through the colliders. slideVel true: remove velocity into what was hit. False: set velocity from the actual travel.
     moveBy(delta, dt, slideVel = true) {
       const p = m.pos, r = moveCapsule(boxes, p, delta, tuning.radius, tuning.height);
+      m.hit = !!r.hit;
       if (!slideVel) {
         if (dt > 0) { m.vel[0] = (r.pos[0] - p[0]) / dt; m.vel[2] = (r.pos[2] - p[2]) / dt; }
       } else if (r.hit) {
@@ -128,6 +133,8 @@ export function createMovement({
       const prev = m.state;
       states[prev].exit?.(m);
       m.state = name; m.stateTime = 0; m.entries++; m.scratch = {};
+      if (states[prev].selfMoves) { m.runSpeed = 0; m.hitTime = 0; } // a run-in is judged on speed built in move or sprint
+      m.autoTimer = 0;
       states[name].enter(m, intent);
       m.onState?.(name, prev, intent);
     },
@@ -135,7 +142,7 @@ export function createMovement({
       states[m.state].exit?.(m);
       m.state = 'move'; m.stateTime = 0; m.cover = null; m.coverTarget = null; m.scratch = {};
       m.pos[0] = m.prevPos[0] = pos[0]; m.pos[1] = m.prevPos[1] = pos[1]; m.pos[2] = m.prevPos[2] = pos[2];
-      m.vel[0] = m.vel[1] = m.vel[2] = 0;
+      m.vel[0] = m.vel[1] = m.vel[2] = 0; m.runSpeed = m.hitTime = m.autoTimer = 0;
       if (yaw !== undefined) m.facing = m.prevFacing = m.heading = yaw;
       else m.prevFacing = m.facing;
     },
@@ -148,8 +155,22 @@ export function createMovement({
       m.stateTime += dt;
       const next = states[m.state].update(m, intent, dt);
       // Velocity-driven states move here; a state with selfMoves (roll) moves itself.
-      if (!states[m.state].selfMoves) {
+      const ran = m.state;
+      if (!states[ran].selfMoves) {
+        const asked = m.speed();
         m.moveBy([m.vel[0] * dt, 0, m.vel[2] * dt], dt, true);
+        if (m.hit) {
+          m.hitTime += dt;
+          if (asked >= m.runSpeed || m.hitTime > 2 * m.coverTuning.autoTime) m.runSpeed = asked;
+        } else { m.runSpeed = asked; m.hitTime = 0; }
+      }
+      // Run-in slam: only from move or sprint, which also rules out roll and the cover states.
+      if (ran === 'move' || ran === 'sprint') {
+        const tg = autoSlamCandidate(m, intent);
+        if (!tg) m.autoTimer = 0;
+        else if ((m.autoTimer += dt) >= m.coverTuning.autoTime) {
+          m.coverTarget = tg; m.go('coverSlide', intent); return;
+        }
       }
       if (next) m.go(next, intent);
     },

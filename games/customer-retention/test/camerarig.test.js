@@ -119,11 +119,11 @@ test('only CAMERA_MODES are modes: shake, bump, look and unknown names give norm
     assert.deepEqual(modeParams(t, m), modeParams(t, 'normal'));
     assert.equal(shakeWeightOf({ ...t, [m]: { shakeWeight: 1 } }, m), 0);
   }
-  assert.deepEqual(modeParams(t, 'coverLow'), { fov: 70, right: 0.6, up: 1.2, back: 2.4 });
-  assert.deepEqual(modeParams(t, 'coverTall'), { fov: 70, right: 0.7, up: 1.5, back: 2.3 });
+  assert.deepEqual(modeParams(t, 'coverLow'), { fov: 70, right: 0.55, up: 1.0, back: 1.9 });
+  assert.deepEqual(modeParams(t, 'coverTall'), { fov: 70, right: 0.65, up: 1.35, back: 1.9 });
 });
 test('coverLow and coverTall blend in within 0.5 s and have zero shake', () => {
-  for (const [mode, p] of [['coverLow', { right: 0.6, up: 1.2, back: 2.4 }], ['coverTall', { right: 0.7, up: 1.5, back: 2.3 }]]) {
+  for (const [mode, p] of [['coverLow', { right: 0.55, up: 1.0, back: 1.9 }], ['coverTall', { right: 0.65, up: 1.35, back: 1.9 }]]) {
     const c = rig(); c.snap(T0, 0);
     const q = createCameraRig({ tuning: { ...clone(), shake: { amp: 0, hz: 9 } }, look: TUNING.look }); q.snap(T0, 0);
     let r;

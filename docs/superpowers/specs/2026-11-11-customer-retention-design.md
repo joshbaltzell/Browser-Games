@@ -374,7 +374,7 @@ Principles:
 
 These are checked by playing, at every milestone from 1 onward.
 
-1. **Cover feels like a magnet you control.** Slamming in is fast and loud. You are never pulled in by accident, and leaving is instant.
+1. **Cover feels like a magnet you control.** Slamming in is fast and loud. You are never pulled in by accident (Gate B rule: running straight into cover slams you in with no tap, while skimming along it, glancing off it, aim-walking, walking slowly or rolling never does), and leaving is instant.
 2. **Every shot gets an answer.** Recoil, a muzzle flash, a hit marker, a flinch, a splat, a sound. Kills burst.
 3. **Thirty seconds of fun.** Pop out, drop a clone, duck a burst, nail a perfect reload, sprint to the next kiosk. If that loop isn't fun in a grey box with one enemy type, nothing later will fix it. Milestone 4 exists to prove it.
 4. **Enemies are readable.** You can always tell who is about to shoot, and why you got hit.

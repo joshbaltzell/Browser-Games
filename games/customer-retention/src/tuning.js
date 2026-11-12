@@ -8,8 +8,8 @@ export const TUNING = {
     fov: 70, right: 0.55, up: 1.55, back: 2.6,
     aim: { fov: 50, back: 1.4 },
     sprint: { fov: 80, up: 1.25, back: 2.9, shakeWeight: 1 },
-    coverLow: { fov: 70, right: 0.6, up: 1.2, back: 2.4 },
-    coverTall: { fov: 70, right: 0.7, up: 1.5, back: 2.3 },
+    coverLow: { fov: 70, right: 0.55, up: 1.0, back: 1.9 },
+    coverTall: { fov: 70, right: 0.65, up: 1.35, back: 1.9 },
     bump: { amount: 0.18, halfLife: 0.07 }, // slam kick toward the player, m and s
     blendHalfLife: 0.07,       // mode changes: offsets and fov
     followHalfLife: 0.04,      // pivot trailing the player (0 = rigid)
@@ -73,5 +73,11 @@ export const TUNING = {
     slamSquash: 0.12,     // squash fraction on arriving at cover
     slamSquashTime: 0.15, // s, squash duration
     thudVolume: 0.5,      // 0 to 1
+    autoSlam: 1,          // 1 on, 0 off: running straight into cover slams you in with no tap
+    autoAngle: 25,        // deg, widest approach angle off straight at the face for a run-in
+    autoDist: 0.15,       // m, a run-in grabs once the stand point is this close (you are bumping the wall)
+    autoMinTilt: 0.7,     // stick tilt needed for a run-in
+    autoMinSpeed: 3,      // m/s, speed from before contact needed for a run-in (jog is 4.5)
+    autoTime: 0.08,       // s of continuous qualifying push before a run-in grabs
   },
 };

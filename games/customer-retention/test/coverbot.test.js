@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMovement, STATES } from '../src/actors/movement.js';
-import { COVER_STATE_NAMES, approachDir } from '../src/actors/coverStates.js';
+import { approachDir, autoSlamCandidate } from '../src/actors/coverStates.js';
 import { GREY_ROOM } from '../src/world/greyRoom.js';
 import { deriveCoverEdges, edgeOptions, edgePoint, findCoverTarget, capsuleClear } from '../src/world/cover.js';
 import { TUNING } from '../src/tuning.js';
@@ -21,7 +21,7 @@ function run(seed, taps) {
   const pick = list => list[Math.floor(rand() * list.length)];
   const out = {
     stateNames: new Set(), nearLegs: 0, grabs: 0, rolls: 0, leaves: 0, vaults: 0, swaps: 0,
-    mismatches: [], badSteps: [], bad: 0,
+    mismatches: [], badSteps: [], bad: 0, autos: 0, skimEntries: [], autoKinds: {},
   };
   let stepNo = 0, tapStep = -1, leg = null, entered = [];
   const m = createMovement({
@@ -79,7 +79,15 @@ function run(seed, taps) {
     entered = [];
     m.update(it, DT);
     const gotSlide = entered.some(([n, p]) => n === 'coverSlide');
-    if (gotSlide !== (expected !== null)) out.mismatches.push([stepNo, prevState, gotSlide, expected && expected.edge.id]);
+    if (expected !== null && !gotSlide) out.mismatches.push([stepNo, prevState, 'tap did not grab', expected.edge.id]);
+    // A slide with no accepted tap must be a run-in: the pure helper agrees (pos and runSpeed are
+    // unchanged by the state change) and it picked the edge the slide is heading for.
+    if (gotSlide && expected === null) {
+      const tg = (prevState === 'move' || prevState === 'sprint') ? autoSlamCandidate(m, it) : null;
+      if (!tg || tg.edge !== m.scratch.edge) out.mismatches.push([stepNo, prevState, 'slide without tap or run-in', tg && tg.edge.id]);
+      out.autos++; out.autoKinds[leg.kind] = (out.autoKinds[leg.kind] || 0) + 1;
+      if (leg.kind === 'skim') out.skimEntries.push([stepNo, m.scratch.edge.id, m.scratch.edge.normal, [Math.sin(it.camYaw), Math.cos(it.camYaw)]]);
+    }
     for (const [n, p] of entered) {
       if (n === 'coverSlide') out.grabs++;
       if (n === 'roll') out.rolls++;
@@ -97,16 +105,25 @@ function run(seed, taps) {
 // Seed 44 was picked from a sweep: the room has few swap pairs, so many seeds never swap.
 const SEEDS = (process.env.BOT_SEEDS || '7,44').split(',').map(Number);
 const noTaps = run(SEEDS[0], false), withTaps = run(SEEDS[1], true);
-if (process.env.BOT_SEEDS) console.log('COUNTS', SEEDS, withTaps.grabs, withTaps.rolls, withTaps.leaves, withTaps.vaults, withTaps.swaps, withTaps.mismatches.length, withTaps.badSteps.length);
+if (process.env.BOT_SEEDS) console.log('COUNTS', SEEDS, noTaps.autos, noTaps.autoKinds, withTaps.autos, withTaps.grabs, withTaps.rolls, withTaps.leaves, withTaps.vaults, withTaps.swaps, withTaps.mismatches.length, withTaps.badSteps.length);
 
-test('5 minutes with no taps: never enters any cover state', () => {
-  for (const n of COVER_STATE_NAMES) assert.equal(noTaps.stateNames.has(n), false, n + ' ' + [...noTaps.stateNames]);
+test('5 minutes with no taps: every cover entry is a run-in the auto conditions allow, never a skim', () => {
+  assert.deepEqual(noTaps.mismatches, []);
+  assert.ok(noTaps.autos >= 5, `run-in grabs ${noTaps.autos}`);
+  for (const n of ['roll', 'vault', 'coverSwap']) assert.equal(noTaps.stateNames.has(n) && n !== 'roll', false, n);
   assert.ok(noTaps.nearLegs >= 30, `near-cover legs ${noTaps.nearLegs}`);
   assert.equal(noTaps.badSteps.length, 0);
 });
-test('5 minutes with taps: every grab is a tap that findCoverTarget accepts, and every such tap grabs', () => {
+test('skim legs (camera along an edge tangent) end in no cover entry unless a wall is head-on', () => {
+  // A skim leg can still run straight into a wall at its far end; that entry is a legitimate run-in
+  // (the helper check above), so only an entry whose edge does not face the run head-on fails.
+  const sideways = [...noTaps.skimEntries, ...withTaps.skimEntries].filter(([, , n, d]) => -(n[0] * d[0] + n[1] * d[1]) < Math.cos(C.autoAngle * Math.PI / 180) - 1e-9);
+  assert.deepEqual(sideways, []);
+});
+test('5 minutes with taps: every grab is a tap that findCoverTarget accepts (and every such tap grabs) or a run-in', () => {
   assert.deepEqual(withTaps.mismatches, []);
   const w = withTaps;
+  assert.ok(w.autos >= 1, `run-ins ${w.autos}`);
   assert.ok(w.grabs >= 20 && w.rolls >= 20 && w.leaves >= 10 && w.vaults >= 1 && w.swaps >= 1,
     `grabs ${w.grabs} rolls ${w.rolls} leaves ${w.leaves} vaults ${w.vaults} swaps ${w.swaps}`);
 });
