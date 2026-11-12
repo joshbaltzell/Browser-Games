@@ -64,6 +64,7 @@ export const TUNING = {
     popShift: 0.55,       // m, sideways shift of a corner pop
     pushAngle: 40,        // deg, stick angle into the face that starts a vault
     lowDrawBack: 0.38,    // m, low cover draws the body this far back from the wall so the head hides behind it
+    blindDrawBack: 0.15,  // m, the drawn body's draw-back from low cover while blind firing (so the arm reaches over the wall)
     vaultTime: 0.5,       // s, vault duration
     vaultMaxDepth: 1.0,   // m, deepest low cover that can be vaulted
     vaultHop: 0.6,        // m, peak height of a vault

@@ -174,12 +174,13 @@ test('samplePose with `out` reuses it and matches a fresh sample', () => {
 
 test('clips are frozen, with the brief\'s durations and their spring half-lives', () => {
   assert.ok(Object.isFrozen(CLIPS));
-  assert.deepEqual(Object.keys(CLIPS), ['idle', 'run', 'aim', 'flinch', 'talk', 'roll', 'sprint', 'coverLow', 'coverLowMove', 'coverTall', 'coverTallMove', 'coverPop', 'vault']);
+  assert.deepEqual(Object.keys(CLIPS), ['idle', 'run', 'aim', 'flinch', 'talk', 'roll', 'sprint', 'coverLow', 'coverLowMove', 'coverTall', 'coverTallMove', 'coverPop', 'vault', 'coverBlindLow', 'coverBlindTallL', 'coverBlindTallR']);
   const d = Object.fromEntries(Object.entries(CLIPS).map(([k, c]) => [k, [c.duration, c.loop, c.ease]]));
   // The run is too fast for the default 0.05 s springs, which lag it ~45 degrees.
   assert.deepEqual(d, {
     idle: [2.4, true, 0.05], run: [0.56, true, 0.008], aim: [1.6, true, 0.05], flinch: [0.35, false, 0.05], talk: [2.4, true, 0.05], roll: [0.55, false, 0.02], sprint: [0.56, true, 0.008],
     coverLow: [2.4, true, 0.05], coverLowMove: [0.5, true, 0.05], coverTall: [2.4, true, 0.05], coverTallMove: [0.5, true, 0.05], coverPop: [1.6, true, 0.05], vault: [0.5, false, 0.02],
+    coverBlindLow: [1.6, true, 0.05], coverBlindTallL: [1.6, true, 0.05], coverBlindTallR: [1.6, true, 0.05],
   });
 });
 
@@ -310,5 +311,53 @@ test('coverPop: hands at or above shoulder height minus 0.15, forward of the che
     const p = samplePose('coverPop', (i / 50) * 1.6, S);
     const sh = bodyPoint(S, p, S.shoulderL)[1];
     for (const h of [p.handL, p.handR]) assert.ok(h[1] >= sh - 0.15 && h[2] > 0.15, `hand ${h}`);
+  }
+});
+
+const BLIND = ['coverBlindLow', 'coverBlindTallL', 'coverBlindTallR'];
+test('blind clips: finite, feet on the floor, arms never across the body', () => {
+  for (const n of BLIND)
+    for (let i = 0; i <= 50; i++) {
+      const p = samplePose(n, (i / 50) * CLIPS[n].duration, S);
+      assert.ok(flat(p).every(Number.isFinite), n);
+      assert.ok(p.footL[1] >= 0 && p.footR[1] >= 0, n);
+      assert.ok(p.handL[0] > 0.15 && p.handR[0] < -0.15, `${n} arms cross or hug the belly`);
+      const a = flat(samplePose(n, 0, S)), z = flat(samplePose(n, CLIPS[n].duration, S));
+      a.forEach((v, k) => assert.ok(Math.abs(v - z[k]) < 1e-6, n));
+    }
+});
+test('coverBlindLow: head fully below a 1 m wall (top <= 0.95 m after squash) at every sample', () => {
+  for (let i = 0; i <= 50; i++) {
+    const p = samplePose('coverBlindLow', (i / 50) * 1.6, S);
+    const top = Math.max(...headPoints(p).map(q => q[1])) * p.squash;
+    assert.ok(top <= 0.95 && headTop(p) <= 0.95 + 0.2, `head top ${top}`);
+    assert.ok(p.hipsY <= 0.45);
+  }
+});
+test('coverBlindLow with blindDrawBack: the head stays behind the wall face; the gun arm reaches as high as the rig can, in front of the face', () => {
+  // The brief wanted the gun hand above the wall top (y * squash >= 1.02). The arm is 0.52 m, so with the head
+  // below 0.95 m the hand tops out near 0.8 m: it stays in front of the near face instead (never inside the wall),
+  // and the view pitches the gun up so the barrel clears the top (see the player test).
+  const standoff = TUNING.move.radius + TUNING.cover.gap, back = TUNING.cover.blindDrawBack;
+  for (let i = 0; i <= 50; i++) {
+    const p = samplePose('coverBlindLow', (i / 50) * 1.6, S);
+    const sq = Math.sqrt(p.squash);
+    assert.ok(Math.max(...headPoints(p).map(q => q[2])) / sq - back <= standoff, 'head past the wall face');
+    assert.ok(Math.max(p.handL[2], p.handR[2]) / sq - back <= standoff, 'a hand inside the wall');
+    assert.ok(p.handR[1] * p.squash >= 0.7, `gun hand height ${p.handR[1] * p.squash}`);
+    const sh = bodyPoint(S, p, S.shoulderR);
+    assert.ok(dist(sh, p.handR) <= S.armLength, `gun hand out of reach: ${dist(sh, p.handR)}`);
+    assert.ok(p.handR[1] > sh[1] + 0.3, 'gun hand is raised');
+  }
+});
+test('coverBlindTallL: handL out past x 0.5 at shoulder height +- 0.15, handR on its own side; R mirrors it', () => {
+  for (let i = 0; i <= 50; i++) {
+    const t = (i / 50) * 1.6, L = samplePose('coverBlindTallL', t, S), R = samplePose('coverBlindTallR', t, S);
+    const shL = bodyPoint(S, L, S.shoulderL)[1], shR = bodyPoint(S, R, S.shoulderR)[1];
+    assert.ok(L.handL[0] > 0.5 && Math.abs(L.handL[1] - shL) <= 0.15, `L out hand ${L.handL}`);
+    assert.ok(L.handR[0] < -0.15, 'L other hand on its own side');
+    assert.ok(R.handR[0] < -0.5 && Math.abs(R.handR[1] - shR) <= 0.15, `R out hand ${R.handR}`);
+    assert.ok(R.handL[0] > 0.15, 'R other hand on its own side');
+    assert.ok(dist(bodyPoint(S, L, S.shoulderL), L.handL) <= S.armLength && dist(bodyPoint(S, R, S.shoulderR), R.handR) <= S.armLength, 'out of reach');
   }
 });

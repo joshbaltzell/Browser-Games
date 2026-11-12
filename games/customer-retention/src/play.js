@@ -102,6 +102,7 @@ export function startPlay({ canvas, gl, params }) {
   let marker = null, markerT = 0, reloadFlash = null, flashT = 0;
   let padScale = 1;
   const fxQueue = [];
+  const aimIn = { dir: [0, 0, 1], stance: null, weapon: 'regret', shot: false };
   const muzzle = [0, 0, 0];
   let seenSlams = 0;
   const target = [0, 0, 0];
@@ -306,7 +307,7 @@ export function startPlay({ canvas, gl, params }) {
 
   function playFeedback(f) {
     const row = TUNING.weapons[f.id], fb = TUNING.feedback;
-    const tip = view.gunTip ? view.gunTip(shotFrom) : f.from;
+    const tip = view.gunTip(shotFrom);
     cam.kick(row.kickPitch * (0.85 + 0.3 * Math.random()), (Math.random() * 2 - 1) * row.kickYaw);
     effects.flash(tip, f.dir);
     effects.tracer(tip, f.hit.point);
@@ -359,7 +360,9 @@ export function startPlay({ canvas, gl, params }) {
     },
     render(alpha, realSeconds) {
       const dt = simulating ? Math.min(realSeconds, MAX_DT) : 0;
-      view.update(alpha, dt);
+      aimIn.shot = fxQueue.length > 0;
+      aimIn.dir = camState.dir; aimIn.stance = stance; aimIn.weapon = arsenal.current();
+      view.update(alpha, dt, aimIn);
       for (const d of dummies) d.view.update(dt);
       const p = mover.pos, q = mover.prevPos;
       for (let i = 0; i < 3; i++) target[i] = q[i] + (p[i] - q[i]) * alpha;

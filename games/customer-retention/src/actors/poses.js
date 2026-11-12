@@ -412,6 +412,40 @@ function vault(t, spec, p) {
   return p;
 }
 
+// Blind fire over low cover. The body sits closer to the wall (TUNING.cover.blindDrawBack, a third of the
+// usual draw-back), so the head is held compact: hips low, a half lean, the chin tucked, and the head top
+// still under the 0.95 m rule. The right (gun) arm goes up as high as the rig reaches (about 0.78 m: the arm is
+// 0.52 m, so it cannot clear a 1 m wall with the head below it) and stays in front of the wall face; the view
+// pitches the gun up so the barrel and the flash clear the top. The left hand rests on the wall face.
+const BLIND_HIPS = 0.17, BLIND_LEAN = 0.5, BLIND_HEAD = -0.9, BLIND_SQUASH = 0.82;
+function coverBlindLow(t, spec, p) {
+  const f = frame(spec);
+  const ph = (TAU * t) / CLIPS.coverBlindLow.duration;
+  p.hipsY = BLIND_HIPS + 0.006 * Math.sin(ph);
+  p.lean = BLIND_LEAN + 0.015 * Math.sin(ph + 0.4);
+  p.twist = 0.03 * Math.sin(ph + 0.6);
+  p.headYaw = 0.04 * Math.sin(ph);
+  p.headPitch = BLIND_HEAD + 0.03 * Math.sin(2 * ph + 1);
+  p.squash = BLIND_SQUASH;
+  p.elbows = 1;
+  bodyPoint(spec, p, spec.shoulderR, _g);
+  set3(p.handR, _g[0] - 0.02, _g[1] + 0.44 + 0.008 * Math.sin(ph + 0.4), _g[2] + 0.12);
+  set3(p.handL, f.sx + 0.12, 0.72 + 0.006 * Math.sin(ph - 0.5), 0.44);
+  set3(p.footL, f.fx + 0.08, 0, 0.12);
+  set3(p.footR, -f.fx - 0.08, 0, 0.12);
+  return p;
+}
+
+// Blind fire round the end of tall cover: tucked flat to the wall as in coverTall, and the arm on the open
+// end's side out past the corner at shoulder height, the other hand on the wall. side +1 is the character's
+// left (+x, handL), -1 its right.
+function coverBlindTall(t, spec, p, side) {
+  coverTall(t * (CLIPS.coverTall.duration / CLIPS.coverBlindTallL.duration), spec, p);
+  const f = frame(spec);
+  onBody(spec, p, side * (f.sx + 0.4), f.sy, 0.2, side > 0 ? p.handL : p.handR);
+  return p;
+}
+
 // ease is the half-life (seconds) of the rig's springs while the clip plays:
 // they smooth the cross-fades and the hits. The run is a fast cycle that the
 // default 0.05 s would lag (about 45 degrees) and flatten, so its springs are
@@ -435,6 +469,9 @@ export const CLIPS = Object.freeze({
   coverTallMove: clip(0.5, true, coverTallMove),
   coverPop: clip(1.6, true, coverPop),
   vault: clip(0.5, false, vault, 0.02),
+  coverBlindLow: clip(1.6, true, coverBlindLow),
+  coverBlindTallL: clip(1.6, true, (t, spec, p) => coverBlindTall(t, spec, p, 1)),
+  coverBlindTallR: clip(1.6, true, (t, spec, p) => coverBlindTall(t, spec, p, -1)),
 });
 
 // The run clip's planted-foot speed in m/s, so a footfall matches the ground at this speed.

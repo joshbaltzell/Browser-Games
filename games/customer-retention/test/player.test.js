@@ -164,3 +164,63 @@ test('createPlayerView: tucked behind low cover the body is drawn lowDrawBack aw
   m.cover.pop = 1; for (let i = 0; i < 30; i++) v.update(1, 1 / 60);
   near(v.group.position.z, 1, 1e-9);
 });
+
+test('pickClip: blind low -> coverBlindLow; blind at a left tall end -> coverBlindTallL, right -> R; firing at rest in move -> aim', () => {
+  const cv = (kind, blind, extra = {}) => ({ state: 'cover', coverTuning: TUNING.cover, cover: { edge: { kind, normal: [0, -1], tangent: [1, 0], length: 4, open: [true, true], ...extra.edge }, pop: 0, blind, popEnd: extra.popEnd ?? 0, t: extra.t ?? 0 }, ...extra.mover });
+  assert.equal(pickClip(fake(cv('low', 1))).name, 'coverBlindLow');
+  assert.equal(pickClip(fake(cv('low', 0.4))).name, 'coverLow');
+  assert.equal(pickClip(fake(cv('low', 0.5))).name, 'coverBlindLow');
+  const names = [1, -1].map(end => pickClip(fake(cv('tall', 1, { popEnd: end }))).name);
+  assert.ok(names.every(n => n === 'coverBlindTallL' || n === 'coverBlindTallR'));
+  assert.notEqual(names[0], names[1]);
+  assert.equal(pickClip(fake(cv('tall', 0))).name, 'coverTall');
+  assert.equal(pickClip(fake({ v: 0.1, firing: true })).name, 'aim');
+  assert.equal(pickClip(fake({ v: 0.1 })).name, 'idle');
+  assert.equal(pickClip(fake({ v: 4.5, firing: true })).name, 'run');
+});
+test('lowDrawBackWeight falls with blind as with pop', () => {
+  const low = { kind: 'low', normal: [0, -1] };
+  near(lowDrawBackWeight(fake({ state: 'cover', cover: { edge: low, pop: 0, blind: 0.25 }, scratch: {} })), 0.75, 1e-12);
+  assert.equal(lowDrawBackWeight(fake({ state: 'cover', cover: { edge: low, pop: 0, blind: 1 }, scratch: {} })), 0);
+  near(lowDrawBackWeight(fake({ state: 'cover', cover: { edge: low, pop: 0.5, blind: 0.25 }, scratch: {} })), 0.5, 1e-12);
+});
+test('createPlayerView: blind behind low cover the body is drawn blindDrawBack from the wall', () => {
+  const m = fake({ state: 'cover', entries: 1, pos: [0, 0, 1], prevPos: [0, 0, 1], coverTuning: TUNING.cover, slams: 0,
+    cover: { edge: { kind: 'low', normal: [0, -1] }, pop: 0, blind: 1 }, scratch: {} });
+  const v = createPlayerView(m);
+  for (let i = 0; i < 40; i++) v.update(1, 1 / 60);
+  near(v.group.position.z, 1 - TUNING.cover.blindDrawBack, 1e-9);
+});
+test('createPlayerView: a shot squashes the gun along the barrel and it settles within gunSquashTime; the gun follows the hand', () => {
+  const m = fake({ coverTuning: TUNING.cover, slams: 0 });
+  const v = createPlayerView(m);
+  const aim = { dir: [0, 0, 1], stance: 'aim', weapon: 'regret', shot: false };
+  v.update(1, 1 / 60, aim);
+  near(v.gun.group.scale.z, 1, 1e-9);
+  const fb = TUNING.feedback;
+  aim.shot = true; v.update(1, fb.gunSquashTime / 2, aim); aim.shot = false;
+  assert.ok(v.gun.group.scale.z < 1 - fb.gunSquash * 0.9, `scale ${v.gun.group.scale.z}`);
+  assert.ok(v.gun.group.scale.x > 1);
+  assert.ok(v.rig.root.parent.rotation.x < 0, 'the body is jolted back');
+  v.update(1, fb.gunSquashTime, aim);
+  near(v.gun.group.scale.z, 1, 1e-9); near(v.rig.root.parent.rotation.x, 0, 1e-9);
+  // The gun is at the right hand, and pointing along the aim direction.
+  v.group.updateMatrixWorld(true);
+  const hand = new THREE.Vector3(); v.rig.root.getObjectByName('body').children[2].getWorldPosition(hand);
+  const g = new THREE.Vector3(); v.gun.group.getWorldPosition(g);
+  assert.ok(g.distanceTo(hand) < 1e-6, `gun ${g.toArray()} hand ${hand.toArray()}`);
+  const tip = v.gunTip([0, 0, 0]);
+  assert.ok(tip[2] > g.z + 0.4, 'the tip is out along the barrel');
+  v.update(1, 1 / 60, { dir: [0, 0, 1], stance: null, weapon: 'pistol', shot: false });
+  assert.equal(v.gun.group.children.find(c => c.name === 'pistol').visible, true);
+  assert.equal(v.gun.group.children.find(c => c.name === 'rifle').visible, false);
+});
+test('blind over low cover: the pitched-up gun barrel clears a 1 m wall from the raised hand', () => {
+  const m = fake({ state: 'cover', entries: 1, pos: [0, 0, 1], prevPos: [0, 0, 1], coverTuning: TUNING.cover, slams: 0,
+    cover: { edge: { kind: 'low', normal: [0, -1] }, pop: 0, blind: 1 }, scratch: {} });
+  const v = createPlayerView(m);
+  for (let i = 0; i < 60; i++) v.update(1, 1 / 60, { dir: [0, 0, -1], stance: 'blind', weapon: 'regret', shot: false });
+  v.group.updateMatrixWorld(true);
+  const tip = v.gunTip([0, 0, 0]);
+  assert.ok(tip[1] >= 1.02, `gun tip height ${tip[1]}`);
+});

@@ -24,9 +24,16 @@ void main() {
 #elif defined( USE_COLOR )
   vTint = color;
 #endif
-  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  vec3 pos = position;
+  vec3 nrm = normal;
+#ifdef USE_INSTANCING
+  // Instanced meshes (the shot effects) carry a matrix per instance.
+  pos = (instanceMatrix * vec4(position, 1.0)).xyz;
+  nrm = mat3(instanceMatrix) * normal;
+#endif
+  vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
   vViewPos = mvPosition.xyz;
-  vViewNormal = normalize(normalMatrix * normal);
+  vViewNormal = normalize(normalMatrix * nrm);
   gl_Position = projectionMatrix * mvPosition;
 }
 `;
