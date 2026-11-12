@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { DOC_PLACEHOLDER } from '../src/actors/docPlaceholder.js';
 import { ASSOCIATE } from '../src/actors/associate.js';
-import { pickClip, rollSpin, vaultHop, slamSquash, createPlayerView } from '../src/actors/player.js';
+import { pickClip, rollSpin, vaultHop, slamSquash, lowDrawBackWeight, createPlayerView } from '../src/actors/player.js';
 import { RUN_SPEED, CLIPS } from '../src/actors/poses.js';
 import { TUNING } from '../src/tuning.js';
 
@@ -128,4 +128,39 @@ test('createPlayerView: a new slam squashes the body, soles on the floor, then s
   near(t.position.y - 0.5 * t.scale.y, 0, 1e-9);
   v.update(1, TUNING.cover.slamSquashTime);
   near(t.scale.y, 1, 1e-9);
+});
+test('vaultTime 0 (panel minimum): clip rate and body height stay finite', () => {
+  const ct = { ...TUNING.cover, vaultTime: 0 };
+  assert.ok(Number.isFinite(pickClip(fake({ state: 'vault', coverTuning: ct })).rate));
+  const m = fake({ state: 'vault', entries: 1, stateTime: 0, coverTuning: ct, slams: 0 });
+  const v = createPlayerView(m);
+  v.update(1, 1 / 60); v.group.updateMatrixWorld(true);
+  const pos = new THREE.Vector3(); v.rig.root.getWorldPosition(pos);
+  assert.ok(Number.isFinite(pos.y));
+});
+test('createPlayerView.fadeHeadFor hides the head with the lens close and shows it again when far', () => {
+  const v = createPlayerView(fake({ coverTuning: TUNING.cover, slams: 0 }));
+  v.update(1, 1 / 60);
+  const head = v.rig.root.getObjectByName('head');
+  assert.equal(v.fadeHeadFor([0, 1.6, 0.2], 0.45, 0.08), false); assert.equal(head.visible, false);
+  assert.equal(v.fadeHeadFor([0, 1.6, 2.5], 0.45, 0.08), true); assert.equal(head.visible, true);
+});
+test('lowDrawBackWeight: 1 tucked behind low cover, rises with the slide, falls with the pop, 0 for tall cover and elsewhere', () => {
+  const low = { kind: 'low', normal: [0, -1] }, tall = { kind: 'tall', normal: [0, -1] };
+  assert.equal(lowDrawBackWeight(fake({ state: 'cover', cover: { edge: low, pop: 0 }, scratch: {} })), 1);
+  near(lowDrawBackWeight(fake({ state: 'cover', cover: { edge: low, pop: 0.25 }, scratch: {} })), 0.75, 1e-12);
+  assert.equal(lowDrawBackWeight(fake({ state: 'cover', cover: { edge: low, pop: 1 }, scratch: {} })), 0);
+  assert.equal(lowDrawBackWeight(fake({ state: 'cover', cover: { edge: tall, pop: 0 }, scratch: {} })), 0);
+  near(lowDrawBackWeight(fake({ state: 'coverSlide', stateTime: 0.05, scratch: { edge: low, dur: 0.1 } })), 0.5, 1e-12);
+  assert.equal(lowDrawBackWeight(fake({ state: 'move', scratch: {} })), 0);
+});
+test('createPlayerView: tucked behind low cover the body is drawn lowDrawBack away from the wall; mover.pos is untouched', () => {
+  const m = fake({ state: 'cover', entries: 1, pos: [0, 0, 1], prevPos: [0, 0, 1], coverTuning: TUNING.cover, slams: 0,
+    cover: { edge: { kind: 'low', normal: [0, -1] }, pop: 0 }, scratch: {} });
+  const v = createPlayerView(m);
+  v.update(1, 1 / 60);
+  near(v.group.position.z, 1 - TUNING.cover.lowDrawBack, 1e-9);
+  assert.deepEqual(m.pos, [0, 0, 1]);
+  m.cover.pop = 1; for (let i = 0; i < 30; i++) v.update(1, 1 / 60);
+  near(v.group.position.z, 1, 1e-9);
 });

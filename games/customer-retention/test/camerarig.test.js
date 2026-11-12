@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createCameraRig, modeParams, shakeWeightOf, CAMERA_MODES } from '../src/render/cameraRig.js';
+import { createCameraRig, modeParams, shakeWeightOf, headVisibleFor, CAMERA_MODES } from '../src/render/cameraRig.js';
 import { TUNING } from '../src/tuning.js';
 import { makeBox, pointInBoxes } from '../src/world/collide.js';
 
@@ -182,4 +182,12 @@ test('tuning is live: changing camera.back moves the camera after settling', () 
   const t = clone(); const c = createCameraRig({ tuning: t, look: TUNING.look }); c.snap(T0, 0);
   near(run(c, 120).pos[2], -2.6, 1e-3);
   t.back = 4; near(run(c, 120).pos[2], -4, 1e-3);
+});
+test('headVisibleFor hides the head inside the distance and returns it past distance + margin', () => {
+  assert.equal(headVisibleFor(0.2, true, 0.45, 0.08), false);
+  assert.equal(headVisibleFor(0.44, true, 0.45, 0.08), false);
+  assert.equal(headVisibleFor(0.46, true, 0.45, 0.08), true);
+  assert.equal(headVisibleFor(0.5, false, 0.45, 0.08), false);   // hysteresis: still hidden
+  assert.equal(headVisibleFor(0.54, false, 0.45, 0.08), true);
+  assert.equal(headVisibleFor(0.01, true, 0, 0), true);          // hide distance 0 never hides
 });

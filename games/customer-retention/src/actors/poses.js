@@ -310,10 +310,10 @@ function sprint(t, spec, p) {
 }
 
 // Cover. Everything here faces the wall (the mover turns to face it), so "forward" is toward the cover.
-// coverLow: a deep crouch, hips down and the back hunched in against a low wall so the head is
-// below its top; the hands rest on the wall top, either side. The head and the wall top meet at
-// about 0.9 m, so the lean is large: the shoulders are over the wall face.
-const LOW_HIPS = 0.1, LOW_LEAN = 0.7, LOW_SQUASH = 0.82;
+// coverLow: a real crouch, hips low and the back hunched forward so the head is below the wall top.
+// The view draws the body back from the wall by TUNING.cover.lowDrawBack, so the hands (about
+// 0.73 m ahead of the body) rest on the wall face (0.38 m ahead of the mover) and nothing goes through it.
+const LOW_HIPS = 0.25, LOW_LEAN = 0.85, LOW_SQUASH = 0.82;
 function coverLow(t, spec, p) {
   const f = frame(spec);
   const ph = (TAU * t) / CLIPS.coverLow.duration;
@@ -324,8 +324,8 @@ function coverLow(t, spec, p) {
   p.headPitch = -0.55 + 0.03 * Math.sin(2 * ph + 1);
   p.squash = LOW_SQUASH;
   p.elbows = 1;
-  set3(p.handL, f.sx + 0.12, 0.88 + 0.006 * Math.sin(ph - 0.5), 0.46);
-  set3(p.handR, -f.sx - 0.12, 0.88 + 0.006 * Math.sin(ph + 0.4), 0.46);
+  set3(p.handL, f.sx + 0.12, 0.88 + 0.006 * Math.sin(ph - 0.5), 0.66);
+  set3(p.handR, -f.sx - 0.12, 0.88 + 0.006 * Math.sin(ph + 0.4), 0.66);
   set3(p.footL, f.fx + 0.08, 0, 0.12);
   set3(p.footR, -f.fx - 0.08, 0, 0.12);
   return p;
@@ -362,8 +362,8 @@ function coverTall(t, spec, p) {
   p.headPitch = 0.0 + 0.02 * Math.sin(2 * ph + 1);
   p.squash = 1 + 0.006 * Math.sin(ph);
   p.elbows = 1;
-  onBody(spec, p, f.sx + 0.14, f.sy + 0.0, 0.4, p.handL);
-  onBody(spec, p, -f.sx - 0.14, f.sy + 0.0, 0.4, p.handR);
+  onBody(spec, p, f.sx + 0.14, f.sy + 0.0, 0.31, p.handL);
+  onBody(spec, p, -f.sx - 0.14, f.sy + 0.0, 0.31, p.handR);
   set3(p.footL, f.fx, 0, 0.015);
   set3(p.footR, -f.fx, 0, -0.015);
   return p;

@@ -225,6 +225,7 @@ export function startPlay({ canvas, gl, params }) {
       const r = cam.update(dt, { target, mode: camMode, side: camSide }, boxes);
       camState.pos[0] = r.pos[0]; camState.pos[1] = r.pos[1]; camState.pos[2] = r.pos[2]; camState.fov = r.fov;
       if (camera.fov !== r.fov) { camera.fov = r.fov; camera.updateProjectionMatrix(); }
+      view.fadeHeadFor(r.pos, TUNING.camera.headHideDist, TUNING.camera.headHideMargin);
       camera.position.set(r.pos[0], r.pos[1], r.pos[2]);
       camera.lookAt(r.pos[0] + r.dir[0], r.pos[1] + r.dir[1], r.pos[2] + r.dir[2]);
       sky.update(performance.now() / 1000);

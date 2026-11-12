@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CLIPS, RUN_SPEED, samplePose, blendPose, bodyPoint } from '../src/actors/poses.js';
 import { ASSOCIATE as S } from '../src/actors/associate.js';
+import { TUNING } from '../src/tuning.js';
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const flat = p => [p.hipsY, p.lean, p.twist, p.headYaw, p.headPitch, p.squash, p.elbows, ...p.handL, ...p.handR, ...p.footL, ...p.footR];
 
@@ -217,6 +218,14 @@ test('roll and sprint sample finite at 50 points, arms clear of the belly', () =
 
 const COVER = ['coverLow', 'coverLowMove', 'coverTall', 'coverTallMove', 'coverPop', 'vault'];
 // Height of the top of the head as drawn (the rig squashes the whole body about the floor).
+// Head surface points (about the neck, turned by the head pitch) placed on the posed body.
+const headPoints = p => {
+  const c = Math.cos(p.headPitch), sn = Math.sin(p.headPitch);
+  return [[0.3, 0.2], [0.5, 0.15], [0.1, 0.17], [0.59, 0.05], [0.6, 0], [0.3, -0.235]]
+    .map(([y, z]) => bodyPoint(S, p, [0, S.neckY + y * c - z * sn, y * sn + z * c]));
+};
+// Furthest-forward head and hand points after the rig's squash (which widens z by 1 / sqrt(squash)).
+const forwardOf = p => Math.max(...headPoints(p).map(q => q[2]), p.handL[2], p.handR[2]) / Math.sqrt(p.squash);
 const headTop = p => bodyPoint(S, p, [0, S.height, 0])[1] * p.squash;
 test('cover clips: finite, feet on or above the floor, arms never across the body', () => {
   for (const n of COVER)
@@ -233,8 +242,25 @@ test('coverLow and coverLowMove: hips at most 0.45, head fully below a 1 m wall 
       const p = samplePose(n, (i / 50) * CLIPS[n].duration, S);
       assert.ok(p.hipsY <= 0.45, `${n} hips ${p.hipsY}`);
       assert.ok(headTop(p) <= 0.95, `${n} head top ${headTop(p)}`);
-      assert.ok(bodyPoint(S, p, [0, S.height, 0])[1] <= 0.95, `${n} head top before squash`);
       for (const h of [p.handL, p.handR]) assert.ok(h[2] > 0.15 && h[1] >= 0.6 && h[1] <= 1.05, `${n} hand ${h}`);
+    }
+});
+test('low cover: with the draw-back, head and hands stay in front of the wall face, the head below the wall top', () => {
+  const standoff = TUNING.move.radius + TUNING.cover.gap, back = TUNING.cover.lowDrawBack;
+  for (const n of ['coverLow', 'coverLowMove'])
+    for (let i = 0; i <= 50; i++) {
+      const p = samplePose(n, (i / 50) * CLIPS[n].duration, S);
+      const top = Math.max(...headPoints(p).map(q => q[1])) * p.squash;
+      assert.ok(top <= 0.95, `${n} head top ${top}`);
+      assert.ok(forwardOf(p) - back <= standoff, `${n} forward ${forwardOf(p) - back} past ${standoff}`);
+    }
+});
+test('tall cover: the hands reach the wall face and no further', () => {
+  const standoff = TUNING.move.radius + TUNING.cover.gap;
+  for (const n of ['coverTall', 'coverTallMove'])
+    for (let i = 0; i <= 50; i++) {
+      const p = samplePose(n, (i / 50) * CLIPS[n].duration, S);
+      for (const h of [p.handL, p.handR]) assert.ok(h[2] / Math.sqrt(p.squash) <= standoff, `${n} hand ${h}`);
     }
 });
 test('coverTall: standing, hands forward at shoulder height +- 0.15', () => {

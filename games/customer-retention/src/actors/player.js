@@ -4,6 +4,7 @@ import { CLIPS, RUN_SPEED } from './poses.js';
 import { buildRig } from './rig.js';
 import { createAnimator } from './animator.js';
 import { DOC_PLACEHOLDER } from './docPlaceholder.js';
+import { headVisibleFor } from '../render/cameraRig.js';
 import { coverEdgeOf } from './coverStates.js';
 
 // The player on screen: a rig that follows a Mover. The mover is the truth;
@@ -12,6 +13,8 @@ import { coverEdgeOf } from './coverStates.js';
 const TAU = Math.PI * 2;
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const wrap = a => a - TAU * Math.round(a / TAU);
+// The panel can set vaultTime to 0; floor it so the vault fraction stays finite.
+const MIN_VAULT_TIME = 1e-3;
 const TUMBLE_Y = 0.5; // the roll spins about this height
 
 // Which clip a mover state plays and how fast.
@@ -31,8 +34,17 @@ export function pickClip(mover, tuning = mover.tuning || TUNING.move) {
     if (v > tuning.runClipMinSpeed) return { name: low ? 'coverLowMove' : 'coverTallMove', rate: clamp(v / ct.moveSpeed, 0.5, 2) };
     return { name: low ? 'coverLow' : 'coverTall', rate: 1 };
   }
-  if (s === 'vault') return { name: 'vault', rate: CLIPS.vault.duration / (mover.coverTuning || TUNING.cover).vaultTime };
+  if (s === 'vault') return { name: 'vault', rate: CLIPS.vault.duration / Math.max((mover.coverTuning || TUNING.cover).vaultTime, MIN_VAULT_TIME) };
   return { name: 'idle', rate: 1 };
+}
+
+// How far (0 to 1) the drawn body is drawn back from a low wall: 1 tucked behind it, rising as a
+// slide into low cover arrives, falling as the player pops up over it. 0 anywhere else.
+export function lowDrawBackWeight(mover) {
+  const edge = (mover.state === 'cover' || mover.state === 'coverSlide') ? coverEdgeOf(mover) : null;
+  if (!edge || edge.kind !== 'low') return 0;
+  if (mover.state === 'coverSlide') return clamp(mover.stateTime / Math.max(mover.scratch.dur, 1e-6), 0, 1);
+  return mover.cover ? clamp(1 - mover.cover.pop, 0, 1) : 0;
 }
 
 // Height of a vault's arc at fraction u: 0 at both ends, h at the middle.
@@ -59,11 +71,31 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
   tumble.add(rig.root);
   group.add(tumble);
   group.add(rig.shadow); // on the group so it never tumbles
+  const headNode = rig.root.getObjectByName('head');
+  const headCentre = new THREE.Vector3();
+  let headShown = true;
+  // Hides the head (and face) while the lens is too close to it; returns whether it is drawn.
+  function fadeHeadFor(lens, hideDist, margin) {
+    headNode.getWorldPosition(headCentre);
+    headCentre.y += rig.spec.head.centerY;
+    const d = Math.hypot(lens[0] - headCentre.x, lens[1] - headCentre.y, lens[2] - headCentre.z);
+    headShown = headVisibleFor(d, headShown, hideDist, margin);
+    headNode.visible = headShown;
+    return headShown;
+  }
+  let drawW = 0, drawNx = 0, drawNz = 0;
   let clip = '', entries = -1, slams = mover.slams || 0, slamT = Infinity;
 
   function update(alpha, dt) {
     const p = mover.pos, q = mover.prevPos;
-    group.position.set(q[0] + (p[0] - q[0]) * alpha, q[1] + (p[1] - q[1]) * alpha, q[2] + (p[2] - q[2]) * alpha);
+    // Low cover draws the body back from the wall so the head and hands sit behind it; the mover,
+    // the collision and the camera target stay where they are.
+    const ct = mover.coverTuning || TUNING.cover;
+    const target = lowDrawBackWeight(mover);
+    if (target > 0) { const e = coverEdgeOf(mover); drawNx = e.normal[0]; drawNz = e.normal[1]; }
+    drawW = ct.popTime > 0 ? Math.max(target, drawW + clamp(target - drawW, -dt / ct.popTime, dt / ct.popTime)) : target;
+    const back = drawW * ct.lowDrawBack;
+    group.position.set(q[0] + (p[0] - q[0]) * alpha + drawNx * back, q[1] + (p[1] - q[1]) * alpha, q[2] + (p[2] - q[2]) * alpha + drawNz * back);
     group.rotation.y = mover.prevFacing + wrap(mover.facing - mover.prevFacing) * alpha;
     const c = pickClip(mover);
     if (c.name !== clip || mover.entries !== entries) {
@@ -73,9 +105,8 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
     anim.update(dt * c.rate);
     rig.update(dt);
     tumble.rotation.x = mover.state === 'roll' ? rollSpin(mover.stateTime / mover.tuning.rollTime) : 0;
-    const ct = mover.coverTuning || TUNING.cover;
     if ((mover.slams || 0) !== slams) { slams = mover.slams || 0; slamT = 0; } else slamT += dt;
-    const hop = mover.state === 'vault' ? vaultHop(clamp(mover.stateTime / ct.vaultTime, 0, 1), ct.vaultHop) : 0;
+    const hop = mover.state === 'vault' ? vaultHop(clamp(mover.stateTime / Math.max(ct.vaultTime, MIN_VAULT_TIME), 0, 1), ct.vaultHop) : 0;
     const k = slamSquash(slamT, ct.slamSquash, ct.slamSquashTime);
     tumble.scale.set(1 + k / 2, 1 - k, 1 + k / 2);
     tumble.position.y = TUMBLE_Y * (1 - k) + hop; // the soles stay on the floor while squashed
@@ -87,5 +118,5 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
     group.removeFromParent();
   }
 
-  return { group, update, dispose, rig, anim };
+  return { group, update, dispose, rig, anim, fadeHeadFor };
 }

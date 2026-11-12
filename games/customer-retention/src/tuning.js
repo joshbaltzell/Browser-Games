@@ -17,6 +17,8 @@ export const TUNING = {
     shake: { amp: 0.025, hz: 9 }, // sprint only
     probeRadius: 0.22, minBack: 0.35, wallReturnHalfLife: 0.18,
     pitchMin: -1.1, pitchMax: 1.2,
+    headHideDist: 0.45,        // m, the player's head is hidden while the lens is this close to it
+    headHideMargin: 0.08,      // m, the head stays hidden until the lens is this much further out
   },
   look: { mouse: 0.0022, pad: { yawRate: 3.2, pitchRate: 2.2, expo: 1.8 }, aimScale: 0.6, invertY: false },
   move: {
@@ -53,12 +55,13 @@ export const TUNING = {
     moveSpeed: 3,         // m/s, shuffle along cover
     alongDeadzone: 0.2,   // stick component along the edge below which we stay put
     leaveTilt: 0.5,       // stick tilt away from the cover that leaves it
-    leaveAngle: 45,       // deg, stick angle off the outward normal that leaves it
+    leaveAngle: 55,       // deg, stick angle off the outward normal that leaves it
     endLeaveTime: 0.3,    // s, pushing past an open end this long leaves cover
     cornerZone: 0.3,      // m, near an end counts as at the corner
     popTime: 0.12,        // s, rise to peek or fire over or around cover
     popShift: 0.55,       // m, sideways shift of a corner pop
-    pushAngle: 45,        // deg, stick angle into the face that starts a vault
+    pushAngle: 40,        // deg, stick angle into the face that starts a vault
+    lowDrawBack: 0.38,    // m, low cover draws the body this far back from the wall so the head hides behind it
     vaultTime: 0.5,       // s, vault duration
     vaultMaxDepth: 1.0,   // m, deepest low cover that can be vaulted
     vaultHop: 0.6,        // m, peak height of a vault

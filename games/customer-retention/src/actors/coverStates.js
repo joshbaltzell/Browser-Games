@@ -52,11 +52,13 @@ export function cameraSideOf(m) {
   if (!c) return 1;
   const e = c.edge;
   let end = c.popEnd;
-  if (end === 0) { end = atEnd(e, c.t, m.coverTuning); if (end !== 0 && !isOpen(e, end)) end = 0; }
+  if (end === 0) end = atEnd(e, c.t, m.coverTuning);
   if (end === 0) return 1;
   const y = yawOf(-e.normal[0], -e.normal[1]);
   const rx = -Math.cos(y), rz = Math.sin(y);
-  return (e.tangent[0] * end * rx + e.tangent[1] * end * rz) < 0 ? -1 : 1;
+  const toward = (e.tangent[0] * end * rx + e.tangent[1] * end * rz) < 0 ? -1 : 1;
+  // an open end draws the lens toward it; a closed end (a wall) pushes it to the other shoulder
+  return isOpen(e, end) ? toward : -toward;
 }
 
 // Shared by the slide and the swap: scratch holds { edge, t, from, to, dur }.

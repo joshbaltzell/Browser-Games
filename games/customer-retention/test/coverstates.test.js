@@ -8,6 +8,7 @@ import {
 import { makeBox, pointInBoxes } from '../src/world/collide.js';
 import { deriveCoverEdges, edgeOptions, capsuleClear } from '../src/world/cover.js';
 import { TUNING } from '../src/tuning.js';
+import { createCameraRig } from '../src/render/cameraRig.js';
 
 const DT = 1 / 60, S = 0.38, C = TUNING.cover;
 const near = (a, b, e) => assert.ok(Math.abs(a - b) <= e, `${a} vs ${b}`);
@@ -252,4 +253,29 @@ test('tuning set to 0 mid-state: finite, outside boxes, known state, never stuck
 test('endPush resets while popped, so a stale value cannot walk the player off early', () => {
   const m = inCover(); toEnd(m); step(m, I({ moveX: -1 }), 10); assert.ok(m.cover.endPush > 0);
   step(m, I({ aim: true }), 10); assert.equal(m.cover.endPush, 0);
+});
+test('cameraSideOf: at a closed end (a wall) the lens takes the open side, and stays clear of the player', () => {
+  const WALL = makeBox([-3, 0, 1], [-2, 3, 3], 'wall'); // flush with the low box's -x end, on the camera's right
+  const boxes = [FLOOR, LOW, WALL];
+  const m = mover({ boxes, spawn: [-1.5, 0, 0.4] });
+  m.update(I({ moveY: -1, tap: true }), DT); step(m, I(), 20);
+  assert.equal(m.state, 'cover');
+  let n = 0; while (m.cover.t > 0.05 && n++ < 400) m.update(I({ moveX: 1 }), DT);
+  assert.equal(cameraSideOf(m), -1);
+  const cam = createCameraRig({ tuning: JSON.parse(JSON.stringify(TUNING.camera)), look: TUNING.look });
+  const target = [m.pos[0], m.pos[1], m.pos[2]];
+  cam.snap(target, -Math.PI / 2, 'coverLow', -1);
+  let r; for (let i = 0; i < 120; i++) r = cam.update(DT, { target, mode: 'coverLow', side: cameraSideOf(m) }, boxes);
+  assert.ok(Math.hypot(r.pos[0] - target[0], r.pos[2] - target[2]) >= 0.35, `lens ${r.pos}`);
+});
+test('keyboard diagonals decide the same way at camera yaw offsets of +-2 degrees', () => {
+  const R = Math.PI / 180;
+  for (const sx of [-1, 1]) for (const d of [-2, 0, 2]) {
+    // away from the wall + sideways: leaves cover (45 deg is inside leaveAngle 55)
+    const m = inCover(); m.update(I({ moveX: sx, moveY: 1, camYaw: d * R }), DT);
+    assert.equal(m.state, 'move', `leave sx=${sx} d=${d}`);
+    // into the wall + sideways, then tap: 45 deg is past pushAngle 40 and not along enough: no vault, no swap
+    const k = inCover(); k.update(I({ moveX: sx, moveY: -1, camYaw: d * R, tap: true }), DT);
+    assert.equal(k.state, 'cover', `tap sx=${sx} d=${d}`);
+  }
 });

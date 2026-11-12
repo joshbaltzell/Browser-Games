@@ -21,6 +21,12 @@ export function shakeWeightOf(tuning, mode) {
   return m && typeof m === 'object' && m.shakeWeight > 0 ? m.shakeWeight : 0;
 }
 
+// Whether the player's head is drawn, given the lens-to-head distance. Hidden inside hideDist,
+// back only past hideDist + margin, so it cannot flicker at the edge.
+export function headVisibleFor(dist, wasVisible, hideDist, margin = 0) {
+  return wasVisible ? dist >= hideDist : dist >= hideDist + margin;
+}
+
 export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } = {}) {
   const sp = { fov: { x: 0, v: 0 }, right: { x: 0, v: 0 }, up: { x: 0, v: 0 }, back: { x: 0, v: 0 } };
   const side = { x: 1, v: 0 };
