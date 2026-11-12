@@ -115,7 +115,7 @@ test('a mode without shakeWeight (coverTall, fov 75) gets zero shake', () => {
 test('only CAMERA_MODES are modes: shake, bump, look and unknown names give normal', () => {
   const t = clone();
   assert.deepEqual([...CAMERA_MODES], ['normal', 'aim', 'sprint', 'coverLow', 'coverTall', 'downed']);
-  for (const m of ['shake', 'bump', 'look', 'nope']) {
+  for (const m of ['shake', 'bump', 'slamShake', 'look', 'nope']) {
     assert.deepEqual(modeParams(t, m), modeParams(t, 'normal'));
     assert.equal(shakeWeightOf({ ...t, [m]: { shakeWeight: 1 } }, m), 0);
   }
@@ -148,6 +148,37 @@ test('bump pulls the lens toward the player by about amount, and it is back with
   const d2 = dist(run(c, 1).pos, head);
   assert.ok(d0 - d2 <= 2.05 * amt, `${d0 - d2}`);
   c.bump(); c.snap(T0, 0); near(dist(run(c, 1).pos, head), d0, 1e-6);
+});
+test('slam shake: a bump rings the lens for slamShake.time then it is exactly still; no bump, no shake', () => {
+  const c = rig(); c.snap(T0, 0); run(c, 120);
+  const rest = run(c, 1).pos.slice();
+  assert.deepEqual(run(c, 5).pos, rest);
+  c.bump();
+  let moved = 0; const s = TUNING.camera.slamShake;
+  for (let i = 0; i < Math.round(s.time / DT) - 1; i++) {
+    const p = c.update(DT, { target: T0, mode: 'normal', side: 1 }, OPEN).pos;
+    moved = Math.max(moved, Math.abs(p[1] - rest[1]) + Math.abs(p[0] - rest[0]));
+  }
+  assert.ok(moved > 0.005, `shake ${moved}`);
+  const after = run(c, 30).pos;
+  near(after[0], rest[0], 1e-3); near(after[1], rest[1], 1e-3); near(after[2], rest[2], 1e-3);
+});
+test('slam shake: amount 0 or time 0 shakes nothing; the offset stays within amount of the bump-only path', () => {
+  for (const sh of [{ amount: 0, time: 0.18, hz: 24 }, { amount: 0.06, time: 0, hz: 24 }]) {
+    const a = createCameraRig({ tuning: { ...clone(), slamShake: sh }, look: TUNING.look }), b = rig({ tuning: { ...clone(), slamShake: sh } });
+    a.snap(T0, 0); b.snap(T0, 0); a.bump(); b.bump();
+    for (let i = 0; i < 20; i++) assert.deepEqual(a.update(DT, { target: T0, mode: 'normal', side: 1 }, OPEN).pos, b.update(DT, { target: T0, mode: 'normal', side: 1 }, OPEN).pos);
+  }
+});
+test('dip: a foot plant lowers the lens by about the amount and it springs back within 0.3 s; capped; snap clears it', () => {
+  const c = rig(); c.snap(T0, 0); run(c, 120);
+  const y0 = run(c, 1).pos[1];
+  c.dip(0.015); const y1 = run(c, 1).pos[1];
+  assert.ok(y0 - y1 > 0.005 && y0 - y1 <= 0.0151, `${y0 - y1}`);
+  near(run(c, 18).pos[1], y0, 0.001);
+  for (let i = 0; i < 30; i++) c.dip(0.05);
+  assert.ok(y0 - run(c, 1).pos[1] <= 0.101);
+  c.dip(NaN); c.dip(-1); c.snap(T0, 0); near(run(c, 1).pos[1], y0, 1e-6);
 });
 test('passing a pillar corner at jog: the lens never comes within minBack of the head and is never inside a box', () => {
   const B = [FLOOR, makeBox([-0.4, 0, -0.4], [0.4, 4, 0.4], 'pillar')];

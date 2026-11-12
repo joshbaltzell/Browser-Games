@@ -7,7 +7,8 @@
   // Each leg: place, expected outcome, length in seconds, and timed intents (last one at or before now applies).
   const LEGS = [
     { name: 'coverRow right + tap', place: 'coverRow', expect: 'none', len: 1.5, steps: [M({ moveX: 1 }), M({ moveX: 1, tap: true }, 0.5), M({ moveX: 1 }, 0.55)] },
-    { name: 'coverRow back + tap', place: 'coverRow', expect: 'none', len: 1, steps: [M({ moveY: 1 }), M({ moveY: 1, tap: true }, 0.3), M({ moveY: 1 }, 0.35)] },
+    // The perimeter walls are cover now: jogging back from the cover row runs straight into the south wall and slams in with no tap.
+    { name: 'coverRow back, run-in to the south wall', place: 'coverRow', expect: 'grab', len: 1.8, steps: [M({ moveY: 1 })] },
     { name: 'coverRow sprint at wall', place: 'coverRow', expect: 'grab', len: 1.2, steps: [M({ moveY: -1, sprint: true })] },
     { name: 'coverTall sprint along', place: 'coverTall', expect: 'none', len: 1.2, steps: [M({ moveX: -1, sprint: true })] },
     { name: 'coverTall aim-walk into wall', place: 'coverTall', expect: 'none', len: 1, steps: [M({ moveY: -1, aim: true })] },

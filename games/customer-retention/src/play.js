@@ -100,6 +100,11 @@ export function startPlay({ canvas, gl, params }) {
       transitions.push({ state, from, t: simTime, tapped: lastTap, auto: state === 'coverSlide' && !lastTap && (from === 'move' || from === 'sprint') });
       if (transitions.length > TRANSITION_CAP) transitions.shift();
     },
+    // A foot plant (jog, aim-walk or sprint): the lens dips a little and the 'step' sound plays (silent until that recipe exists).
+    onStep(e) {
+      cam.dip(TUNING.feedback.stepDip);
+      sfx.play('step', TUNING.feedback.stepVolume * (e.sprint ? 1.25 : 1));
+    },
   });
   mover.place(spawn.pos, spawn.yaw);
   const view = createPlayerView(mover);
@@ -252,7 +257,7 @@ export function startPlay({ canvas, gl, params }) {
     return {
       pos: mover.pos.slice(), state: mover.state, speed: mover.speed(), facing: mover.facing, entries: mover.entries,
       cover: c ? { id: c.edge.id, kind: c.edge.kind, t: c.t, length: c.edge.length, pop: c.pop, exposed: c.exposed } : null,
-      slams: mover.slams,
+      slams: mover.slams, steps: mover.steps,
       blind: c ? c.blind : 0, firing: !!mover.firing,
     };
   };
@@ -495,10 +500,11 @@ export function startPlay({ canvas, gl, params }) {
       const edge = mover.cover ? mover.cover.edge : null;
       const aimHit = castRay(camState.pos, camState.dir, 100, boxes, targetList, { ignoreBox: edge ? edge.boxIndex : -1 });
       padScale = input.device() === 'pad' && aimHit.target ? TUNING.look.pad.assist : 1;
-      const spreadStance = stance || (mover.cover && mover.cover.pop > 0 ? 'aim' : 'hip');
+      const covered = !!mover.cover && mover.cover.pop < 0.5; // tucked or blind: the reticle shows dimmed
+      const spreadStance = stance || (mover.cover && (mover.cover.pop > 0 || covered) ? 'aim' : 'hip');
       const fm = fight ? damageFaceModel({ hp: health.hp, max: TUNING.health.max, downed: health.downed, downT: health.downT, hits, now: simTime }) : null;
       hud.render(hudModel({
-        arsenal, stance, firing: intent.fire, spreadDeg: arsenal.spreadOf(spreadStance), fov: camera.fov,
+        arsenal, stance, firing: intent.fire, covered, device: input.device(), spreadDeg: arsenal.spreadOf(spreadStance), fov: camera.fov,
         viewportH: canvas.clientHeight || window.innerHeight, marker, reloadFlash,
         face: fm, bark: fv ? fv.bark() : null,
         objective: fight ? (fight.clear ? 'Kiosk Row clear' : fight.started ? 'Clear Kiosk Row' : 'Walk in') : '',

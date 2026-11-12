@@ -6,7 +6,7 @@ import { TUNING } from '../tuning.js';
 const EPS = 1e-9;
 const RAD = Math.PI / 180;
 const BLOCK_Y0 = 0.05, BLOCK_Y1 = 1.8;
-const COVER_KINDS = { low: 'low', tall: 'tall', pillar: 'tall' };
+const COVER_KINDS = { low: 'low', tall: 'tall', pillar: 'tall', wall: 'tall' };
 
 export function edgeOptions(cover = TUNING.cover, move = TUNING.move) {
   return { radius: move.radius, gap: cover.gap, endInset: cover.endInset, minLength: cover.minLength };

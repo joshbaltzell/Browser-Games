@@ -20,23 +20,43 @@ test('forward is the camera forward; right is the camera right', () => {
   m = mover(); step(m, I({ moveX: 1 }), 3); assert.ok(m.vel[0] < 0);
   near(forwardOf(0)[2], 1, 1e-12); near(rightOf(0)[0], -1, 1e-12);
 });
-test('jog reaches 4.5 m/s in 0.12 s, not before 0.1 s', () => {
-  const m = mover(); step(m, fwd, 6); assert.ok(m.speed() < 4.5);
+test('jog reaches 4.5 m/s in 0.25 s (15 steps), not before 0.23 s', () => {
+  const m = mover(); step(m, fwd, 14); assert.ok(m.speed() < 4.5);
   step(m, fwd, 2); near(m.speed(), 4.5, 1e-9);
 });
-test('stops from jog within 0.08 s', () => {
-  const m = mover(); step(m, fwd, 20); step(m, I(), 5); assert.equal(m.speed(), 0);
+test('stops from jog within 0.17 s (10 steps), not in 0.12 s', () => {
+  const m = mover(); step(m, fwd, 30); step(m, I(), 7); assert.ok(m.speed() > 0); step(m, I(), 3); assert.equal(m.speed(), 0);
+});
+test('footsteps: one onStep per stepEvery metres of jog, feet alternate; sprint strides longer; standing and aim-walk-stopped make none', () => {
+  const ev = []; const m = mover({ onStep: e => ev.push(e) });
+  step(m, I(), 60); assert.equal(ev.length, 0);
+  step(m, fwd, 120);
+  const t = TUNING.move, jogged = m.pos[2];
+  const expected = Math.floor((jogged - 0) / t.stepEvery);
+  assert.ok(Math.abs(ev.length - expected) <= 1, `${ev.length} steps over ${jogged} m`);
+  assert.equal(m.steps, ev.length);
+  ev.forEach((e, i) => { assert.equal(e.sprint, false); assert.equal(e.foot, (i + 1) % 2); assert.ok(e.speed > 4); });
+  const n0 = ev.length; step(m, I(), 60); assert.equal(ev.length, n0, 'none while standing');
+  const s = mover({ onStep: e => ev.push(e) }); ev.length = 0;
+  step(s, I({ moveY: -1, sprint: true }), 120);
+  assert.ok(ev.length > 0 && ev.every(e => e.sprint));
+  assert.ok(Math.abs(ev.length - Math.floor(s.pos[2] / t.stepEverySprint)) <= 1, `${ev.length} sprint steps over ${s.pos[2]} m`);
+});
+test('footsteps: pushing against a wall makes no steps', () => {
+  const ev = []; const wall = makeBox([-5, 0, 1], [5, 3, 2], 'wall');
+  const m = createMovement({ boxes: [FLOOR, wall], spawn: [0, 0, 0], onStep: e => ev.push(e), coverTuning: { ...TUNING.cover, autoSlam: 0 } });
+  step(m, fwd, 60); const n = ev.length; step(m, fwd, 120); assert.equal(ev.length, n);
 });
 test('half stick tilt jogs at half speed', () => {
   const m = mover(); step(m, I({ moveY: -0.5 }), 20); near(m.speed(), 2.25, 1e-9);
 });
 test('aiming caps speed at 2.2 and faces the camera (strafe)', () => {
-  const m = mover(); step(m, I({ aim: true, camYaw: 1.0, moveX: 1 }), 12);
+  const m = mover(); step(m, I({ aim: true, camYaw: 1.0, moveX: 1 }), 20);
   near(m.speed(), 2.2, 1e-9); near(m.facing, 1.0, 1e-9);
 });
 test('not aiming, facing turns toward motion at turnRate', () => {
   const m = mover(); const it = I({ moveX: -1 }); // -X input is +X world at yaw 0
-  m.update(it, DT); assert.ok(Math.abs(m.facing) <= 14 / 60 + 1e-9);
+  m.update(it, DT); assert.ok(Math.abs(m.facing) <= 10 / 60 + 1e-9);
   step(m, it, 30); near(m.facing, Math.PI / 2, 1e-6);
 });
 test('sprint: needs sprint and stick tilt; reaches 7.5; ends on release, on aim, or on no input', () => {

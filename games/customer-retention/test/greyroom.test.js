@@ -58,13 +58,15 @@ test('wallTrim gives a skirting band and a panel line every 2 m on each wall, in
 });
 
 const roomEdges = () => deriveCoverEdges(GREY_ROOM.boxes, { ...edgeOptions(), exclude: GREY_ROOM.coverExclude });
-test('cover: every low, tall and pillar box yields at least one edge; wall boxes none', () => {
+test('cover: every low, tall, pillar and wall box yields at least one edge; the four outer walls give only their inside faces', () => {
   const edges = roomEdges();
   GREY_ROOM.boxes.forEach((b, i) => {
     const n = edges.filter(e => e.boxIndex === i).length;
-    if (b.kind === 'low' || b.kind === 'tall' || b.kind === 'pillar') assert.ok(n >= 1, `box ${i} ${b.kind}`);
-    else assert.equal(n, 0, `box ${i} ${b.kind}`);
+    if (b.kind === 'floor') assert.equal(n, 0, `box ${i} ${b.kind}`);
+    else assert.ok(n >= 1, `box ${i} ${b.kind}`);
+    if (b.kind === 'wall') for (const e of edges.filter(e => e.boxIndex === i)) assert.equal(e.kind, 'tall', `box ${i}`);
   });
+  for (const e of edges.filter(e => [1, 2, 3, 4].includes(e.boxIndex))) assert.ok(Math.abs(e.a[0]) < 12 && Math.abs(e.a[1]) < 12, `${e.id} inside the room`);
 });
 test('cover: the swap row is two low walls in line with 2.4 m between stand ends', () => {
   const edges = roomEdges(), boxes = GREY_ROOM.boxes;

@@ -13,21 +13,29 @@ const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 // marker is the hit marker kind ('body' | 'head' | 'kill') or null; reloadFlash is 'perfect' | 'good' | 'jam' or null.
 // face is the damageFaceModel result (or null); objective is a line of text; bark is { speaker, text } or null;
 // banner is { title, hint } or null. The last four pass through unchanged.
-export function hudModel({ arsenal, stance, firing, spreadDeg, fov, viewportH, marker = null, reloadFlash = null,
+// covered: the player is tucked or blind in cover (not popped); the reticle then shows dimmed, at the same screen point the
+// aimed shot's camera ray goes through. device is 'kbm' or 'pad': it picks the key name in the reload prompt.
+export function hudModel({ arsenal, stance, firing, covered = false, device = 'kbm', spreadDeg, fov, viewportH, marker = null, reloadFlash = null,
   face = null, objective = '', bark = null, banner = null, weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
   const id = arsenal.current();
   const row = weapons[id], am = arsenal.ammo[id];
   const r = arsenal.reload;
-  let reload = { show: false, marker: 0, good: [row.goodStart, row.goodEnd], perfect: [row.perfectStart, row.perfectEnd], flash: reloadFlash };
+  const key = device === 'pad' ? 'RB' : 'R';
+  let reload = { show: false, marker: 0, good: [row.goodStart, row.goodEnd], perfect: [row.perfectStart, row.perfectEnd], flash: reloadFlash, prompt: '' };
   if (r) {
     const T = Math.max(row.reloadTime, combat.minReloadTime);
-    reload = { ...reload, show: true, marker: clamp01(r.t / T) };
-  }
+    reload = { ...reload, show: true, marker: clamp01(r.t / T), prompt: r.press === null ? `${key} again on the bright zone` : '' };
+  } else if (am.mag <= 0) reload.prompt = `${key} to reload`;
+  const popped = stance === 'aim';
   return {
     weapon: WEAPONS[id].name,
     mag: am.mag,
     reserve: row.infiniteReserve > 0 ? '∞' : am.reserve,
-    reticle: { show: stance === 'aim' || !!firing, gap: feedback.reticleMinGap + reticleGap(spreadDeg, fov, viewportH) },
+    reticle: {
+      show: popped || !!firing || covered,
+      gap: feedback.reticleMinGap + reticleGap(spreadDeg, fov, viewportH),
+      opacity: covered && !popped ? feedback.coverReticleOpacity : 1,
+    },
     reload,
     hit: { show: !!marker, kind: marker || null },
     // The face hides while a banner owns the screen (downed, cleared); the edge glow still follows the face model.
@@ -76,6 +84,7 @@ export function createHud(root = document.body) {
   const panel = el('div', 'cr-weapon', hud);
   const name = el('div', 'cr-weapon-name', panel);
   const ammo = el('div', 'cr-ammo', panel);
+  const prompt = el('div', 'cr-prompt', panel);
   const bar = el('div', 'cr-reload', panel);
   const grey = el('div', 'cr-zone cr-zone-good', bar);
   const bright = el('div', 'cr-zone cr-zone-perfect', bar);
@@ -95,12 +104,14 @@ export function createHud(root = document.body) {
     render(m) {
       set('weapon', m.weapon, v => { name.textContent = v; });
       set('ammo', `${m.mag}|${m.reserve}`, () => { ammo.textContent = `${m.mag} / ${m.reserve}`; });
+      set('prompt', m.reload.prompt, v => { prompt.textContent = v; });
       set('reload.show', m.reload.show, v => { bar.hidden = !v; });
       set('good', `${m.reload.good}`, () => zone(grey, m.reload.good));
       set('perfect', `${m.reload.perfect}`, () => zone(bright, m.reload.perfect));
       set('marker', Math.round(m.reload.marker * 500), () => { mark.style.left = pct(m.reload.marker); });
       set('flash', m.reload.flash, v => { result.textContent = v ? v.toUpperCase().replace('JAM', 'JAMMED') : ''; result.dataset.kind = v || ''; });
       set('ret.show', m.reticle.show, v => { reticle.hidden = !v; });
+      set('ret.op', Math.round(m.reticle.opacity * 100), () => { reticle.style.opacity = m.reticle.opacity.toFixed(2); });
       set('ret.gap', Math.round(m.reticle.gap), g => { arms.forEach(a => a.style.setProperty('--gap', `${g}px`)); });
       const fc = m.face;
       set('face.show', !!m.faceShow, v => { faceEl.hidden = !v; });

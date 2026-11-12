@@ -51,7 +51,8 @@ for (let i = 0; i <= 12; i++) marks.push({ min: [-10 + i - 0.05, 0, 10], max: [-
 export const GREY_ROOM = deepFreeze({
   boxes,
   marks,
-  coverExclude: [],
+  // The perimeter walls give tall cover on their inside faces only; the outside faces are out of the arena.
+  coverExclude: ['1-z#0', '2+z#0', '3-x#0', '4+x#0'],
   spawn: { pos: [0, 0, 0], yaw: 0 },
   features: {
     corridor: { pos: [6, 0, -6], yaw: 0 },

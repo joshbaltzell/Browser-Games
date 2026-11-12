@@ -31,6 +31,8 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
   const sp = { fov: { x: 0, v: 0 }, right: { x: 0, v: 0 }, up: { x: 0, v: 0 }, back: { x: 0, v: 0 } };
   const side = { x: 1, v: 0 };
   const kick = { x: 0, v: 0 };     // slam bump: metres of lens pull toward the player
+  const dip = { x: 0, v: 0 };      // footstep dip: metres the lens is below where it would be
+  const slam = { t: 0, amp: 0 };   // slam shake: seconds left and the peak offset in metres (a transient, not a camera mode)
   const recoil = { p: { x: 0, v: 0 }, y: { x: 0, v: 0 } }; // gun kick offsets, degrees
   const free = [0, 0, 0];          // un-lagged head, where the pivot may not be dragged through a corner from
   const shakeW = { x: 0, v: 0 };   // mode shake weight, blended like the other mode params
@@ -61,6 +63,12 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       const b = tuning.bump;
       if (!b || !(b.amount > 0) || !(scale > 0)) return;
       kick.x = Math.min(kick.x + b.amount * scale, 2 * b.amount);
+      const s = tuning.slamShake;
+      if (s && s.amount > 0 && s.time > 0) { slam.t = s.time; slam.amp = s.amount * scale; }
+    },
+    // A foot plant: the lens dips by `amount` m and springs back (at the bump's half-life).
+    dip(amount) {
+      if (Number.isFinite(amount) && amount > 0) dip.x = Math.min(dip.x + amount, 0.1);
     },
     // Gun kick in degrees: adds to a pitch and a yaw offset of the view (each capped at recoil.max)
     // that spring back. cam.yaw and cam.pitch, which movement reads, never change.
@@ -83,7 +91,7 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       side.x = sideArg; side.v = 0;
       shakeW.x = shakeWeightOf(tuning, mode); shakeW.v = 0;
       for (let i = 0; i < 3; i++) { piv[i].x = target[i]; piv[i].v = 0; }
-      kick.x = 0; kick.v = 0;
+      kick.x = 0; kick.v = 0; dip.x = 0; dip.v = 0; slam.t = 0;
       recoil.p.x = 0; recoil.p.v = 0; recoil.y.x = 0; recoil.y.v = 0;
       ratio = 1; ready = true;
     },
@@ -97,6 +105,7 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       springStep(side, sideTarget, tuning.sideHalfLife, dt);
       for (let i = 0; i < 3; i++) springStep(piv[i], target[i], tuning.followHalfLife, dt);
       springStep(kick, 0, tuning.bump ? tuning.bump.halfLife : 0, dt);
+      springStep(dip, 0, tuning.bump ? tuning.bump.halfLife : 0, dt);
 
       const rh = tuning.recoil ? tuning.recoil.halfLife : 0;
       springStep(recoil.p, 0, rh, dt); springStep(recoil.y, 0, rh, dt);
@@ -144,6 +153,18 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
         pos[0] += rx * sx - rz * dir[1] * shakeUp;
         pos[1] += (rz * dir[0] - rx * dir[2]) * shakeUp;
         pos[2] += rz * sx + rx * dir[1] * shakeUp;
+      }
+      pos[1] -= dip.x;
+      // 5. slam shake: a decaying jitter across the view, for slam.t seconds
+      const sl = tuning.slamShake;
+      if (slam.t > 0 && sl && sl.time > 0) {
+        slam.t = Math.max(0, slam.t - dt);
+        const k = slam.t / sl.time, a = slam.amp * k * k;
+        const sx = Math.sin(TAU * sl.hz * slam.t) * a, sy2 = Math.sin(TAU * sl.hz * 1.27 * slam.t + 2) * a;
+        const rx = -cy, rz = sy;
+        pos[0] += rx * sx - rz * dir[1] * sy2;
+        pos[1] += (rz * dir[0] - rx * dir[2]) * sy2;
+        pos[2] += rz * sx + rx * dir[1] * sy2;
       }
       result.fov = sp.fov.x;
       return result;

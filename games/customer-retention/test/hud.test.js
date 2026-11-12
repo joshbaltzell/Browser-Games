@@ -98,3 +98,42 @@ test('real wiring (health -> damageFaceModel -> hudModel, as play.js composes it
   h.reset();
   assert.equal(view(0.3).fm.face.opacity, 0, 'full health: nothing to show');
 });
+
+test('hudModel: in cover (tucked or blind) the reticle shows dimmed at coverReticleOpacity; popped aiming and open-ground aiming keep it full', () => {
+  const a = createArsenal();
+  const dim = TUNING.feedback.coverReticleOpacity;
+  assert.equal(dim, 0.5);
+  let m = base(a, { stance: null, covered: true });
+  assert.equal(m.reticle.show, true); assert.equal(m.reticle.opacity, dim);
+  m = base(a, { stance: 'blind', firing: true, covered: true });
+  assert.equal(m.reticle.show, true); assert.equal(m.reticle.opacity, dim);
+  m = base(a, { stance: 'aim', covered: true });
+  assert.equal(m.reticle.show, true); assert.equal(m.reticle.opacity, 1);
+  m = base(a, { stance: 'aim' }); assert.equal(m.reticle.opacity, 1);
+  m = base(a, { stance: null }); assert.equal(m.reticle.show, false);
+  // read at use time
+  m = base(a, { stance: null, covered: true, feedback: { ...TUNING.feedback, coverReticleOpacity: 0.2 } }); assert.equal(m.reticle.opacity, 0.2);
+});
+
+test('hudModel: the reload prompt says "R again on the bright zone" until the press, then hides; "RB" on a pad', () => {
+  const a = createArsenal();
+  a.set('regret', { mag: 10 });
+  a.update({ ...idle, reload: true }, 'move', 0);
+  a.update(idle, 'move', 0.5);
+  assert.equal(base(a).reload.prompt, 'R again on the bright zone');
+  assert.equal(base(a, { device: 'pad' }).reload.prompt, 'RB again on the bright zone');
+  a.update({ ...idle, reload: true }, 'move', 0);
+  assert.notEqual(a.reload.press, null);
+  assert.equal(base(a).reload.prompt, '');
+  assert.equal(base(a, { device: 'pad' }).reload.prompt, '');
+});
+
+test('hudModel: an empty magazine with no reload running says "R to reload" ("RB to reload" on a pad); a loaded one says nothing', () => {
+  const a = createArsenal();
+  assert.equal(base(a).reload.prompt, '');
+  a.set('regret', { mag: 0 });
+  assert.equal(base(a).reload.prompt, 'R to reload');
+  assert.equal(base(a, { device: 'pad' }).reload.prompt, 'RB to reload');
+  a.update({ ...idle, reload: true }, 'move', 0);
+  assert.equal(base(a).reload.prompt, 'R again on the bright zone');
+});

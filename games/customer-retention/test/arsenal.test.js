@@ -115,19 +115,19 @@ test('no shot and no ammo spent with stance null, while reloading or while switc
 test('spread: stance base plus bloom; bloom grows per shot to bloomMax and recovers at bloomRecover', () => {
   const a = make();
   const first = a.update(I({ fire: true, firePressed: true }), 'aim', DT).find(e => e.type === 'shot');
-  assert.equal(first.spread, 0.6);
-  assert.equal(a.spreadOf('aim'), 0.6 + 0.25);
-  const hip = make().update(I({ fire: true }), 'hip', DT)[0]; assert.equal(hip.spread, 2.5);
-  const blind = make().update(I({ fire: true }), 'blind', DT)[0]; assert.equal(blind.spread, 7);
+  assert.equal(first.spread, 0.96);
+  assert.equal(a.spreadOf('aim'), 0.96 + 0.25);
+  const hip = make().update(I({ fire: true }), 'hip', DT)[0]; assert.equal(hip.spread, 4);
+  const blind = make().update(I({ fire: true }), 'blind', DT)[0]; assert.equal(blind.spread, 11.2);
   // Check the cap with recovery off, then recovery on its own.
   const w = structuredClone(W); w.regret.bloomRecover = 0;
   const b = make(w);
   let shots = 0;
   while (shots < 20) shots += count(b.update(I({ fire: true }), 'aim', DT), 'shot');
-  assert.equal(b.spreadOf('aim'), 0.6 + 2);
+  assert.equal(b.spreadOf('aim'), 0.96 + 2);
   const w5 = structuredClone(W); const b5 = make(w5); b5.ammo.regret.bloom = 2;
   run(b5, I(), 'aim', 1);
-  assert.ok(Math.abs(b5.spreadOf('aim') - (0.6 + Math.max(0, 2 - W.regret.bloomRecover))) < 1e-9);
+  assert.ok(Math.abs(b5.spreadOf('aim') - (0.96 + Math.max(0, 2 - W.regret.bloomRecover))) < 1e-9);
   // Partial recovery.
   const c = make(); c.ammo.regret.bloom = 2;
   run(c, I(), 'aim', 0.2);

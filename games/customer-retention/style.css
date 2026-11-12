@@ -17,6 +17,7 @@ html, body { margin: 0; height: 100%; background: #1b1f3b; overflow: hidden; fon
 .cr-weapon { position: absolute; right: 24px; bottom: 24px; width: 180px; text-align: right; }
 .cr-weapon-name { font-size: 14px; opacity: .85; }
 .cr-ammo { font-size: 32px; font-weight: 700; line-height: 1.1; }
+.cr-prompt { direction: rtl; /* a line longer than the panel grows to the left */ height: 16px; margin-top: 6px; font-size: 13px; font-weight: 700; color: #ffe9a8; white-space: nowrap; }
 .cr-reload { position: relative; width: 180px; height: 12px; margin-top: 8px; background: rgba(27,31,59,.7); border: 1px solid rgba(255,255,255,.5); box-sizing: border-box; }
 .cr-zone { position: absolute; top: 0; bottom: 0; }
 .cr-zone-good { background: rgba(190,190,200,.55); }

@@ -108,11 +108,11 @@ function downTimes() {
   });
 }
 
-test('standing still at features.open on Normal: health 0 between 1.2 s and 2.0 s after the first hit, mean of seeds 1..5 (spec: about 1.5 s)', () => {
+test('standing still at features.open on Normal: health 0 between 2.5 s and 3.5 s after the first hit, mean of seeds 1..5 (Gate C: easier, about 3 s)', () => {
   const ts = downTimes();
   const mn = mean(ts);
   console.log('time-to-down after the first hit, seeds 1..5:', ts.map(t => t.toFixed(2)).join(' '), 'mean', mn.toFixed(2));
-  assert.ok(mn >= 1.2 && mn <= 2.0, `mean ${mn}`);
+  assert.ok(mn >= 2.5 && mn <= 3.5, `mean ${mn}`);
 });
 
 function damageWindow(seed, runner) {
@@ -216,7 +216,7 @@ test('no two characters overlap (distance >= 2 * radius - 0.05) after any step; 
 
 test('a downed player: every token released within one step, no accurate shots until revive or reset', () => {
   let downAt = -1, heldAfter = null, afterShots = 0, revived = -1, laterShots = 0;
-  const r = sim(14, {
+  const r = sim(24, {
     at: 'open', seed: 2, god: false,
     intent: (i, m, f) => {
       return I();

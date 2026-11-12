@@ -104,8 +104,8 @@ function run(seed, taps, fire = false) {
   return out;
 }
 
-// Seed 44 was picked from a sweep: the room has few swap pairs, so many seeds never swap.
-const SEEDS = (process.env.BOT_SEEDS || '7,44').split(',').map(Number);
+// Seed 21 was picked from a sweep (it was 44 until the outer walls became cover, which shifted every run): the room has few swap pairs, so many seeds never swap.
+const SEEDS = (process.env.BOT_SEEDS || '7,21').split(',').map(Number);
 const noTaps = run(SEEDS[0], false), withTaps = run(SEEDS[1], true), noTapsFire = run(SEEDS[0], false, true);
 if (process.env.BOT_SEEDS) console.log('COUNTS', SEEDS, noTaps.autos, noTaps.autoKinds, withTaps.autos, withTaps.grabs, withTaps.rolls, withTaps.leaves, withTaps.vaults, withTaps.swaps, withTaps.mismatches.length, withTaps.badSteps.length);
 

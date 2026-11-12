@@ -295,9 +295,9 @@ test('run-in: the entry carries onState with no tap', () => {
   step(m, I({ moveY: -1 }), 120);
   assert.deepEqual(calls[0], ['coverSlide', 'move', false]);
 });
-test('run-in: never from 30 deg off the normal, parallel 0.3 m from the face, aim-walking, a slow walk, or autoSlam 0', () => {
+test('run-in: never from 45 deg off the normal, parallel 0.3 m from the face, aim-walking, a slow walk, or autoSlam 0', () => {
   const cases = [
-    ['30 deg', { spawn: [-3, 0, -3] }, I({ moveX: -Math.sin(30 * Math.PI / 180), moveY: -Math.cos(30 * Math.PI / 180) }), 0],
+    ['45 deg', { spawn: [-5, 0, -3] }, I({ moveX: -Math.sin(45 * Math.PI / 180), moveY: -Math.cos(45 * Math.PI / 180) }), 0],
     ['parallel', { spawn: [-6, 0, 2 - S - 0.3] }, I({ moveX: -1 }), 0],
     ['aim-walk', { spawn: [0, 0, 0] }, I({ moveY: -1, aim: true }), 0],
     ['slow walk', { spawn: [0, 0, 0] }, I({ moveY: -0.4 }), 0],
@@ -309,9 +309,12 @@ test('run-in: never from 30 deg off the normal, parallel 0.3 m from the face, ai
   const off = mover({ spawn: [0, 0, -3] }); off.coverTuning = { ...C, autoSlam: 0 };
   step(off, I({ moveY: -1 }), 240); assert.equal(off.slams, 0); assert.notEqual(off.state, 'cover');
 });
-test('run-in: 30 deg off the normal grabs with a wider autoAngle (read live)', () => {
-  const m = mover({ spawn: [-1, 0, -3] }); m.coverTuning = { ...C, autoAngle: 40 };
-  step(m, I({ moveX: -Math.sin(20 * Math.PI / 180), moveY: -Math.cos(20 * Math.PI / 180) }), 200);
+test('run-in: 30 deg off the normal grabs at the default autoAngle 40, not with 25; 45 deg grabs with a wider autoAngle (read live)', () => {
+  const t30 = I({ moveX: -Math.sin(30 * Math.PI / 180), moveY: -Math.cos(30 * Math.PI / 180) });
+  let m = mover({ spawn: [-3, 0, -3] }); step(m, t30, 200); assert.equal(m.slams, 1);
+  m = mover({ spawn: [-3, 0, -3] }); m.coverTuning = { ...C, autoAngle: 25 }; step(m, t30, 200); assert.equal(m.slams, 0);
+  const t45 = I({ moveX: -Math.sin(45 * Math.PI / 180), moveY: -Math.cos(45 * Math.PI / 180) });
+  m = mover({ spawn: [-4, 0, -3] }); m.coverTuning = { ...C, autoAngle: 50 }; step(m, t45, 200);
   assert.equal(m.slams, 1);
 });
 test('run-in: pushing in from rest against the wall never grabs, and a roll never grabs', () => {

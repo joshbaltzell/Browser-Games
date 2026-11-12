@@ -30,10 +30,11 @@ test('a free 4 x 2 low box gives four edges with outward normals, height, depth,
   assert.deepEqual(mx.normal, [-1, 0]); near(mx.a[0], -2 - S); near(mx.depth, 4);
   assert.ok(Object.isFrozen(pz) && Object.isFrozen(pz.a) && Object.isFrozen(pz.normal));
 });
-test('tall and pillar boxes give tall edges; wall and floor boxes give none', () => {
+test('tall, pillar and wall boxes give tall edges; floor boxes give none', () => {
   const e = deriveCoverEdges([FLOOR, makeBox([5, 0, 5], [7, 4, 7]), makeBox([-1, 0, -1], [1, 2.2, -0.2], 'tall'), makeBox([0, 0, 3], [0.8, 4, 3.8], 'pillar')], O);
   assert.ok(e.length > 0);
-  assert.ok(e.every(x => x.kind === 'tall' && x.boxIndex >= 2));
+  assert.ok(e.every(x => x.kind === 'tall' && x.boxIndex >= 1));
+  assert.ok(e.some(x => x.boxIndex === 1), 'a wall box gives tall edges');
   assert.ok(e.some(x => x.boxIndex === 2) && e.some(x => x.boxIndex === 3));
 });
 test('a face shorter than minLength after insets gives no edge', () => {

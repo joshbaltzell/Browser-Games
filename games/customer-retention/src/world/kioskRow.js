@@ -44,7 +44,8 @@ export const KIOSK_ROW = deepFreeze({
   name: 'kioskRow',
   boxes,
   marks: [],
-  coverExclude: [],
+  // The perimeter walls give tall cover on their inside faces only; the outside faces are out of the arena.
+  coverExclude: ['1-z#0', '2+z#0', '3-x#0', '4+x#0'],
   spawn: { pos: [0, 0, -13.5], yaw: 0 },
   // The lockdown starts when the player crosses this z.
   trigger: { z: -11 },

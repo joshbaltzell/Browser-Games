@@ -18,21 +18,21 @@ test('starts full; 7 x 15 damage downs from 100 on the 7th; damage while downed 
   assert.equal(h.damage(0), null);
   assert.equal(H().damage(-5), null);
 });
-test('regeneration: none before 4 s; full exactly 3 s after it starts (7 s after the last hit, +- one 1/60 step)', () => {
+test('regeneration: none before 3 s; full exactly 3 s after it starts (6 s after the last hit, +- one 1/60 step)', () => {
   const h = H(); h.damage(60);
-  run(h, 3.9); assert.equal(h.hp, 40);
+  run(h, 2.9); assert.equal(h.hp, 40);
   run(h, 0.2); assert.ok(h.hp > 40, `${h.hp}`);
   const h2 = H(); h2.damage(60);
-  run(h2, 7 - 1.5 * DT); assert.ok(h2.hp < 100, `${h2.hp}`);
+  run(h2, 6 - 1.5 * DT); assert.ok(h2.hp < 100, `${h2.hp}`);
   run(h2, 3 * DT); assert.equal(h2.hp, 100);
   // halfway through regeneration is halfway up
-  const h3 = H(); h3.damage(60); run(h3, 5.5); assert.ok(Math.abs(h3.hp - 70) < 60 * DT / 3 + 1e-6, `${h3.hp}`);
+  const h3 = H(); h3.damage(60); run(h3, 4.5); assert.ok(Math.abs(h3.hp - 70) < 60 * DT / 3 + 1e-6, `${h3.hp}`);
 });
-test('a hit during regeneration stops it and restarts the 4 s delay', () => {
-  const h = H(); h.damage(60); run(h, 5);
+test('a hit during regeneration stops it and restarts the 3 s delay', () => {
+  const h = H(); h.damage(60); run(h, 4);
   const mid = h.hp; assert.ok(mid > 40 && mid < 100);
   assert.equal(h.damage(10), 'hit'); const after = h.hp; assert.equal(after, mid - 10); assert.equal(h.sinceHit, 0);
-  run(h, 3.9); assert.equal(h.hp, after);
+  run(h, 2.9); assert.equal(h.hp, after);
   run(h, 0.3); assert.ok(h.hp > after);
   // regeneration restarts from the new hp and reaches full 3 s after the delay
   run(h, 3.5); assert.equal(h.hp, 100);
@@ -47,7 +47,7 @@ test('downed: bleedOut after 12 s; standInRevive 1 revives after 3 s at 50 hp', 
   assert.deepEqual(run(r, 2.9), []); assert.equal(r.downed, true);
   assert.deepEqual(run(r, 0.2), ['revived']);
   assert.equal(r.downed, false); assert.equal(r.hp, 50); assert.ok(r.sinceHit < 0.2);
-  run(r, 3.6); assert.equal(r.hp, 50);            // regeneration waits its delay after a revive
+  run(r, 2.6); assert.equal(r.hp, 50);            // regeneration waits its delay after a revive
   run(r, 3.4); assert.equal(r.hp, 100);
 });
 test('godMode: hp never below 1, result hit, never downed', () => {
@@ -58,7 +58,7 @@ test('godMode: hp never below 1, result hit, never downed', () => {
 });
 test('panel extremes: regenTime 0 fills at the delay; downedTime 0 bleeds out on the next update; dt 0 and dt 5 stay finite', () => {
   const h = H({ regenTime: 0 }); h.damage(60);
-  run(h, 3.9); assert.equal(h.hp, 40);
+  run(h, 2.9); assert.equal(h.hp, 40);
   run(h, 0.2); assert.equal(h.hp, 100);
   const d = H({ downedTime: 0 }); assert.equal(d.damage(500), 'downed'); assert.equal(d.update(DT), 'bleedOut');
   for (const dt of [0, 5, -1, NaN, Infinity]) {
@@ -76,5 +76,5 @@ test('reads tuning at use time: a panel change to max or regenDelay takes effect
 });
 test('reset after a hit mid-regeneration leaves no stale state', () => {
   const h = H(); h.damage(50); run(h, 5); h.reset();
-  assert.equal(h.hp, 100); h.damage(10); run(h, 3.9); assert.equal(h.hp, 90);
+  assert.equal(h.hp, 100); h.damage(10); run(h, 2.9); assert.equal(h.hp, 90);
 });

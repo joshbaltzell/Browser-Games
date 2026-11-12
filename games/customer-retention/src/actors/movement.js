@@ -113,14 +113,16 @@ export const CONTEXT_ACTIONS = [coverAction, { name: 'roll', when: () => true, s
 
 export function createMovement({
   boxes, spawn, tuning = TUNING.move, coverTuning = TUNING.cover, coverEdges = [],
-  states = STATES, contextActions = CONTEXT_ACTIONS, onState,
+  states = STATES, contextActions = CONTEXT_ACTIONS, onState, onStep,
 }) {
   const m = {
     state: 'move', stateTime: 0, entries: 0,
     pos: [spawn[0], spawn[1], spawn[2]], prevPos: [spawn[0], spawn[1], spawn[2]],
     vel: [0, 0, 0], facing: 0, prevFacing: 0, aiming: false, firing: false, heading: 0,
-    tuning, boxes, coverTuning, coverEdges, onState,
+    tuning, boxes, coverTuning, coverEdges, onState, onStep,
     cover: null, coverTarget: null, slams: 0,
+    // Footsteps: stepDist is the ground covered since the last foot plant; steps counts plants and foot alternates 0 and 1.
+    stepDist: 0, steps: 0, foot: 0,
     // Run-in slam bookkeeping. runVel is the velocity (x, z) the state asked for this step, taken before
     // moveBy can zero the into-wall part on contact; while a wall keeps blocking us it is held
     // for 2 * autoTime so a real run-in still counts, but pushing from rest never reaches it.
@@ -183,6 +185,18 @@ export function createMovement({
           m.hitTime += dt;
           if (asked >= Math.hypot(m.runVel[0], m.runVel[1]) || m.hitTime > 2 * m.coverTuning.autoTime) { m.runVel[0] = ax; m.runVel[1] = az; }
         } else { m.runVel[0] = ax; m.runVel[1] = az; m.hitTime = 0; }
+      }
+      if (ran === 'move' || ran === 'sprint') {
+        const fast = m.speed() > m.tuning.runClipMinSpeed;
+        if (!fast) m.stepDist = 0.5 * m.tuning.stepEvery; // standing: the first plant comes after half a stride
+        else {
+          m.stepDist += Math.hypot(m.pos[0] - m.prevPos[0], m.pos[2] - m.prevPos[2]);
+          const stride = Math.max(0.1, ran === 'sprint' ? m.tuning.stepEverySprint : m.tuning.stepEvery);
+          if (m.stepDist >= stride) {
+            m.stepDist %= stride; m.steps++; m.foot ^= 1;
+            m.onStep?.({ foot: m.foot, sprint: ran === 'sprint', speed: m.speed() });
+          }
+        }
       }
       // Run-in slam: only from move or sprint, which also rules out roll and the cover states.
       if (ran === 'move' || ran === 'sprint') {
