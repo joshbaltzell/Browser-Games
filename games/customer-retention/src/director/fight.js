@@ -422,6 +422,17 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
   // Doc went down mid-execution: the Rep is released (to flinch, or back to lying down).
   f.releaseExecution = (e) => releaseExecuted(e);
 
+  // Dev: open a dormant sauna now (the PA line and Tobble's callout come with it, on the next step). False when it is not dormant.
+  f.openPad = (id) => {
+    const p = pads.list.find(x => x.id === id);
+    if (!p || p.state !== 'dormant') return false;
+    p.state = 'open'; p.nextT = f.now + tuning.pad.interval;
+    late.push({ type: 'padOpen', id });
+    bark(id, 'padOpen', late, true);
+    if (tobbleUp()) bark('tobble', 'tobblePad', late, true);
+    return true;
+  };
+
   // Dev: fill one free slot with a Rep rising at the first sauna; and put a Rep down.
   f.spawnRep = () => {
     const e = freeSlot();

@@ -288,6 +288,7 @@ fexpect() { # label, js expression returning 'ok' or a description
 ev "__cr.drive({})" >/dev/null
 sleep 0.5
 fexpect "boots Check-in Turnstiles with 4 idle Associates and no fight yet" "(() => { const f = __cr.fight(); return __cr.level() === 'kioskRow' && f.enemies.length === 4 && f.enemies.every(e => e.state === 'idle') && f.started === false && __cr.dummies().length === 0 ? 'ok' : 'bad ' + JSON.stringify(f.enemies.map(e => e.state)); })()"
+fexpect "boots with Tobble beside the spawn, a dormant Spawn Sauna and 4 kettlebells" "(() => { const t = __cr.tobble(), p = __cr.pads(); return t && Math.hypot(t.pos[0] - 1.4, t.pos[2] + 13.8) < 0.5 && p.length === 1 && p[0].state === 'dormant' && __cr.grenades().count === 4 && __cr.fight().enemies.every(e => e.kind === 'associate') ? 'ok' : 'bad ' + JSON.stringify([t, p, __cr.grenades()]); })()"
 pw screenshot --filename "$SHOT_DIR/kiosk-start.png" >/dev/null
 
 # Crossing the lockdown line starts the fight; every Associate is in a cover state within 5 s.
@@ -308,14 +309,15 @@ ev "(async () => { __cr.drive({}); __cr.place('kioskLeft'); __cr.clearFightLog()
 fexpect "tucked behind K1 for 10 s: no playerHit and full health" "(() => { const hits = __log('playerHit').length, shots = __log('enemyShot').length; return __covered > 100 && hits === 0 && __cr.health().hp === 100 && __cr.player().state === 'cover' ? 'ok' : 'bad hits ' + hits + ' shots ' + shots + ' covered ' + __covered; })()"
 pw screenshot --filename "$SHOT_DIR/tucked.png" >/dev/null
 
-# Kill them all: god mode, in the open, aiming at the head of each Associate while it is popped.
+# Kill the four starters: god mode, in the open, aiming at the head of each Associate while it is popped (or at a downed one lying on the floor).
+# The sauna opens after two kills and sends more, so the arena does not clear here; the end-to-end check below closes it.
 ev "__cr.restart()" >/dev/null
-ev "(async () => { __cr.god(true); __cr.drive({}); __cr.place('open'); __cr.setGun('regret', { mag: 50, reserve: 250 }); const t0 = performance.now(); while (performance.now() - t0 < 60000 && !__cr.fight().clear) { const open = __alive().filter(e => e.pop > 0.7 || e.state === 'run' || e.state === 'suppress'); if (open.length) { const e = open[0]; await __aimAtE(e.id, e.state === 'run' ? 1.0 : 1.5); __cr.drive({ aim: true, fire: true }); await __w(250); } else { __cr.drive({ aim: true }); await __w(50); } } __cr.drive({}); window.__clearMs = performance.now() - t0; await __w(300); return 'ok'; })()" >/dev/null
-fexpect "all four Associates die within 60 s: clear, 4 pickups, the clear banner" "(() => { const f = __cr.fight(), b = document.querySelector('.cr-banner'); return f.clear && f.pickups === 4 && b && !b.hidden && /SET COMPLETE/.test(b.textContent) && __log('clear').length === 1 ? 'ok' : 'bad clear ' + f.clear + ' pickups ' + f.pickups + ' banner ' + (b && b.textContent) + ' ' + __clearMs; })()"
-pw screenshot --filename "$SHOT_DIR/clear.png" >/dev/null
+ev "(async () => { __cr.god(true); __cr.drive({}); __cr.place('open'); __cr.setGun('regret', { mag: 50, reserve: 250 }); const starters = ['a1', 'a2', 'b1', 'b2']; const t0 = performance.now(); while (performance.now() - t0 < 60000 && !__cr.fight().enemies.filter(e => starters.includes(e.id)).every(e => !e.alive)) { const open = __alive().filter(e => e.pop > 0.7 || e.state === 'run' || e.state === 'suppress' || e.state === 'downed'); if (open.length) { const e = open[0]; await __aimAtE(e.id, e.state === 'downed' ? 0.4 : e.state === 'run' ? 1.0 : 1.5); __cr.drive({ aim: true, fire: true }); await __w(250); } else { __cr.drive({ aim: true }); await __w(50); } } __cr.drive({}); window.__clearMs = performance.now() - t0; await __w(300); return 'ok'; })()" >/dev/null
+fexpect "the four starting Associates die within 60 s and leave pickups" "(() => { const f = __cr.fight(); return f.enemies.filter(e => ['a1', 'a2', 'b1', 'b2'].includes(e.id)).every(e => !e.alive) && f.pickups >= 1 ? 'ok' : 'bad pickups ' + f.pickups + ' ' + __clearMs; })()"
+pw screenshot --filename "$SHOT_DIR/four-down.png" >/dev/null
 # Walking onto a pickup adds ammo (start 0.6 m beside it in the open, not inside the kiosk the Associate stood behind: the mover shoves a player out of a box and that raced the pickup).
-ev "(async () => { __cr.setGun('regret', { mag: 50, reserve: 100 }); const p = __cr.fight().pickupPos[0]; window.__before = __cr.gun().reserve; __cr.at(p[0], p[2] + 0.6, 0); await __step({ moveY: 1 }); await __until(() => __cr.gun().reserve > 100, 2000); return 'ok'; })()" >/dev/null
-fexpect "walking onto a pickup raises the reserve and removes it" "(() => { const g = __cr.gun(); return g.reserve > 100 && __cr.fight().pickups === 3 ? 'ok' : 'bad ' + g.reserve + ' ' + __cr.fight().pickups; })()"
+ev "(async () => { __cr.setGun('regret', { mag: 50, reserve: 100 }); const p = __cr.fight().pickupPos[0]; window.__pk = p; __cr.at(p[0], p[2] + 0.6, 0); await __step({ moveY: 1 }); await __until(() => __cr.gun().reserve > 100, 2000); return 'ok'; })()" >/dev/null
+fexpect "walking onto a pickup raises the reserve and removes it" "(() => { const g = __cr.gun(); return g.reserve > 100 && !__cr.fight().pickupPos.some(q => Math.abs(q[0] - __pk[0]) < 0.01 && Math.abs(q[2] - __pk[2]) < 0.01) ? 'ok' : 'bad ' + g.reserve + ' ' + __cr.fight().pickups; })()"
 
 # Health: 60 damage shows the face; 60 more downs the player, who crawls, cannot shoot, and gives up with interact.
 ev "__cr.god(false)" >/dev/null
@@ -326,8 +328,83 @@ fexpect "60 damage leaves 40 health and the face shows" "(() => { const f = docu
 ev "(async () => { __cr.hurt(60); await __w(300); __cr.clearShots(); window.__crawl0 = __cr.player().pos; __cr.drive({ moveY: -1, fire: true }); await __w(1000); __cr.drive({}); return 'ok'; })()" >/dev/null
 fexpect "downed: crawls with the stick, cannot shoot, the timer shows" "(() => { const p = __cr.player(), h = __cr.health(), d = Math.hypot(p.pos[0] - __crawl0[0], p.pos[2] - __crawl0[2]), b = document.querySelector('.cr-banner'); return h.downed && p.state === 'downed' && d > 0.5 && d < 1.3 && __cr.shots().length === 0 && /plateau/.test(b.textContent) ? 'ok' : 'bad d=' + d + ' shots ' + __cr.shots().length + ' ' + JSON.stringify(h); })()"
 pw screenshot --filename "$SHOT_DIR/downed.png" >/dev/null
-ev "(async () => { __cr.drive({ interact: true }); await __w(300); return 'ok'; })()" >/dev/null
-fexpect "interact while downed restarts: full health, 4 alive, fight not started, standing" "(() => { const f = __cr.fight(), h = __cr.health(); return h.hp === 100 && !h.downed && f.enemies.length === 4 && f.enemies.every(e => e.alive && e.state === 'idle') && !f.started && __cr.player().state !== 'downed' ? 'ok' : 'bad ' + JSON.stringify(h); })()"
+# Giving up is a hold now (interact is also the revive key): a tap does nothing, holding it for giveUpHold goes back to the checkpoint.
+ev "(async () => { __cr.drive({ interact: true }); await __w(300); __cr.drive({}); return 'ok'; })()" >/dev/null
+fexpect "a tap of interact while downed does not give up" "(() => __cr.health().downed ? 'ok' : 'bad ' + JSON.stringify(__cr.health()))()"
+ev "(async () => { __cr.drive({ interactHeld: true }); await __until(() => !__cr.health().downed, 3000); __cr.drive({}); await __w(200); return 'ok'; })()" >/dev/null
+fexpect "holding interact while downed restarts: full health, 4 alive, fight not started, standing" "(() => { const f = __cr.fight(), h = __cr.health(); return h.hp === 100 && !h.downed && f.enemies.length === 4 && f.enemies.every(e => e.alive && e.state === 'idle') && !f.started && __cr.player().state !== 'downed' ? 'ok' : 'bad ' + JSON.stringify(h); })()"
+
+# ---- milestone 5: Tobble, finishers, bash, Cheat Day, kettlebells, the Spawn Sauna, revives --------------------------
+# A frozen frame for a screenshot: drive(null) stops the simulation, the shot is taken, then `resume` goes back to driving.
+fshot() { local resume="${2:-}"; [ -n "$resume" ] || resume="{}"; ev "__cr.drive(null)" >/dev/null; pw screenshot --filename "$SHOT_DIR/$1.png" >/dev/null; ev "__cr.drive($resume)" >/dev/null; }
+# Doc runs into a tucked Associate from behind with the cutter spinning (retrying: a hit while revving interrupts it). Resolves true once the execution has started.
+ev "(() => { window.__cheat = async (id) => { for (let k = 0; k < 8; k++) { const e = __cr.fight().enemies.find(x => x.id === id && x.alive); if (!e) return false; __cr.drive({}); __cr.at(e.pos[0], e.pos[2] + 3.0, Math.PI); __cr.look(Math.PI, 0); await __w(150); __cr.drive({ melee: true }); await __w(300); __cr.drive({ melee: true, moveY: -1 }); if (await __until(() => __cr.player().state === 'execute', 2500)) return true; __cr.drive({}); await __w(200); } return false; }; return 'ok'; })()" >/dev/null
+# All four tucked and Tobble in cover, in the open with god mode.
+ev "(async () => { __cr.restart(); __cr.god(true); __cr.drive({}); __cr.place('kioskLeft'); await __w(100); await __step({ moveY: -1, tap: true }); await __until(() => __cr.player().state === 'cover', 3000); window.__tcover = await __until(() => { const t = __cr.tobble(), p = __cr.player(), d = Math.hypot(t.pos[0] - p.pos[0], t.pos[2] - p.pos[2]); return t.state === 'cover' && d >= 2 && d <= 6; }, 6000); window.__tstate = JSON.stringify(__cr.tobble()); return 'ok'; })()" >/dev/null
+fexpect "taking K1: within 6 s Tobble is in cover 2 to 6 m away" "(() => (__tcover ? 'ok' : 'bad ' + __tstate))()"
+pw screenshot --filename "$SHOT_DIR/tobble-cover.png" >/dev/null
+
+# Finish: a downed Rep, Doc beside it, interact: the execution, then the Rep is dead within 1 s.
+ev "(async () => { __cr.restart(); __cr.god(true); __cr.drive({}); await __w(200); __cr.downRep('a1'); await __w(100); const p = __cr.fight().enemies.find(e => e.id === 'a1').pos; __cr.at(p[0], p[2] + 1.0, Math.PI); __cr.look(Math.PI, 0); await __w(300); __cr.clearFightLog(); __cr.drive({ interact: true }); await __w(60); __cr.drive({}); window.__ex = await __until(() => __cr.player().state === 'execute', 1000); await __w(250); return 'ok'; })()" >/dev/null
+fshot finish
+ev "(async () => { window.__dead = await __until(() => !__cr.fight().enemies.find(e => e.id === 'a1').alive, 1000); return 'ok'; })()" >/dev/null
+fexpect "interact on a downed Rep: an execution, and it is dead within 1 s (kind execute)" "(() => (__ex && __dead && __log('death').some(d => d.id === 'a1' && d.kind === 'execute') ? 'ok' : 'bad ' + __ex + ' ' + __dead + ' ' + JSON.stringify(__log('death'))))()"
+
+# Bash: tap next to a tucked Rep: it staggers and takes 30.
+ev "(async () => { __cr.restart(); __cr.god(true); __cr.drive({}); __cr.place('open'); await __until(() => __cr.fight().enemies.every(e => ['cover', 'telegraph', 'burst', 'suppress', 'reload'].includes(e.state)), 6000); const a = __cr.fight().enemies.find(e => e.id === 'a2'); __cr.at(a.pos[0], a.pos[2] + 1.2, Math.PI); __cr.look(Math.PI, 0); await __w(150); __cr.drive({ melee: true }); await __w(100); __cr.drive({}); window.__stag = await __until(() => __cr.fight().enemies.find(e => e.id === 'a2').state === 'stagger', 1500); return 'ok'; })()" >/dev/null
+fexpect "a tap of melee beside a Rep: it staggers and has 70 health" "(() => { const a = __cr.fight().enemies.find(e => e.id === 'a2'); return __stag && a.health === 70 ? 'ok' : 'bad ' + JSON.stringify(a); })()"
+ev "__cr.drive({})" >/dev/null
+
+# Cheat Day: hold melee for 0.5 s with The Regret and walk into a Rep: an execution, and a kill within 1.5 s.
+ev "(async () => { __cr.restart(); __cr.god(true); __cr.drive({}); __cr.place('open'); await __until(() => __cr.fight().enemies.every(e => ['cover', 'telegraph', 'burst', 'suppress', 'reload'].includes(e.state)), 6000); __cr.setGun('regret', { mag: 50, reserve: 250 }); __cr.clearFightLog(); window.__cut = await __cheat('b1'); await __w(450); return 'ok'; })()" >/dev/null
+fshot cheat-day
+ev "(async () => { window.__cutDead = await __until(() => !__cr.fight().enemies.find(e => e.id === 'b1').alive, 1500); return 'ok'; })()" >/dev/null
+fexpect "Cheat Day: the execution starts and the Rep is dead within 1.5 s (kind execute)" "(() => (__cut && __cutDead && __log('death').some(d => d.id === 'b1' && d.kind === 'execute') ? 'ok' : 'bad ' + __cut + ' ' + __cutDead + ' ' + JSON.stringify(__log('death'))))()"
+ev "__cr.drive({})" >/dev/null
+
+# The Spawn Sauna and a kettlebell: open it, wait for a spawn, lob a kettlebell onto it and it closes.
+ev "(async () => { __cr.restart(); __cr.god(true); __cr.drive({}); __cr.clearFightLog(); __cr.at(5.6, 2.5, 0); await __w(300); __cr.openPad('sauna1'); await __until(() => __log('padOpen').length > 0, 1500); window.__spawned = await __until(() => __cr.pads()[0].spawned >= 1, 7000); window.__aimed = __cr.aimThrow(4.6, 13.4); await __w(400); __cr.drive({ grenade: true }); await __w(500); return 'ok'; })()" >/dev/null
+fshot arc "{ grenade: true }"
+ev "(async () => { __cr.drive({}); window.__closed = await __until(() => __cr.pads()[0].state === 'closed', 2500); await __until(() => __log('explode').length > 0, 500); await __w(110); __cr.drive(null); return 'ok'; })()" >/dev/null
+fshot boom
+fexpect "sauna: padOpen logged, a Rep spawned within 6 s, a lobbed kettlebell closes it within 2.5 s; 3 kettlebells left, an explosion logged" "(() => (__log('padOpen').length >= 1 && __spawned && __aimed && __closed && __cr.grenades().count === 3 && __log('explode').length >= 1 && __log('padClosed').length === 1 ? 'ok' : 'bad ' + JSON.stringify([__spawned, __aimed, __closed, __cr.pads(), __cr.grenades().count, __log('explode').length])))()"
+ev "__cr.drive({})" >/dev/null
+
+# Doc down and Tobble up: he comes, kneels and revives Doc (50 health) within 12 s.
+ev "(async () => { __cr.restart(); __cr.god(false); __cr.drive({}); __cr.clearFightLog(); __cr.hurt(200); await __w(100); await __until(() => { const t = __cr.tobble(), p = __cr.player(); return t.state === 'revive' && Math.hypot(t.pos[0] - p.pos[0], t.pos[2] - p.pos[2]) < 1.3; }, 8000); await __w(500); return 'ok'; })()" >/dev/null
+fshot tobble-revive
+ev "(async () => { window.__rev = await __until(() => __log('revived').length > 0, 12000); await __w(100); return 'ok'; })()" >/dev/null
+fexpect "Tobble revives Doc within 12 s: revived logged, 50 health, standing" "(() => (__rev && __cr.health().hp === 50 && !__cr.health().downed && __cr.player().state !== 'downed' ? 'ok' : 'bad ' + JSON.stringify([__rev, __cr.health(), __cr.player().state])))()"
+
+# Tobble down and Doc up: hold interact beside him for 1.7 s and he stands.
+ev "(async () => { __cr.restart(); __cr.drive({}); await __w(200); __cr.hurtTobble(999); await __w(200); const p = __cr.tobble().pos; __cr.at(p[0] + 0.9, p[2], -Math.PI / 2); await __w(300); __cr.drive({ interactHeld: true }); window.__kneel = await __until(() => __cr.player().state === 'reviveTobble', 1000); await __w(500); window.__up = await __until(() => __cr.tobble().downed === false, 2500); __cr.drive({}); return 'ok'; })()" >/dev/null
+fexpect "holding interact beside a downed Tobble for 1.7 s stands him up" "(() => (__kneel && __up && !__cr.tobble().downed ? 'ok' : 'bad ' + JSON.stringify([__kneel, __up, __cr.tobble()])))()"
+
+# Both down: back to the checkpoint.
+ev "(async () => { __cr.god(false); __cr.restart(); __cr.drive({}); __cr.place('open'); await __until(() => __cr.fight().started, 2000); await __w(500); __cr.hurtTobble(999); __cr.hurt(200); await __w(400); return 'ok'; })()" >/dev/null
+fexpect "Doc and Tobble both down: the checkpoint restarts (4 alive, fight not started, Tobble up, Doc up)" "(() => { const f = __cr.fight(), t = __cr.tobble(); return !f.started && f.enemies.length === 4 && f.enemies.every(e => e.alive) && !t.downed && t.hp === 150 && !__cr.health().downed && __log('checkpoint').length >= 0 ? 'ok' : 'bad ' + JSON.stringify([f.started, t, __cr.health()]); })()"
+
+# End to end (the milestone's "done when"): a fight with Tobble, a Cheat Day kill and a kettlebell on the sauna, then the arena clears.
+ev "(() => { window.__lob = async () => { for (let k = 0; k < 4 && __cr.pads()[0].state === 'open' && __cr.grenades().count > 0; k++) { __cr.drive({}); __cr.at(5.6, 2.5, 0); await __w(250); if (!__cr.aimThrow(4.6, 13.4)) continue; await __w(300); __cr.drive({ grenade: true }); await __w(400); __cr.drive({}); await __until(() => __cr.pads()[0].state !== 'open', 2500); } }; return 'ok'; })()" >/dev/null
+ev "(async () => { __cr.restart(); __cr.god(true); __cr.drive({}); __cr.clearFightLog(); __cr.setGun('regret', { mag: 50, reserve: 250 }); __cr.place('open'); const t0 = performance.now(); await __until(() => __cr.fight().enemies.every(e => ['cover', 'telegraph', 'burst', 'suppress', 'reload'].includes(e.state)), 6000); await __cheat('b1'); await __until(() => __log('death').some(d => d.kind === 'execute'), 3000); __cr.drive({}); while (performance.now() - t0 < 150000 && !__cr.fight().clear) { if (__cr.pads()[0].state === 'open' && __cr.grenades().count > 0) { await __lob(); continue; } const open = __alive().filter(e => e.pop > 0.7 || e.state === 'run' || e.state === 'suppress' || e.state === 'downed'); if (open.length) { const e = open[0]; await __aimAtE(e.id, e.state === 'downed' ? 0.4 : e.state === 'run' ? 1.0 : 1.5); __cr.drive({ aim: true, fire: true }); await __w(250); } else { __cr.drive({ aim: true }); await __w(50); } } __cr.drive({}); window.__e2eMs = performance.now() - t0; await __w(400); return 'ok'; })()" >/dev/null
+fexpect "end to end: the arena clears within 150 s with a Cheat Day kill, the sauna closed or spent, and Tobble having fired" "(() => { const f = __cr.fight(), s = __cr.pads()[0].state; return f.clear && __log('death').some(d => d.kind === 'execute') && (s === 'closed' || s === 'spent') && __log('tobbleShot').length >= 1 ? 'ok' : 'bad ' + JSON.stringify([f.clear, __log('death').map(d => d.kind), s, __log('tobbleShot').length, __e2eMs]); })()"
+echo "end to end: cleared in $(ev '(__e2eMs / 1000).toFixed(1)') s, sauna $(ev "__cr.pads()[0].state"), $(ev "__log('tobbleShot').length") Tobble shots"
+pw screenshot --filename "$SHOT_DIR/clear.png" >/dev/null
+fexpect "the clear banner shows" "(() => { const b = document.querySelector('.cr-banner'); return b && !b.hidden && /SET COMPLETE/.test(b.textContent) && __log('clear').length === 1 ? 'ok' : 'bad ' + (b && b.textContent); })()"
+
+# Eight Reps and Tobble: the budget holds.
+ev "(async () => { __cr.restart(); __cr.god(true); __cr.drive({}); __cr.place('open'); for (let k = 0; k < 8 && __alive().length < 8; k++) { __cr.spawnRep(); await __w(100); } await __w(4000); return 'ok'; })()" >/dev/null
+fexpect "8 Reps alive" "(() => (__alive().length === 8 ? 'ok' : 'bad ' + __alive().length))()"
+MCALLS=$(ev "__cr.stats().calls")
+MTRIS=$(ev "__cr.stats().tris")
+MFPS=$(ev "Math.round(__cr.stats().fps)")
+[ "$MCALLS" -lt 400 ] 2>/dev/null || fail "8 Reps and Tobble: draw calls '$MCALLS', expected under 400"
+[ "$MTRIS" -lt 300000 ] 2>/dev/null || fail "8 Reps and Tobble: triangles '$MTRIS', expected under 300000"
+echo "8 Reps and Tobble: $MFPS fps, $MCALLS calls, $MTRIS triangles"
+pw screenshot --filename "$SHOT_DIR/eight-reps.png" >/dev/null
+ev "__cr.god(false)" >/dev/null
+ev "__cr.drive({})" >/dev/null
+check_console
 
 # Performance in the middle of a fight.
 ev "(async () => { __cr.god(true); __cr.drive({}); __cr.place('open'); await __w(4000); return 'ok'; })()" >/dev/null
@@ -342,4 +419,4 @@ ev "__cr.drive(null)" >/dev/null
 check_console
 
 
-echo "smoke ok: ready, look test driven, grey room and Check-in Turnstiles fight driven, perf $CALLS_ON calls ($CALLS_OFF without outlines), $TRIS triangles, no console errors; screenshots at $SHOT_DIR"
+echo "smoke ok: ready, look test driven, grey room and Check-in Turnstiles fight driven (Tobble, finishers, bash, Cheat Day, kettlebells, Spawn Sauna, revives), perf $CALLS_ON calls ($CALLS_OFF without outlines), $TRIS triangles, no console errors; screenshots at $SHOT_DIR"

@@ -50,6 +50,12 @@ export function createGrenadeView(scene) {
   line.frustumCulled = false;
   line.visible = false;
   scene.add(line);
+  // A dot on every sample of the path, a few pixels wide whatever the distance: the 1 px dashed line alone is lost against the room.
+  const dots = new THREE.Points(arcGeo, new THREE.PointsMaterial({ color: PALETTE.playerOrange, size: 5, sizeAttenuation: false, toneMapped: false }));
+  dots.name = 'kettlebellArcDots';
+  dots.frustumCulled = false;
+  dots.visible = false;
+  scene.add(dots);
 
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.88, 1, 40).rotateX(-Math.PI / 2),
@@ -60,7 +66,7 @@ export function createGrenadeView(scene) {
   scene.add(ring);
 
   return {
-    mesh, line, ring,
+    mesh, line, ring, dots,
     // balls: fight.grenades.live ({ pos, prevPos, fuse, resting }); alpha interpolates between fixed steps.
     update(balls, alpha, dt = 0) {
       clock += dt > 0 ? dt : 0;
@@ -81,16 +87,16 @@ export function createGrenadeView(scene) {
     },
     // points: the 64-point scratch predictArc filled; count of them in use; land: [x, y, z] or null; show: false hides both.
     arc(points, count, land, show) {
-      if (!show || !(count > 1)) { line.visible = false; ring.visible = false; return; }
+      if (!show || !(count > 1)) { line.visible = false; dots.visible = false; ring.visible = false; return; }
       const n = Math.min(count, ARC_POINTS);
       for (let i = 0; i < n; i++) { positions[i * 3] = points[i][0]; positions[i * 3 + 1] = points[i][1]; positions[i * 3 + 2] = points[i][2]; }
       arcGeo.attributes.position.needsUpdate = true;
       arcGeo.setDrawRange(0, n);
       arcMat.dashSize = arcMat.gapSize = Math.max(TUNING.feedback.arcDot, 1e-3);
       line.computeLineDistances();
-      line.visible = true;
+      line.visible = true; dots.visible = true;
       if (land) { ring.position.set(land[0], land[1] + 0.03, land[2]); ring.scale.setScalar(TUNING.grenade.killRadius); ring.visible = true; } else ring.visible = false;
     },
-    reset() { mesh.count = 0; mesh.instanceMatrix.needsUpdate = true; line.visible = false; ring.visible = false; },
+    reset() { mesh.count = 0; mesh.instanceMatrix.needsUpdate = true; line.visible = false; dots.visible = false; ring.visible = false; },
   };
 }

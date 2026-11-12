@@ -27,6 +27,12 @@ import { createHud, hudModel } from './ui/hud.js';
 import { createDummyView } from './actors/dummyView.js';
 import { createPlayerView } from './actors/player.js';
 import { createAssociateView } from './actors/associateView.js';
+import { createTobbleView } from './actors/tobbleView.js';
+import { createGrenadeView } from './render/grenadeView.js';
+import { createPadView } from './render/padView.js';
+import { createKettlebellBag } from './combat/grenades.js';
+import { createPlayerActions } from './playerActions.js';
+import { promptText } from './ui/prompts.js';
 import { createHealth } from './combat/health.js';
 import { createFight } from './director/fight.js';
 import { damageFaceModel, hitAngle } from './ui/damageFace.js';
@@ -64,7 +70,7 @@ export function gatePlayerInput(intent, arsenalIn, { downed = false, busy = fals
 const TRANSITION_CAP = 2000;
 const SHOT_LOG_CAP = 500;
 const FIGHT_LOG_CAP = 500;
-const LOGGED = new Set(['enemyShot', 'playerHit', 'telegraph', 'death', 'clear', 'bark']);
+const LOGGED = new Set(['enemyShot', 'playerHit', 'telegraph', 'death', 'clear', 'bark', 'down', 'explode', 'padOpen', 'padClosed', 'padSpawn', 'tobbleShot', 'tobbleHit', 'revived', 'checkpoint']);
 
 export function startPlay({ canvas, gl, params }) {
   const gfx = createRenderer(canvas, gl);
@@ -94,8 +100,10 @@ export function startPlay({ canvas, gl, params }) {
   const transitions = [];
   let simTime = 0;
   let lastTap = false;
+  let actions = null;   // the fight's player actions (Kiosk Row only)
   const mover = createMovement({
     boxes, spawn: spawn.pos, coverEdges: deriveEdges(),
+    onAction(ev) { if (actions) actions.onAction(ev); },
     onState(state, from) {
       transitions.push({ state, from, t: simTime, tapped: lastTap, auto: state === 'coverSlide' && !lastTap && (from === 'move' || from === 'sprint') });
       if (transitions.length > TRANSITION_CAP) transitions.shift();
@@ -132,7 +140,26 @@ export function startPlay({ canvas, gl, params }) {
     : null;
   const views = fight ? fight.enemies.map(e => { const v = createAssociateView(e); scene.add(v.group); return v; }) : [];
   const viewOf = new Map(fight ? fight.enemies.map((e, i) => [e, views[i]]) : []);
-  const fv = fight ? createFightView({ scene, effects, sfx, fight, views }) : null;
+  // Milestone 5: Tobble, the kettlebells in flight and the Spawn Saunas on screen, and Doc's actions wired to the fight.
+  const bag = createKettlebellBag();
+  const gv = fight ? createGrenadeView(scene) : null;
+  const pv = fight ? createPadView(scene, fight.pads, effects) : null;
+  let tv = null, tvFor = null;
+  let restartPending = false, marker = null, markerT = 0;
+  const fvHooks = { restart: () => { restartPending = true; }, marker: (k) => { marker = k; markerT = TUNING.feedback.killMarkerTime; }, tobbleView: null };
+  const fv = fight ? createFightView({ scene, effects, sfx, fight, views, cam, hooks: fvHooks }) : null;
+  // Tobble's view follows the fight's Tobble (a new one when the panel flag turns him on).
+  function syncTobble() {
+    if (!fight || tvFor === fight.tobble) return;
+    if (tv) scene.remove(tv.group);
+    tv = fight.tobble ? createTobbleView(fight.tobble) : null;
+    if (tv) scene.add(tv.group);
+    tvFor = fight.tobble; fvHooks.tobbleView = tv;
+  }
+  syncTobble();
+  actions = fight ? createPlayerActions({
+    mover, fight, arsenal, bag, cam, sfx, effects, views, health, playerView: view, grenadeView: gv, boxes, hooks: fvHooks,
+  }) : null;
   const targetList = fight ? fight.targets() : dummyList;
   const hits = [];                 // damage face flashes: { t, angle }
   const fightLog = [];
@@ -140,7 +167,7 @@ export function startPlay({ canvas, gl, params }) {
   const shotLog = [];
   let lastKind = '-', lastTarget = '-';
   let stance = null;
-  let marker = null, markerT = 0, reloadFlash = null, flashT = 0;
+  let reloadFlash = null, flashT = 0;
   let padScale = 1;
   const fxQueue = [];
   const aimIn = { dir: [0, 0, 1], stance: null, weapon: 'regret', shot: false };
@@ -155,10 +182,11 @@ export function startPlay({ canvas, gl, params }) {
   let driveTap = false;
   let driveEnd = false;      // drive(null) arrived while a tap was still waiting
   let aimHeld = false;
-  const pending = { cover: false, fire: false, reload: false, weapon: null, interact: false };
-  const drivePending = { reload: false, weapon: null, fire: false, interact: false };
-  let interactPress = false;   // an interact press arrived since the last step
-  const intent = { moveX: 0, moveY: 0, camYaw: 0, sprint: false, aim: false, tap: false, fire: false };
+  const pending = { cover: false, fire: false, reload: false, weapon: null, interact: false, melee: false };
+  const drivePending = { reload: false, weapon: null, fire: false, interact: false, melee: false };
+  const press = { melee: false, interact: false };   // presses (latched, like reload) since the last step
+  const held = { melee: false, grenade: false, interact: false };
+  const intent = { moveX: 0, moveY: 0, camYaw: 0, sprint: false, aim: false, tap: false, fire: false, grenade: false, interactHeld: false };
   const arsenalIn = { weapon: null, reload: false, fire: false, firePressed: false };
   const WEAPON_ACTIONS = [['weapon1', 1], ['weapon2', 2], ['weapon3', 3], ['weaponNext', 'next'], ['weaponPrev', 'prev']];
 
@@ -190,7 +218,7 @@ export function startPlay({ canvas, gl, params }) {
   function restart() {
     if (fight) fight.reset();
     health.reset();
-    arsenal.reset();
+    arsenal.reset(); bag.reset();
     placeAt(spawn.pos, spawn.yaw);
     stance = null; button.reset(); trigger.reset();
     cam.recenter(); effects.clear();
@@ -198,6 +226,8 @@ export function startPlay({ canvas, gl, params }) {
     marker = null; reloadFlash = null; markerT = 0; flashT = 0;
     if (fv) fv.reset();
     for (const v of views) v.reset();
+    if (fight) { actions.reset(); gv.reset(); pv.reset(); syncTobble(); if (tv) tv.reset(); }
+    restartPending = false;
   }
 
   // Health hit zero: the fight has already put the mover down (or this is the dev hook); the sound and the line.
@@ -209,7 +239,7 @@ export function startPlay({ canvas, gl, params }) {
   }
 
   function logEvent(ev) {
-    fightLog.push({ t: simTime, type: ev.type, id: ev.id || null, accurate: !!ev.accurate, hit: ev.type === 'playerHit', key: ev.key || null });
+    fightLog.push({ t: simTime, type: ev.type, id: ev.id || null, accurate: !!ev.accurate, hit: ev.type === 'playerHit', key: ev.key || null, kind: ev.kind || null });
     if (fightLog.length > FIGHT_LOG_CAP) fightLog.shift();
   }
 
@@ -217,7 +247,7 @@ export function startPlay({ canvas, gl, params }) {
   function stepFight(dt) {
     const fb = TUNING.feedback;
     listener.pos[0] = mover.pos[0]; listener.pos[1] = mover.pos[1]; listener.pos[2] = mover.pos[2]; listener.yaw = cam.yaw;
-    const events = fight.step(dt, { m: mover, health });
+    const events = fight.step(dt, { m: mover, health, aim: { lens: camState.pos, dir: camState.dir, active: !!stance && stance !== 'blind' || mover.grenadeAim } });
     fv.handle(events, listener);
     for (const ev of events) {
       if (LOGGED.has(ev.type)) logEvent(ev);
@@ -227,18 +257,25 @@ export function startPlay({ canvas, gl, params }) {
         const k = Math.random() * 2 * Math.PI;
         cam.kick(fb.hitKick * Math.cos(k), fb.hitKick * Math.sin(k));
         sfx.play('hurt', fb.hurtVolume, Math.sin(angle));
+        actions.onPlayerHit();
         if (ev.result === 'downed') goDown();
       } else if (ev.type === 'clear') sfx.play('clear', fb.killVolume);
     }
     while (hits.length && simTime - hits[0].t > fb.hitFlashTime) hits.shift();
-    const h = health.update(dt);
+    const h = health.update(dt, { standIn: !fight.tobble });
     if (h === 'revived') mover.revive();
-    const press = interactPress; interactPress = false;
-    if (h === 'bleedOut' || (press && (health.downed || fight.clear))) { restart(); return; }
-    if (!health.downed && fv.collect(mover.pos, TUNING.combat.pickupRadius)) {
-      arsenal.addReserve('regret', TUNING.associate.ammoDrop);
+    if (h === 'bleedOut' || restartPending) { restart(); return; }
+    const got = health.downed ? 0 : fv.collect(mover.pos, TUNING.combat.pickupRadius);
+    if (got) {
+      arsenal.addReserve('regret', got * TUNING.associate.ammoDrop);
       sfx.play('pickup', fb.pickupVolume);
     }
+  }
+
+  function objectiveText() {
+    if (fight.clear) return 'Check-in Turnstiles: set complete';
+    if (fight.pads.some(p => p.state === 'open')) return promptText('sauna', input.device());
+    return fight.started ? 'Get past the front desk' : 'Walk in';
   }
 
   function placeAt(pos, yaw) {
@@ -251,7 +288,7 @@ export function startPlay({ canvas, gl, params }) {
   let camMode = 'normal', camSide = 1;
   let fps = 0, ms = 0, accFrames = 0, accSeconds = 0, calls = 0, tris = 0, panelClock = 0;
   const cr = window.__cr;
-  cr.stats = () => ({ fps, ms, calls, tris, scale: gfx.scale(), characters: 1 + views.length });
+  cr.stats = () => ({ fps, ms, calls, tris, scale: gfx.scale(), characters: 1 + views.length + (tv ? 1 : 0) });
   cr.player = () => {
     const c = mover.cover;
     return {
@@ -273,8 +310,16 @@ export function startPlay({ canvas, gl, params }) {
   cr.level = () => levelName;
   cr.fight = () => (fight ? {
     started: fight.started, clear: fight.clear, tokens: fight.tokens.held(), pickups: fv.count(), pickupPos: fv.pickups(),
-    enemies: fight.enemies.map(e => ({ id: e.id, state: e.state, health: e.health, alive: e.alive, pos: e.pos.slice(), holds: fight.tokens.holds(e.id), role: e.role, point: e.point ? e.point.index : null, pop: e.pop })),
+    enemies: fight.enemies.filter(e => e.state !== 'unused').map(e => ({ id: e.id, slot: fight.enemies.indexOf(e), kind: 'associate', state: e.state, health: e.health, alive: e.alive, pos: e.pos.slice(), holds: fight.tokens.holds(e.id), role: e.role, point: e.point ? e.point.index : null, pop: e.pop })),
   } : { started: false, clear: false, tokens: [], pickups: 0, enemies: [] });
+  cr.tobble = () => { const t = fight && fight.tobble; return t ? { state: t.state, hp: t.hp, downed: t.downed, pos: t.pos.slice(), point: t.point ? t.point.index : null } : null; };
+  cr.pads = () => (fight ? fight.pads.map(p => ({ id: p.id, state: p.state, spawned: p.spawned, alive: p.alive })) : []);
+  cr.grenades = () => ({ count: bag.count, live: fight ? fight.grenades.live.map(b => ({ pos: b.pos.slice(), fuse: b.fuse })) : [] });
+  cr.aimThrow = (x, z) => (actions ? actions.aimThrow(x, z) : false);
+  cr.hurtTobble = (n) => (fight ? fight.hurtTobble(n) : null);
+  cr.downRep = (id) => { const e = fight && fight.enemies.find(x => x.id === id); return !!e && fight.downRep(e); };
+  cr.openPad = (id) => (fight ? fight.openPad(id) : false);
+  cr.spawnRep = () => { const e = fight && fight.spawnRep(); return e ? e.id : null; };
   cr.health = () => ({ hp: health.hp, max: TUNING.health.max, downed: health.downed, downT: health.downT });
   cr.hurt = (n) => { if (health.damage(n) === 'downed') goDown(); };
   cr.god = (on) => { TUNING.health.godMode = on ? 1 : 0; };
@@ -309,6 +354,7 @@ export function startPlay({ canvas, gl, params }) {
       return;
     }
     if (i.fire && !(drive && drive.fire)) drivePending.fire = true; // a new press, latched until a step sees it
+    if (i.melee && !(drive && drive.melee)) drivePending.melee = true;
     drive = i; driveEnd = false;
     if (i.tap) driveTap = true;
     if (i.reload) drivePending.reload = true;
@@ -326,6 +372,7 @@ export function startPlay({ canvas, gl, params }) {
       intent.fire = t.fire; arsenalIn.fire = t.fire; arsenalIn.firePressed = t.firePressed;
       arsenalIn.reload = drivePending.reload; arsenalIn.weapon = drivePending.weapon;
       drivePending.reload = false; drivePending.weapon = null;
+      held.melee = !!drive.melee; held.grenade = !!drive.grenade; held.interact = !!drive.interactHeld;
       if (driveTap) { driveTap = false; if (driveEnd) { drive = null; driveEnd = false; } }
     } else {
       const h = snap.held;
@@ -336,9 +383,12 @@ export function startPlay({ canvas, gl, params }) {
       const t = trigger.update(h.fire, pending.fire, true);
       intent.fire = t.fire; arsenalIn.fire = t.fire; arsenalIn.firePressed = t.firePressed;
       arsenalIn.reload = pending.reload; arsenalIn.weapon = pending.weapon;
+      held.melee = h.melee; held.grenade = h.grenade; held.interact = h.interact;
     }
-    interactPress = pending.interact || drivePending.interact;
-    pending.cover = false; pending.fire = false; pending.reload = false; pending.weapon = null; pending.interact = false; drivePending.interact = false;
+    press.interact = pending.interact || drivePending.interact; press.melee = pending.melee || drivePending.melee;
+    intent.grenade = held.grenade; intent.interactHeld = held.interact;
+    pending.cover = false; pending.fire = false; pending.reload = false; pending.weapon = null; pending.interact = false; pending.melee = false;
+    drivePending.interact = false; drivePending.melee = false;
     intent.camYaw = cam.yaw;
     lastTap = intent.tap;
     return intent;
@@ -363,11 +413,13 @@ export function startPlay({ canvas, gl, params }) {
       'Gamepad: left stick move, right stick look, LT aim, RT fire, RB reload (again on the bright zone), D-pad switch, A tap: take cover or roll, hold: sprint',
       'In cover: aim to pop out, fire without aim to blind fire, push in + tap to vault, push toward a gap + tap to swap, pull away to leave',
     ];
-    if (fight) lines.push('E / X: renew your membership when downed, another set when clear');
+    if (fight) lines.push('E / X: hold to renew your membership when downed, another set when clear', 'F / B: tap bash, hold rev Cheat Day (The Regret)   G / LB: hold to aim a kettlebell, release to throw   E / X: finish a downed Rep, hold to revive Tobble');
     lines.push('Sound starts after a click or key', '', `${mover.state}   ${mover.speed().toFixed(2)} m/s`, coverLine(), gunLine());
     if (fight) {
-      lines.push(`fight: ${fight.enemies.filter(e => e.alive).length}/${fight.enemies.length}  tokens ${fight.tokens.held().join(',') || '-'}  hp ${health.hp.toFixed(0)}`);
+      lines.push(`fight: ${fight.enemies.filter(e => e.alive).length}/${fight.enemies.filter(e => e.state !== 'unused').length}  tokens ${fight.tokens.held().join(',') || '-'}  hp ${health.hp.toFixed(0)}`);
       lines.push(`health: ${health.hp.toFixed(0)}/${TUNING.health.max}  ${health.downed ? `downed ${health.downT.toFixed(1)}` : '-'}`);
+      const tb = fight.tobble, sa = fight.pads[0];
+      lines.push(`tobble: ${tb ? `${tb.state} hp ${tb.hp.toFixed(0)}` : 'off'}`, `sauna: ${sa ? `${sa.state} ${sa.spawned}/${TUNING.pad.total}` : '-'}   kettlebells ${bag.count}`);
     } else lines.push(`dummies: ${dummyList.filter(d => d.alive).length}/${dummyList.length}  last: ${lastKind} ${lastTarget}`);
     lines.push(`${Math.round(fps)} fps   ${f1(ms)} ms   scale ${gfx.scale()}`, `${calls} draw calls   ${tris} triangles`,
       `Pointer lock: ${input.isLocked() ? 'yes' : 'no'}   Gamepad: ${pad}`, '` tuning panel    ?look look test    H hide panel');
@@ -432,6 +484,11 @@ export function startPlay({ canvas, gl, params }) {
         effects.receipts(f.target.pos.map((v, i) => (i === 1 ? v + 1.2 : v)), fb.receiptCount);
         marker = 'kill'; markerT = fb.killMarkerTime;
         sfx.play('kill', fb.killVolume);
+      } else if (f.result === 'down') {
+        // The Rep goes down instead of dying: the kill marker without the burst.
+        effects.gel(f.hit.point, back, fb.gelCount);
+        marker = 'kill'; markerT = fb.killMarkerTime;
+        sfx.play('hit', fb.hitVolume);
       } else {
         if (!fight) dv.hit(f.hit.kind);
         effects.gel(f.hit.point, back);
@@ -447,7 +504,7 @@ export function startPlay({ canvas, gl, params }) {
       const driving = !!drive || driveTap;
       simulating = driving || shouldSimulate({ locked: input.isLocked(), device: input.device(), panelOpen: hooks.panelOpen() });
       pauseBox.hidden = simulating;
-      if (!simulating) { button.reset(); trigger.reset(); pending.cover = false; pending.fire = false; pending.reload = false; pending.weapon = null; pending.interact = false; return; }
+      if (!simulating) { button.reset(); trigger.reset(); pending.cover = false; pending.fire = false; pending.reload = false; pending.weapon = null; pending.interact = false; pending.melee = false; return; }
       const dt = Math.min(realSeconds, MAX_DT);
       aimHeld = snap.held.aim || (drive && drive.aim);
       cam.look(snap.lookDX, snap.lookDY, snap.lookX, snap.lookY, dt, aimHeld, padScale);
@@ -455,6 +512,7 @@ export function startPlay({ canvas, gl, params }) {
       if (snap.pressed.fire) pending.fire = true;
       if (snap.pressed.reload) pending.reload = true;
       if (snap.pressed.interact) pending.interact = true;
+      if (snap.pressed.melee) pending.melee = true;
       for (const [action, w] of WEAPON_ACTIONS) if (snap.pressed[action]) pending.weapon = w;
     },
     step(dt) {
@@ -464,22 +522,31 @@ export function startPlay({ canvas, gl, params }) {
       simTime += dt;
       const inp = buildIntent(dt);
       gatePlayerInput(inp, arsenalIn, { downed: !!fight && health.downed, busy: arsenal.reload !== null || arsenal.switching > 0 });
+      if (actions) {
+        actions.step(dt, { meleeHeld: held.melee, meleePressed: press.melee, grenadeHeld: held.grenade, interactHeld: held.interact, interactPressed: press.interact, device: input.device(), camYaw: cam.yaw, camPitch: cam.pitch });
+        if (actions.busy()) { arsenalIn.fire = false; arsenalIn.firePressed = false; inp.fire = false; }   // a throw in progress: no fire
+      }
       mover.update(inp, dt);
       stance = fireStance(mover);
       const events = arsenal.update(arsenalIn, stance, dt);
       for (const e of events) handleEvent(e);
       if (fight) { fv.tick(dt); stepFight(dt); }
       for (const d of dummies) stepDummy(d, dt);
-      if (crateTouch(mover.pos, LEVEL.ammoCrates, TUNING.combat.crateRadius)) arsenal.refill();
+      if (crateTouch(mover.pos, LEVEL.ammoCrates, TUNING.combat.crateRadius)) { arsenal.refill(); bag.refill(); }
+      if (restartPending) restart();
     },
     render(alpha, realSeconds) {
       const dt = simulating ? Math.min(realSeconds, MAX_DT) : 0;
       aimIn.shot = fxQueue.length > 0;
-      aimIn.dir = camState.dir; aimIn.stance = stance; aimIn.weapon = arsenal.current();
+      aimIn.dir = camState.dir; aimIn.stance = stance; aimIn.weapon = arsenal.current(); aimIn.kettlebell = !!actions && actions.armed();
       view.update(alpha, dt, aimIn);
       for (const d of dummies) d.view.update(dt);
       for (const v of views) v.update(alpha, dt);
-      if (fv) fv.update(dt);
+      if (fv) {
+        fv.update(dt);
+        gv.update(fight.grenades.live, alpha, dt); pv.update(dt);
+        if (tv) { tv.group.visible = !!fight.tobble; if (fight.tobble) tv.update(alpha, dt); }
+      }
       const p = mover.pos, q = mover.prevPos;
       for (let i = 0; i < 3; i++) target[i] = q[i] + (p[i] - q[i]) * alpha;
       if (mover.slams > seenSlams) { seenSlams = mover.slams; cam.bump(); sfx.play('thud', TUNING.cover.thudVolume); }
@@ -513,8 +580,9 @@ export function startPlay({ canvas, gl, params }) {
         arsenal, stance, firing: intent.fire, covered, device: input.device(), spreadDeg: arsenal.spreadOf(spreadStance), fov: camera.fov,
         viewportH: canvas.clientHeight || window.innerHeight, marker, reloadFlash,
         face: fm, bark: fv ? fv.bark() : null,
-        objective: fight ? (fight.clear ? 'Check-in Turnstiles: set complete' : fight.started ? 'Get past the front desk' : 'Walk in') : '',
-        banner: !fight ? null : health.downed ? { title: `You've hit a plateau ${fm.downed.seconds}`, hint: 'E / X renew your membership' } : fight.clear ? { title: 'SET COMPLETE', hint: 'Rest 60 seconds! E / X for another set' } : null,
+        objective: fight ? objectiveText() : '',
+        banner: !fight ? null : health.downed ? { title: `You've hit a plateau ${fm.downed.seconds}`, hint: promptText(fight.tobble && !fight.tobble.downed ? 'giveUpTobble' : 'giveUp', input.device()), hold: actions.giveUpFrac() } : fight.clear ? { title: 'SET COMPLETE', hint: input.device() === 'pad' ? 'Rest 60 seconds! X for another set' : 'Rest 60 seconds! E for another set' } : null,
+        grenades: fight ? bag.count : null, action: actions ? actions.prompt() : null,
       }));
       sky.update(performance.now() / 1000);
       room.update(dt);
