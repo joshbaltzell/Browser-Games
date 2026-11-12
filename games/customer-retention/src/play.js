@@ -403,7 +403,7 @@ export function startPlay({ canvas, gl, params }) {
     const hit = r.hit;
     const tg = hit.target;
     let result = null;
-    if (tg) result = fight ? fight.hurt(tg, shotDamage(row, hit.kind, e.mult)) : damageDummy(tg, shotDamage(row, hit.kind, e.mult));
+    if (tg) result = fight ? fight.hurt(tg, shotDamage(row, hit.kind, e.mult), hit.kind === 'head' ? 'head' : 'body') : damageDummy(tg, shotDamage(row, hit.kind, e.mult));
     lastKind = hit.kind; lastTarget = tg ? tg.id : '-';
     shotLog.push({ t: simTime, kind: hit.kind, target: tg ? tg.id : null, point: hit.point.slice(), stance });
     if (shotLog.length > SHOT_LOG_CAP) shotLog.shift();

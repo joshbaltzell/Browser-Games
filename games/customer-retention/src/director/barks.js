@@ -16,6 +16,11 @@ export const BARKS = Object.freeze({
   ]),
   reload: Object.freeze(['Restocking the protein!', 'Re-racking!', 'One moment, topping up the upsell!']),
   downed: Object.freeze(['Your membership has been renewed!', 'See you tomorrow! And tomorrow!']),
+  dive: Object.freeze(['Incoming weight!', 'Drop set! DROP SET!']),
+  cloneDown: Object.freeze(['Just\u2026 resting between sets\u2026']),
+  cloneRevive: Object.freeze(['On your feet! Membership quotas!']),
+  padOpen: Object.freeze([{ speaker: 'PA', text: 'The sauna is now a spawning pool. Please enjoy responsibly.' }]),
+  padClosed: Object.freeze([{ speaker: 'PA', text: 'The sauna is closed for cleaning. Forever.' }]),
   clear: Object.freeze(['Your satisfaction is our\u2026 priority\u2026', 'Auto-renew\u2026 is\u2026 forever\u2026', 'Have a\u2026 glorp\u2026 day\u2026']),
 });
 

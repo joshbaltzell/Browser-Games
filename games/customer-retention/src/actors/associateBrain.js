@@ -9,6 +9,10 @@ import { HIT_SHAPES } from '../combat/targets.js';
 import { turnToward } from './moveMath.js';
 
 const MAX_DT = 0.25;
+// States where a Rep cannot be hit, staggered or sent diving: held still (executed), an empty slot or a corpse.
+const LOCKED = new Set(['executed', 'unused', 'dead']);
+const CALM_REP = new Set(['cover', 'suppress', 'reload']);   // a downed Rep crawls toward one of these
+const DOWNED = { r: 0.25, y: 0.25, back: 0.2, front: 0.6 };
 const TUCKED = new Set(['idle', 'cover', 'telegraph', 'burst', 'suppress', 'reload', 'flinch']);
 const SHOOTING = new Set(['telegraph', 'burst', 'suppress']);
 const clamp01 = v => Math.max(0, Math.min(1, v));
@@ -24,6 +28,31 @@ export function resetAssociate(e, tuning = TUNING.associate) {
   e.aim[0] = e.aim[1] = e.aim[2] = 0;
   e.wait = 0; e.wantSuppress = null; e.shots = 0; e.relocT = 0; e.pointT = 0; e.mustMove = false;
   e.stuckT = 0; e.stuckRef[0] = e.start[0]; e.stuckRef[1] = e.start[2]; e.stuckCount = 0;
+  e.helper = null; e.helping = null; e.diveDir[0] = e.diveDir[1] = 0; e.divePoint = null; e.claimed = false; e.diedAt = -Infinity; e.wasDowned = false;
+  associateShapes(e);
+  return e;
+}
+
+// An empty enemy slot: not alive, never drawn or targeted, parked below the floor until spawnAssociate fills it.
+export function unuseAssociate(e) {
+  e.alive = false; e.state = 'unused'; e.stateT = 0; e.health = 0;
+  e.pos[1] = e.prevPos[1] = -50;
+  e.point = null; e.path = []; e.pathI = 0; e.pop = 0; e.blind = 0; e.role = 'hold';
+  e.helper = null; e.helping = null; e.claimed = false; e.wasDowned = false;
+  associateShapes(e);
+  return e;
+}
+
+// A slot comes alive at pos as a new Rep at full health, rising from the sauna in 'spawn'. It faces the player.
+export function spawnAssociate(e, pos, ctx) {
+  const T = (ctx.tuning || TUNING).associate;
+  for (let i = 0; i < 3; i++) { e.pos[i] = pos[i]; e.prevPos[i] = pos[i]; }
+  const pl = ctx.player;
+  e.yaw = e.prevYaw = pl ? Math.atan2(pl.pos[0] - pos[0], pl.pos[2] - pos[2]) : Math.PI;
+  e.state = 'spawn'; e.stateT = 0; e.health = T.health; e.alive = true; e.claimed = false;
+  e.point = null; e.path = []; e.pathI = 0; e.pop = 0; e.blind = 0; e.role = 'hold'; e.bursts = 0;
+  e.wait = 0; e.wantSuppress = null; e.shots = 0; e.relocT = 0; e.pointT = 0; e.mustMove = false;
+  e.stuckT = 0; e.stuckCount = 0; e.helper = null; e.helping = null; e.wasDowned = false; e.diedAt = -Infinity; e.divePoint = null;
   associateShapes(e);
   return e;
 }
@@ -37,6 +66,9 @@ export function createAssociate({ id, pos }, tuning = TUNING.associate) {
     // Working data.
     wait: 0, wantSuppress: null, shots: 0, relocT: 0, pointT: 0, mustMove: false,
     stuckT: 0, stuckRef: [0, 0], stuckCount: 0, chest: [0, 0, 0], muzzle: [0, 0, 0],
+    // Reactions: who is reviving this downed Rep (helper) or whom this Rep is reviving (helping), the dive heading,
+    // whether a slot is claimed for a spawn, when it died and whether an execution interrupted a downed state.
+    helper: null, helping: null, diveDir: [0, 0], divePoint: null, claimed: false, diedAt: -Infinity, wasDowned: false,
   };
   return resetAssociate(e, tuning);
 }
@@ -44,6 +76,15 @@ export function createAssociate({ id, pos }, tuning = TUNING.associate) {
 // Crouch shapes when tucked behind low cover, standing shapes when popped or out of cover.
 export function associateShapes(e, combat = TUNING.combat) {
   const [x, y, z] = e.pos, s = e.shapes;
+  if (e.state === 'downed') {
+    // Lying down: a capsule along the facing from 0.2 m behind to 0.6 m in front (r 0.25, y 0.25) and the head at the front end.
+    const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
+    s.body.r = DOWNED.r; s.head.r = HIT_SHAPES.head.r;
+    s.body.a[0] = x - fx * DOWNED.back; s.body.a[1] = y + DOWNED.y; s.body.a[2] = z - fz * DOWNED.back;
+    s.body.b[0] = x + fx * DOWNED.front; s.body.b[1] = y + DOWNED.y; s.body.b[2] = z + fz * DOWNED.front;
+    s.head.c[0] = s.body.b[0]; s.head.c[1] = y + DOWNED.y; s.head.c[2] = s.body.b[2];
+    return s;
+  }
   const crouch = TUCKED.has(e.state) && e.point && e.point.kind === 'low' && e.pop < 0.5;
   s.head.r = HIT_SHAPES.head.r + combat.hitPad; s.body.r = HIT_SHAPES.body.r + combat.hitPad;
   s.head.c[0] = x; s.head.c[2] = z; s.body.a[0] = x; s.body.a[2] = z; s.body.b[0] = x; s.body.b[2] = z;
@@ -178,7 +219,7 @@ function seek(e, ctx, T) {
   if (!p) {
     e.mustMove = false;
     if (e.role !== 'hold') e.role = 'hold';
-    if (e.point) { enterCover(e, ctx, T); return; }
+    if (e.point && dist2(e.point.pos, [e.pos[0], e.pos[2]]) <= 0.5) { enterCover(e, ctx, T); return; }
     p = nearestPoint(e, ctx, true) || nearestPoint(e, ctx, false);
     if (!p) { enterCover(e, ctx, T); return; }
   }
@@ -193,6 +234,7 @@ function seek(e, ctx, T) {
 }
 
 function arrive(e, ctx, T) {
+  if (e.role === 'revive') { go(e, 'kneel'); return; }
   const p = e.point;
   e.pos[0] = p.pos[0]; e.pos[2] = p.pos[1];
   e.role = 'hold'; e.stuckCount = 0; e.pointT = 0; e.relocT = 0; e.mustMove = false;
@@ -201,6 +243,11 @@ function arrive(e, ctx, T) {
 }
 
 function run(e, ctx, T, dt) {
+  if (e.role === 'revive') {
+    const t = helpTarget(e, ctx);
+    if (!t) { cancelRevive(e, ctx); seek(e, ctx, T); return; }
+    if (distXZ(e.pos, t.pos) <= REVIVE_REACH) { go(e, 'kneel'); return; }
+  }
   let remaining = T.runSpeed * dt;
   for (let guard = 0; guard < e.path.length + 2; guard++) {
     const wp = e.path[e.pathI], last = e.pathI === e.path.length - 1;
@@ -222,7 +269,7 @@ function run(e, ctx, T, dt) {
   e.stuckT += dt;
   if (e.stuckT >= T.stuckTime) {
     const moved = Math.hypot(e.pos[0] - e.stuckRef[0], e.pos[2] - e.stuckRef[1]);
-    if (moved < 0.05) { e.stuckCount++; seek(e, ctx, T); return; }
+    if (moved < 0.05) { if (e.role === 'revive') cancelRevive(e, ctx); e.stuckCount++; seek(e, ctx, T); return; }
     e.stuckCount = 0; e.stuckT = 0; e.stuckRef[0] = e.pos[0]; e.stuckRef[1] = e.pos[2];
   }
 }
@@ -325,6 +372,164 @@ function suppress(e, ctx, T, dt) {
   if (t >= T.suppressTime - 1e-9) { e.blind = 0; enterCover(e, ctx, T); }
 }
 
+// ---- Reactions: revive, kneel, crawl, stagger, dive, spawn rise -------------------------------------------------------
+const REVIVE_REACH = 0.8;   // m, a helper kneels once this close to the downed Rep
+
+function helpTarget(e, ctx) {
+  const t = (ctx.others || []).find(o => o.id === e.helping);
+  return t && t.alive && t.state === 'downed' && t.helper === e.id ? t : null;
+}
+
+// Ends a helper's revive: the role goes back to hold and the downed Rep may be given another helper.
+function cancelRevive(e, ctx) {
+  const t = (ctx.others || []).find(o => o.id === e.helping);
+  if (t && t.helper === e.id) t.helper = null;
+  e.helping = null; e.role = 'hold';
+}
+
+// The director's call: helper e runs to the downed Rep and kneels. It gives up its token, its point and its pop.
+export function startRevive(e, target, ctx) {
+  const T = (ctx.tuning || TUNING).associate;
+  releaseToken(e, ctx);
+  setPop(e, 0, T); e.blind = 0;
+  if (e.point && ctx.reserved.get(e.point.index) === e.id) ctx.reserved.delete(e.point.index);
+  e.point = null; e.role = 'revive'; e.helping = target.id; target.helper = e.id; e.mustMove = false;
+  const dx = e.pos[0] - target.pos[0], dz = e.pos[2] - target.pos[2], d = Math.hypot(dx, dz) || 1;
+  if (d <= REVIVE_REACH) { go(e, 'kneel'); return; }
+  const goal = [target.pos[0] + dx / d * 0.7, target.pos[2] + dz / d * 0.7];
+  e.path = findPath(ctx.graph, ctx.boxes, [e.pos[0], e.pos[2]], goal, T.radius) || [goal];
+  e.pathI = 0; e.stuckT = 0; e.stuckRef[0] = e.pos[0]; e.stuckRef[1] = e.pos[2];
+  go(e, 'run');
+}
+
+function kneel(e, ctx, T, dt) {
+  const t = helpTarget(e, ctx);
+  if (!t) { cancelRevive(e, ctx); seek(e, ctx, T); return; }
+  face(e, t.pos[0], t.pos[2], T, dt);
+  if (e.stateT < T.reviveTime - 1e-9) return;
+  t.helper = null; t.health = Math.max(1, T.reviveHealth * T.health); t.role = 'hold'; t.mustMove = false; t.bursts = 0;
+  go(t, 'seek');
+  ctx.events.push({ type: 'cloneRevive', id: e.id, target: t.id });
+  e.helping = null; e.role = 'hold';
+  seek(e, ctx, T);
+}
+
+// A downed Rep lies still while someone kneels to it. Alone it crawls toward the nearest calm Rep, else straight away from the player.
+function crawl(e, ctx, T, dt) {
+  if (e.stateT >= T.bleedTime - 1e-9) { e.health = 0; kill(e, ctx, 'bleed'); return; }
+  if (e.helper) return;
+  let tx = 0, tz = 0, best = Infinity;
+  for (const o of ctx.others || []) {
+    if (o === e || !o.alive || !CALM_REP.has(o.state)) continue;
+    const d = distXZ(e.pos, o.pos);
+    if (d < best) { best = d; tx = o.pos[0] - e.pos[0]; tz = o.pos[2] - e.pos[2]; }
+  }
+  if (best === Infinity) { tx = e.pos[0] - ctx.player.pos[0]; tz = e.pos[2] - ctx.player.pos[2]; best = Math.hypot(tx, tz); }
+  else if (best < 1.2) return;   // it has reached company
+  if (best < 1e-6) { tx = 1; tz = 0; best = 1; }
+  e.yaw = turnToward(e.yaw, Math.atan2(tx, tz), T.turnRate * dt);
+  const want = T.downedCrawl * dt;
+  const r = moveCapsule(ctx.boxes, e.pos, [tx / best * want, 0, tz / best * want], T.radius, T.height);
+  e.pos[0] = r.pos[0]; e.pos[2] = r.pos[2];
+}
+
+// After a stagger or a dive the Rep goes back to its point when it is on it, else it looks for one.
+function afterStagger(e, ctx, T) {
+  const own = e.point && ctx.reserved.get(e.point.index) === e.id;
+  if (own && e.pop <= 1e-6 && dist2(e.point.pos, [e.pos[0], e.pos[2]]) <= 0.3) enterCover(e, ctx, T); else seek(e, ctx, T);
+}
+
+export function staggerAssociate(e, ctx) {
+  if (!e.alive || LOCKED.has(e.state) || e.state === 'downed') return false;
+  if (e.role === 'revive') cancelRevive(e, ctx);
+  releaseToken(e, ctx);
+  e.blind = 0; go(e, 'stagger');
+  return true;
+}
+
+// Starts a dive away from `from` ([x, ?, z]): a wait of diveReaction, then diveDistance in diveTime. It gives up token and point.
+export function diveAssociate(e, from, ctx) {
+  if (!e.alive || LOCKED.has(e.state) || e.state === 'downed' || e.state === 'dive') return false;
+  if (e.role === 'revive') cancelRevive(e, ctx);
+  releaseToken(e, ctx);
+  setPop(e, 0, (ctx.tuning || TUNING).associate); e.blind = 0;
+  if (e.point && ctx.reserved.get(e.point.index) === e.id) ctx.reserved.delete(e.point.index);
+  e.divePoint = e.point; e.point = null; e.role = 'hold'; e.path = []; e.pathI = 0;
+  let dx = e.pos[0] - from[0], dz = e.pos[2] - from[2];
+  const d = Math.hypot(dx, dz);
+  if (d < 1e-6) { dx = Math.sin(e.yaw); dz = Math.cos(e.yaw); } else { dx /= d; dz /= d; }
+  e.diveDir[0] = dx; e.diveDir[1] = dz; e.yaw = Math.atan2(dx, dz);
+  go(e, 'dive');
+  return true;
+}
+
+function dive(e, ctx, T, dt) {
+  const dur = Math.max(T.diveTime, 1e-3);
+  const from = Math.max(e.stateT - dt, T.diveReaction), to = Math.min(e.stateT, T.diveReaction + dur);
+  if (to > from) {
+    const move = T.diveDistance * (to - from) / dur;
+    const r = moveCapsule(ctx.boxes, e.pos, [e.diveDir[0] * move, 0, e.diveDir[1] * move], T.radius, T.height);
+    e.pos[0] = r.pos[0]; e.pos[2] = r.pos[2];
+  }
+  if (e.stateT >= T.diveReaction + dur - 1e-9) {
+    // Back on its feet it looks for a new spot: the point it left is no longer reserved but still counts as the one to move off.
+    e.point = e.divePoint; e.divePoint = null; e.mustMove = true;
+    seek(e, ctx, T);
+  }
+}
+
+// Doc's cutter or stomp takes hold of e: it freezes, shoots nothing and gives up token, point and helper (a revive on it is cancelled).
+export function executeAssociate(e, ctx) {
+  if (!e.alive || LOCKED.has(e.state) || e.state === 'dive') return false;
+  if (e.role === 'revive') cancelRevive(e, ctx);
+  releaseToken(e, ctx);
+  setPop(e, 0, (ctx.tuning || TUNING).associate); e.blind = 0;
+  if (e.point && ctx.reserved.get(e.point.index) === e.id) ctx.reserved.delete(e.point.index);
+  e.wasDowned = e.state === 'downed';
+  e.point = null; e.role = 'hold'; e.helper = null; e.mustMove = false;
+  go(e, 'executed');
+  return true;
+}
+
+// Lets go of an executed Rep (Doc was downed mid-execution): a Rep that was downed lies down again, any other flinches and then seeks.
+export function releaseExecuted(e) {
+  if (!e.alive || e.state !== 'executed') return false;
+  go(e, e.wasDowned ? 'downed' : 'flinch');
+  e.wasDowned = false;
+  return true;
+}
+
+// The bite completes: an executed Rep dies (kind 'execute' from the cutter or the stomp). 'kill', or null when it was not held.
+export function finishAssociate(e, ctx, kind = 'execute') {
+  if (!e.alive || e.state !== 'executed') return null;
+  e.health = 0;
+  return kill(e, ctx, kind);
+}
+
+function kill(e, ctx, kind) {
+  e.alive = false;
+  releaseToken(e, ctx);
+  if (e.role === 'revive') cancelRevive(e, ctx);
+  e.helper = null;
+  if (e.point && ctx.reserved.get(e.point.index) === e.id) ctx.reserved.delete(e.point.index);
+  e.pop = 0; e.blind = 0; go(e, 'dead');
+  ctx.events.push({ type: 'death', id: e.id, pos: [e.pos[0], e.pos[1], e.pos[2]], kind });
+  return 'kill';
+}
+
+// The Rep goes down instead of dying: still alive at 1 hp, off its point and its token, lying still for bleedTime.
+export function downAssociate(e, ctx) {
+  if (!e.alive || LOCKED.has(e.state) || e.state === 'downed') return null;
+  releaseToken(e, ctx);
+  if (e.role === 'revive') cancelRevive(e, ctx);
+  if (e.point && ctx.reserved.get(e.point.index) === e.id) ctx.reserved.delete(e.point.index);
+  e.point = null; e.health = 1; e.pop = 0; e.blind = 0; e.role = 'hold'; e.helper = null; e.mustMove = false;
+  go(e, 'downed');
+  ctx.events.push({ type: 'down', id: e.id, pos: [e.pos[0], e.pos[1], e.pos[2]] });
+  ctx.events.push({ type: 'bark', id: e.id, key: 'cloneDown' });
+  return 'down';
+}
+
 export function updateAssociate(e, ctx, dt) {
   if (!e.alive) return;
   if (!(dt > 0) || !Number.isFinite(dt)) dt = 0;
@@ -348,22 +553,31 @@ export function updateAssociate(e, ctx, dt) {
       setPop(e, e.pop - step(dt, T.popTime), T); e.blind = clamp01(e.blind - step(dt, T.popTime));
       if (e.stateT >= T.flinchTime) { if (e.point) enterCover(e, ctx, T); else seek(e, ctx, T); }
       break;
-    default: break;
+    case 'stagger':
+      setPop(e, e.pop - step(dt, T.popTime), T);
+      if (e.stateT >= T.staggerTime - 1e-9) afterStagger(e, ctx, T);
+      break;
+    case 'dive': dive(e, ctx, T, dt); break;
+    case 'kneel': kneel(e, ctx, T, dt); break;
+    case 'downed': crawl(e, ctx, T, dt); break;
+    case 'spawn': if (e.stateT >= (ctx.tuning || TUNING).pad.riseTime - 1e-9) seek(e, ctx, T); break;
+    default: break;   // 'executed', 'unused' and 'dead' hold still
   }
 }
 
-// 'hit' | 'kill' | null. A hit while shooting flinches and gives the token back; a kill frees the point too.
-export function hurtAssociate(e, amount, ctx) {
-  if (!e.alive || !(amount > 0)) return null;
+// 'hit' | 'down' | 'kill' | null. kind is 'body' | 'head' | 'bash' | 'blast' | 'execute' | 'tobble' | 'bleed'.
+// A killing body hit from Doc or any Tobble shot goes down instead with probability downChance. Any hit on a downed Rep kills it.
+// A hit while shooting flinches and gives the token back; a hurt helper flinches and its revive is cancelled. A held (executed) or empty slot ignores hits.
+export function hurtAssociate(e, amount, ctx, kind = 'body') {
+  if (!e.alive || !(amount > 0) || e.state === 'executed' || e.state === 'unused') return null;
+  if (e.state === 'downed') { e.health = 0; return kill(e, ctx, kind); }
   e.health -= amount;
   if (e.health <= 0) {
-    e.health = 0; e.alive = false;
-    releaseToken(e, ctx);
-    if (e.point && ctx.reserved.get(e.point.index) === e.id) ctx.reserved.delete(e.point.index);
-    e.pop = 0; e.blind = 0; go(e, 'dead');
-    ctx.events.push({ type: 'death', id: e.id, pos: [e.pos[0], e.pos[1], e.pos[2]] });
-    return 'kill';
+    if ((kind === 'body' || kind === 'tobble') && ctx.rand() < (ctx.tuning || TUNING).associate.downChance) return downAssociate(e, ctx);
+    e.health = 0;
+    return kill(e, ctx, kind);
   }
+  if (e.role === 'revive') { cancelRevive(e, ctx); releaseToken(e, ctx); go(e, 'flinch'); return 'hit'; }
   if (SHOOTING.has(e.state)) { releaseToken(e, ctx); go(e, 'flinch'); e.blind = Math.min(e.blind, 1); }
   return 'hit';
 }

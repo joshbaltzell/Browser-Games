@@ -4,7 +4,7 @@ import { PANEL, DEFAULTS, getPath, setPath, diffFromDefaults, applyOverrides, fo
 
 const KEY = 'cr-tuning';
 
-const LABELS = { melee: 'Melee and Cheat Day', grenade: 'Kettlebells', move: 'Move', camera: 'Camera', look: 'Look', cover: 'Cover', weapons: 'Weapons', regret: 'The Regret', pistol: 'Guest Pass', combat: 'Combat', associate: 'Associate', director: 'Director', dummy: 'Dummies', recoil: 'Recoil', feedback: 'Feedback', aim: 'Aim', sprint: 'Sprint', coverLow: 'Cover low', coverTall: 'Cover tall', health: 'Health', downed: 'Downed', bump: 'Bump', shake: 'Shake', pad: 'Pad', wall: 'Wall' };
+const LABELS = { melee: 'Melee and Cheat Day', grenade: 'Kettlebells', move: 'Move', camera: 'Camera', look: 'Look', cover: 'Cover', weapons: 'Weapons', regret: 'The Regret', pistol: 'Guest Pass', combat: 'Combat', associate: 'Associate', director: 'Director', dummy: 'Dummies', recoil: 'Recoil', feedback: 'Feedback', aim: 'Aim', sprint: 'Sprint', coverLow: 'Cover low', coverTall: 'Cover tall', health: 'Health', downed: 'Downed', bump: 'Bump', shake: 'Shake', pad: 'Spawn Sauna', lookPad: 'Pad', wall: 'Wall' };
 const WALL = new Set(['probeRadius', 'minBack', 'wallReturnHalfLife']);
 
 // Folder chain for a path: move.jog -> [Move]; camera.aim.fov -> [Camera, Aim]; camera.probeRadius -> [Camera, Wall].
@@ -12,6 +12,7 @@ function folderChain(path) {
   const keys = path.split('.');
   const chain = keys.slice(0, -1);
   if (chain.length === 1 && chain[0] === 'camera' && WALL.has(keys[1])) chain.push('wall');
+  if (chain[0] === 'look' && chain[1] === 'pad') chain[1] = 'lookPad';   // the gamepad look group; 'pad' is the Spawn Sauna block
   return chain;
 }
 

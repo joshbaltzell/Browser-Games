@@ -173,11 +173,17 @@ export const TUNING = {
     suppressChance: 0.5, suppressTime: 1.2, suppressRate: 4, suppressMiss: 1.5, suppressSpread: 8, // fraction, s, shots/s, m, deg
     coverWaitMin: 0.8, coverWaitMax: 2.0, magBursts: 3, reloadTime: 2.0, flinchTime: 0.25, // s, s, bursts, s, s
     minRange: 5, preferRange: 12, maxRange: 24, relocateCheck: 0.5, relocateAfter: 12, ammoDrop: 25, muzzleUp: 1.35, // m, m, m, s, s, rounds, m
+    // Downed Reps, clone revive, stagger and kettlebell dives. Chances are 0 to 1, times in s, distances in m, speeds in m/s, health as a fraction.
+    downChance: 0.35, downedCrawl: 0.8, bleedTime: 15, reviveTime: 2.5, reviveHealth: 0.4, reviveRange: 12,
+    staggerTime: 0.9, diveWarn: 1.0, diveRadius: 4.5, diveChance: 0.75, diveReaction: 0.25, diveDistance: 3, diveTime: 0.6,
   },
+  // Spawn Saunas (the spec's Hiring Pads). Radius in m, times in s. A kettlebell closes one within radius + grenade.padReach.
+  pad: { radius: 1.1, openAfterKills: 2, openAfter: 25, interval: 5, maxAlive: 2, total: 6, riseTime: 0.8 },
   // The encounter director. Times in s, distances in m, angles in deg. casual is a flag (dev switch).
   director: {
     tokens: 2, casualTokens: 1, casual: 0, tokenCooldown: 1.0, tokenMaxHold: 3.0, requestWindow: 0.25,
     pushAfter: 6, flankAfter: 10, stayRadius: 2.5, flankAngle: 60, flankMaxAngle: 120,
+    maxEnemies: 8,   // enemy slots, 4 to 8 (read when the fight is created and at each restart)
   },
   // Shot feedback. Times in s, sizes in m, speeds in m/s, volumes 0 to 1, squash and kicks as fractions or m.
   feedback: {

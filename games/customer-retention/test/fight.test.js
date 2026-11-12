@@ -8,6 +8,7 @@ import { fireStance, muzzleOf } from '../src/combat/stance.js';
 import { shotDamage } from '../src/combat/targets.js';
 import { rng } from '../src/core/random.js';
 import { TUNING } from '../src/tuning.js';
+import { solveThrowPitch, throwVelocity, throwOrigin } from '../src/combat/grenades.js';
 
 const COVERISH = new Set(['cover', 'telegraph', 'burst', 'suppress', 'reload', 'flinch']);
 const solid = BOXES.filter(b => b.kind !== 'floor');
@@ -26,7 +27,7 @@ test('before the trigger nothing fires; crossing z -11 starts it with a lockdown
   const idle = sim(6, { at: 'start' });
   assert.equal(idle.f.started, false);
   assert.equal(idle.log.filter(e => e.type === 'enemyShot' || e.type === 'telegraph' || e.type === 'bark').length, 0);
-  assert.ok(idle.f.enemies.every(e => e.state === 'idle'));
+  assert.ok(idle.f.enemies.filter(e => e.alive).every(e => e.state === 'idle'));
   // Walk forward (+z) across the line.
   const walk = sim(3, { at: 'start', intent: () => I({ moveY: -1 }) });
   const bark = walk.log.find(e => e.type === 'bark');
@@ -43,7 +44,7 @@ test('within 5 s of the start every alive Associate is in a cover state; over 60
     sim(60, {
       at: 'kioskLeft', seed, intent: tuck(),
       each: (i, m, f) => {
-        if (i === 300) at5 = f.enemies.map(e => e.state);
+        if (i === 300) at5 = f.enemies.filter(e => e.alive).map(e => e.state);
         for (const e of f.enemies) if (e.alive && inBox(e.pos)) bad++;
       },
     });
@@ -148,7 +149,7 @@ test('hiding tucked for 8 s gives one pusher that ends >= 2 m closer; staying pu
         for (const e of f.enemies) {
           if (e.role === 'push' && !before.has(e.id)) before.set(e.id, last.get(e.id)); // the point it left (the brain re-picks in the same step)
         }
-        for (const e of f.enemies) if (e.role === 'hold') last.set(e.id, e.point.index);
+        for (const e of f.enemies) if (e.alive && e.role === 'hold') last.set(e.id, e.point.index);
       },
     });
     assert.ok(pushers <= 1 && flankers <= 1, 'never two of either at once');
@@ -172,7 +173,7 @@ test('an Associate whose cover the player walks round (player on its open side) 
   const r = sim(8, {
     at: 'open', seed: 1, tune: (t) => { t.director.tokens = 0; t.associate.suppressChance = 0; },
     each: (i, m, f) => {
-      if (i === 180) { m.place([-3.6, 0, 7.5], Math.PI); placed = f.now; snapshot = f.enemies.map(e => [e.id, e.point.index]); }
+      if (i === 180) { m.place([-3.6, 0, 7.5], Math.PI); placed = f.now; snapshot = f.enemies.filter(e => e.alive).map(e => [e.id, e.point.index]); }
       if (placed > 0 && f.now > placed + 1.0 && snapshot) {
         const a1 = f.enemies[0];
         assert.ok(a1.state === 'run' || a1.state === 'cover');
@@ -240,7 +241,10 @@ test('killing all four emits clear once; reset restores four alive at their star
   const r = sim(3, { at: 'open', seed: 1, tune: (t) => { t.director.tokens = 0; } });
   const { f } = r;
   let clears = 0;
-  for (const e of f.enemies) assert.equal(f.hurt(e, 1000), 'kill');
+  const four = f.enemies.slice(0, 4);
+  for (const e of four) assert.equal(f.hurt(e, 1000, 'head'), 'kill');
+  // Two deaths open the Spawn Sauna and the clear waits for it: a kettlebell on it closes it (the explosion lands within 2 s).
+  f.throwGrenade([4.6, 0.5, 13.4], [0, 0, 0]);
   const m = r.m, health = r.health;
   for (let i = 0; i < 120; i++) for (const ev of f.step(DT, { m, health })) if (ev.type === 'clear') clears++;
   assert.equal(clears, 1);
@@ -248,13 +252,13 @@ test('killing all four emits clear once; reset restores four alive at their star
   // The deaths surfaced as events on the next step.
   f.reset();
   assert.equal(f.clear, false); assert.equal(f.started, false);
-  f.enemies.forEach((e, i) => {
+  four.forEach((e, i) => {
     assert.equal(e.alive, true); assert.equal(e.state, 'idle'); assert.equal(e.health, TUNING.associate.health);
     assert.deepEqual(e.pos, R.associates[i].pos);
     assert.ok(e.point);
   });
   assert.deepEqual(f.tokens.held(), []);
-  assert.deepEqual([...f.enemies.map(e => e.point.index)].sort(), [...new Set(f.enemies.map(e => e.point.index))].sort());
+  assert.deepEqual([...four.map(e => e.point.index)].sort(), [...new Set(four.map(e => e.point.index))].sort());
 });
 
 test('the same seed gives the same event log; dt 0 and dt 5 stay finite; tokens 0, burstTime 0, telegraphTime 0, runSpeed 0 give no NaN and no lock-up', () => {
@@ -321,6 +325,7 @@ test('popped at K1 with perfect aim at the chest, firing only while a clone is i
     const firstHit = new Map(), seen = new Set();
     sim(40, {
       at: 'kioskLeft', seed, god: true, intent: (i) => I({ moveY: i === 0 ? -1 : 0, tap: i === 0, aim: i > 0 }),
+      tune: t => { t.associate.downChance = 0; },   // this test counts kills, not downs
       each: (i, m, f) => {
         const stance = fireStance(m);
         if (!mark || !mark.alive) mark = f.enemies.find(e => e.alive && (e.state === 'telegraph' || e.state === 'burst')) || null;
@@ -347,5 +352,399 @@ test('popped at K1 with perfect aim at the chest, firing only while a clone is i
     assert.ok(killSecs !== null, `seed ${seed}: a clone dies`);
     assert.ok(killSecs <= 1.6, `seed ${seed}: ${killSecs} s of popped fire`);
     assert.ok(bodyHits >= 7 && [...firstHit.values()][0] >= 1, `seed ${seed}: the marked clone took a chest hit in its first exposure ${[...firstHit]}`);
+  }
+});
+
+// ---- Milestone 5: slots, reactions, kettlebells, the Spawn Sauna ----
+const LOUD = new Set(['telegraph', 'burst']);
+// Steps an existing sim result further, by hand. `each(events, i)` after each step.
+function go(r, seconds, each) {
+  const evs = [];
+  for (let i = 0; i < Math.round(seconds / DT); i++) {
+    const ev = r.f.step(DT, { m: r.m, health: r.health });
+    r.health.update(DT);
+    for (const e of ev) evs.push({ t: r.f.now, ...e });
+    if (each) each(ev, i);
+  }
+  return evs;
+}
+const quiet = t => { t.director.tokens = 0; t.associate.suppressChance = 0; };   // Reps tuck and do not shoot
+const alive = f => f.enemies.filter(e => e.alive);
+const base4 = f => f.enemies.slice(0, 4);
+
+test('slots: 8 enemies, 4 alive at the start, 4 unused; f.spawnRep x5 never gives more than 8 alive', () => {
+  const { f } = sim(0.1, { at: 'start' });
+  assert.equal(f.enemies.length, 8);
+  assert.equal(alive(f).length, 4);
+  assert.deepEqual(f.enemies.slice(4).map(e => [e.state, e.alive]), Array(4).fill(['unused', false]));
+  assert.deepEqual(base4(f).map(e => e.id), ['a1', 'a2', 'b1', 'b2']);
+  const got = [];
+  for (let i = 0; i < 5; i++) got.push(f.spawnRep());
+  assert.deepEqual(got.map(e => !!e), [true, true, true, true, false]);
+  assert.equal(alive(f).length, 8);
+  assert.ok(got.slice(0, 4).every(e => e.state === 'spawn' && e.alive && Math.hypot(e.pos[0] - R.pads[0].pos[0], e.pos[2] - R.pads[0].pos[2]) < 1e-9));
+  // A dead slot is reusable only 1 s after its death.
+  f.hurt(f.enemies[0], 1000, 'head');
+  assert.equal(f.spawnRep(), null, 'its death burst is not over');
+  const r = sim(0.1, { at: 'start' });
+  for (let i = 0; i < 4; i++) r.f.spawnRep();
+  r.f.hurt(r.f.enemies[0], 1000, 'head');
+  go(r, 1.05);
+  assert.equal(r.f.spawnRep(), r.f.enemies[0], 'the dead slot is taken once 1 s has passed');
+  // maxEnemies is read when the fight is created: 6 slots in play.
+  const six = sim(0.1, { at: 'start', tune: t => { t.director.maxEnemies = 6; } }).f;
+  for (let i = 0; i < 5; i++) six.spawnRep();
+  assert.equal(alive(six).length, 6);
+});
+
+test('clone revive: a downed Rep gets one helper within 12 m, which kneels 2.5 s; the Rep stands at 40 hp and seeks; killing the helper cancels and a new helper may come', () => {
+  const r = sim(3, { at: 'open', seed: 1, tune: quiet });
+  const { f } = r, a1 = f.enemies[0];
+  assert.equal(a1.state, 'cover');
+  assert.equal(f.downRep(a1), true);
+  assert.equal(a1.state, 'downed');
+  let helpers = 0, kneelFrom = -1, kneelTo = -1, helperId = null;
+  const evs = go(r, 8, () => {
+    const hs = f.enemies.filter(e => e.role === 'revive');
+    helpers = Math.max(helpers, hs.length);
+    if (hs.length && !helperId) helperId = hs[0].id;
+    const k = f.enemies.find(e => e.state === 'kneel');
+    if (k && kneelFrom < 0) kneelFrom = f.now;
+    if (k) kneelTo = f.now;
+  });
+  assert.equal(helpers, 1, 'one helper at a time');
+  assert.ok(helperId && helperId !== 'a1');
+  const helper = f.enemies.find(e => e.id === helperId);
+  assert.ok(evs.some(e => e.type === 'bark' && e.key === 'cloneRevive' && e.id === helperId));
+  assert.ok(Math.abs(kneelTo - kneelFrom - 2.5) < 0.1, `knelt ${kneelTo - kneelFrom}`);
+  assert.ok(evs.some(e => e.type === 'cloneRevive' && e.target === 'a1'));
+  assert.equal(a1.alive, true); assert.ok(a1.state !== 'downed' && a1.state !== 'dead');
+  assert.equal(Math.round(a1.health), 40);
+  assert.equal(helper.role, 'hold'); assert.equal(a1.helper, null);
+  // Killing the helper cancels the revive; another helper may come.
+  const r2 = sim(3, { at: 'open', seed: 1, tune: quiet });
+  const g = r2.f, d = g.enemies[0];
+  g.downRep(d);
+  go(r2, 0.1);
+  const h1 = g.enemies.find(e => e.role === 'revive');
+  assert.ok(h1 && d.helper === h1.id);
+  go(r2, 0.3);
+  assert.equal(g.hurt(h1, 1000, 'head'), 'kill');
+  go(r2, 0.05);
+  assert.equal(d.state, 'downed', 'the revive did not finish');
+  assert.notEqual(d.helper, h1.id);
+  const h2 = g.enemies.find(e => e.role === 'revive');
+  assert.ok(h2 && h2.id !== h1.id && d.helper === h2.id, 'a new helper');
+  // A hurt (not killed) helper flinches and the revive is cancelled too.
+  const h2hit = g.hurt(h2, 10, 'body');
+  assert.equal(h2hit, 'hit'); assert.equal(h2.state, 'flinch'); assert.equal(h2.role, 'hold'); assert.equal(d.helper, null);
+  // Out of range: no helper (reviveRange 12).
+  const far = sim(3, { at: 'open', seed: 1, tune: t => { quiet(t); t.associate.reviveRange = 0.5; } });
+  far.f.downRep(far.f.enemies[0]); go(far, 1);
+  assert.equal(far.f.enemies[0].helper, null);
+});
+
+// Throws a kettlebell at `to` from Doc, fused to burst there (the flight time to it), and returns the throw.
+function throwAt(f, m, tun, to, extra = {}) {
+  const from = throwOrigin(m, 0, tun.combat, [0, 0, 0]);
+  const yaw = Math.atan2(to[0] - from[0], to[2] - from[2]);
+  const pitch = solveThrowPitch(from, to, yaw, tun.grenade);
+  assert.notEqual(pitch, null, 'the throw is solvable');
+  const vel = throwVelocity(yaw, pitch, tun.grenade, [0, 0, 0]);
+  const D = Math.hypot(to[0] - from[0], to[2] - from[2]);
+  tun.grenade.fuse = extra.fuse ?? D / Math.hypot(vel[0], vel[2]);
+  return f.throwGrenade(from, vel);
+}
+
+test('kettlebell on the K5 pair (solveThrowPitch from open, diveChance 0): both take blast damage, none is downed by it', () => {
+  let tun = null, thrown = null;
+  const r = sim(2.2, {
+    at: 'open', seed: 1, tune: t => { tun = t; quiet(t); t.associate.diveChance = 0; t.associate.downChance = 1; },
+    each: (i, m, f) => { if (i === 0) thrown = throwAt(f, m, tun, [-3.5, 0.6, 4.9]); },
+  });
+  assert.ok(thrown);
+  const ex = r.log.find(e => e.type === 'explode');
+  assert.ok(ex, 'it exploded');
+  assert.ok(Math.hypot(ex.pos[0] + 3.5, ex.pos[2] - 4.9) < 0.6, `burst at ${ex.pos}`);
+  const [a1, a2] = r.f.enemies;
+  for (const e of [a1, a2]) {
+    assert.ok(e.health < TUNING.associate.health, `${e.id} took damage`);
+    assert.notEqual(e.state, 'downed', 'a blast never downs');
+  }
+  const deaths = r.log.filter(e => e.type === 'death');
+  assert.ok(deaths.length >= 2 && deaths.every(d => d.kind === 'blast'), 'inside the kill radius they die by blast');
+  assert.equal(ex.kills, 2);
+  // Further out the damage falls off, and a Rep the blast cannot see takes nothing (K5 between).
+  const far = sim(0.1, { at: 'open', seed: 1, tune: quiet });
+  const g = far.f; far.tuning.grenade.fuse = 0.05; g.throwGrenade([-3.5, 0.5, 4.9], [0, 0, 0]);
+  go(far, 0.2);
+  assert.ok(g.enemies[0].health < 100, 'sanity: an open blast hurts');
+  const hid = sim(0.1, { at: 'open', seed: 1, tune: quiet });
+  hid.tuning.grenade.fuse = 0.05;
+  hid.f.throwGrenade([-3.5, 0.5, 2.6], [0, 0, 0]);   // the K5 box is between this and a1 / a2 at z 4.88
+  go(hid, 0.2);
+  assert.equal(hid.f.enemies[0].health, 100); assert.equal(hid.f.enemies[1].health, 100);
+});
+
+test('Reps dive: diveChance 1, a kettlebell landing between a1 and a2 -> both in dive within 0.3 s, one dive bark', () => {
+  let diving = null;
+  const r = sim(2, {
+    at: 'open', seed: 1, tune: t => { quiet(t); t.associate.diveChance = 1; },
+    each: (i, m, f) => {
+      if (i === 0) f.throwGrenade([-3.5, 0.5, 4.9], [0, 0, 0]);
+      // fuse 1.6, diveWarn 1.0: the roll comes 0.6 s in; both are diving 0.3 s later.
+      if (i === Math.round(0.9 / DT)) diving = f.enemies.slice(0, 2).map(e => e.state);
+    },
+  });
+  assert.deepEqual(diving, ['dive', 'dive']);
+  assert.equal(r.log.filter(e => e.type === 'bark' && e.key === 'dive').length, 1, 'one bark per kettlebell');
+  // Rolled once per kettlebell: with diveChance 0 nobody dives, and a Rep out of diveRadius never rolls.
+  const none = sim(2, { at: 'open', seed: 1, tune: t => { quiet(t); t.associate.diveChance = 0; }, each: (i, m, f) => { if (i === 0) f.throwGrenade([-3.5, 0.5, 4.9], [0, 0, 0]); } });
+  assert.ok(!none.log.some(e => e.type === 'bark' && e.key === 'dive'));
+  // After the blast the divers are alive and away from the burst (they are not in it).
+  const ex = r.log.find(e => e.type === 'explode');
+  assert.ok(ex.kills === 0 && r.f.enemies.slice(0, 2).every(e => e.alive && Math.hypot(e.pos[0] - ex.pos[0], e.pos[2] - ex.pos[2]) >= 2), 'the divers were clear of the kill radius');
+});
+
+test('the sauna: opens after 2 kills, a kettlebell on it closes it (padClosed, PA bark); clear needs the 4 dead and the sauna closed or spent', () => {
+  const r = sim(1, { at: 'open', seed: 1, tune: quiet });
+  const { f } = r;
+  assert.equal(f.pads[0].state, 'dormant');
+  f.hurt(f.enemies[0], 1000, 'head'); f.hurt(f.enemies[1], 1000, 'head');
+  let evs = go(r, 0.2);
+  assert.equal(f.kills, 2);
+  assert.equal(f.pads[0].state, 'open');
+  const open = evs.find(e => e.type === 'padOpen');
+  assert.equal(open.id, 'sauna1');
+  assert.ok(evs.some(e => e.type === 'bark' && e.key === 'padOpen' && e.force === true), 'the PA says so, forced');
+  f.hurt(f.enemies[2], 1000, 'head'); f.hurt(f.enemies[3], 1000, 'head');
+  evs = go(r, 0.5);
+  assert.equal(f.clear, false, 'four dead but the sauna is still open');
+  f.throwGrenade([4.6, 0.5, 13.4], [0, 0, 0]);
+  evs = go(r, 2.0);
+  const closed = evs.find(e => e.type === 'padClosed');
+  assert.equal(closed.id, 'sauna1');
+  assert.ok(evs.some(e => e.type === 'bark' && e.key === 'padClosed'), 'the PA bark');
+  assert.equal(evs.find(e => e.type === 'explode').closed[0], 'sauna1');
+  assert.equal(f.pads[0].state, 'closed');
+  assert.equal(f.clear, true);
+  assert.equal(evs.filter(e => e.type === 'clear').length, 1);
+  assert.equal(f.pads[0].spawned, 0, 'it never spawned (closed before its first interval)');
+});
+
+test('sauna left open: with godMode and every new Rep killed at once, it spends after 6 spawns and the arena clears', () => {
+  let spentAt = null, clearAt = null, openAt = null;
+  const r = sim(60, {
+    at: 'open', seed: 1, god: true, tune: quiet,
+    each: (i, m, f, h, ev) => {
+      for (const e of ev) {
+        if (e.type === 'padSpent') spentAt = f.now;
+        if (e.type === 'padOpen') openAt = f.now;
+        if (e.type === 'clear' && clearAt === null) clearAt = f.now;
+      }
+      for (const e of f.enemies) if (e.alive && e.state !== 'unused') f.hurt(e, 1000, 'head');
+    },
+  });
+  assert.equal(r.f.pads[0].state, 'spent'); assert.equal(r.f.pads[0].spawned, 6);
+  assert.equal(r.log.filter(e => e.type === 'padSpawn').length, 6);
+  assert.ok(spentAt !== null && clearAt !== null && clearAt >= spentAt);
+  assert.equal(r.f.clear, true);
+  console.log(`sauna left open: opened ${openAt.toFixed(2)} s, spent ${spentAt.toFixed(2)} s (${(spentAt - openAt).toFixed(1)} s after opening), clear ${clearAt.toFixed(2)} s`);
+  assert.ok(spentAt - openAt > 25 && spentAt - openAt < 40);
+  assert.equal(alive(r.f).length, 0);
+});
+
+test('executions: beginExecution locks the Rep (executed, no shots, token released); finishExecution kills with kind execute; releaseExecution -> flinch', () => {
+  let held = null, shotsWhileHeld = 0, second = null;
+  const r = sim(20, {
+    at: 'kioskLeft', seed: 2, god: true, intent: tuck(true),
+    each: (i, m, f, h, ev) => {
+      if (!held) {
+        const holder = f.enemies.find(e => f.tokens.holds(e.id));
+        if (holder) { assert.equal(f.beginExecution(holder), true); held = holder; assert.equal(f.tokens.holds(holder.id), false, 'token released'); assert.equal(holder.state, 'executed'); }
+      } else if (f.now < 19) {
+        shotsWhileHeld += ev.filter(e => e.type === 'enemyShot' && e.id === held.id).length;
+        assert.equal(held.state, 'executed', 'it holds');
+        assert.equal(f.tokens.holds(held.id), false);
+      }
+    },
+  });
+  assert.ok(held, 'a Rep held a token');
+  assert.equal(shotsWhileHeld, 0);
+  assert.equal(held.point, null);
+  assert.equal(r.f.finishExecution(held), 'kill');
+  const ev = go(r, 0.05);
+  const death = ev.find(e => e.type === 'death' && e.id === held.id);
+  assert.equal(death.kind, 'execute');
+  assert.equal(held.alive, false);
+  assert.equal(r.f.finishExecution(held), null, 'nothing held any more');
+  // Release -> flinch, then it seeks again.
+  const r2 = sim(3, { at: 'open', seed: 1, tune: quiet });
+  const e = r2.f.enemies[2];
+  assert.equal(r2.f.beginExecution(e), true);
+  assert.equal(r2.f.beginExecution(e), false, 'already held');
+  go(r2, 1); assert.equal(e.state, 'executed');
+  r2.f.releaseExecution(e);
+  assert.equal(e.state, 'flinch');
+  go(r2, 0.4); assert.ok(['run', 'cover'].includes(e.state), e.state);
+  // A downed Rep released lies down again.
+  const d = r2.f.enemies[3]; r2.f.downRep(d);
+  assert.equal(r2.f.beginExecution(d), true); r2.f.releaseExecution(d);
+  assert.equal(d.state, 'downed');
+  // Refusals: a dead, an unused and a diving Rep.
+  const dead = r2.f.enemies[0]; r2.f.hurt(dead, 1000, 'head');
+  assert.equal(r2.f.beginExecution(dead), false);
+  assert.equal(r2.f.beginExecution(r2.f.enemies[7]), false);
+  const div = r2.f.enemies[1]; div.state = 'dive';
+  assert.equal(r2.f.beginExecution(div), false);
+  // A downed Rep with a helper kneeling to it, being executed: the helper is cancelled.
+  const r3 = sim(3, { at: 'open', seed: 1, tune: quiet });
+  const t3 = r3.f.enemies[0]; r3.f.downRep(t3); go(r3, 0.1);
+  const helper = r3.f.enemies.find(x => x.role === 'revive');
+  assert.ok(helper);
+  r3.f.beginExecution(t3); go(r3, 0.1);
+  assert.equal(helper.role, 'hold'); assert.equal(t3.helper, null);
+});
+
+test('bash: f.bash on a standing Rep deals 30 and staggers; on a downed Rep kills', () => {
+  const r = sim(3, { at: 'open', seed: 1, tune: quiet });
+  const { f } = r, a = f.enemies[0], b = f.enemies[1];
+  assert.equal(f.bash(a), 'hit');
+  assert.equal(a.health, 70); assert.equal(a.state, 'stagger');
+  go(r, 0.85); assert.equal(a.state, 'stagger');
+  go(r, 0.15); assert.notEqual(a.state, 'stagger');
+  f.downRep(b);
+  assert.equal(f.bash(b), 'kill');
+  assert.equal(b.alive, false);
+  assert.equal(f.bash(b), null, 'nothing left to bash');
+  assert.equal(f.bash(f.enemies[7]), null, 'an empty slot');
+  const ev = go(r, 0.05);
+  assert.equal(ev.find(e => e.type === 'death' && e.id === b.id).kind, 'bash');
+  // A bash that would kill a standing Rep kills it (never downs).
+  const c = f.enemies[2]; c.health = 20;
+  assert.equal(f.bash(c), 'kill');
+});
+
+test('tokens with the sauna open: over 120 s (godMode, player popped at kioskLeft) at most 2 Reps in telegraph or burst at any step', () => {
+  let peak = 0, peakAlive = 0;
+  const r = sim(120, {
+    at: 'kioskLeft', seed: 3, god: true, intent: tuck(true),
+    each: (i, m, f) => {
+      const n = f.enemies.filter(e => LOUD.has(e.state)).length;
+      peak = Math.max(peak, n);
+      peakAlive = Math.max(peakAlive, alive(f).length);
+      assert.ok(n <= 2 && f.tokens.held().length <= 2, `t ${f.now.toFixed(2)}: ${n}`);
+    },
+  });
+  assert.ok(['open', 'spent'].includes(r.f.pads[0].state), 'the sauna opened');
+  assert.ok(r.f.pads[0].spawned >= 2 && peakAlive >= 6, `spawned ${r.f.pads[0].spawned}, peak alive ${peakAlive}`);
+  assert.ok(peak >= 1);
+});
+
+test('no two characters overlap after any step with 6 Reps alive and spawns arriving; a shoved tucked Rep re-snaps to its point', () => {
+  let worst = Infinity, most = 0, docMoved = 0;
+  const r = sim(60, {
+    at: 'kioskLeft', seed: 4, god: true, intent: tuck(true),
+    each: (i, m, f) => {
+      if (i === 60 * 3 || i === 60 * 4) f.spawnRep();
+      const live = alive(f); most = Math.max(most, live.length);
+      for (let a = 0; a < live.length; a++) for (let b = a + 1; b < live.length; b++) worst = Math.min(worst, Math.hypot(live[a].pos[0] - live[b].pos[0], live[a].pos[2] - live[b].pos[2]));
+      for (const e of live) docMoved = Math.min(docMoved, Math.hypot(e.pos[0] - m.pos[0], e.pos[2] - m.pos[2]) - (rad + TUNING.move.radius));
+    },
+  });
+  assert.ok(most >= 6, `${most} alive`);
+  assert.ok(worst >= 2 * rad - 0.05, `closest ${worst}`);
+  assert.ok(docMoved >= -0.05, `nobody inside Doc's radius: ${docMoved}`);
+  // Re-snap: a tucked Rep shoved 0.6 m off its point is back on it after one step.
+  const q = sim(3, { at: 'open', seed: 1, tune: quiet });
+  const e = q.f.enemies[0];
+  assert.equal(e.state, 'cover');
+  const home = [e.point.pos[0], e.point.pos[1]];
+  e.pos[0] += 0.6; e.pos[2] += 0.2;
+  go(q, 1 / 60);
+  assert.ok(Math.hypot(e.pos[0] - home[0], e.pos[2] - home[1]) < 0.05, 'snapped back');
+  assert.equal(e.state, 'cover');
+  // Not when another Rep stands on the point: it seeks instead.
+  const w = q.f.enemies[1];
+  w.pos[0] = e.point.pos[0] + 0.3; w.pos[2] = e.point.pos[1];
+  e.pos[0] += 0.7;
+  go(q, 1 / 60);
+  assert.ok(['seek', 'run', 'cover'].includes(e.state));
+  assert.ok(Math.hypot(e.pos[0] - w.pos[0], e.pos[2] - w.pos[2]) >= 2 * rad - 0.06, 'no overlap');
+});
+
+test('shooting an idle Rep before the trigger starts the fight with the lockdown bark (m4 Minor 10)', () => {
+  const r = sim(0.2, { at: 'start' });
+  assert.equal(r.f.started, false);
+  assert.equal(r.f.hurt(r.f.enemies[0], 5, 'body'), 'hit');
+  assert.equal(r.f.started, true);
+  const ev = go(r, 0.05);
+  assert.equal(ev.filter(e => e.type === 'bark' && e.key === 'lockdown').length, 1);
+  assert.equal(r.f.enemies[0].health, 95);
+  // Only once: the trigger line later does not bark again.
+  const more = go(r, 1);
+  assert.equal(more.filter(e => e.type === 'bark' && e.key === 'lockdown').length, 0);
+  // A hit on an empty slot starts nothing.
+  const q = sim(0.1, { at: 'start' });
+  assert.equal(q.f.hurt(q.f.enemies[6], 5, 'body'), null);
+  assert.equal(q.f.started, false);
+});
+
+test('reset mid-execution, mid-flight, mid-clone-revive and mid-spawn: 4 Reps at starts idle, 4 unused, sauna dormant, no balls, kills 0, no helpers', () => {
+  const check = (f, label) => {
+    base4(f).forEach((e, i) => {
+      assert.deepEqual([e.alive, e.state, e.role, e.health, e.helper, e.helping, e.claimed], [true, 'idle', 'hold', TUNING.associate.health, null, null, false], `${label} ${e.id}`);
+      assert.deepEqual(e.pos, R.associates[i].pos);
+      assert.ok(e.point);
+    });
+    f.enemies.slice(4).forEach(e => assert.deepEqual([e.alive, e.state, e.helper, e.claimed], [false, 'unused', null, false], label));
+    assert.deepEqual([f.pads[0].state, f.pads[0].spawned, f.pads[0].alive], ['dormant', 0, 0], label);
+    assert.equal(f.grenades.live.length, 0, label); assert.equal(f.kills, 0, label);
+    assert.deepEqual(f.tokens.held(), []); assert.equal(f.started, false); assert.equal(f.clear, false);
+  };
+  // Mid-execution.
+  let r = sim(2, { at: 'open', seed: 1, tune: quiet });
+  r.f.beginExecution(r.f.enemies[0]); go(r, 0.2); r.f.reset(); check(r.f, 'execution');
+  // Mid-flight.
+  r = sim(2, { at: 'open', seed: 1, tune: quiet });
+  r.f.throwGrenade([0, 1.5, 0], [3, 2, 3]); go(r, 0.3); assert.equal(r.f.grenades.live.length, 1);
+  r.f.reset(); check(r.f, 'flight');
+  const quietAfter = go(r, 3); assert.ok(!quietAfter.some(e => e.type === 'explode'), 'the ball never explodes after a reset');
+  // Mid-clone-revive.
+  r = sim(2, { at: 'open', seed: 1, tune: quiet });
+  r.f.downRep(r.f.enemies[0]); go(r, 0.5); assert.ok(r.f.enemies.some(e => e.role === 'revive'));
+  r.f.reset(); check(r.f, 'revive');
+  // Mid-spawn (and with the sauna open and a Rep still rising).
+  r = sim(2, { at: 'open', seed: 1, tune: quiet });
+  r.f.hurt(r.f.enemies[0], 1000, 'head'); r.f.hurt(r.f.enemies[1], 1000, 'head');
+  go(r, 5.3); assert.ok(r.f.pads[0].spawned >= 1 && r.f.enemies.some(e => e.alive && e.state === 'spawn'), 'a spawn arrived and is rising');
+  r.f.reset(); check(r.f, 'spawn');
+  // And the fight plays again after the reset.
+  const again = go(r, 2); assert.equal(r.f.kills, 0);
+  assert.ok(r.f.enemies.slice(0, 4).every(e => e.alive));
+  assert.ok(again.every(e => e.type !== 'padOpen'));
+});
+
+test('determinism: the same seed gives the same log with kettlebells and the sauna; dt 0 and dt 5 stay finite', () => {
+  const run = (seed) => {
+    let tun = null;
+    const r = sim(40, {
+      at: 'kioskLeft', seed, god: true, intent: tuck(true), tune: t => { tun = t; },
+      each: (i, m, f) => {
+        if (i === 120) f.throwGrenade([-4, 1.5, -9], [2, 3, 8]);
+        if (i === 900) f.downRep(f.enemies[1]);
+      },
+    });
+    return JSON.stringify(r.log.map(e => [e.t, e.type, e.id, e.key, e.amount, e.kind, e.enemyId, e.pos && e.pos.map(v => +v.toFixed(4))]));
+  };
+  const a = run(7);
+  assert.equal(a, run(7));
+  assert.notEqual(a, run(8));
+  assert.ok(a.includes('"padSpawn"') && a.includes('"explode"'), 'the sauna and the kettlebell both appear in the log');
+  const r = sim(30, { at: 'kioskLeft', seed: 1, god: true, intent: tuck(true) });
+  r.f.throwGrenade([0, 1, 0], [1, 1, 1]);
+  for (const dt of [0, 5, 0, 5, NaN, -1]) {
+    r.f.step(dt, { m: r.m, health: r.health });
+    for (const e of r.f.enemies) assert.ok(e.pos.every(Number.isFinite) && Number.isFinite(e.health), `dt ${dt}`);
   }
 });

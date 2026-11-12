@@ -5,7 +5,7 @@ import { makeBox, pointInBoxes } from '../src/world/collide.js';
 import { TUNING } from '../src/tuning.js';
 import { deriveCoverEdges, edgeOptions } from '../src/world/cover.js';
 import { buildGraph, findPath } from '../src/world/waypoints.js';
-import { lineOfSight, popPos } from '../src/world/coverPoints.js';
+import { lineOfSight, popPos, coverPoints } from '../src/world/coverPoints.js';
 
 const solid = R.boxes.filter(b => b.kind !== 'floor');
 const edges = deriveCoverEdges(R.boxes, { ...edgeOptions(), exclude: R.coverExclude });
@@ -112,4 +112,27 @@ test('the wall signs are the front desk, the cancellations arrow and two posters
   assert.equal(R.landmark.text, 'FRONT DESK');
   assert.deepEqual(R.signs.map(s => s.text), ['CANCELLATIONS: TOP FLOOR →', 'NEW YEAR, NEW YOU (FOREVER)', 'WHERE QUITTING IS NOT AN OPTION']);
   for (const s of R.signs) assert.ok(Math.abs(s.pos[0]) <= 7 && Math.abs(s.pos[2]) <= 15 && s.pos[1] + s.h / 2 <= 4);
+});
+
+test('the sauna and Tobble start are clear of every box; the sauna has a waypoint within linkMax and every cover point is reachable from it', () => {
+  assert.deepEqual(R.pads, [{ id: 'sauna1', pos: [4.6, 0, 13.4], spawns: 'associate' }]);
+  assert.deepEqual(R.tobble, { pos: [1.4, 0, -13.8], yaw: 0 });
+  const clear = (p, r) => solid.every(b => {
+    const cx = Math.max(b.min[0], Math.min(p[0], b.max[0])), cz = Math.max(b.min[2], Math.min(p[2], b.max[2]));
+    return Math.hypot(p[0] - cx, p[2] - cz) >= r;
+  });
+  const inRoom = (p, r) => Math.abs(p[0]) <= 7 - r && Math.abs(p[2]) <= 15 - r;
+  const sauna = R.pads[0].pos, tobble = R.tobble.pos;
+  assert.ok(clear(sauna, TUNING.pad.radius) && inRoom(sauna, TUNING.pad.radius), 'the whole sauna disc is on the floor, off every box');
+  assert.ok(clear(tobble, TUNING.associate.radius) && inRoom(tobble, TUNING.associate.radius));
+  assert.ok(!pointInBoxes(R.boxes.filter(b => b.kind !== 'floor'), tobble, 0.35));
+  const A = TUNING.associate;
+  const near = R.waypoints.filter(w => Math.hypot(w[0] - sauna[0], w[1] - sauna[2]) <= A.linkMax);
+  assert.ok(near.length >= 1, 'a waypoint within linkMax');
+  assert.ok(near.some(w => Math.hypot(w[0] - sauna[0], w[1] - sauna[2]) < 1.5), 'the [3.5, 13.5] point is its link');
+  const graph = buildGraph(R.waypoints, R.boxes, { radius: A.radius, linkMax: A.linkMax });
+  const points = coverPoints(edges, { spacing: A.pointSpacing, cornerZone: TUNING.cover.cornerZone });
+  assert.ok(points.length > 20);
+  const unreachable = points.filter(p => !findPath(graph, R.boxes, [sauna[0], sauna[2]], p.pos, A.radius));
+  assert.deepEqual(unreachable.map(p => p.index), [], 'every cover point is reachable from the sauna');
 });

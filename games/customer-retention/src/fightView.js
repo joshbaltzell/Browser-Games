@@ -64,7 +64,7 @@ export function createFightView({ scene, effects, sfx, fight, views }) {
   function handle(events, listener) {
     const fb = TUNING.feedback, A = TUNING.associate;
     for (const ev of events) {
-      if (ev.type === 'bark') barkLine.say(ev.key, false);
+      if (ev.type === 'bark') barkLine.say(ev.key, !!ev.force);
       else if (ev.type === 'telegraph') {
         glints.set(ev.id, A.popTime + A.telegraphTime);
         const v = byId.get(ev.id), e = enemyById.get(ev.id);

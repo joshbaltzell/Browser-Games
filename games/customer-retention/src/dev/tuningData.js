@@ -1,7 +1,7 @@
 import { TUNING } from '../tuning.js';
 
 // The tunable numbers: every number in TUNING.move (but radius and height),
-// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.health, TUNING.melee, TUNING.grenade, TUNING.associate, TUNING.director, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
+// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.health, TUNING.melee, TUNING.grenade, TUNING.pad, TUNING.associate, TUNING.director, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
 // Pure data and helpers; no DOM.
 
 const n = (path, min, max, step) => ({ path, min, max, step });
@@ -86,7 +86,10 @@ export const PANEL = Object.freeze([
   n('associate.coverWaitMin', 0, 5, 0.1), n('associate.coverWaitMax', 0, 8, 0.1), n('associate.magBursts', 1, 10, 1), n('associate.reloadTime', 0, 6, 0.1), n('associate.flinchTime', 0, 2, 0.01),
   n('associate.minRange', 0, 20, 0.5), n('associate.preferRange', 0, 40, 0.5), n('associate.maxRange', 1, 60, 0.5), n('associate.relocateCheck', 0.05, 3, 0.05), n('associate.relocateAfter', 1, 60, 0.5), n('associate.ammoDrop', 0, 200, 1), n('associate.muzzleUp', 0.5, 2, 0.01),
   n('director.tokens', 0, 8, 1), n('director.casualTokens', 0, 8, 1), n('director.casual', 0, 1, 1), n('director.tokenCooldown', 0, 5, 0.1), n('director.tokenMaxHold', 0.5, 10, 0.1), n('director.requestWindow', 0, 2, 0.05),
-  n('director.pushAfter', 1, 30, 0.5), n('director.flankAfter', 1, 60, 0.5), n('director.stayRadius', 0.5, 10, 0.1), n('director.flankAngle', 0, 180, 1), n('director.flankMaxAngle', 60, 180, 1),
+  n('director.pushAfter', 1, 30, 0.5), n('director.flankAfter', 1, 60, 0.5), n('director.stayRadius', 0.5, 10, 0.1), n('director.flankAngle', 0, 180, 1), n('director.flankMaxAngle', 60, 180, 1), n('director.maxEnemies', 4, 8, 1),
+  n('associate.downChance', 0, 1, 0.05), n('associate.downedCrawl', 0, 3, 0.05), n('associate.bleedTime', 1, 60, 0.5), n('associate.reviveTime', 0, 10, 0.1), n('associate.reviveHealth', 0.05, 1, 0.05), n('associate.reviveRange', 0, 40, 0.5),
+  n('associate.staggerTime', 0, 3, 0.05), n('associate.diveWarn', 0, 1.6, 0.05), n('associate.diveRadius', 0, 12, 0.1), n('associate.diveChance', 0, 1, 0.05), n('associate.diveReaction', 0, 2, 0.05), n('associate.diveDistance', 0, 10, 0.1), n('associate.diveTime', 0.05, 3, 0.05),
+  n('pad.radius', 0.1, 4, 0.05), n('pad.openAfterKills', 0, 8, 1), n('pad.openAfter', 0, 120, 1), n('pad.interval', 0.5, 30, 0.5), n('pad.maxAlive', 1, 8, 1), n('pad.total', 1, 30, 1), n('pad.riseTime', 0, 3, 0.05),
   n('dummy.health', 1, 1000, 1), n('dummy.respawnTime', 0, 30, 0.5), n('dummy.railSpeed', 0, 10, 0.1),
   n('camera.recoil.halfLife', 0.01, 0.5, 0.01), n('camera.recoil.max', 0, 20, 0.5), n('look.pad.assist', 0.1, 1, 0.05),
   n('feedback.flashTime', 0.01, 0.3, 0.01), n('feedback.flashSize', 0.05, 1.5, 0.05), n('feedback.tracerTime', 0.01, 0.3, 0.01), n('feedback.tracerWidth', 0.005, 0.2, 0.005),
@@ -177,5 +180,5 @@ function text(v, indent) {
 
 // The move, camera, look, cover, weapons, combat, health, associate, director, dummy and feedback blocks as object-literal text to paste into src/tuning.js.
 export function formatForTuningFile(current = TUNING) {
-  return ['associate', 'camera', 'combat', 'cover', 'director', 'dummy', 'feedback', 'grenade', 'health', 'look', 'melee', 'move', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
+  return ['associate', 'camera', 'combat', 'cover', 'director', 'dummy', 'feedback', 'grenade', 'health', 'look', 'melee', 'move', 'pad', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
 }

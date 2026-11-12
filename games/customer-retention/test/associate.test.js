@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAssociate, updateAssociate, hurtAssociate, pickPoint, associateShapes } from '../src/actors/associateBrain.js';
+import { createAssociate, updateAssociate, hurtAssociate, pickPoint, associateShapes, downAssociate, staggerAssociate, diveAssociate, spawnAssociate } from '../src/actors/associateBrain.js';
 import { createTokens } from '../src/director/tokens.js';
 import { coverPoints } from '../src/world/coverPoints.js';
 import { buildGraph, findPath } from '../src/world/waypoints.js';
@@ -168,4 +168,176 @@ test('run: reaches a point across the arena around K3 without entering a box; st
   assert.ok(s.stuckCount >= 3);
   assert.equal(s.path.length, 1, 'straight run to the nearest point');
   assert.ok(s.pos.every(Number.isFinite));
+});
+
+// ---- Milestone 5 reactions ----
+const DT = 1 / 60;
+const tunedCtx = (edit, over = {}) => { const t = structuredClone(TUNING); edit(t); return makeCtx({ ...over, ctx: { tuning: t, director: t.director, ...(over.ctx || {}) } }); };
+const inSolid = (p) => solid.some(b => {
+  const cx = Math.max(b.min[0], Math.min(p[0], b.max[0])), cz = Math.max(b.min[2], Math.min(p[2], b.max[2]));
+  return b.max[1] >= 0.05 && Math.hypot(p[0] - cx, p[2] - cz) < A.radius - 0.02;
+});
+
+test('down rule: with downChance 1 a killing body hit returns down (alive, health 1, token and point freed, down event); head, bash, blast, execute never down', () => {
+  const ctx = tunedCtx(t => { t.associate.downChance = 1; });
+  const e = placed(ctx, 'a1', -4.3, 4.88);
+  ctx.tokens.request('a1', 0, 2, TUNING.director); e.state = 'telegraph';
+  assert.equal(ctx.tokens.holds('a1'), true);
+  assert.equal(hurtAssociate(e, 1000, ctx, 'body'), 'down');
+  assert.equal(e.alive, true); assert.equal(e.health, 1); assert.equal(e.state, 'downed');
+  assert.equal(ctx.tokens.holds('a1'), false, 'token freed');
+  assert.equal(ctx.reserved.size, 0, 'point freed'); assert.equal(e.point, null);
+  const down = ctx.events.find(v => v.type === 'down');
+  assert.deepEqual([down.id, down.pos], ['a1', [e.pos[0], e.pos[1], e.pos[2]]]);
+  assert.ok(ctx.events.some(v => v.type === 'bark' && v.key === 'cloneDown'));
+  assert.ok(!ctx.events.some(v => v.type === 'death'));
+  // Any Tobble shot downs a killing hit too.
+  const t = placed(tunedCtx(x => { x.associate.downChance = 1; }), 'b1', 2.7, 4.88);
+  assert.equal(hurtAssociate(t, 1000, tunedCtx(x => { x.associate.downChance = 1; }), 'tobble'), 'down');
+  // Everything else kills.
+  for (const kind of ['head', 'bash', 'blast', 'execute']) {
+    const c = tunedCtx(x => { x.associate.downChance = 1; });
+    const k = placed(c, 'k', -4.3, 4.88);
+    assert.equal(hurtAssociate(k, 1000, c, kind), 'kill', kind);
+    assert.equal(k.alive, false);
+    assert.equal(c.events.find(v => v.type === 'death').kind, kind, 'death carries its kind');
+  }
+  // downChance 0 never downs, and a non-killing hit never rolls.
+  const c0 = tunedCtx(x => { x.associate.downChance = 0; });
+  assert.equal(hurtAssociate(placed(c0, 'z', -4.3, 4.88), 1000, c0, 'body'), 'kill');
+  let draws = 0; const c1 = tunedCtx(x => { x.associate.downChance = 1; }, { ctx: { rand: () => { draws++; return 0; } } });
+  assert.equal(hurtAssociate(placed(c1, 'y', -4.3, 4.88), 10, c1, 'body'), 'hit');
+  assert.equal(draws, 0);
+});
+
+test('a downed Rep crawls <= 0.8 m/s away from the player when alone, never into a box, and bleeds out at 15 s with death kind bleed', () => {
+  const ctx = makeCtx({ pos: [0, 0, -4] });
+  const e = createAssociate({ id: 'd', pos: [-0.6, 0, 8] });
+  ctx.others = [e];
+  assert.equal(downAssociate(e, ctx), 'down');
+  const d0 = Math.hypot(e.pos[0] - ctx.player.pos[0], e.pos[2] - ctx.player.pos[2]);
+  let top = 0, t = 0, deadAt = -1;
+  for (let i = 0; i < 60 * 16 && deadAt < 0; i++) {
+    const before = [e.pos[0], e.pos[2]];
+    updateAssociate(e, ctx, DT); t += DT;
+    top = Math.max(top, Math.hypot(e.pos[0] - before[0], e.pos[2] - before[1]) / DT);
+    assert.ok(!inSolid(e.pos), `step ${i}: inside a box`);
+    if (!e.alive) deadAt = t;
+  }
+  assert.ok(top <= TUNING.associate.downedCrawl + 1e-6 && top > 0.3, `top speed ${top}`);
+  assert.ok(Math.hypot(e.pos[0] - ctx.player.pos[0], e.pos[2] - ctx.player.pos[2]) > d0, 'it crawled away');
+  assert.ok(deadAt >= 14.95 && deadAt <= 15.05, `bled out at ${deadAt}`);
+  assert.equal(ctx.events.find(v => v.type === 'death').kind, 'bleed');
+  assert.equal(e.state, 'dead');
+  // With company (a calm Rep) it crawls toward it and stops beside it; with a helper kneeling it lies still.
+  const c2 = makeCtx({ pos: [0, 0, -4] });
+  const friend = placed(c2, 'f', -4.3, 4.88); friend.state = 'cover';
+  const d = createAssociate({ id: 'd2', pos: [-4.3, 0, 8] });
+  c2.others = [d, friend]; downAssociate(d, c2);
+  for (let i = 0; i < 60 * 8; i++) updateAssociate(d, c2, DT);
+  assert.ok(Math.hypot(d.pos[0] - friend.pos[0], d.pos[2] - friend.pos[2]) < 1.3, 'it reached company');
+  const still = d.pos.slice(); d.helper = 'f';
+  for (let i = 0; i < 30; i++) updateAssociate(d, c2, DT);
+  assert.deepEqual(d.pos, still);
+});
+
+test('any hit on a downed Rep kills it', () => {
+  const ctx = tunedCtx(t => { t.associate.downChance = 1; });
+  const e = placed(ctx, 'a1', -4.3, 4.88);
+  hurtAssociate(e, 1000, ctx, 'body');
+  assert.equal(e.state, 'downed');
+  assert.equal(hurtAssociate(e, 0.001, ctx, 'body'), 'kill');
+  assert.equal(e.alive, false);
+  assert.equal(ctx.events.filter(v => v.type === 'death').at(-1).kind, 'body');
+  const d = createAssociate({ id: 'd', pos: [0, 0, 0] }); downAssociate(d, ctx);
+  assert.equal(downAssociate(d, ctx), null, 'already down');
+  assert.equal(hurtAssociate(d, 5, ctx, 'bash'), 'kill');
+});
+
+test('stagger: staggerTime 0.9 s, standing shapes, token released, no enemyShot, then cover or seek', () => {
+  const ctx = makeCtx();
+  const e = placed(ctx, 'a1', -4.3, 4.88);
+  e.state = 'cover'; e.wait = 0; e.stateT = 0;
+  let shots = 0;
+  for (let i = 0; i < 400 && e.state !== 'burst'; i++) updateAssociate(e, ctx, DT);   // let it take a token and shoot
+  assert.equal(e.state, 'burst');
+  assert.equal(ctx.tokens.holds('a1'), true);
+  ctx.events.length = 0;
+  assert.equal(staggerAssociate(e, ctx), true);
+  assert.equal(e.state, 'stagger'); assert.equal(ctx.tokens.holds('a1'), false);
+  let t = 0;
+  while (t < 0.85) { updateAssociate(e, ctx, DT); t += DT; shots += ctx.events.filter(v => v.type === 'enemyShot').length; ctx.events.length = 0; }
+  assert.equal(e.state, 'stagger', 'still staggering before 0.9 s');
+  associateShapes(e);
+  assert.equal(e.shapes.body.b[1], HIT_SHAPES.body.by, 'standing shapes');
+  assert.equal(e.shapes.head.c[1], HIT_SHAPES.head.cy);
+  while (t < 0.95) { updateAssociate(e, ctx, DT); t += DT; }
+  assert.ok(['cover', 'run'].includes(e.state), `then ${e.state}`);
+  assert.equal(shots, 0, 'no enemyShot while staggered');
+  for (const s of ['dead', 'executed', 'unused', 'downed']) { const x = placed(makeCtx(), 'x', 2.7, 4.88); x.state = s; if (s === 'dead') x.alive = false; assert.equal(staggerAssociate(x, makeCtx()), false, s); }
+});
+
+test('dive: from a kettlebell 2 m away, after 0.25 s the Rep moves >= 2 m away within 0.6 s, ends outside every box, then seeks with mustMove', () => {
+  const ctx = makeCtx({ pos: [0, 0, -10] });
+  const e = createAssociate({ id: 'v', pos: [0, 0, 0] });
+  e.state = 'cover'; ctx.others = [e];
+  const from = [2, 0.12, 0], start = e.pos.slice();
+  assert.equal(diveAssociate(e, from, ctx), true);
+  assert.equal(e.state, 'dive');
+  let t = 0;
+  while (t < 0.24) { updateAssociate(e, ctx, DT); t += DT; }
+  assert.deepEqual(e.pos, start, 'the reaction delay: no movement yet');
+  let seeking = false;
+  const seek = e.mustMove;
+  assert.equal(seek, false);
+  while (t < 0.25 + 0.6 + 0.02) {
+    updateAssociate(e, ctx, DT); t += DT;
+    assert.ok(!inSolid(e.pos));
+    if (e.state !== 'dive' && !seeking) { seeking = true; assert.ok(['run', 'cover'].includes(e.state), e.state); }
+  }
+  assert.ok(Math.hypot(e.pos[0] - start[0], e.pos[2] - start[2]) >= 2, 'moved >= 2 m');
+  assert.ok(Math.hypot(e.pos[0] - from[0], e.pos[2] - from[2]) >= 4.5, 'and the dive went away from the kettlebell');
+  assert.equal(seeking, true, 'then it seeks');
+  // mustMove: the point it picks is not the one it dived from, and it holds no token or old point while diving.
+  const c2 = makeCtx({ pos: [0, 0, -10] });
+  const f = placed(c2, 'f', -4.3, 4.88); f.state = 'cover'; c2.others = [f];
+  const old = f.point;
+  c2.tokens.request('f', 0, 2, TUNING.director);
+  diveAssociate(f, [-3.5, 0, 4.9], c2);
+  assert.equal(c2.tokens.holds('f'), false); assert.equal(c2.reserved.size, 0); assert.equal(f.point, null);
+  for (let i = 0; i < 60 * 1.0; i++) updateAssociate(f, c2, DT);
+  assert.ok(f.point && f.point.index !== old.index, 'a new point');
+  assert.equal(diveAssociate(f, [0, 0, 0], c2) && f.state === 'dive', true);
+  assert.equal(diveAssociate(f, [0, 0, 0], c2), false, 'already diving');
+});
+
+test('spawn: a slot spawned at the sauna rises for 0.8 s with standing shapes and then seeks', () => {
+  const ctx = makeCtx({ pos: [0, 0, -10] });
+  const e = createAssociate({ id: 'r5', pos: [0, 0, 0] });
+  e.alive = false; e.state = 'unused'; ctx.others = [e];
+  const pad = R.pads[0].pos;
+  spawnAssociate(e, pad, ctx);
+  assert.deepEqual(e.pos, pad);
+  assert.equal(e.state, 'spawn'); assert.equal(e.alive, true); assert.equal(e.health, TUNING.associate.health);
+  associateShapes(e);
+  assert.equal(e.shapes.body.b[1], HIT_SHAPES.body.by, 'standing shapes while rising');
+  let t = 0;
+  while (t < 0.78) { updateAssociate(e, ctx, DT); t += DT; }
+  assert.equal(e.state, 'spawn');
+  while (t < 0.85) { updateAssociate(e, ctx, DT); t += DT; }
+  assert.notEqual(e.state, 'spawn');
+  assert.ok(['run', 'cover'].includes(e.state), e.state);
+});
+
+test('downed shapes: a capsule along the facing from 0.2 m behind to 0.6 m in front at y 0.25 (r 0.25) and a head at the front end', () => {
+  const ctx = makeCtx();
+  const e = createAssociate({ id: 'd', pos: [1, 0, 2] });
+  e.yaw = Math.PI / 2; ctx.others = [e];
+  downAssociate(e, ctx); associateShapes(e);
+  const s = e.shapes;
+  assert.deepEqual(s.body.a.map(v => +v.toFixed(6)), [0.8, 0.25, 2]);
+  assert.deepEqual(s.body.b.map(v => +v.toFixed(6)), [1.6, 0.25, 2]);
+  assert.equal(s.body.r, 0.25);
+  assert.deepEqual(s.head.c.map(v => +v.toFixed(6)), [1.6, 0.25, 2]);
+  assert.equal(s.head.r, HIT_SHAPES.head.r);
 });

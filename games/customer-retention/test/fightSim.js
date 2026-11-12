@@ -15,9 +15,9 @@ export const I = (o = {}) => ({ moveX: 0, moveY: 0, camYaw: 0, aim: false, sprin
 // Walk to the wall in front and take it: the first step taps forward, the rest idle (or pop with aim).
 export const tuck = (aim = false) => (i) => (i === 0 ? I({ moveY: -1, tap: true }) : I({ aim }));
 
-// Steps `seconds` of fight. `tune` edits a private clone of TUNING. `intent(i, m, f)` is called before each step and
+// Steps `seconds` of fight. `tune` edits a private clone of TUNING. `aim` ({ lens, dir, active } or a function (i, m, f) of it) goes to the fight's step. `intent(i, m, f)` is called before each step and
 // `each(i, m, f, health, events)` after it. The log holds every event with its time and the token holders before the step.
-export function sim(seconds, { at = 'open', seed = 1, god = false, intent = () => I(), tune, each } = {}) {
+export function sim(seconds, { at = 'open', seed = 1, god = false, intent = () => I(), tune, each, aim } = {}) {
   const tuning = structuredClone(TUNING);
   if (god) tuning.health.godMode = 1;
   if (tune) tune(tuning);
@@ -29,10 +29,10 @@ export function sim(seconds, { at = 'open', seed = 1, god = false, intent = () =
   for (let i = 0; i < n; i++) {
     m.update(intent(i, m, f), DT);
     const before = f.tokens.held();
-    const ev = f.step(DT, { m, health });
+    const ev = f.step(DT, { m, health, aim: typeof aim === 'function' ? aim(i, m, f) : aim });
     health.update(DT);
     for (const e of ev) log.push({ t: f.now, ...e, holders: before, states: null });
     if (each) each(i, m, f, health, ev);
   }
-  return { f, m, health, log, tuning };
+  return { f, m, health, log, tuning, grenades: f.grenades };
 }

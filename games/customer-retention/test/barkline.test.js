@@ -71,9 +71,9 @@ test('gatePlayerInput: downed blocks reload, weapon switch and fire; reloading o
   assert.equal(i.fire, true); assert.deepEqual(a, mkIn());
 });
 
-test('the bark pools: about a dozen lines in all, read in turn (no immediate repeat), and no line sounds like a person being hurt', () => {
+test('the bark pools: about two dozen lines in all, read in turn (no immediate repeat), and no line sounds like a person being hurt', () => {
   const all = Object.values(BARKS).flat().map(l => (typeof l === 'string' ? l : l.text));
-  assert.ok(all.length >= 10 && all.length <= 16, `${all.length} lines`);
+  assert.ok(all.length >= 10 && all.length <= 24, `${all.length} lines`);
   const line = createBarkLine();
   const seen = [];
   for (let i = 0; i < 3; i++) { line.say('push', true); seen.push(line.current().text); }
@@ -81,4 +81,24 @@ test('the bark pools: about a dozen lines in all, read in turn (no immediate rep
   line.say('push', true);
   assert.equal(line.current().text, seen[0], 'the pool wraps');
   assert.ok(!all.some(t => /customer|ticket|associate|sir|ma'am/i.test(t)));
+});
+
+test('new Rep and PA keys: dive, cloneDown, cloneRevive, padOpen (PA), padClosed (PA), 1-3 lines each, no workplace words', () => {
+  const speakerOf = l => (typeof l === 'string' ? 'Rep' : l.speaker);
+  const textOf = l => (typeof l === 'string' ? l : l.text);
+  for (const [key, speaker] of [['dive', 'Rep'], ['cloneDown', 'Rep'], ['cloneRevive', 'Rep'], ['padOpen', 'PA'], ['padClosed', 'PA']]) {
+    const pool = BARKS[key];
+    assert.ok(pool && pool.length >= 1 && pool.length <= 3, `${key}: ${pool && pool.length} lines`);
+    for (const l of pool) {
+      assert.equal(speakerOf(l), speaker, key);
+      assert.ok(textOf(l).length > 0 && textOf(l).length < 80, key);
+      assert.ok(!/\b(office|work|worker|job|boss|manager|employee|colleague|meeting|salary|career|HR|payroll|staff|desk)\b/i.test(textOf(l)), `${key}: ${textOf(l)}`);
+    }
+    const line = createBarkLine();
+    assert.equal(line.say(key, true), true);
+    assert.equal(line.current().speaker, speaker);
+  }
+  assert.equal(BARKS.padOpen[0].text, 'The sauna is now a spawning pool. Please enjoy responsibly.');
+  assert.equal(BARKS.padClosed[0].text, 'The sauna is closed for cleaning. Forever.');
+  assert.deepEqual(BARKS.dive, ['Incoming weight!', 'Drop set! DROP SET!']);
 });

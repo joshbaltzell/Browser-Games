@@ -63,6 +63,11 @@ export const KIOSK_ROW = deepFreeze({
     { id: 'b1', pos: [2.7, 0, 4.88] },
     { id: 'b2', pos: [4.3, 0, 4.88] },
   ],
+  // The Spawn Sauna (the spec's Hiring Pad) behind the front desk in the north-east corner. It does not collide, and the
+  // existing [3.5, 13.5] waypoint is its link. `spawns` names the kind a sauna produces (milestone 7 adds more).
+  pads: [{ id: 'sauna1', pos: [4.6, 0, 13.4], spawns: 'associate' }],
+  // Tobble (Task 3) starts beside the player's spawn.
+  tobble: { pos: [1.4, 0, -13.8], yaw: 0 },
   waypoints,
   ammoCrates: [{ pos: [5.5, 0, -12.5] }],
   landmark: { pos: [0, 3, 14.7], text: 'FRONT DESK', w: 6, h: 1.2 },
