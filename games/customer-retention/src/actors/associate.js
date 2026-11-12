@@ -29,6 +29,41 @@ function deepFreeze(o) {
 
 const SHIRT = PALETTE.glorpPurple;
 
+// Every enemy kind's colourway, in one table (the alien recolour changes it here). The Rep is a purple polo and khakis; the Personal
+// Trainer a tank top and teal shorts, the same skin and hair.
+export const ENEMY_COLORS = deepFreeze({
+  associate: {
+    shirt: SHIRT,
+    collar: mix(SHIRT, PALETTE.ink, 0.25),
+    logo: PALETTE.gel,
+    pants: mix(PALETTE.planet, PALETTE.ink, 0.3),        // khakis
+    skin: PALETTE.daleSkin,
+    hair: PALETTE.daleHair,
+    shoe: mix(PALETTE.ink, SHIRT, 0.3),
+    sole: PALETTE.cream,
+    lanyard: PALETTE.hotPink,
+    badge: PALETTE.cream,
+    badgeStripe: PALETTE.teal,
+    headset: mix(PALETTE.ink, PALETTE.lilac, 0.25),
+    mic: PALETTE.hotPink,
+  },
+  trainer: {
+    shirt: PALETTE.planet,                                 // the tank top
+    collar: PALETTE.planet,
+    logo: PALETTE.gel,
+    pants: mix(PALETTE.teal, PALETTE.ink, 0.45),           // shorts
+    skin: PALETTE.daleSkin,
+    hair: PALETTE.daleHair,
+    shoe: PALETTE.cream,
+    sole: PALETTE.ink,
+    lanyard: PALETTE.hotPink,
+    badge: PALETTE.cream,
+    badgeStripe: PALETTE.teal,
+    headset: PALETTE.ink,
+    mic: PALETTE.hotPink,
+  },
+});
+
 export const ASSOCIATE = deepFreeze({
   name: 'associate',
 
@@ -66,25 +101,22 @@ export const ASSOCIATE = deepFreeze({
   hair: { thickness: 0.032, lift: 0.04, back: 0.05, quiff: true },
   hand: { radius: 0.07 },
   shoe: { length: 0.32, width: 0.17, height: 0.135 },
-  colors: {
-    shirt: SHIRT,
-    collar: mix(SHIRT, PALETTE.ink, 0.25),
-    logo: PALETTE.gel,
-    pants: mix(PALETTE.planet, PALETTE.ink, 0.3),        // khakis
-    skin: PALETTE.daleSkin,
-    hair: PALETTE.daleHair,
-    shoe: mix(PALETTE.ink, SHIRT, 0.3),
-    sole: PALETTE.cream,
-    lanyard: PALETTE.hotPink,
-    badge: PALETTE.cream,
-    badgeStripe: PALETTE.teal,
-    headset: mix(PALETTE.ink, PALETTE.lilac, 0.25),
-    mic: PALETTE.hotPink,
-  },
+  colors: ENEMY_COLORS.associate,
   outfit: { collar: true, lanyard: true, logo: true, headset: true },
   face: {
     eyeRadius: 0.072, eyeSpacing: 0.158, eyeY: 0.035, eyeZ: 0.204,
     mouthY: -0.105, mouthWidth: 0.15, mouthZ: 0.19,
     brow: 'pair', seed: 6, fixedSmile: 0.75,
   },
+});
+
+// The Personal Trainer: the Rep's rig in the trainer colourway, no polo, collar, lanyard or headset, and bare shoulders (the sleeve caps shrunk
+// away). The view scales it by TUNING.trainer.scaleW and scaleH.
+export const TRAINER = deepFreeze({
+  ...ASSOCIATE,
+  name: 'trainer',
+  colors: ENEMY_COLORS.trainer,
+  torso: { ...ASSOCIATE.torso, sleeve: 0.02 },
+  outfit: { collar: false, lanyard: false, logo: false, headset: false },
+  face: { ...ASSOCIATE.face, seed: 11 },
 });

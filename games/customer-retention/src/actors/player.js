@@ -31,6 +31,7 @@ export function pickClip(mover, tuning = mover.tuning || TUNING.move) {
   if (s === 'rev') return { name: 'aim', rate: 1 };
   if (s === 'execute') return { name: 'bash', rate: 1, loop: true };
   if (s === 'reviveTobble') return { name: 'revive', rate: 1 };
+  if (s === 'knocked') return { name: 'flinch', rate: 1 };
   // Crawling: the clip runs at crawl pace and holds when the player is still.
   if (s === 'downed') return { name: 'crawl', rate: clamp(v / Math.max(tuning.crawlSpeed, 1e-6), 0, 2) };
   if (s === 'roll') return { name: 'roll', rate: CLIPS.roll.duration / tuning.rollTime };

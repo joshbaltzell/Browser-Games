@@ -1,6 +1,6 @@
 // Smoothie Bar (the spec's second arena): a 40 x 36 m single-floor juice bar. The player spawns at the south end and fights toward +z.
 // A long blender bar splits the middle into a west and an east lane; Build-Your-Bowl counters and the Free Trial Counter sit in the north,
-// where the five Reps start and the Spawn Saunas open after the first three kills. The exit gate is in the north-west corner.
+// where the five Reps and the Trainer start and the Spawn Saunas open after the first three kills. The exit gate is in the north-west corner.
 // Pure data: no WebGL, no DOM.
 import { makeBox } from './collide.js';
 import { gridPoints } from './gridPoints.js';
@@ -68,16 +68,18 @@ export const SMOOTHIE_BAR = deepFreeze({
     flankWest: { pos: [-16, 0, 0], yaw: 0 },
     flankEast: { pos: [16, 0, 0], yaw: 0 },
   },
-  // Five Reps on the +z stand lines of the bowl counters (two each) and the fifth Rep's table.
+  // Five Reps on the +z stand lines of the bowl counters (two each) and the fifth Rep's table, and one Personal Trainer.
   associates: [
     { id: 'a1', pos: [-8.3, 0, 10.88] },
     { id: 'a2', pos: [-5.7, 0, 10.88] },
     { id: 'b1', pos: [5.7, 0, 10.88] },
     { id: 'b2', pos: [8.3, 0, 10.88] },
     { id: 'c1', pos: [0, 0, 12.18] },
+    // The Personal Trainer: no cover, it starts in the north lane's open floor and runs at Doc once the fight starts.
+    { id: 't1', kind: 'trainer', pos: [-12, 0, 6] },
   ],
   // The one Spawn Saunas in the north-east corner. It opens after the first three kills (TUNING.pad.openAfterKillsSmoothie).
-  pads: [{ id: 'sauna1', pos: [14.5, 0, 16.4], spawns: 'associate', openKey: 'openAfterKillsSmoothie' }],
+  pads: [{ id: 'sauna1', pos: [14.5, 0, 16.4], spawns: 'associate', openKey: 'openAfterKillsSmoothie', shareKey: 'trainerShareSmoothie' }],
   tobble: { pos: [1.6, 0, -16.5], yaw: 0 },
   waypoints,
   ammoCrates: [{ pos: [6.5, 0, -16.8] }, { pos: [-16.5, 0, 14.5] }],

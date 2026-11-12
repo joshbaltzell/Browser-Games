@@ -1,4 +1,4 @@
-// Doc's locked actions: bash, rev (Cheat Day), execute and reviveTobble. They plug into the movement
+// Doc's locked actions: bash, rev (Cheat Day), execute, reviveTobble and knocked (a Trainer's swing). They plug into the movement
 // machine's STATES. Logic only: no clock of their own and no DOM. They read TUNING.melee at every use.
 // Every one ends by its time (or, for rev and reviveTobble, by the button), and m.down() leaves any of them.
 import { TUNING } from '../tuning.js';
@@ -8,7 +8,7 @@ const wish = [0, 0], delta = [0, 0, 0];
 const EPS = 1e-9;
 const FALLBACK_REVIVE_TIME = 1.5; // TUNING.tobble.playerReviveTime arrives in Task 3
 
-export const ACTION_STATE_NAMES = ['bash', 'rev', 'execute', 'reviveTobble'];
+export const ACTION_STATE_NAMES = ['bash', 'rev', 'execute', 'reviveTobble', 'knocked'];
 export const reviveTimeOf = (tuning = TUNING) => tuning.tobble?.playerReviveTime ?? FALLBACK_REVIVE_TIME;
 
 // Turns m.facing to the point (x, z) at once, keeping the angle continuous.
@@ -20,6 +20,28 @@ function faceAt(m, x, z) {
 function still(m) { m.aiming = false; m.firing = false; m.vel[0] = m.vel[1] = m.vel[2] = 0; }
 
 export const ACTION_STATES = {
+  // A Personal Trainer's swing landed: thrown back along scratch.dir by TUNING.trainer.knockback, eased out over knockTime, locked (no shooting,
+  // cover, bash or roll) until it ends. m.knock() sets the direction and the time.
+  knocked: {
+    acceptsTap: false,
+    selfMoves: true,
+    enter(m) { still(m); m.cover = null; m.coverTarget = null; m.scratch.prevOff = 0; },
+    update(m, intent, dt) {
+      const sc = m.scratch;
+      m.aiming = false; m.firing = false;
+      const time = sc.time > 0 ? sc.time : 0;
+      const done = m.stateTime >= time - EPS;
+      const u = done || !(time > 0) ? 1 : m.stateTime / time;
+      const off = sc.dist * (1 - (1 - u) * (1 - u));
+      const inc = off - sc.prevOff; sc.prevOff = off;
+      delta[0] = sc.dir[0] * inc; delta[1] = 0; delta[2] = sc.dir[1] * inc;
+      m.moveBy(delta, dt, false);
+      if (!done) return null;
+      m.vel[0] = m.vel[1] = m.vel[2] = 0;
+      return 'move';
+    },
+    exit() {},
+  },
   // A short lunge along the facing it had on entry, eased out over bashTime. One bashHit at bashHitAt.
   bash: {
     acceptsTap: false,
@@ -118,6 +140,15 @@ export const ACTION_ENTRY = {
     m.go('execute', {});
     m.scratch.time = Number.isFinite(time) && time > 0 ? time : 0;
     faceAt(m, target[0], target[1]);
+    return true;
+  },
+  // Thrown back along (dx, dz) by dist metres over time seconds. Not while rolling, in an execution, kneeling to Tobble or already knocked.
+  knock(m, dx, dz, dist, time) {
+    if (m.state === 'roll' || m.state === 'execute' || m.state === 'reviveTobble' || m.state === 'knocked' || m.state === 'downed') return false;
+    const l = Math.hypot(dx, dz);
+    if (!(l > 1e-9)) return false;
+    m.go('knocked', {});
+    m.scratch.dir = [dx / l, dz / l]; m.scratch.dist = dist > 0 ? dist : 0; m.scratch.time = time;
     return true;
   },
   reviveTobble(m, pos) {

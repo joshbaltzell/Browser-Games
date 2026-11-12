@@ -378,13 +378,14 @@ export function startPlay({ canvas, gl, params }) {
   cr.gpu = () => { const i = renderer.info; return { geometries: i.memory.geometries, textures: i.memory.textures, programs: (i.programs || []).length, calls, tris }; };
   cr.fight = () => (fight ? {
     started: fight.started, clear: fight.clear, tokens: fight.tokens.held(), pickups: fv.count(), pickupPos: fv.pickups(),
-    enemies: fight.enemies.filter(e => e.state !== 'unused').map(e => ({ id: e.id, slot: fight.enemies.indexOf(e), kind: 'associate', state: e.state, health: e.health, alive: e.alive, pos: e.pos.slice(), holds: fight.tokens.holds(e.id), role: e.role, point: e.point ? e.point.index : null, pop: e.pop })),
+    enemies: fight.enemies.filter(e => e.state !== 'unused').map(e => ({ id: e.id, slot: fight.enemies.indexOf(e), kind: e.kind || 'associate', state: e.state, health: e.health, alive: e.alive, pos: e.pos.slice(), holds: fight.tokens.holds(e.id), role: e.role, point: e.point ? e.point.index : null, pop: e.pop })),
   } : { started: false, clear: false, tokens: [], pickups: 0, enemies: [] });
   cr.tobble = () => { const t = fight && fight.tobble; return t ? { state: t.state, hp: t.hp, downed: t.downed, pos: t.pos.slice(), point: t.point ? t.point.index : null } : null; };
   cr.pads = () => (fight ? fight.pads.map(p => ({ id: p.id, state: p.state, spawned: p.spawned, alive: p.alive })) : []);
   cr.grenades = () => ({ count: bag.count, live: fight ? fight.grenades.live.map(b => ({ pos: b.pos.slice(), fuse: b.fuse })) : [] });
   cr.aimThrow = (x, z) => (actions ? actions.aimThrow(x, z) : false);
   cr.hurtTobble = (n) => (fight ? fight.hurtTobble(n) : null);
+  cr.spawnTrainer = (pos) => { const e = fight && fight.spawnTrainer(pos); return e ? e.id : null; };
   cr.downRep = (id) => { const e = fight && fight.enemies.find(x => x.id === id); return !!e && fight.downRep(e); };
   cr.openPad = (id) => (fight ? fight.openPad(id) : false);
   cr.spawnRep = () => { const e = fight && fight.spawnRep(); return e ? e.id : null; };

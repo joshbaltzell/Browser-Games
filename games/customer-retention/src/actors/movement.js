@@ -160,6 +160,7 @@ export function createMovement({
     rev(on) { return ACTION_ENTRY.rev(m, on); },
     execute(target, time) { return ACTION_ENTRY.execute(m, target, time); },
     reviveTobble(pos) { return ACTION_ENTRY.reviveTobble(m, pos); },
+    knock(dx, dz, dist, time) { return ACTION_ENTRY.knock(m, dx, dz, dist, time); },
     revive() { if (m.state === 'downed') m.go('move', {}); },
     place(pos, yaw) {
       states[m.state].exit?.(m);

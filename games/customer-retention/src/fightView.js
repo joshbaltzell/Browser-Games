@@ -113,10 +113,12 @@ export function createFightView({ scene, effects, sfx, fight, views, cam = null,
       else if (ev.type === 'death') deathFx(ev, listener);
       else if (ev.type === 'checkpoint') { if (hooks.restart) hooks.restart(); }
       else if (ev.type === 'telegraph') {
-        glints.set(ev.id, A.popTime + A.telegraphTime);
+        glints.set(ev.id, ev.time !== undefined ? ev.time : A.popTime + A.telegraphTime);
         const v = byId.get(ev.id), e = enemyById.get(ev.id);
         if (v) v.glint(true);
         if (e) sfx.play('charge', fb.chargeVolume, pan(listener, e.pos));
+      } else if (ev.type === 'trainerSwing') {
+        sfx.play('bash', fb.bashVolume * near(listener, ev.from), pan(listener, ev.from));
       } else if (ev.type === 'shotFx') {
         const e = nearestEnemy(ev.from), v = e && byId.get(e.id);
         shotOrigin(ev, v ? v.tip : null, tip);

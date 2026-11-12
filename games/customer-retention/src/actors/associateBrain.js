@@ -7,6 +7,9 @@ import { findPath } from '../world/waypoints.js';
 import { coverValue, lineOfSight, popPos } from '../world/coverPoints.js';
 import { HIT_SHAPES } from '../combat/targets.js';
 import { turnToward } from './moveMath.js';
+import {
+  initTrainer, trainerShapes, updateTrainer, staggerTrainer, diveTrainer, executeTrainer, releaseTrainer, finishTrainer, hurtTrainer,
+} from './trainerBrain.js';
 
 const MAX_DT = 0.25;
 // States where a Rep cannot be hit, staggered or sent diving: held still (executed), an empty slot or a corpse.
@@ -19,7 +22,8 @@ const clamp01 = v => Math.max(0, Math.min(1, v));
 const dist2 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);       // [x, z] and [x, z]
 const distXZ = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);      // [x, y, z] and [x, y, z]
 
-export function resetAssociate(e, tuning = TUNING.associate) {
+// e.kind is 'associate' (a Rep) or 'trainer' (a Personal Trainer, trainerBrain.js): a slot is one of them for as long as it lives.
+export function resetAssociate(e, tuning = TUNING.associate, all = TUNING) {
   e.pos[0] = e.start[0]; e.pos[1] = e.start[1]; e.pos[2] = e.start[2];
   e.prevPos[0] = e.start[0]; e.prevPos[1] = e.start[1]; e.prevPos[2] = e.start[2];
   e.yaw = e.prevYaw = Math.PI;       // facing -z, toward where the player arrives
@@ -29,7 +33,8 @@ export function resetAssociate(e, tuning = TUNING.associate) {
   e.wait = 0; e.wantSuppress = null; e.shots = 0; e.relocT = 0; e.pointT = 0; e.mustMove = false;
   e.stuckT = 0; e.stuckRef[0] = e.start[0]; e.stuckRef[1] = e.start[2]; e.stuckCount = 0;
   e.helper = null; e.helping = null; e.target = 'player'; e.diveDir[0] = e.diveDir[1] = 0; e.divePoint = null; e.claimed = false; e.diedAt = -Infinity; e.wasDowned = false;
-  associateShapes(e);
+  e.kind = e.startKind; if (e.kind === 'trainer') initTrainer(e, all);
+  associateShapes(e, all.combat, all);
   return e;
 }
 
@@ -38,14 +43,14 @@ export function unuseAssociate(e) {
   e.alive = false; e.state = 'unused'; e.stateT = 0; e.health = 0;
   e.pos[1] = e.prevPos[1] = -50;
   e.point = null; e.path = []; e.pathI = 0; e.pop = 0; e.blind = 0; e.role = 'hold';
-  e.helper = null; e.helping = null; e.claimed = false; e.wasDowned = false;
+  e.helper = null; e.helping = null; e.claimed = false; e.wasDowned = false; e.kind = 'associate';
   associateShapes(e);
   return e;
 }
 
-// A slot comes alive at pos as a new Rep at full health, rising from the sauna in 'spawn'. It faces the player.
-export function spawnAssociate(e, pos, ctx) {
-  const T = (ctx.tuning || TUNING).associate;
+// A slot comes alive at pos as a new Rep (or, with kind 'trainer', a new Personal Trainer) at full health, rising from the sauna in 'spawn'. It faces the player.
+export function spawnAssociate(e, pos, ctx, kind = 'associate') {
+  const tun = ctx.tuning || TUNING, T = tun.associate;
   for (let i = 0; i < 3; i++) { e.pos[i] = pos[i]; e.prevPos[i] = pos[i]; }
   const pl = ctx.player;
   e.yaw = e.prevYaw = pl ? Math.atan2(pl.pos[0] - pos[0], pl.pos[2] - pos[2]) : Math.PI;
@@ -53,13 +58,14 @@ export function spawnAssociate(e, pos, ctx) {
   e.point = null; e.path = []; e.pathI = 0; e.pop = 0; e.blind = 0; e.role = 'hold'; e.bursts = 0;
   e.wait = 0; e.wantSuppress = null; e.shots = 0; e.relocT = 0; e.pointT = 0; e.mustMove = false;
   e.stuckT = 0; e.stuckCount = 0; e.helper = null; e.helping = null; e.target = 'player'; e.wasDowned = false; e.diedAt = -Infinity; e.divePoint = null;
-  associateShapes(e);
+  e.kind = kind; if (kind === 'trainer') initTrainer(e, tun);
+  associateShapes(e, tun.combat, tun);
   return e;
 }
 
-export function createAssociate({ id, pos }, tuning = TUNING.associate) {
+export function createAssociate({ id, pos, kind = 'associate' }, tuning = TUNING.associate, all = TUNING) {
   const e = {
-    id, start: [pos[0], pos[1], pos[2]], pos: [0, 0, 0], prevPos: [0, 0, 0], yaw: 0, prevYaw: 0,
+    id, kind, startKind: kind, strikeAt: -1, windupLen: 0, struckAt: -Infinity, retargetT: 0, repathT: 0, forcePathT: 0, start: [pos[0], pos[1], pos[2]], pos: [0, 0, 0], prevPos: [0, 0, 0], yaw: 0, prevYaw: 0,
     state: 'idle', stateT: 0, health: 0, alive: true, point: null, path: [], pathI: 0, pop: 0, blind: 0,
     role: 'hold', bursts: 0, aim: [0, 0, 0],
     shapes: { head: { c: [0, 0, 0], r: HIT_SHAPES.head.r }, body: { a: [0, 0, 0], b: [0, 0, 0], r: HIT_SHAPES.body.r } },
@@ -70,11 +76,12 @@ export function createAssociate({ id, pos }, tuning = TUNING.associate) {
     // whether a slot is claimed for a spawn, when it died and whether an execution interrupted a downed state.
     helper: null, helping: null, target: 'player', diveDir: [0, 0], divePoint: null, claimed: false, diedAt: -Infinity, wasDowned: false,
   };
-  return resetAssociate(e, tuning);
+  return resetAssociate(e, tuning, all);
 }
 
 // Crouch shapes when tucked behind low cover, standing shapes when popped or out of cover.
-export function associateShapes(e, combat = TUNING.combat) {
+export function associateShapes(e, combat = TUNING.combat, all = TUNING) {
+  if (e.kind === 'trainer') return trainerShapes(e, combat, all);
   const [x, y, z] = e.pos, s = e.shapes;
   if (e.state === 'downed') {
     // Lying down: a capsule along the facing from 0.2 m behind to 0.6 m in front (r 0.25, y 0.25) and the head at the front end.
@@ -470,6 +477,7 @@ function afterStagger(e, ctx, T) {
 }
 
 export function staggerAssociate(e, ctx) {
+  if (e.kind === 'trainer') return staggerTrainer(e);
   if (!e.alive || LOCKED.has(e.state) || e.state === 'downed') return false;
   if (e.role === 'revive') cancelRevive(e, ctx);
   releaseToken(e, ctx);
@@ -479,6 +487,7 @@ export function staggerAssociate(e, ctx) {
 
 // Starts a dive away from `from` ([x, ?, z]): a wait of diveReaction, then diveDistance in diveTime. It gives up token and point.
 export function diveAssociate(e, from, ctx) {
+  if (e.kind === 'trainer') return diveTrainer(e, from);
   if (!e.alive || LOCKED.has(e.state) || e.state === 'downed' || e.state === 'dive') return false;
   if (e.role === 'revive') cancelRevive(e, ctx);
   releaseToken(e, ctx);
@@ -510,6 +519,7 @@ function dive(e, ctx, T, dt) {
 
 // Doc's cutter or stomp takes hold of e: it freezes, shoots nothing and gives up token, point and helper (a revive on it is cancelled).
 export function executeAssociate(e, ctx) {
+  if (e.kind === 'trainer') return executeTrainer(e);
   if (!e.alive || LOCKED.has(e.state) || e.state === 'dive') return false;
   if (e.role === 'revive') cancelRevive(e, ctx);
   releaseToken(e, ctx);
@@ -523,6 +533,7 @@ export function executeAssociate(e, ctx) {
 
 // Lets go of an executed Rep (Doc was downed mid-execution): a Rep that was downed lies down again, any other flinches and then seeks.
 export function releaseExecuted(e) {
+  if (e.kind === 'trainer') return releaseTrainer(e);
   if (!e.alive || e.state !== 'executed') return false;
   go(e, e.wasDowned ? 'downed' : 'flinch');
   e.wasDowned = false;
@@ -531,6 +542,7 @@ export function releaseExecuted(e) {
 
 // The bite completes: an executed Rep dies (kind 'execute' from the cutter or the stomp). 'kill', or null when it was not held.
 export function finishAssociate(e, ctx, kind = 'execute') {
+  if (e.kind === 'trainer') return finishTrainer(e, ctx, kind);
   if (!e.alive || e.state !== 'executed') return null;
   e.health = 0;
   return kill(e, ctx, kind);
@@ -549,6 +561,7 @@ function kill(e, ctx, kind) {
 
 // The Rep goes down instead of dying: still alive at 1 hp, off its point and its token, lying still for bleedTime.
 export function downAssociate(e, ctx) {
+  if (e.kind === 'trainer') return null;   // a Trainer never downs
   if (!e.alive || LOCKED.has(e.state) || e.state === 'downed') return null;
   releaseToken(e, ctx);
   if (e.role === 'revive') cancelRevive(e, ctx);
@@ -567,6 +580,7 @@ export function updateAssociate(e, ctx, dt) {
   const T = (ctx.tuning || TUNING).associate, D = ctx.director || TUNING.director;
   e.prevPos[0] = e.pos[0]; e.prevPos[1] = e.pos[1]; e.prevPos[2] = e.pos[2]; e.prevYaw = e.yaw;
   e.stateT += dt;
+  if (e.kind === 'trainer') { updateTrainer(e, ctx, dt); return; }
   switch (e.state) {
     case 'idle': if (ctx.started) seek(e, ctx, T); break;
     case 'seek': seek(e, ctx, T); break;
@@ -599,6 +613,7 @@ export function updateAssociate(e, ctx, dt) {
 // A killing body hit from Doc or any Tobble shot goes down instead with probability downChance. Any hit on a downed Rep kills it.
 // A hit while shooting flinches and gives the token back; a hurt helper flinches and its revive is cancelled. A held (executed) or empty slot ignores hits.
 export function hurtAssociate(e, amount, ctx, kind = 'body') {
+  if (e.kind === 'trainer') return hurtTrainer(e, amount, ctx, kind);
   if (!e.alive || !(amount > 0) || e.state === 'executed' || e.state === 'unused') return null;
   if (e.state === 'downed') { e.health = 0; return kill(e, ctx, kind); }
   e.health -= amount;

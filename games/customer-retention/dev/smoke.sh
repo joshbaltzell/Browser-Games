@@ -430,7 +430,7 @@ rexpect() { # label, js expression returning 'ok' or a description
   r=$(ev "$2")
   [ "$r" = "ok" ] || fail "run: $1: $(pw --raw eval "JSON.stringify([__cr.run(), __cr.gate(), __cr.gpu()])") ($r)"
 }
-rexpect "?arena=smoothie opens the Smoothie Bar with 5 idle Reps, the sauna dormant, the checkpoint set" "(() => { const f = __cr.fight(), r = __cr.run(); return __cr.level() === 'smoothieBar' && r.arena === 'smoothie' && r.checkpoint === 1 && f.enemies.filter(e => e.state !== 'unused').length === 5 && __cr.pads()[0].state === 'dormant' ? 'ok' : 'bad ' + JSON.stringify([r, f.enemies.length]); })()"
+rexpect "?arena=smoothie opens the Smoothie Bar with 5 idle Reps and 1 idle Trainer, the sauna dormant, the checkpoint set" "(() => { const f = __cr.fight(), r = __cr.run(); return __cr.level() === 'smoothieBar' && r.arena === 'smoothie' && r.checkpoint === 1 && f.enemies.filter(e => e.state !== 'unused').length === 6 && f.enemies.filter(e => e.kind === 'trainer').length === 1 && __cr.pads()[0].state === 'dormant' ? 'ok' : 'bad ' + JSON.stringify([r, f.enemies.length]); })()"
 rexpect "the hours line shows at the checkpoint" "__cr.run().hours === 'Cancellation hours: Tues 2:00–2:05' ? 'ok' : 'bad ' + __cr.run().hours"
 ev "(async () => { __cr.place('open'); await __w(5000); return 'ok'; })()" >/dev/null
 SM_CALLS=$(ev "__cr.stats().calls"); SM_TRIS=$(ev "__cr.stats().tris"); SM_FPS=$(ev "Math.round(__cr.stats().fps)")
@@ -438,6 +438,8 @@ SM_CALLS=$(ev "__cr.stats().calls"); SM_TRIS=$(ev "__cr.stats().tris"); SM_FPS=$
 [ "$SM_TRIS" -lt 300000 ] 2>/dev/null || fail "smoothie bar: triangles '$SM_TRIS', expected under 300000"
 echo "smoothie bar fight: $SM_FPS fps, $SM_CALLS calls, $SM_TRIS triangles"
 shotc smoothie-fight
+ev "(async () => { await __until(() => __cr.fightLog().some(x => x.type === 'telegraph' && x.kind === 'trainer'), 12000); return 'ok'; })()" >/dev/null
+rexpect "the Trainer runs at Doc and winds up before it swings (a Trainer telegraph is logged)" "(() => __cr.fightLog().some(x => x.type === 'telegraph' && x.kind === 'trainer') ? 'ok' : 'bad no trainer telegraph')()"
 rexpect "the fight started and the Reps are shooting" "(() => __cr.fight().started && __cr.fightLog().some(x => x.type === 'enemyShot') ? 'ok' : 'bad')()"
 # Clear the arena in god mode: the gate opens, the banner shows.
 ev "(async () => { __cr.restart(); __cr.drive({}); __cr.clearArena(); await __until(() => __cr.run().gateOpen, 3000); await __w(1200); return 'ok'; })()" >/dev/null

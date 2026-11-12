@@ -1,7 +1,7 @@
 import { TUNING } from '../tuning.js';
 
 // The tunable numbers: every number in TUNING.move (but radius and height),
-// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.health, TUNING.melee, TUNING.grenade, TUNING.pad, TUNING.run, TUNING.tobble, TUNING.associate, TUNING.director, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
+// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.health, TUNING.melee, TUNING.grenade, TUNING.pad, TUNING.run, TUNING.tobble, TUNING.trainer, TUNING.associate, TUNING.director, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
 // Pure data and helpers; no DOM.
 
 const n = (path, min, max, step) => ({ path, min, max, step });
@@ -89,7 +89,13 @@ export const PANEL = Object.freeze([
   n('director.pushAfter', 1, 30, 0.5), n('director.flankAfter', 1, 60, 0.5), n('director.stayRadius', 0.5, 10, 0.1), n('director.flankAngle', 0, 180, 1), n('director.flankMaxAngle', 60, 180, 1), n('director.maxEnemies', 4, 8, 1),
   n('associate.downChance', 0, 1, 0.05), n('associate.downedCrawl', 0, 3, 0.05), n('associate.bleedTime', 1, 60, 0.5), n('associate.reviveTime', 0, 10, 0.1), n('associate.reviveHealth', 0.05, 1, 0.05), n('associate.reviveRange', 0, 40, 0.5),
   n('associate.staggerTime', 0, 3, 0.05), n('associate.diveWarn', 0, 1.6, 0.05), n('associate.diveRadius', 0, 12, 0.1), n('associate.diveChance', 0, 1, 0.05), n('associate.diveReaction', 0, 2, 0.05), n('associate.diveDistance', 0, 10, 0.1), n('associate.diveTime', 0.05, 3, 0.05),
-  n('pad.radius', 0.1, 4, 0.05), n('pad.openAfterKills', 0, 8, 1), n('pad.openAfterKillsSmoothie', 0, 8, 1), n('pad.openAfter', 0, 120, 1), n('pad.interval', 0.5, 30, 0.5), n('pad.maxAlive', 1, 8, 1), n('pad.total', 1, 30, 1), n('pad.riseTime', 0, 3, 0.05),
+  n('pad.radius', 0.1, 4, 0.05), n('pad.openAfterKills', 0, 8, 1), n('pad.openAfterKillsSmoothie', 0, 8, 1), n('pad.openAfter', 0, 120, 1), n('pad.interval', 0.5, 30, 0.5), n('pad.maxAlive', 1, 8, 1), n('pad.total', 1, 30, 1), n('pad.riseTime', 0, 3, 0.05), n('pad.trainerShare', 0, 1, 0.05), n('pad.trainerShareSmoothie', 0, 1, 0.05),
+  n('trainer.health', 1, 1000, 1), n('trainer.scaleW', 0.5, 2, 0.05), n('trainer.scaleH', 0.5, 2, 0.05), n('trainer.runSpeed', 0, 12, 0.1), n('trainer.turnRate', 0.5, 40, 0.5), n('trainer.maxAlive', 0, 8, 1),
+  n('trainer.swingRange', 0.5, 4, 0.05), n('trainer.swingSlack', 0, 2, 0.05), n('trainer.swingArc', 10, 360, 5), n('trainer.windup', 0.05, 2, 0.05), n('trainer.lockTime', 0, 1, 0.05),
+  n('trainer.swingTime', 0.05, 1.5, 0.05), n('trainer.recover', 0, 3, 0.05), n('trainer.swingGap', 0, 3, 0.05),
+  n('trainer.damage', 0, 100, 1), n('trainer.tobbleDamage', 0, 100, 1), n('trainer.knockback', 0, 6, 0.1), n('trainer.knockTime', 0.05, 1.5, 0.05), n('trainer.staggerTime', 0, 3, 0.05),
+  n('trainer.preferDoc', 0.1, 2, 0.05), n('trainer.retargetTime', 0.05, 3, 0.05), n('trainer.repathTime', 0.1, 3, 0.05), n('trainer.avoidRadius', 0, 5, 0.1), n('trainer.avoidWeight', 0, 5, 0.1), n('trainer.stuckTime', 0.1, 3, 0.1),
+  n('trainer.diveChance', 0, 1, 0.05), n('trainer.barkChance', 0, 1, 0.05),
   n('run.fadeOut', 0.05, 3, 0.05), n('run.blackHold', 0, 2, 0.05), n('run.fadeIn', 0.05, 3, 0.05), n('run.gateReach', 0.5, 4, 0.1), n('run.hoursTime', 1, 20, 0.5), n('run.gateOpenTime', 0.1, 3, 0.05),
   n('tobble.enabled', 0, 1, 1), n('tobble.scale', 0.3, 1.2, 0.01), n('tobble.radius', 0.1, 0.6, 0.01), n('tobble.height', 0.5, 2, 0.01), n('tobble.health', 1, 1000, 1),
   n('tobble.regenDelay', 0, 20, 0.5), n('tobble.regenTime', 0, 20, 0.5), n('tobble.runSpeed', 0, 12, 0.1), n('tobble.turnRate', 1, 30, 0.5),
@@ -192,5 +198,5 @@ function text(v, indent) {
 
 // The move, camera, look, cover, weapons, combat, health, associate, director, dummy and feedback blocks as object-literal text to paste into src/tuning.js.
 export function formatForTuningFile(current = TUNING) {
-  return ['associate', 'camera', 'combat', 'cover', 'director', 'dummy', 'feedback', 'grenade', 'health', 'look', 'melee', 'move', 'pad', 'run', 'tobble', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
+  return ['associate', 'camera', 'combat', 'cover', 'director', 'dummy', 'feedback', 'grenade', 'health', 'look', 'melee', 'move', 'pad', 'run', 'tobble', 'trainer', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
 }

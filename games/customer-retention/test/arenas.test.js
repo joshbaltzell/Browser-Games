@@ -58,17 +58,23 @@ test('Smoothie Bar signs and exit: SMOOTHIE BAR, FREE TRIAL COUNTER, a gate in t
   assert.deepEqual(S.exit, { pos: [-12, 0, 18], yaw: Math.PI, w: 3.4 });
 });
 
-test('Smoothie Bar starts with 5 Reps on +z stand lines of low cover, 1 m or more apart; one sauna that opens after 3 kills', () => {
-  assert.equal(S.associates.length, 5);
+test('Smoothie Bar starts with 5 Reps on +z stand lines of low cover, 1 m or more apart, and 1 Trainer in the open; one sauna that opens after 3 kills', () => {
+  const reps = S.associates.filter(a => a.kind !== 'trainer'), trainers = S.associates.filter(a => a.kind === 'trainer');
+  assert.equal(reps.length, 5);
+  assert.equal(trainers.length, 1);
+  assert.equal(pointInBoxes(solids(S), [trainers[0].pos[0], 1, trainers[0].pos[2]], TUNING.associate.radius * TUNING.trainer.scaleW), false);
+  assert.equal(S.pads[0].shareKey, 'trainerShareSmoothie');
+  assert.equal(TUNING.pad.trainerShareSmoothie, 0.5);
+  assert.equal(TUNING.pad.trainerShare, 0);
   const edges = edgesOf(S);
-  for (const a of S.associates) {
+  for (const a of reps) {
     const e = edges.find(e => e.kind === 'low' && e.normal[1] === 1 && Math.abs(e.a[1] - a.pos[2]) < 1e-9
       && a.pos[0] >= Math.min(e.a[0], e.b[0]) - 1e-9 && a.pos[0] <= Math.max(e.a[0], e.b[0]) + 1e-9);
     assert.ok(e, `${a.id} stands on a low +z edge`);
     assert.equal(pointInBoxes(solids(S), [a.pos[0], 1, a.pos[2]], A.radius), false);
   }
   for (let i = 0; i < 5; i++) for (let j = i + 1; j < 5; j++) {
-    assert.ok(Math.hypot(S.associates[i].pos[0] - S.associates[j].pos[0], S.associates[i].pos[2] - S.associates[j].pos[2]) >= A.reserveRadius, `${i} ${j}`);
+    assert.ok(Math.hypot(reps[i].pos[0] - reps[j].pos[0], reps[i].pos[2] - reps[j].pos[2]) >= A.reserveRadius, `${i} ${j}`);
   }
   assert.equal(S.pads.length, 1);
   assert.equal(S.pads[0].openKey, 'openAfterKillsSmoothie');
@@ -175,9 +181,9 @@ function smoothieFight(seconds, { god = true } = {}) {
   return { f, m, log, tuning };
 }
 
-test('a headless Smoothie Bar fight: five Reps, the lockdown starts, everyone stays finite and inside the room', () => {
+test('a headless Smoothie Bar fight: five Reps and a Trainer, the lockdown starts, everyone stays finite and inside the room', () => {
   const { f, log } = smoothieFight(20);
-  assert.equal(f.enemies.filter(e => e.state !== 'unused').length, 5);
+  assert.equal(f.enemies.filter(e => e.state !== 'unused').length, 6);
   assert.ok(f.started);
   assert.ok(log.some(e => e.type === 'enemyShot'), 'the Reps shoot');
   for (const e of f.enemies) for (const v of e.pos) assert.ok(Number.isFinite(v));

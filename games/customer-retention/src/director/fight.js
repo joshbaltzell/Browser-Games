@@ -4,6 +4,8 @@ import { TUNING } from '../tuning.js';
 import { castRay, spreadDir } from '../combat/hits.js';
 import { playerTarget, shotAtPlayer } from '../combat/playerHits.js';
 import { moveCapsule } from '../world/collide.js';
+import { wrap } from '../actors/moveMath.js';
+import { trainerRadius } from '../actors/trainerBrain.js';
 import { coverPoints } from '../world/coverPoints.js';
 import { buildGraph } from '../world/waypoints.js';
 import { coverEdgeOf } from '../actors/coverStates.js';
@@ -24,6 +26,7 @@ const TUCKED_AT_POINT = new Set(['cover', 'telegraph', 'burst', 'suppress', 'rel
 const MAX_SLOTS = 8;       // director.maxEnemies tops out here; this many Reps are built (and viewed) at load
 const REUSE_AFTER = 1.0;   // s, a dead slot's death burst is over and the slot may be filled again
 const MAX_DT = 0.1;
+const SWING_Y = 1.3;       // m, the height a swing's line of sight is judged at (over a 1 m counter)
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 
 export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
@@ -38,8 +41,8 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
   const events = [], late = [];
   // The level's Reps fill the first slots; the rest are empty ('unused') until a sauna or the dev hook fills them.
   const starts = level.associates.length;
-  const enemies = level.associates.map(a => createAssociate(a, tuning.associate));
-  for (let i = starts; i < MAX_SLOTS; i++) enemies.push(unuseAssociate(createAssociate({ id: `r${i + 1}`, pos: [0, 0, 0] }, tuning.associate)));
+  const enemies = level.associates.map(a => createAssociate(a, tuning.associate, tuning));
+  for (let i = starts; i < MAX_SLOTS; i++) enemies.push(unuseAssociate(createAssociate({ id: `r${i + 1}`, pos: [0, 0, 0] }, tuning.associate, tuning)));
   const readSlots = () => Math.max(starts, Math.min(MAX_SLOTS, Math.round(tuning.director.maxEnemies)));
   let slotLimit = readSlots();   // director.maxEnemies applies at creation and at each restart
   const scratch = playerTarget({ state: 'move', pos: [0, 0, 0], cover: null, scratch: {} });
@@ -58,6 +61,7 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
   function claimStarts() {
     reserved.clear();
     for (const e of enemies.slice(0, starts)) {
+      if (e.kind === 'trainer') continue;   // a Trainer holds no cover point
       let best = null, bd = Infinity;
       for (const p of points) {
         const d = Math.hypot(p.pos[0] - e.pos[0], p.pos[1] - e.pos[2]);
@@ -185,7 +189,45 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
       if (ev.type === 'padOpen') { bark(ev.id, 'padOpen', events, true); if (tobbleUp()) bark('tobble', 'tobblePad', events, true); continue; }
       if (ev.type !== 'padSpawn') continue;
       const pad = pads.list.find(p => p.id === ev.id), e = enemies.find(x => x.id === ev.enemyId);
-      spawnAssociate(e, pad.pos, ctx);
+      spawnAssociate(e, pad.pos, ctx, nextKind(pad));
+    }
+  }
+
+  const aliveTrainers = () => enemies.reduce((n, x) => n + (x.kind === 'trainer' && x.alive ? 1 : 0), 0);
+  // What a sauna's next spawn is: a Trainer with the sauna's share (pad.trainerShare, or the level's shareKey) while fewer than trainer.maxAlive live.
+  function nextKind(pad) {
+    const P = tuning.pad, share = pad.shareKey && Number.isFinite(P[pad.shareKey]) ? P[pad.shareKey] : P.trainerShare;
+    return share > 0 && aliveTrainers() < tuning.trainer.maxAlive && rand() < share ? 'trainer' : 'associate';
+  }
+
+  // A swing lands on Doc and on Tobble when they are inside its reach and arc with a clear line at shoulder height. Doc is staggered back.
+  const swingEye = [0, 0, 0], swingAt = [0, 0, 0];
+  function inSwing(ev, pos) {
+    const dx = pos[0] - ev.from[0], dz = pos[2] - ev.from[2], d = Math.hypot(dx, dz);
+    if (d > ev.reach) return false;
+    if (d > 1e-6 && Math.abs(wrap(Math.atan2(dx, dz) - ev.yaw)) > ev.arc * Math.PI / 360 + 1e-9) return false;
+    swingEye[0] = ev.from[0]; swingEye[1] = ev.from[1] + SWING_Y; swingEye[2] = ev.from[2];
+    swingAt[0] = pos[0]; swingAt[1] = ev.from[1] + SWING_Y; swingAt[2] = pos[2];
+    return lineOfSight(boxes, swingEye, swingAt);
+  }
+  function resolveSwings(m, health) {
+    const T = tuning.trainer;
+    for (let i = 0; i < events.length; i++) {
+      const ev = events[i];
+      if (ev.type !== 'trainerSwing') continue;
+      if (!health.downed && inSwing(ev, m.pos)) {
+        const result = health.damage(T.damage);
+        if (result !== null) {
+          events.push({ type: 'playerHit', id: ev.id, from: ev.from, amount: T.damage, result, melee: true });
+          if (result === 'downed') { if (m.state !== 'downed') m.down(); releaseAll(); }
+          else if (m.knock) { const dx = m.pos[0] - ev.from[0], dz = m.pos[2] - ev.from[2], l = Math.hypot(dx, dz) || 1; m.knock(dx / l, dz / l, T.knockback, T.knockTime); }
+        }
+      }
+      const tb = f.tobble;
+      if (tb && !tb.downed && inSwing(ev, tb.pos)) {
+        const result = hurtTobble(tb, T.tobbleDamage, ctx);
+        events.push({ type: 'tobbleHit', id: ev.id, from: ev.from, result });
+      }
     }
   }
 
@@ -234,7 +276,7 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
         if (ball.rolled && ball.rolled.has(e.id)) continue;
         if (Math.hypot(e.pos[0] - ball.pos[0], e.pos[2] - ball.pos[2]) > T.diveRadius) continue;
         (ball.rolled || (ball.rolled = new Set())).add(e.id);
-        if (rand() < T.diveChance && diveAssociate(e, ball.pos, ctx) && !ball.barked) { ball.barked = true; bark(e.id, 'dive'); }
+        if (rand() < (e.kind === 'trainer' ? tuning.trainer.diveChance : T.diveChance) && diveAssociate(e, ball.pos, ctx) && !ball.barked) { ball.barked = true; bark(e.id, 'dive'); }
       }
     }
   }
@@ -247,9 +289,10 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
   };
   function separate(m) {
     const r = tuning.associate.radius, h = tuning.associate.height;
+    const rOf = e => (e.kind === 'trainer' ? trainerRadius(tuning) : r), hOf = e => (e.kind === 'trainer' ? h * tuning.trainer.scaleH : h);
     const push = (e, dx, dz) => {
       if (e.state === 'executed') return;
-      const res = moveCapsule(boxes, e.pos, [dx, 0, dz], r, h);
+      const res = moveCapsule(boxes, e.pos, [dx, 0, dz], rOf(e), hOf(e));
       e.pos[0] = res.pos[0]; e.pos[2] = res.pos[2];
     };
     const held = e => e.state === 'executed';
@@ -260,13 +303,14 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
         const b = enemies[j];
         if (!b.alive) continue;
         let dx = b.pos[0] - a.pos[0], dz = b.pos[2] - a.pos[2], d = Math.hypot(dx, dz);
-        if (d >= 2 * r) continue;
+        const pr = rOf(a) + rOf(b);
+        if (d >= pr) continue;
         if (d < 1e-6) { dx = 1; dz = 0; d = 1; }
-        const o = (2 * r - d) / 2, ka = held(b) ? 2 : held(a) ? 0 : 1, kb = held(a) ? 2 : held(b) ? 0 : 1;
+        const o = (pr - d) / 2, ka = held(b) ? 2 : held(a) ? 0 : 1, kb = held(a) ? 2 : held(b) ? 0 : 1;
         push(a, -dx / d * o * ka, -dz / d * o * ka); push(b, dx / d * o * kb, dz / d * o * kb);
       }
       let dx = a.pos[0] - m.pos[0], dz = a.pos[2] - m.pos[2], d = Math.hypot(dx, dz);
-      const need = r + tuning.move.radius;
+      const need = rOf(a) + tuning.move.radius;
       if (d < need) {
         if (d < 1e-6) { dx = 1; dz = 0; d = 1; }
         push(a, dx / d * (need - d), dz / d * (need - d));
@@ -283,7 +327,7 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
       for (const e of enemies) {
         if (!e.alive) continue;
         let dx = e.pos[0] - tb.pos[0], dz = e.pos[2] - tb.pos[2], d = Math.hypot(dx, dz);
-        const need = rt + r;
+        const need = rt + rOf(e);
         if (d >= need) continue;
         if (d < 1e-6) { dx = 1; dz = 0; d = 1; }
         const o = need - d, kt = held(e) || (e.point && TUCKED_AT_POINT.has(e.state)) ? 1 : 0.5;   // a held or tucked Rep stays put; Tobble gives way
@@ -382,8 +426,9 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
     for (const e of enemies) updateAssociate(e, ctx, dt);
     for (let i = n0; i < events.length; i++) if (events[i].type === 'death') onKill(enemies.find(e => e.id === events[i].id));   // bleed-outs
     shoot(m, health);
+    resolveSwings(m, health);
     separate(m);
-    for (const e of enemies) associateShapes(e, tuning.combat);
+    for (const e of enemies) associateShapes(e, tuning.combat, tuning);
     if (f.tobble) tobbleShapes(f.tobble, tuning.combat);
     // Doc and Tobble both down at the end of a step (in either order, or together): one checkpoint event; the caller restarts.
     const bothDown = !!f.tobble && f.tobble.downed && health.downed;
@@ -447,6 +492,14 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
     const pad = pads.list[0];
     return spawnAssociate(e, pad ? pad.pos : [0, 0, 0], ctx);
   };
+  // Dev and tests: fill one free slot with a Trainer rising at the first sauna, or at `pos`. Null when trainer.maxAlive are already alive or no slot is free.
+  f.spawnTrainer = (pos) => {
+    if (aliveTrainers() >= tuning.trainer.maxAlive) return null;
+    const e = freeSlot();
+    if (!e) return null;
+    const pad = pads.list[0];
+    return spawnAssociate(e, pos || (pad ? pad.pos : [0, 0, 0]), ctx, 'trainer');
+  };
   f.downRep = (e) => {
     ctx.events = late;
     const r = downAssociate(e, ctx);
@@ -477,14 +530,14 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
   f.reset = () => {
     tokens.reset(); grenades.reset(); pads.reset();
     slotLimit = readSlots();
-    enemies.forEach((e, i) => { resetAssociate(e, tuning.associate); if (i >= starts) unuseAssociate(e); });
+    enemies.forEach((e, i) => { resetAssociate(e, tuning.associate, tuning); if (i >= starts) unuseAssociate(e); });
     claimStarts();
     f.tobble = ctx.tobble = tobbleOn() ? (f.tobble ? resetTobble(f.tobble) : createTobble(level.tobble, tuning.tobble)) : null;
     checkpointed = false; headKills = 0; ctx.playerDowned = false;
     events.length = 0; late.length = 0;
     f.started = f.clear = false; f.now = 0; f.startT = 0; f.kills = 0; f.hideT = f.stayT = 0;
     ctx.now = 0; ctx.started = false; ctx.aim = undefined; wasDowned = false; settled = false;
-    for (const e of enemies) associateShapes(e, tuning.combat);
+    for (const e of enemies) associateShapes(e, tuning.combat, tuning);
   };
 
   return f;

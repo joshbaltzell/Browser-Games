@@ -178,7 +178,17 @@ export const TUNING = {
     staggerTime: 0.9, diveWarn: 1.0, diveRadius: 4.5, diveChance: 0.75, diveReaction: 0.25, diveDistance: 3, diveTime: 0.6,
   },
   // Spawn Saunas (the spec's Hiring Pads). Radius in m, times in s. A kettlebell closes one within radius + grenade.padReach.
-  pad: { radius: 1.1, openAfterKills: 2, openAfterKillsSmoothie: 3, openAfter: 25, interval: 5, maxAlive: 2, total: 6, riseTime: 0.8 },
+  pad: { radius: 1.1, openAfterKills: 2, openAfterKillsSmoothie: 3, openAfter: 25, interval: 5, maxAlive: 2, total: 6, riseTime: 0.8, trainerShare: 0, trainerShareSmoothie: 0.5 },
+  // The Personal Trainer (a rusher, no cover, no attack token). scaleW and scaleH size it against an Associate (its capsule and hit volumes).
+  // Times in s, distances in m, speeds in m/s, damage in hp, angles in deg, chances 0 to 1. A swing only lands if Doc is inside swingRange + swingSlack
+  // and swingArc wide of the facing locked lockTime before the blow; two blows are never within swingGap of each other.
+  trainer: {
+    health: 130, scaleW: 1.2, scaleH: 1.1, runSpeed: 6.2, turnRate: 12, maxAlive: 3,
+    swingRange: 1.6, swingSlack: 0.4, swingArc: 120, windup: 0.5, lockTime: 0.15, swingTime: 0.3, recover: 0.8, swingGap: 0.6,
+    damage: 30, tobbleDamage: 30, knockback: 1.6, knockTime: 0.35, staggerTime: 0.8,
+    preferDoc: 0.6, retargetTime: 0.4, repathTime: 0.5, avoidRadius: 1.8, avoidWeight: 1.5, stuckTime: 0.6,
+    diveChance: 0.4, barkChance: 0.5,
+  },
   // Tobble, the squadmate (the story's intern). enabled is a flag read at fight creation and restart; scale is Tobble's size against an Associate.
   // Times in s, distances in m, speeds in m/s, angles in deg, health as a fraction where it says. His rate * damage is 0.25 of the Regret's.
   tobble: {

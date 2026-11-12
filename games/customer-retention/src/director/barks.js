@@ -2,8 +2,9 @@ import { TUNING } from '../tuning.js';
 import { PALETTE } from '../render/palette.js';
 
 // The speaker's colour for the bark line (the HUD reads it by speaker name).
-export const SPEAKER_COLORS = Object.freeze({ Rep: PALETTE.glorpPurple, PA: PALETTE.cream, Tobble: PALETTE.tobbleMint });
+export const SPEAKER_COLORS = Object.freeze({ Rep: PALETTE.glorpPurple, PA: PALETTE.cream, Tobble: PALETTE.tobbleMint, Trainer: PALETTE.planet });
 const T = (...lines) => Object.freeze(lines.map(text => Object.freeze({ speaker: 'Tobble', text })));
+const P = (...lines) => Object.freeze(lines.map(text => Object.freeze({ speaker: 'Trainer', text })));
 
 // What the Reps shout (the Glorp aliens that run GlorpFit). Text only; voices come in milestone 10. Each key holds a short pool
 // that is read in turn, so a repeat never comes twice in a row. `speaker` is 'Rep' unless the line is the station PA.
@@ -26,6 +27,10 @@ export const BARKS = Object.freeze({
   cloneRevive: Object.freeze(['On your feet! Membership quotas!']),
   padOpen: Object.freeze([{ speaker: 'PA', text: 'The sauna is now a spawning pool. Please enjoy responsibly.' }]),
   padClosed: Object.freeze([{ speaker: 'PA', text: 'The sauna is closed for cleaning. Forever.' }]),
+  // The Personal Trainers (the rushers): a shout as one starts to run at Doc, the one at the top of every swing, and the last words.
+  trainerCharge: P('ONE MORE REP!', "You're not quitting, you're just TIRED!", 'PAIN IS WEAKNESS LEAVING YOUR WALLET!', 'NO EXCUSES!'),
+  trainerWindup: P('HUP!'),
+  trainerDeath: P('\u2026tell my\u2026 macros\u2026'),
   // Tobble, the squadmate.
   tobbleRevive: T('I got you! PUSH!', 'I got you! Push! PUSH! Two more!'),
   tobbleDown: T('I\'m down! This was not in the internship packet!', 'Doc! I need a spot!'),

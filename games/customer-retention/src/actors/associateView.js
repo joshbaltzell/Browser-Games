@@ -4,7 +4,8 @@ import { TUNING } from '../tuning.js';
 import { PALETTE } from '../render/palette.js';
 import { createToonMaterial } from '../render/toon.js';
 import { addOutline, computeOutlineNormals } from '../render/outline.js';
-import { ASSOCIATE } from './associate.js';
+import { ASSOCIATE, TRAINER } from './associate.js';
+import { kettlebellGeometry } from '../render/grenadeView.js';
 import { buildRig } from './rig.js';
 import { createAnimator } from './animator.js';
 import { RUN_SPEED, CLIPS } from './poses.js';
@@ -48,6 +49,7 @@ export function pickAssociateClip(e) {
 // The yaw an Associate wants: the wall while tucked or blind firing, the player (the aim point) while telegraphing
 // or bursting, the way it is going while running; else the brain's own yaw.
 export function associateFacing(e) {
+  if (e.kind === 'trainer') return e.yaw;
   if ((e.state === 'idle' || e.state === 'cover' || e.state === 'reload' || e.state === 'flinch' || e.state === 'suppress') && e.point) {
     return yawOf(-e.point.normal[0], -e.point.normal[1]);
   }
@@ -59,8 +61,21 @@ export function associateFacing(e) {
   return e.yaw;
 }
 
+// Which clip a Personal Trainer plays. The wind-up and the swing are the kettlebell throw's raise and slam (the view drives their speed so the
+// raise ends with the wind-up and the slam fills the swing).
+export function pickTrainerClip(e) {
+  switch (e.state) {
+    case 'run': return 'run';
+    case 'windup': case 'swing': return 'throw';
+    case 'stagger': case 'executed': return 'flinch';
+    case 'dive': return 'roll';
+    default: return 'idle';   // idle, spawn, recover, dead
+  }
+}
+
 export function faceOf(e) {
   if (e.state === 'dead' || !e.alive) return 'dead';
+  if (e.kind === 'trainer' && (e.state === 'run' || e.state === 'windup' || e.state === 'swing')) return 'angry';
   if (SHOOTING.has(e.state)) return 'angry';
   if (e.state === 'flinch' || e.state === 'stagger' || e.state === 'downed' || e.state === 'executed' || e.state === 'dive') return 'scared';
   return 'smug';
@@ -88,33 +103,78 @@ const FROM = new THREE.Vector3(0, 0, 1);
 const _v = new THREE.Vector3();
 const _d = new THREE.Vector3();
 const GUN_DOWN = 0.6;
+const THROW_RAISED = 0.4;   // the throw clip's u at the top of the raise (the hand as high as the arm reaches)
 // How far the gun points up while blind firing over low cover, as for the player.
 const BLIND_LOW_GUN_PITCH = 0.95;
 
-export function createAssociateView(e) {
-  const rig = buildRig(ASSOCIATE);
+// The Trainer's kettlebell: the player's kettlebell geometry, gripped by the handle in the right hand with the bell beyond the fist along the
+// forearm. A red-orange glint sphere on the bell shows while it winds up.
+const KB_SCALE = 1.3;
+function buildKettlebell() {
+  const geo = kettlebellGeometry();
+  geo.translate(0, -0.22, 0).rotateX(Math.PI);   // handle top at the origin, the bell 0.22 m out along +y (the forearm)
+  const g = new THREE.Group();
+  g.name = 'trainerKettlebell';
+  g.scale.setScalar(KB_SCALE);
+  g.add(new THREE.Mesh(geo, createToonMaterial({ vertexColors: true, rim: 0.15 })));
+  const glint = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), new THREE.MeshBasicMaterial({ color: '#ff4a1c', toneMapped: false }));
+  glint.name = 'glint';
+  glint.position.set(0, 0.22, 0);
+  glint.visible = false;
+  g.add(glint);
+  return { group: g, glint };
+}
+
+// One drawn character: a rig with its animator, its dive tumble and its weapon. A view owns the Rep's, and builds a Trainer's the first
+// time its slot holds a Trainer (a hidden one costs no draw calls).
+function buildChar(kind) {
+  const trainer = kind === 'trainer';
+  const rig = buildRig(trainer ? TRAINER : ASSOCIATE);
   const anim = createAnimator(rig);
-  const group = new THREE.Group();
-  group.name = `associate-${e.id}`;
+  const root = new THREE.Group();
+  root.name = kind;
   // The dive's roll spins the body about its middle, as for the player.
   const tumble = new THREE.Group();
   tumble.position.y = TUMBLE_Y;
   rig.root.position.y = -TUMBLE_Y;
   tumble.add(rig.root);
-  group.add(tumble);
-  group.add(rig.shadow);
+  root.add(tumble);
+  root.add(rig.shadow);
   const handR = rig.root.getObjectByName('body').children[2]; // buildRig adds hips, then handL, handR
-  const blaster = buildBlaster();
-  group.add(blaster.group);
+  const weapon = trainer ? buildKettlebell() : buildBlaster();
+  if (trainer) handR.add(weapon.group);
+  else root.add(weapon.group);
+  return { kind, rig, anim, root, tumble, handR, weapon };
+}
+
+export function createAssociateView(e) {
+  const group = new THREE.Group();
+  group.name = `associate-${e.id}`;
+  const chars = { associate: buildChar('associate'), trainer: null };
+  let cur = chars.associate;
+  group.add(cur.root);
+  const blaster = cur.weapon;   // the Rep's, for tests and the muzzle
 
   let clip = '', flinchT = 0, expression = '', drawW = 0, yaw = e.yaw, mode = 'live', deathT = 0, glintOn = false, glintT = 0;
-  let nx = 0, nz = 0;
+  let nx = 0, nz = 0, clipT = 0;
+
+  // A slot that now holds the other kind swaps its character (a Trainer's is built the first time it is needed).
+  function useKind(kind) {
+    if (cur.kind === kind) return;
+    if (!chars[kind]) { chars[kind] = buildChar(kind); group.add(chars[kind].root); }
+    cur.root.visible = false;
+    cur = chars[kind];
+    cur.root.visible = true;
+    const W = TUNING.trainer.scaleW, H = TUNING.trainer.scaleH;
+    clip = ''; expression = '';
+  }
 
   function reset() {
     mode = 'live'; deathT = 0; drawW = 0; yaw = e.yaw; glintOn = false; glintT = 0;
-    group.visible = true; group.scale.setScalar(1); tumble.rotation.x = 0;
+    group.visible = true; group.scale.setScalar(1); cur.tumble.rotation.x = 0;
     clip = ''; expression = ''; flinchT = 0;
     blaster.emitter.scale.setScalar(1);
+    if (chars.trainer) chars.trainer.weapon.glint.visible = false;
   }
 
   function update(alpha, dt) {
@@ -122,6 +182,7 @@ export function createAssociateView(e) {
     // An empty slot is never drawn. A slot that dies is a burst; one that comes alive again (a sauna spawn) is a fresh Rep.
     if (e.state === 'unused') { group.visible = false; return; }
     if (e.state === 'spawn' && (mode === 'burst' || mode === 'gone')) reset();
+    if (e.state !== 'dead' && e.alive) useKind(e.kind || 'associate');
     if (!e.alive && e.state === 'dead' && mode === 'live') { mode = 'burst'; deathT = 0; }
     if (mode === 'live') group.visible = true;
     if (mode === 'burst') {
@@ -132,6 +193,8 @@ export function createAssociateView(e) {
     }
     if (mode === 'gone') return;
     const dead = mode === 'burst';
+    const { rig, anim, tumble, handR } = cur, tr = cur.kind === 'trainer', TT = TUNING.trainer;
+    cur.root.scale.set(tr ? TT.scaleW : 1, tr ? TT.scaleH : 1, tr ? TT.scaleW : 1);
     // Position: interpolated, and low cover draws the body back from the wall so the head and hands sit behind it.
     const p = e.pos, q = e.prevPos;
     const low = !dead && e.point && e.point.kind === 'low' && e.state !== 'run' && e.state !== 'dead';
@@ -143,31 +206,49 @@ export function createAssociateView(e) {
     const rise = e.state === 'spawn' ? RISE_FROM * (1 - clamp(e.stateT / Math.max(TUNING.pad.riseTime, 1e-3), 0, 1)) : 0;
     group.position.set(q[0] + (p[0] - q[0]) * alpha + nx * back, q[1] + (p[1] - q[1]) * alpha + rise, q[2] + (p[2] - q[2]) * alpha + nz * back);
     // Facing: the brain's yaw, interpolated, except that a tucked or blind-firing Associate sits square to its wall.
-    const want = e.state === 'run' || SHOOTING.has(e.state) ? e.prevYaw + wrapAngle(e.yaw - e.prevYaw) * alpha : associateFacing(e);
-    yaw = turnToward(yaw, want, T.turnRate * 1.5 * dt);
+    const want = tr || e.state === 'run' || SHOOTING.has(e.state) ? e.prevYaw + wrapAngle(e.yaw - e.prevYaw) * alpha : associateFacing(e);
+    yaw = turnToward(yaw, want, (tr ? TT.turnRate : T.turnRate) * 1.5 * dt);
     group.rotation.y = yaw;
     if (dead) return;
-    const name = pickAssociateClip(e);
-    if (name !== clip) { anim.play(name, name === 'flinch' ? undefined : { fade: 0.1 }); clip = name; flinchT = 0; }
-    else if (e.state === 'executed') {
+    const name = tr ? pickTrainerClip(e) : pickAssociateClip(e);
+    const key = tr ? name + ':' + e.state : name;
+    const D = CLIPS.throw.duration;
+    if (key !== clip) {
+      if (tr && name === 'throw') {
+        // The raise starts at the top of the clip; the slam picks up from the held raise (u 0.4) with no fade.
+        const at = e.state === 'swing' ? THROW_RAISED * D : 0;
+        anim.play(name, { fade: e.state === 'swing' ? 0.02 : 0.08, at }); clipT = at;
+      } else anim.play(name, name === 'flinch' ? undefined : { fade: 0.1 });
+      clip = key; flinchT = 0;
+    } else if (e.state === 'executed') {
       // Held under the cutter it keeps flinching: replay the one-shot as it ends.
       flinchT += dt;
       if (flinchT >= CLIPS.flinch.duration) { flinchT = 0; anim.play('flinch'); }
     }
-    let rate = name === 'run' ? clamp(T.runSpeed / RUN_SPEED, 0.5, 3) : 1;
+    let rate = name === 'run' ? clamp((tr ? TT.runSpeed : T.runSpeed) / RUN_SPEED, 0.5, 3) : 1;
     if (name === 'crawl') rate = Math.hypot(p[0] - q[0], p[2] - q[2]) > 1e-5 ? 1 : 0;   // it only crawls while it moves
     if (name === 'roll') rate = CLIPS.roll.duration / Math.max(T.diveReaction + T.diveTime, 1e-3);   // the roll fills the whole dive
+    if (tr && e.state === 'windup') rate = clipT < THROW_RAISED * D - 1e-6 ? THROW_RAISED * D / Math.max(TT.windup, 1e-3) : 0;   // the raise ends with the wind-up and holds
+    if (tr && e.state === 'swing') rate = (1 - THROW_RAISED) * D / Math.max(TT.swingTime, 1e-3);
+    clipT += dt * rate;
     tumble.rotation.x = name === 'roll' ? rollSpin(clamp(e.stateT / Math.max(T.diveReaction + T.diveTime, 1e-3), 0, 1)) : 0;
     anim.update(dt * rate, rate === 0 ? dt : undefined);
     rig.update(dt);
     const ex = faceOf(e);
     if (ex !== expression) { rig.face.setExpression(ex); expression = ex; }
-    updateBlaster(name, dt);
+    if (tr) updateKettlebell(dt); else updateBlaster(name, dt, handR);
+  }
+
+  // The Trainer's glint pulses while it winds up.
+  function updateKettlebell(dt) {
+    const g = chars.trainer.weapon.glint;
+    g.visible = glintOn && e.state === 'windup';
+    if (g.visible) { glintT += dt; g.scale.setScalar(1 + 0.6 * (0.5 + 0.5 * Math.sin(glintT * 2 * Math.PI * 8))); }
   }
 
   // The blaster sits at the right hand and points at the aim point while shooting, up over a low wall while blind
   // firing, and forward and down otherwise (in the group's space).
-  function updateBlaster(name, dt) {
+  function updateBlaster(name, dt, handR) {
     blaster.group.visible = e.state !== 'downed' && e.state !== 'dive';
     group.updateMatrixWorld(true);
     handR.getWorldPosition(_v);
@@ -197,13 +278,13 @@ export function createAssociateView(e) {
     group, update, reset,
     death() { if (mode === 'live') { mode = 'burst'; deathT = 0; } },
     glint(on) { if (on && !glintOn) glintT = 0; glintOn = !!on; },
-    // The emitter in world space, for the muzzle flash and the tracer.
+    // The muzzle (the Rep's emitter) or the Trainer's kettlebell in world space, for the muzzle flash and the tracer.
     tip(out = [0, 0, 0]) {
       group.updateMatrixWorld(true);
-      blaster.emitter.getWorldPosition(_v);
+      (cur.kind === 'trainer' ? cur.weapon.glint : blaster.emitter).getWorldPosition(_v);
       out[0] = _v.x; out[1] = _v.y; out[2] = _v.z;
       return out;
     },
-    rig, anim, blaster,
+    get rig() { return cur.rig; }, get anim() { return cur.anim; }, blaster, get kind() { return cur.kind; },
   };
 }

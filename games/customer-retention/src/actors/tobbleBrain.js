@@ -20,7 +20,7 @@ const MAX_DT = 0.25;
 const HEAD_Y = 1.49;                              // a popped Rep's head, as coverValue sees it
 const RECHECK = 0.5;                              // s between "is my spot still good" checks
 const ID = 'tobble';
-const LIVE_REP = new Set(['idle', 'seek', 'run', 'cover', 'telegraph', 'burst', 'suppress', 'reload', 'flinch', 'stagger', 'dive', 'kneel', 'spawn']);
+const LIVE_REP = new Set(['idle', 'seek', 'run', 'cover', 'telegraph', 'burst', 'suppress', 'reload', 'flinch', 'stagger', 'dive', 'kneel', 'spawn', 'windup', 'swing', 'recover']);
 const dist2 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const clamp01 = v => Math.max(0, Math.min(1, v));
 const cfgOf = (t, ctx) => (ctx && ctx.tuning ? ctx.tuning.tobble : t.cfg);
