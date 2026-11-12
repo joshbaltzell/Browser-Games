@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { DOC_PLACEHOLDER } from '../src/actors/docPlaceholder.js';
 import { ASSOCIATE } from '../src/actors/associate.js';
-import { pickClip, rollSpin, createPlayerView } from '../src/actors/player.js';
+import { pickClip, rollSpin, vaultHop, slamSquash, createPlayerView } from '../src/actors/player.js';
 import { RUN_SPEED, CLIPS } from '../src/actors/poses.js';
 import { TUNING } from '../src/tuning.js';
 
@@ -78,4 +78,54 @@ test('pickClip reads the mover tuning, not the module default', () => {
   assert.deepEqual(pickClip(fake({ state: 'roll', tuning })), { name: 'roll', rate: 0.5 });
   assert.equal(pickClip(fake({ v: 1, tuning })).name, 'idle');
   assert.equal(pickClip(fake({ v: 1 })).name, 'run');
+});
+
+test('pickClip maps cover states', () => {
+  const cv = (kind, pop = 0) => ({ state: 'cover', cover: { edge: { kind }, pop }, coverTuning: TUNING.cover });
+  assert.deepEqual(pickClip(fake(cv('low'))), { name: 'coverLow', rate: 1 });
+  assert.deepEqual(pickClip(fake(cv('tall'))), { name: 'coverTall', rate: 1 });
+  assert.deepEqual(pickClip(fake(cv('low', 1))), { name: 'coverPop', rate: 1 });
+  assert.deepEqual(pickClip(fake({ ...cv('tall', 1), v: 2 })), { name: 'coverPop', rate: 1 });
+  assert.deepEqual(pickClip(fake({ ...cv('low'), v: 2 })), { name: 'coverLowMove', rate: 2 / 3 });
+  assert.deepEqual(pickClip(fake({ ...cv('tall'), v: 9 })), { name: 'coverTallMove', rate: 2 });
+  assert.deepEqual(pickClip(fake({ ...cv('tall'), v: 0.5 })), { name: 'coverTallMove', rate: 0.5 });
+  assert.equal(pickClip(fake({ state: 'coverSlide', scratch: { edge: { kind: 'tall' } }, coverTuning: TUNING.cover })).name, 'coverTall');
+  assert.equal(pickClip(fake({ state: 'coverSlide', scratch: { edge: { kind: 'low' } }, coverTuning: TUNING.cover })).name, 'coverLow');
+  assert.deepEqual(pickClip(fake({ state: 'coverSwap', v: 7.5 })), { name: 'sprint', rate: 2.2 });
+  assert.deepEqual(pickClip(fake({ state: 'vault', coverTuning: { ...TUNING.cover, vaultTime: 1.0 } })), { name: 'vault', rate: 0.5 });
+  assert.deepEqual(pickClip(fake({ state: 'cover', cover: null, coverTuning: TUNING.cover })), { name: 'idle', rate: 1 });
+});
+test('vaultHop peaks at h halfway and is 0 at both ends; slamSquash is 0 outside [0, time)', () => {
+  near(vaultHop(0, 0.6), 0, 1e-12); near(vaultHop(1, 0.6), 0, 1e-12); near(vaultHop(0.5, 0.6), 0.6, 1e-12);
+  assert.equal(slamSquash(-0.01, 0.12, 0.15), 0); assert.equal(slamSquash(0.15, 0.12, 0.15), 0);
+  near(slamSquash(0.075, 0.12, 0.15), 0.12, 1e-12);
+});
+test('createPlayerView: during a vault the body lifts and the shadow stays on the floor', () => {
+  const m = fake({ state: 'vault', entries: 1, stateTime: 0.25, coverTuning: TUNING.cover, slams: 0 });
+  const v = createPlayerView(m);
+  v.update(1, 1 / 60);
+  v.group.updateMatrixWorld(true);
+  const pos = new THREE.Vector3();
+  v.rig.root.getWorldPosition(pos);
+  const base = pos.y;
+  m.state = 'move'; m.stateTime = 0;
+  v.update(1, 1 / 60); v.group.updateMatrixWorld(true);
+  v.rig.root.getWorldPosition(pos);
+  near(base - pos.y, TUNING.cover.vaultHop, 1e-9);
+  m.state = 'vault'; m.stateTime = 0.25; v.update(1, 1 / 60); v.group.updateMatrixWorld(true);
+  v.rig.shadow.getWorldPosition(pos);
+  assert.ok(Math.abs(pos.y) < 0.02);
+});
+test('createPlayerView: a new slam squashes the body, soles on the floor, then settles', () => {
+  const m = fake({ coverTuning: TUNING.cover, slams: 0 });
+  const v = createPlayerView(m);
+  v.update(1, 1 / 60);
+  m.slams = 1;
+  v.update(1, 0);
+  v.update(1, TUNING.cover.slamSquashTime / 2);
+  const t = v.group.children[0], k = TUNING.cover.slamSquash;
+  near(t.scale.y, 1 - k, 1e-9); near(t.scale.x, 1 + k / 2, 1e-9);
+  near(t.position.y - 0.5 * t.scale.y, 0, 1e-9);
+  v.update(1, TUNING.cover.slamSquashTime);
+  near(t.scale.y, 1, 1e-9);
 });

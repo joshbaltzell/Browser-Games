@@ -309,6 +309,109 @@ function sprint(t, spec, p) {
   return p;
 }
 
+// Cover. Everything here faces the wall (the mover turns to face it), so "forward" is toward the cover.
+// coverLow: a deep crouch, hips down and the back hunched in against a low wall so the head is
+// below its top; the hands rest on the wall top, either side. The head and the wall top meet at
+// about 0.9 m, so the lean is large: the shoulders are over the wall face.
+const LOW_HIPS = 0.1, LOW_LEAN = 0.7, LOW_SQUASH = 0.82;
+function coverLow(t, spec, p) {
+  const f = frame(spec);
+  const ph = (TAU * t) / CLIPS.coverLow.duration;
+  p.hipsY = LOW_HIPS + 0.006 * Math.sin(ph);
+  p.lean = LOW_LEAN + 0.015 * Math.sin(ph + 0.4);
+  p.twist = 0.03 * Math.sin(ph + 0.6);
+  p.headYaw = 0.04 * Math.sin(ph);
+  p.headPitch = -0.55 + 0.03 * Math.sin(2 * ph + 1);
+  p.squash = LOW_SQUASH;
+  p.elbows = 1;
+  set3(p.handL, f.sx + 0.12, 0.88 + 0.006 * Math.sin(ph - 0.5), 0.46);
+  set3(p.handR, -f.sx - 0.12, 0.88 + 0.006 * Math.sin(ph + 0.4), 0.46);
+  set3(p.footL, f.fx + 0.08, 0, 0.12);
+  set3(p.footR, -f.fx - 0.08, 0, 0.12);
+  return p;
+}
+
+// A sideways shuffle over a held body: each foot lifts and steps out in turn. The body is the
+// base pose at t = 0 (its breathing has a longer period), with a small bob at the step rate.
+function shuffle(spec, p, durKey, t) {
+  const f = frame(spec);
+  const u = t / CLIPS[durKey].duration;
+  const s = Math.sin(TAU * u);
+  p.hipsY += 0.012 * Math.cos(2 * TAU * u);
+  p.footL[0] += 0.06 * s;
+  p.footR[0] += 0.06 * s;
+  p.footL[1] = 0.09 * Math.max(0, s);
+  p.footR[1] = 0.09 * Math.max(0, -s);
+  p.twist += 0.03 * s;
+  return f;
+}
+function coverLowMove(t, spec, p) {
+  coverLow(0, spec, p);
+  shuffle(spec, p, 'coverLowMove', t);
+  return p;
+}
+
+// coverTall: standing flat against a tall wall, hands up on it at shoulder height, either side.
+function coverTall(t, spec, p) {
+  const f = frame(spec);
+  const ph = (TAU * t) / CLIPS.coverTall.duration;
+  p.hipsY = spec.hipHeight - 0.012 + 0.006 * Math.sin(ph);
+  p.lean = 0.07 + 0.01 * Math.sin(ph + 0.4);
+  p.twist = 0.02 * Math.sin(ph + 0.6);
+  p.headYaw = 0.05 * Math.sin(ph);
+  p.headPitch = 0.0 + 0.02 * Math.sin(2 * ph + 1);
+  p.squash = 1 + 0.006 * Math.sin(ph);
+  p.elbows = 1;
+  onBody(spec, p, f.sx + 0.14, f.sy + 0.0, 0.4, p.handL);
+  onBody(spec, p, -f.sx - 0.14, f.sy + 0.0, 0.4, p.handR);
+  set3(p.footL, f.fx, 0, 0.015);
+  set3(p.footR, -f.fx, 0, -0.015);
+  return p;
+}
+function coverTallMove(t, spec, p) {
+  coverTall(0, spec, p);
+  shuffle(spec, p, 'coverTallMove', t);
+  return p;
+}
+
+// The pop-out: the aim hands, knees braced and bent, leaning into the shot.
+function coverPop(t, spec, p) {
+  aim(t * (CLIPS.aim.duration / CLIPS.coverPop.duration), spec, p);
+  p.hipsY -= 0.07;
+  p.lean += 0.06;
+  p.footL[2] += 0.04; p.footR[2] -= 0.04;
+  p.footL[0] += 0.04; p.footR[0] -= 0.04;
+  return p;
+}
+
+// The vault: from standing, the hands reach forward and down onto the wall, the legs tuck high
+// in the middle (the view lifts the whole body over the top), and it lands standing.
+function vault(t, spec, p) {
+  const u = t / CLIPS.vault.duration;
+  const e = pulse(u, 0, 0.3, 0.7, 1);
+  const f = frame(spec);
+  idle(0, spec, _b);
+  const lerp = (a, b) => a + (b - a) * e;
+  p.hipsY = lerp(_b.hipsY, spec.hipHeight - 0.02);
+  p.lean = lerp(_b.lean, 0.55);
+  p.twist = 0;
+  p.headYaw = 0;
+  p.headPitch = lerp(_b.headPitch, -0.25);
+  p.squash = 1;
+  p.elbows = 1;
+  for (let side = -1; side <= 1; side += 2) {
+    const h = handOf(p, side), r = handOf(_b, side);
+    h[0] = lerp(r[0], side * (f.sx + 0.14));
+    h[1] = lerp(r[1], 0.7);
+    h[2] = lerp(r[2], 0.62);
+    const ft = side > 0 ? p.footL : p.footR, fr = side > 0 ? _b.footL : _b.footR;
+    ft[0] = lerp(fr[0], side * (f.fx + 0.04));
+    ft[1] = lerp(fr[1], 0.55);
+    ft[2] = lerp(fr[2], 0.3);
+  }
+  return p;
+}
+
 // ease is the half-life (seconds) of the rig's springs while the clip plays:
 // they smooth the cross-fades and the hits. The run is a fast cycle that the
 // default 0.05 s would lag (about 45 degrees) and flatten, so its springs are
@@ -326,6 +429,12 @@ export const CLIPS = Object.freeze({
   talk: clip(2.4, true, talk),
   roll: clip(0.55, false, roll, 0.02),
   sprint: clip(0.56, true, sprint, 0.008),
+  coverLow: clip(2.4, true, coverLow),
+  coverLowMove: clip(0.5, true, coverLowMove),
+  coverTall: clip(2.4, true, coverTall),
+  coverTallMove: clip(0.5, true, coverTallMove),
+  coverPop: clip(1.6, true, coverPop),
+  vault: clip(0.5, false, vault, 0.02),
 });
 
 // The run clip's planted-foot speed in m/s, so a footfall matches the ground at this speed.

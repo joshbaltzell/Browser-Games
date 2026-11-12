@@ -173,11 +173,12 @@ test('samplePose with `out` reuses it and matches a fresh sample', () => {
 
 test('clips are frozen, with the brief\'s durations and their spring half-lives', () => {
   assert.ok(Object.isFrozen(CLIPS));
-  assert.deepEqual(Object.keys(CLIPS), ['idle', 'run', 'aim', 'flinch', 'talk', 'roll', 'sprint']);
+  assert.deepEqual(Object.keys(CLIPS), ['idle', 'run', 'aim', 'flinch', 'talk', 'roll', 'sprint', 'coverLow', 'coverLowMove', 'coverTall', 'coverTallMove', 'coverPop', 'vault']);
   const d = Object.fromEntries(Object.entries(CLIPS).map(([k, c]) => [k, [c.duration, c.loop, c.ease]]));
   // The run is too fast for the default 0.05 s springs, which lag it ~45 degrees.
   assert.deepEqual(d, {
     idle: [2.4, true, 0.05], run: [0.56, true, 0.008], aim: [1.6, true, 0.05], flinch: [0.35, false, 0.05], talk: [2.4, true, 0.05], roll: [0.55, false, 0.02], sprint: [0.56, true, 0.008],
+    coverLow: [2.4, true, 0.05], coverLowMove: [0.5, true, 0.05], coverTall: [2.4, true, 0.05], coverTallMove: [0.5, true, 0.05], coverPop: [1.6, true, 0.05], vault: [0.5, false, 0.02],
   });
 });
 
@@ -211,5 +212,77 @@ test('roll and sprint sample finite at 50 points, arms clear of the belly', () =
     const p = samplePose(n, (i / 50) * CLIPS[n].duration, S);
     assert.ok(flat(p).every(Number.isFinite), n);
     assert.ok(Math.abs(p.handL[0]) > 0.2 && Math.abs(p.handR[0]) > 0.2 || n === 'sprint', n);
+  }
+});
+
+const COVER = ['coverLow', 'coverLowMove', 'coverTall', 'coverTallMove', 'coverPop', 'vault'];
+// Height of the top of the head as drawn (the rig squashes the whole body about the floor).
+const headTop = p => bodyPoint(S, p, [0, S.height, 0])[1] * p.squash;
+test('cover clips: finite, feet on or above the floor, arms never across the body', () => {
+  for (const n of COVER)
+    for (let i = 0; i <= 50; i++) {
+      const p = samplePose(n, (i / 50) * CLIPS[n].duration, S);
+      assert.ok(flat(p).every(Number.isFinite), n);
+      assert.ok(p.footL[1] >= 0 && p.footR[1] >= 0, n);
+      assert.ok(p.handL[0] > 0.15 && p.handR[0] < -0.15, `${n} arms cross or hug the belly`);
+    }
+});
+test('coverLow and coverLowMove: hips at most 0.45, head fully below a 1 m wall (0.95 m), hands forward on the wall top', () => {
+  for (const n of ['coverLow', 'coverLowMove'])
+    for (let i = 0; i <= 50; i++) {
+      const p = samplePose(n, (i / 50) * CLIPS[n].duration, S);
+      assert.ok(p.hipsY <= 0.45, `${n} hips ${p.hipsY}`);
+      assert.ok(headTop(p) <= 0.95, `${n} head top ${headTop(p)}`);
+      assert.ok(bodyPoint(S, p, [0, S.height, 0])[1] <= 0.95, `${n} head top before squash`);
+      for (const h of [p.handL, p.handR]) assert.ok(h[2] > 0.15 && h[1] >= 0.6 && h[1] <= 1.05, `${n} hand ${h}`);
+    }
+});
+test('coverTall: standing, hands forward at shoulder height +- 0.15', () => {
+  for (let i = 0; i <= 50; i++) {
+    const p = samplePose('coverTall', (i / 50) * 2.4, S);
+    assert.ok(p.hipsY > S.hipHeight - 0.08);
+    const sh = bodyPoint(S, p, S.shoulderL)[1];
+    for (const h of [p.handL, p.handR]) assert.ok(h[2] > 0.15 && Math.abs(h[1] - sh) <= 0.15, `hand ${h} shoulder ${sh}`);
+  }
+});
+test('move variants step: each foot lifts 0.03 to 0.12 m once a cycle; loops close; the body is its base pose', () => {
+  for (const [n, base] of [['coverLowMove', 'coverLow'], ['coverTallMove', 'coverTall']]) {
+    const D = CLIPS[n].duration, b = samplePose(base, 0, S);
+    let maxL = 0, maxR = 0, liftsL = 0, liftsR = 0, prevL = false, prevR = false;
+    const N = 200;
+    for (let i = 0; i <= N; i++) {
+      const p = samplePose(n, (i / N) * D, S);
+      maxL = Math.max(maxL, p.footL[1]); maxR = Math.max(maxR, p.footR[1]);
+      const l = p.footL[1] > 0.01, r = p.footR[1] > 0.01;
+      if (l && !prevL) liftsL++; if (r && !prevR) liftsR++;
+      prevL = l; prevR = r;
+      assert.ok(Math.abs(p.hipsY - b.hipsY) < 0.03 && Math.abs(p.lean - b.lean) < 0.01, n);
+    }
+    assert.ok(maxL >= 0.03 && maxL <= 0.12 && maxR >= 0.03 && maxR <= 0.12, `${n} lift ${maxL} ${maxR}`);
+    assert.equal(liftsL, 1); assert.equal(liftsR, 1);
+    const a = flat(samplePose(n, 0, S)), z = flat(samplePose(n, D, S));
+    a.forEach((v, i) => assert.ok(Math.abs(v - z[i]) < 1e-6, n));
+  }
+  for (const n of ['coverLow', 'coverTall', 'coverPop']) {
+    const a = flat(samplePose(n, 0, S)), z = flat(samplePose(n, CLIPS[n].duration, S));
+    a.forEach((v, i) => assert.ok(Math.abs(v - z[i]) < 1e-6, n));
+  }
+});
+test('vault: one-shot 0.5 s, standing at both ends, both feet at least 0.45 m up through the middle fifth', () => {
+  assert.equal(CLIPS.vault.loop, false); assert.equal(CLIPS.vault.duration, 0.5);
+  for (const t of [0, 0.5]) {
+    const p = samplePose('vault', t, S);
+    assert.ok(p.hipsY > S.hipHeight - 0.1 && p.footL[1] < 0.01 && p.footR[1] < 0.01);
+  }
+  for (let i = 0; i <= 20; i++) {
+    const p = samplePose('vault', 0.5 * (0.4 + 0.2 * i / 20), S);
+    assert.ok(p.footL[1] >= 0.45 && p.footR[1] >= 0.45, `feet ${p.footL[1]} ${p.footR[1]}`);
+  }
+});
+test('coverPop: hands at or above shoulder height minus 0.15, forward of the chest', () => {
+  for (let i = 0; i <= 50; i++) {
+    const p = samplePose('coverPop', (i / 50) * 1.6, S);
+    const sh = bodyPoint(S, p, S.shoulderL)[1];
+    for (const h of [p.handL, p.handR]) assert.ok(h[1] >= sh - 0.15 && h[2] > 0.15, `hand ${h}`);
   }
 });

@@ -9,6 +9,7 @@ import { buildLookCorner } from '../world/lookCorner.js';
 import { buildRig } from '../actors/rig.js';
 import { createAnimator } from '../actors/animator.js';
 import { ASSOCIATE } from '../actors/associate.js';
+import { CLIPS } from '../actors/poses.js';
 import { EXPRESSIONS } from '../actors/face.js';
 
 // The milestone-0 look test: the corner, the sky and one Associate, with
@@ -93,7 +94,7 @@ export function startLookTest({ canvas, gl }) {
   const offset = [0, 0, 0];
 
   function setAnim(name) {
-    if (!ANIM_KEYS.includes(name)) return;
+    if (!ANIM_KEYS.includes(name) && !Object.prototype.hasOwnProperty.call(CLIPS, name)) return;
     hero.anim.play(name);
     for (const a of extras) a.anim.play(perfOn ? 'run' : name);
   }
@@ -180,6 +181,7 @@ export function startLookTest({ canvas, gl }) {
 
   window.__cr.stats = () => ({ fps, ms, calls, tris, scale: gfx.scale(), characters: actors.length });
   window.__cr.anim = setAnim;
+  window.__cr.orbit = (y, p, d) => { yaw = y; pitch = p; if (d) dist = d; }; // for screenshots: a side view
   window.__cr.expression = setExpression;
   window.__cr.perf = setPerf;
   window.__cr.gameCam = setGameCam;
