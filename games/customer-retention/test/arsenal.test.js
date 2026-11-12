@@ -430,3 +430,22 @@ test('panel extremes: rate 0, reloadTime 0, every zone and finish 0, and dt 0 an
   f.cooldown = 0;
   assert.ok(count(run(f, I({ fire: true }), 'aim', 1), 'shot') >= 8);
 });
+test('reset restores 50 + 250, slot 1, no reload, no boost; addReserve caps at reserveMax and ignores the pistol', () => {
+  const a = make(); const rows = a.ammo; const regret = a.ammo.regret;
+  toSwitch(a, 3); a.ammo.pistol.mag = 2; a.update(I({ reload: true }), 'aim', DT);
+  a.ammo.regret.mag = 3; a.ammo.regret.reserve = 7; a.ammo.regret.boost = true; a.ammo.regret.bloom = 1.5;
+  assert.equal(a.slot, 2); assert.ok(a.reload);
+  a.reset();
+  assert.equal(a.slot, 0); assert.equal(a.reload, null); assert.equal(a.switching, 0); assert.equal(a.cooldown, 0);
+  assert.deepEqual({ ...a.ammo.regret }, { mag: 50, reserve: 250, bloom: 0, boost: false });
+  assert.deepEqual({ ...a.ammo.pistol }, { mag: 12, reserve: 0, bloom: 0, boost: false });
+  assert.equal(a.ammo, rows); assert.equal(a.ammo.regret, regret);
+  assert.equal(a.update(I(), 'aim', DT).length, 0);
+  a.addReserve('regret', 100); assert.equal(a.ammo.regret.reserve, 350);
+  a.addReserve('regret', 100); assert.equal(a.ammo.regret.reserve, 400);
+  a.addReserve('regret', 25); assert.equal(a.ammo.regret.reserve, 400);
+  a.addReserve('pistol', 25); assert.equal(a.ammo.pistol.reserve, 0);
+  a.addReserve('nope', 25); a.addReserve('regret', -5); a.addReserve('regret', NaN); assert.equal(a.ammo.regret.reserve, 400);
+  // a reserve above reserveMax (panel change) is never reduced by a pickup
+  a.ammo.regret.reserve = 450; a.addReserve('regret', 10); assert.equal(a.ammo.regret.reserve, 450);
+});

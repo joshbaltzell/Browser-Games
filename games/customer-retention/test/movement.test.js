@@ -4,10 +4,11 @@ import { createMovement, STATES, CONTEXT_ACTIONS, rollOffset, forwardOf, rightOf
 import { TUNING } from '../src/tuning.js';
 import { makeBox } from '../src/world/collide.js';
 import { GREY_ROOM } from '../src/world/greyRoom.js';
+import { deriveCoverEdges, edgeOptions } from '../src/world/cover.js';
 
 const DT = 1 / 60;
 const FLOOR = makeBox([-100, -1, -100], [100, 0, 100], 'floor');
-const near = (a, b, e) => assert.ok(Math.abs(a - b) <= e, `${a} vs ${b}`);
+const near = (a, b, e, n = "") => assert.ok(Math.abs(a - b) <= e, `${n} ${a} vs ${b}`);
 const mover = (o = {}) => createMovement({ boxes: [FLOOR], spawn: [0, 0, 0], ...o });
 const I = (o = {}) => ({ moveX: 0, moveY: 0, camYaw: 0, aim: false, sprint: false, tap: false, ...o });
 const step = (m, intent, n) => { for (let i = 0; i < n; i++) m.update(intent, DT); };
@@ -193,4 +194,46 @@ test('fire held in move faces the camera at aimTurnRate and sets m.firing; sprin
 test('an intent without fire behaves as before: firing false and facing follows motion', () => {
   const m = mover(); step(m, I({ moveX: -1, camYaw: 0 }), 30);
   assert.equal(m.firing, false); near(m.facing, Math.PI / 2, 1e-6);
+});
+test('down() from move, sprint, roll and each cover state: state downed, cover null; crawl at 1.0 m/s; taps, aim, sprint and fire do nothing; revive() returns to move', () => {
+  const LOWB = makeBox([-2, 0, 2], [2, 1, 2.6], 'low'), WALL = makeBox([-6, 0, 2], [-3, 1, 2.6], 'low'), FAR = makeBox([-1, 0, 2.2], [3, 1, 2.8], 'low');
+  const mk = (boxes, spawn) => mover({ boxes: [FLOOR, ...boxes], spawn, coverEdges: deriveCoverEdges([FLOOR, ...boxes], edgeOptions()) });
+  const inCoverM = () => { const m = mk([LOWB], [0, 0, 0.4]); m.update(I({ moveY: -1, tap: true }), DT); step(m, I(), 20); return m; };
+  const setups = {
+    move: () => mover(),
+    sprint: () => { const m = mover(); step(m, I({ moveY: -1, sprint: true }), 20); assert.equal(m.state, 'sprint'); return m; },
+    roll: () => { const m = mover(); m.update(I({ moveY: -1, tap: true }), DT); assert.equal(m.state, 'roll'); return m; },
+    coverSlide: () => { const m = mk([LOWB], [0, 0, 0.4]); m.update(I({ moveY: -1, tap: true }), DT); assert.equal(m.state, 'coverSlide'); return m; },
+    cover: inCoverM,
+    popped: () => { const m = inCoverM(); step(m, I({ aim: true }), 12); assert.equal(m.cover.exposed, true); return m; },
+    blind: () => { const m = inCoverM(); step(m, I({ fire: true }), 12); assert.equal(m.cover.blind, 1); return m; },
+    vault: () => { const m = inCoverM(); m.update(I({ moveY: -1, tap: true }), DT); assert.equal(m.state, 'vault'); return m; },
+    coverSwap: () => {
+      const m = mk([WALL, FAR], [-3.5, 0, 0.4]); m.update(I({ moveY: -1, tap: true }), DT); step(m, I(), 20);
+      let n = 0; while (m.cover.t < m.cover.edge.length - 1e-6 && n++ < 300) m.update(I({ moveX: -1 }), DT);
+      m.update(I({ moveX: -1, tap: true }), DT); assert.equal(m.state, 'coverSwap'); return m;
+    },
+  };
+  for (const [name, make] of Object.entries(setups)) {
+    const m = make(); m.down();
+    assert.equal(m.state, 'downed', name); assert.equal(m.cover, null, name); assert.equal(m.aiming, false, name); assert.equal(m.firing, false, name);
+    // crawl 1.0 m/s along +x (stick -x at yaw 0), with every other input held
+    const it = I({ moveX: -1, aim: true, sprint: true, fire: true, tap: true });
+    const before = m.entries; step(m, it, 30);
+    assert.equal(m.state, 'downed', name); assert.equal(m.entries, before, name);
+    assert.equal(m.aiming, false, name); assert.equal(m.firing, false, name); assert.equal(m.cover, null, name);
+    near(m.speed(), 1.0, 1e-9, name);
+    m.revive(); assert.equal(m.state, 'move', name); assert.equal(m.cover, null, name);
+    step(m, I({ moveX: 1 }), 20); near(m.speed(), 4.5, 1e-9, name);
+  }
+});
+test('downed: crawlSpeed and crawlTurnRate come from the tuning; never returns a next state; revive() when not downed does nothing', () => {
+  const m = mover({ tuning: { ...TUNING.move, crawlSpeed: 2, crawlTurnRate: 1 } }); m.down();
+  step(m, I({ moveX: -1 }), 30); near(m.speed(), 2, 1e-9);
+  assert.ok(m.facing > 0 && m.facing <= 0.5 + 1e-9, `${m.facing}`);      // 1 rad/s over 0.5 s
+  step(m, I({ moveX: 0.5 }), 30); near(m.speed(), 1, 1e-9);
+  step(m, I(), 20); assert.equal(m.speed(), 0);
+  const j = mover(); const e = j.entries; j.revive(); assert.equal(j.state, 'move'); assert.equal(j.entries, e);
+  m.down(); m.down(); assert.equal(m.state, 'downed');
+  for (const dt of [0, 5]) { m.update(I({ moveY: 1 }), dt); assert.ok(m.pos.every(Number.isFinite)); }
 });

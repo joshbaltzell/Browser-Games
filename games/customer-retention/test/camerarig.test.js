@@ -114,7 +114,7 @@ test('a mode without shakeWeight (coverTall, fov 75) gets zero shake', () => {
 });
 test('only CAMERA_MODES are modes: shake, bump, look and unknown names give normal', () => {
   const t = clone();
-  assert.deepEqual([...CAMERA_MODES], ['normal', 'aim', 'sprint', 'coverLow', 'coverTall']);
+  assert.deepEqual([...CAMERA_MODES], ['normal', 'aim', 'sprint', 'coverLow', 'coverTall', 'downed']);
   for (const m of ['shake', 'bump', 'look', 'nope']) {
     assert.deepEqual(modeParams(t, m), modeParams(t, 'normal'));
     assert.equal(shakeWeightOf({ ...t, [m]: { shakeWeight: 1 } }, m), 0);
@@ -227,4 +227,19 @@ test('look padScale 0.6 slows pad look to 0.6x; mouse look ignores it', () => {
   const m = rig(), n = rig();
   m.look(10, 10, 0, 0, 0.1, false); n.look(10, 10, 0, 0, 0.1, false, 0.6);
   assert.equal(m.yaw, n.yaw); assert.equal(m.pitch, n.pitch);
+});
+test('downed mode: up 0.8, back 2.4; the lens is never inside a box while crawling along a wall', () => {
+  assert.deepEqual(modeParams(clone(), 'downed'), { fov: 70, right: 0.55, up: 0.8, back: 2.4 });
+  const c = rig(); c.snap(T0, 0); const r = run(c, 60, { mode: 'downed' });
+  near(r.pos[1], 0.8, 0.02); near(r.pos[2], -2.4, 0.02); assert.equal(shakeWeightOf(clone(), 'downed'), 0);
+  const W = [FLOOR, makeBox([-0.62, 0, -50], [-5, 5, 50], 'wall')];
+  for (const yaw of [0, 1, -1, 2.5]) {
+    const k = rig(); k.snap([0, 0, 0], yaw); k.yaw = yaw;
+    for (let i = 0; i < 180; i++) {
+      const p = [0, 0, i * 0.01];
+      const q = k.update(DT, { target: p, mode: 'downed', side: 1 }, W);
+      assert.equal(pointInBoxes(W.slice(1), q.pos, 0), false, `yaw ${yaw} step ${i}`);
+      assert.ok(q.pos[1] >= 0.2 - 1e-6, `${q.pos[1]}`);
+    }
+  }
 });

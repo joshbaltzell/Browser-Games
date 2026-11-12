@@ -436,3 +436,7 @@ test('travel() creates the cover object with blind and blindEnd at 0; leaving cl
   const m = inCover(); assert.equal(m.cover.blind, 0); assert.equal(m.cover.blindEnd, 0);
   assert.equal(m.firing, false);
 });
+test('cameraModeOf: downed beats everything', () => {
+  const m = inCover(); m.down(); assert.equal(cameraModeOf(m), 'downed');
+  const s = mover(); step(s, I({ moveX: 1, sprint: true }), 20); s.down(); assert.equal(cameraModeOf(s), 'downed');
+});

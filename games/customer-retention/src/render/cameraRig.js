@@ -7,7 +7,7 @@ import { sweepSphere } from '../world/collide.js';
 const KEYS = ['fov', 'right', 'up', 'back'];
 const TAU = Math.PI * 2;
 
-export const CAMERA_MODES = Object.freeze(['normal', 'aim', 'sprint', 'coverLow', 'coverTall']);
+export const CAMERA_MODES = Object.freeze(['normal', 'aim', 'sprint', 'coverLow', 'coverTall', 'downed']);
 const isMode = (mode) => mode !== 'normal' && CAMERA_MODES.includes(mode);
 
 export function modeParams(cam, mode, out = {}) {

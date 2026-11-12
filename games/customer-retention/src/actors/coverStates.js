@@ -66,6 +66,7 @@ export function coverEdgeOf(m) {
 }
 
 export function cameraModeOf(m) {
+  if (m.state === 'downed') return 'downed';
   if (m.state === 'sprint') return 'sprint';
   if (m.cover && m.cover.pop >= 0.5) return 'aim';
   if (m.state === 'cover' || m.state === 'coverSlide' || m.state === 'coverSwap') {

@@ -8,9 +8,12 @@ const SPREAD_KEY = { aim: 'spreadAim', hip: 'spreadHip', blind: 'spreadBlind' };
 // Frame-rate independent: everything advances by the dt passed to update.
 export function createArsenal({ weapons = TUNING.weapons, combat = TUNING.combat, loadout = LOADOUT } = {}) {
   const ammo = {};
-  for (const id of loadout) {
-    if (id) ammo[id] = { mag: Math.floor(weapons[id].mag), reserve: Math.floor(weapons[id].reserveStart), bloom: 0, boost: false };
-  }
+  const fill = () => {
+    for (const id of loadout) {
+      if (id) Object.assign(ammo[id] || (ammo[id] = {}), { mag: Math.floor(weapons[id].mag), reserve: Math.floor(weapons[id].reserveStart), bloom: 0, boost: false });
+    }
+  };
+  fill();
   const events = [];
   const a = {
     slot: Math.max(0, loadout.findIndex(Boolean)),
@@ -124,6 +127,20 @@ export function createArsenal({ weapons = TUNING.weapons, combat = TUNING.combat
     return events;
   };
 
+  // Back to the starting state: every weapon full with its starting reserve, first slot, no reload.
+  a.reset = () => {
+    // Rows are refilled in place, so anything holding a row sees the reset.
+    fill();
+    a.slot = Math.max(0, loadout.findIndex(Boolean));
+    a.reload = null; a.switching = 0; a.cooldown = 0; a.buffer = 0; a.dryLatched = false;
+    events.length = 0;
+  };
+  // A pickup: adds n rounds of reserve, capped at reserveMax. An infinite reserve ignores it.
+  a.addReserve = (id, n) => {
+    const am = ammo[id];
+    if (!am || weapons[id].infiniteReserve > 0 || !(n > 0)) return;
+    am.reserve = Math.max(am.reserve, Math.min(Math.floor(weapons[id].reserveMax), am.reserve + Math.floor(n)));
+  };
   a.refill = () => { for (const i of loadout) if (i) ammo[i].reserve = Math.floor(weapons[i].reserveMax); };
   a.set = (i, { mag, reserve } = {}) => {
     if (!ammo[i]) return;

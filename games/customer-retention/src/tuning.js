@@ -10,6 +10,7 @@ export const TUNING = {
     sprint: { fov: 80, up: 1.25, back: 2.9, shakeWeight: 1 },
     coverLow: { fov: 70, right: 0.55, up: 1.0, back: 1.9 },
     coverTall: { fov: 70, right: 0.65, up: 1.35, back: 1.9 },
+    downed: { fov: 70, up: 0.8, back: 2.4 },
     bump: { amount: 0.18, halfLife: 0.07 }, // slam kick toward the player, m and s
     recoil: { halfLife: 0.09, max: 6 },     // gun kick spring: s to halve, and the cap in deg
     blendHalfLife: 0.07,       // mode changes: offsets and fov
@@ -39,6 +40,8 @@ export const TUNING = {
     runClipMinSpeed: 0.3, // m/s, above this the run clip plays
     runRateMin: 0.5, runRateMax: 2.2,       // run clip playback rate clamp
     sprintRateMin: 0.8, sprintRateMax: 2.2, // sprint clip playback rate clamp
+    crawlSpeed: 1.0,      // m/s, crawling while downed
+    crawlTurnRate: 4,     // rad/s, facing toward the crawl
   },
   // Cover. Distances in m, angles in degrees, times in s, speeds in m/s.
   cover: {
@@ -125,6 +128,19 @@ export const TUNING = {
     crateRadius: 1.0,     // m, walk within this of an ammo crate to refill
     crouchHead: 0.70,     // m, head centre of a crouched character tucked behind low cover
     crouchBodyTop: 0.45,  // m, top of a crouched character's body capsule
+    shoulderDrop: 0.25,   // m, a popped player's shoulder capsule runs from this far below the neck up to the neck
+    pickupRadius: 0.8,    // m, walk within this of an ammo pickup to take it
+  },
+  // Player health. Times in s. The 0/1 fields are flags (standInRevive, godMode).
+  health: {
+    max: 100,
+    regenDelay: 4,        // s without a hit before health regenerates
+    regenTime: 3,         // s from the start of regeneration to full
+    downedTime: 12,       // s of crawling before the arena restarts
+    standInRevive: 0,     // 1: stands in for Tobble, the player gets up after reviveTime
+    reviveTime: 3,        // s
+    reviveHealth: 0.5,    // fraction of max health on getting up
+    godMode: 0,           // 1: health never drops below 1 (dev switch)
   },
   // Target dummies (the grey room's Associates). Health in hit points, times in s, speeds in m/s.
   dummy: { health: 100, respawnTime: 3, railSpeed: 1.5 },
@@ -143,5 +159,9 @@ export const TUNING = {
     shotVolume: 0.35, hitVolume: 0.3, killVolume: 0.45, reloadVolume: 0.35,
     gunSquash: 0.18, gunSquashTime: 0.08, gunKick: 0.05, bodyKick: 0.04,
     dummyBurstTime: 0.12, dummyRespawnPop: 0.2,
+    faceMaxOpacity: 0.85, edgeMaxOpacity: 0.55, // damage face and screen edge glow at zero health
+    hitFlashTime: 0.4,    // s, the edge flash toward a shooter
+    hitKick: 0.5,         // deg, camera kick when the player is hit
+    hurtVolume: 0.45,
   },
 };

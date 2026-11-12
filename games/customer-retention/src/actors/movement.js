@@ -91,6 +91,21 @@ export const STATES = {
     },
     exit() {},
   },
+  // Crawling, hurt: no shooting, no cover, no taps. Only the arena (or a revive) takes the player out.
+  downed: {
+    acceptsTap: false,
+    enter(m) { m.cover = null; m.coverTarget = null; m.aiming = false; m.firing = false; m.vel[0] = m.vel[1] = m.vel[2] = 0; }, // dropped where they stand: no skid
+    update(m, intent, dt) {
+      const t = m.tuning;
+      m.aiming = false; m.firing = false;
+      wishOf(intent, wish);
+      steer(m, wish[0] * t.crawlSpeed, wish[1] * t.crawlSpeed, t.crawlSpeed, dt, t);
+      if (m.speed() > t.faceMinSpeed) m.facing = turnToward(m.facing, Math.atan2(m.vel[0], m.vel[2]), t.crawlTurnRate * dt);
+      m.heading = m.facing;
+      return null;
+    },
+    exit() {},
+  },
   ...COVER_STATES,
 };
 
@@ -139,6 +154,9 @@ export function createMovement({
       states[name].enter(m, intent);
       m.onState?.(name, prev, intent);
     },
+    // Health hit zero: crawl from wherever the player is. revive() stands them up again.
+    down() { m.go('downed', {}); },
+    revive() { if (m.state === 'downed') m.go('move', {}); },
     place(pos, yaw) {
       states[m.state].exit?.(m);
       m.state = 'move'; m.stateTime = 0; m.firing = false; m.cover = null; m.coverTarget = null; m.scratch = {};
