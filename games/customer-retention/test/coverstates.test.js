@@ -326,3 +326,39 @@ test('run-in: pulling away leaves on the same step; running straight back in gra
   m.update(I({ moveY: 1 }), DT); assert.equal(m.state, 'move');
   step(m, I({ moveY: 1 }), 20); step(m, I({ moveY: -1 }), 120); assert.equal(m.slams, 2);
 });
+
+// Fix round 1: the run-in qualifies on closing speed into the face, not speed magnitude.
+const J = Math.PI / 180;
+test('run-in: jogging parallel to LOW in contact range then turning 20 deg off the normal does not grab while closing speed is low', () => {
+  const m = mover({ spawn: [-6, 0, 2 - S - 0.1] });
+  step(m, I({ moveX: -1 }), 60); assert.ok(m.speed() > 4);
+  const turn = I({ moveX: -Math.sin(20 * J), moveY: -Math.cos(20 * J) });
+  for (let i = 0; i < 4; i++) { m.update(turn, DT); assert.equal(m.slams + (m.state === 'coverSlide' ? 1 : 0), 0, 'turn step ' + i); }
+});
+test('run-in: the held pre-contact speed expires after 2 x autoTime', () => {
+  const m = mover({ spawn: [0, 0, -3] }); m.coverTuning = { ...C, autoSlam: 0 };
+  step(m, I({ moveY: -1 }), 120); assert.equal(m.state, 'move');
+  m.coverTuning = { ...C, autoSlam: 1 };
+  step(m, I({ moveY: -1 }), 30); // stand against the wall well past 2 * autoTime
+  assert.equal(m.slams, 0); assert.equal(m.state, 'move');
+});
+test('run-in: place() mid-timer and a state change both reset the timer', () => {
+  const m = mover({ spawn: [0, 0, -3] }); m.coverTuning = { ...C, autoTime: 5 };
+  step(m, I({ moveY: -1 }), 100); assert.ok(m.autoTimer > 0);
+  m.place([0, 0, 0]); assert.equal(m.autoTimer, 0);
+  step(m, I({ moveY: -1 }), 100); assert.ok(m.autoTimer > 0);
+  m.update(I({ moveY: 1, tap: true }), DT); assert.equal(m.state, 'roll'); assert.equal(m.autoTimer, 0);
+});
+test('run-in: a vault exit landing with the stick held does not auto-grab off the carried speed', () => {
+  const boxes = [FLOOR, LOW, makeBox([-2, 0, -2.6], [2, 1, -2], 'low')];
+  const m = mover({ boxes, spawn: [0, 0, 0.4] });
+  m.update(I({ moveY: -1, tap: true }), DT); step(m, I(), 20); assert.equal(m.state, 'cover');
+  m.update(I({ moveY: -1, tap: true }), DT); assert.equal(m.state, 'vault');
+  for (let i = 0; i < 60; i++) { m.update(I({ moveY: -1 }), DT); assert.notEqual(m.state, 'coverSlide', 'step ' + i); }
+});
+test('run-in: a roll that ends against a wall with the stick held in does not grab', () => {
+  // camYaw 0 looks at +z, so the tap toward the -z wall is outside the grab view and rolls
+  const w = mover({ boxes: [FLOOR, LOW, makeBox([-2, 0, -0.4], [2, 1, 0], 'low')], spawn: [0, 0, 1.2] });
+  w.update(I({ moveY: 1, tap: true }), DT); assert.equal(w.state, 'roll');
+  for (let i = 0; i < 60; i++) { w.update(I({ moveY: 1 }), DT); assert.notEqual(w.state, 'coverSlide', 'step ' + i); }
+});

@@ -80,7 +80,7 @@ function run(seed, taps) {
     m.update(it, DT);
     const gotSlide = entered.some(([n, p]) => n === 'coverSlide');
     if (expected !== null && !gotSlide) out.mismatches.push([stepNo, prevState, 'tap did not grab', expected.edge.id]);
-    // A slide with no accepted tap must be a run-in: the pure helper agrees (pos and runSpeed are
+    // A slide with no accepted tap must be a run-in: the pure helper agrees (pos and runVel are
     // unchanged by the state change) and it picked the edge the slide is heading for.
     if (gotSlide && expected === null) {
       const tg = (prevState === 'move' || prevState === 'sprint') ? autoSlamCandidate(m, it) : null;
