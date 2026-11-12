@@ -78,3 +78,25 @@ test('reset after a hit mid-regeneration leaves no stale state', () => {
   const h = H(); h.damage(50); run(h, 5); h.reset();
   assert.equal(h.hp, 100); h.damage(10); run(h, 2.9); assert.equal(h.hp, 90);
 });
+
+test('revive(): from downed to 50 hp, timers cleared; update(dt, { standIn: false }) never stand-in revives; standIn true keeps the m4 behaviour', () => {
+  const h = H(); assert.equal(h.revive(), false, 'not downed: nothing to do'); assert.equal(h.hp, 100);
+  h.damage(100); run(h, 2); assert.ok(h.downT < 12);
+  assert.equal(h.revive(), true);
+  assert.equal(h.downed, false); assert.equal(h.hp, 50); assert.equal(h.downT, 0); assert.equal(h.sinceHit, 0);
+  assert.deepEqual(run(h, 20), [], 'no stale bleedOut after a revive'); assert.ok(h.hp > 50, 'regenerates from 50');
+  assert.equal(h.damage(100), 'downed'); assert.equal(h.downT, 12);
+  assert.deepEqual(run(h, 12.1), ['bleedOut'], 'bled is reset by revive, so a later downing reports again');
+  // standIn
+  const s = H({ standInRevive: 1 }); s.damage(100);
+  const quiet = []; for (let i = 0; i < 60 * 5; i++) { const r = s.update(DT, { standIn: false }); if (r) quiet.push(r); }
+  assert.deepEqual(quiet, []); assert.equal(s.downed, true);
+  const on = H({ standInRevive: 1 }); on.damage(100); assert.deepEqual(run(on, 3.1), ['revived']); assert.equal(on.downed, false); assert.equal(on.hp, 50);
+  const dflt = H({ standInRevive: 1 }); dflt.damage(100);
+  let got = null; for (let i = 0; i < 200 && !got; i++) got = dflt.update(DT, { standIn: true }); assert.equal(got, 'revived');
+  // the revive timer does not accumulate while standIn is false
+  const late = H({ standInRevive: 1 }); late.damage(100); for (let i = 0; i < 60 * 2; i++) late.update(DT, { standIn: false });
+  let r2 = null; for (let i = 0; i < 60 * 2 && !r2; i++) r2 = late.update(DT); assert.equal(r2, null, 'only 2 s of standIn so far');
+  // a revive then a hit works and giveUpHold is a tuning key
+  assert.equal(TUNING.health.giveUpHold, 1.0);
+});

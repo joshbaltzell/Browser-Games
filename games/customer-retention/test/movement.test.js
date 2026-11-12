@@ -257,3 +257,23 @@ test('downed: crawlSpeed and crawlTurnRate come from the tuning; never returns a
   m.down(); m.down(); assert.equal(m.state, 'downed');
   for (const dt of [0, 5]) { m.update(I({ moveY: 1 }), dt); assert.ok(m.pos.every(Number.isFinite)); }
 });
+
+test('kettlebell aim: speed capped at aimWalk, facing turns to camYaw, grenadeAim true; in low cover exposed stays false and pop stays 0', () => {
+  const m = mover(); step(m, I({ grenade: true, camYaw: 1.0, moveX: 1 }), 20);
+  near(m.speed(), 2.2, 1e-9); near(m.facing, 1.0, 1e-9); assert.equal(m.grenadeAim, true); assert.equal(m.state, 'move');
+  step(m, I({ grenade: true, camYaw: 1.0, moveY: -1, sprint: true }), 40); near(m.speed(), 2.2, 1e-9, 'no sprint while a kettlebell is in hand'); assert.equal(m.state, 'move');
+  step(m, I({ moveY: -1 }), 3); assert.equal(m.grenadeAim, false);
+  // a sprint in progress drops to move when G goes down
+  const s = mover(); step(s, I({ moveY: -1, sprint: true }), 30); assert.equal(s.state, 'sprint');
+  step(s, I({ moveY: -1, sprint: true, grenade: true }), 2); assert.equal(s.state, 'move'); assert.equal(s.grenadeAim, true);
+  // low cover: the pose is untouched
+  const wall = makeBox([-3, 0, 5], [3, 1, 5.6], 'low'), boxes = [FLOOR, wall];
+  const c = createMovement({ boxes, spawn: [0, 0, 4.3], coverEdges: deriveCoverEdges(boxes, edgeOptions()) });
+  c.update(I({ moveY: -1, tap: true }), DT); step(c, I(), 20); assert.equal(c.state, 'cover');
+  step(c, I({ grenade: true }), 30);
+  assert.equal(c.state, 'cover'); assert.equal(c.grenadeAim, true); assert.equal(c.cover.pop, 0); assert.equal(c.cover.blind, 0);
+  assert.equal(c.cover.exposed ?? false, false);
+  step(c, I(), 2); assert.equal(c.grenadeAim, false);
+  // an action state or a roll never reports kettlebell aim
+  const r = mover(); r.update(I({ tap: true, grenade: true }), DT); assert.equal(r.state, 'roll'); step(r, I({ grenade: true }), 3); assert.equal(r.grenadeAim, false);
+});

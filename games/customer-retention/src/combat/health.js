@@ -19,18 +19,22 @@ export function createHealth(tuning = TUNING.health) {
       h.hp = 0; h.downed = true; h.downT = tuning.downedTime; reviveT = 0; bled = false;
       return 'downed';
     },
+    // Stands a downed player up at reviveHealth and clears the timers. False when not downed.
+    revive() {
+      if (!h.downed) return false;
+      h.downed = false; h.downT = 0; reviveT = 0; bled = false;
+      h.hp = Math.max(1, tuning.reviveHealth * tuning.max); h.sinceHit = 0; regenFrom = -1; regenT = 0;
+      return true;
+    },
     // 'bleedOut' (once, when the timer runs out; the arena then resets) | 'revived' | null.
-    update(dt) {
+    // standIn false skips the stand-in revive (Tobble is the reviver).
+    update(dt, { standIn = true } = {}) {
       if (!(dt > 0) || !Number.isFinite(dt)) dt = 0;
       if (h.downed) {
         h.downT = Math.max(0, h.downT - dt);
-        if (tuning.standInRevive > 0) {
+        if (standIn && tuning.standInRevive > 0) {
           reviveT += dt;
-          if (reviveT >= tuning.reviveTime) {
-            h.downed = false; h.downT = 0; reviveT = 0;
-            h.hp = Math.max(1, tuning.reviveHealth * tuning.max); h.sinceHit = 0; regenFrom = -1; regenT = 0;
-            return 'revived';
-          }
+          if (reviveT >= tuning.reviveTime) { h.revive(); return 'revived'; }
         }
         if (h.downT <= 0 && !bled) { bled = true; return 'bleedOut'; }
         return null;

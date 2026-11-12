@@ -22,3 +22,11 @@ export function turnToward(angle, target, maxStep) {
   const d = wrap(target - angle);
   return angle + Math.max(-maxStep, Math.min(maxStep, d));
 }
+
+// Moves vel toward (tx, tz): faster rate when slowing, slower when speeding up or turning.
+export function steer(m, tx, tz, top, dt, t) {
+  const v = m.vel;
+  const rate = (Math.hypot(tx, tz) < Math.hypot(v[0], v[2]) ? top / t.stopTime : top / t.accelTime) * dt;
+  const dx = tx - v[0], dz = tz - v[2], d = Math.hypot(dx, dz);
+  if (d <= rate) { v[0] = tx; v[2] = tz; } else { v[0] += dx / d * rate; v[2] += dz / d * rate; }
+}

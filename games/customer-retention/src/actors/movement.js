@@ -1,6 +1,7 @@
 import { TUNING } from '../tuning.js';
 import { moveCapsule } from '../world/collide.js';
-import { wrap, tiltOf, wishOf, turnToward } from './moveMath.js';
+import { wrap, tiltOf, wishOf, turnToward, steer } from './moveMath.js';
+import { ACTION_STATES, ACTION_ENTRY } from './actionStates.js';
 import { COVER_STATES, coverAction, autoSlamCandidate } from './coverStates.js';
 
 export const forwardOf = yaw => [Math.sin(yaw), 0, Math.cos(yaw)];
@@ -9,15 +10,8 @@ export const rollOffset = (u, distance, ease) => distance * (1 - (1 - u) ** ease
 
 const wish = [0, 0], rollDelta = [0, 0, 0];
 
-// Moves vel toward (tx, tz): faster rate when slowing, slower when speeding up or turning.
-function steer(m, tx, tz, top, dt, t) {
-  const v = m.vel;
-  const rate = (Math.hypot(tx, tz) < Math.hypot(v[0], v[2]) ? top / t.stopTime : top / t.accelTime) * dt;
-  const dx = tx - v[0], dz = tz - v[2], d = Math.hypot(dx, dz);
-  if (d <= rate) { v[0] = tx; v[2] = tz; } else { v[0] += dx / d * rate; v[2] += dz / d * rate; }
-}
 function canSprint(m, intent, t) {
-  return intent.sprint && !intent.aim && tiltOf(intent) >= t.stickSprintMin;
+  return intent.sprint && !intent.aim && !intent.grenade && tiltOf(intent) >= t.stickSprintMin;
 }
 
 // State contract: { enter(m, intent), update(m, intent, dt) -> nextName | null, exit(m),
@@ -33,10 +27,10 @@ export const STATES = {
       if (canSprint(m, intent, t)) return 'sprint';
       m.aiming = intent.aim;
       m.firing = !!intent.fire;
-      const top = intent.aim ? t.aimWalk : t.jog;
+      const top = intent.aim || intent.grenade ? t.aimWalk : t.jog;
       wishOf(intent, wish);
       steer(m, wish[0] * top, wish[1] * top, top, dt, t);
-      if (intent.aim || intent.fire) m.facing = turnToward(m.facing, intent.camYaw, t.aimTurnRate * dt);
+      if (intent.aim || intent.fire || intent.grenade) m.facing = turnToward(m.facing, intent.camYaw, t.aimTurnRate * dt);
       else if (m.speed() > t.faceMinSpeed) m.facing = turnToward(m.facing, Math.atan2(m.vel[0], m.vel[2]), t.turnRate * dt);
       m.heading = m.facing;
       return null;
@@ -107,19 +101,22 @@ export const STATES = {
     exit() {},
   },
   ...COVER_STATES,
+  ...ACTION_STATES,
 };
 
 export const CONTEXT_ACTIONS = [coverAction, { name: 'roll', when: () => true, state: 'roll' }];
 
 export function createMovement({
   boxes, spawn, tuning = TUNING.move, coverTuning = TUNING.cover, coverEdges = [],
-  states = STATES, contextActions = CONTEXT_ACTIONS, onState, onStep,
+  states = STATES, contextActions = CONTEXT_ACTIONS, onState, onStep, onAction,
 }) {
   const m = {
     state: 'move', stateTime: 0, entries: 0,
     pos: [spawn[0], spawn[1], spawn[2]], prevPos: [spawn[0], spawn[1], spawn[2]],
     vel: [0, 0, 0], facing: 0, prevFacing: 0, aiming: false, firing: false, heading: 0,
-    tuning, boxes, coverTuning, coverEdges, onState, onStep,
+    tuning, boxes, coverTuning, coverEdges, onState, onStep, onAction,
+    // clock is this mover's own running time (s). grenadeAim is true while a kettlebell is being aimed (move or cover).
+    clock: 0, bashReadyAt: 0, grenadeAim: false,
     cover: null, coverTarget: null, slams: 0,
     // Footsteps: stepDist is the ground covered since the last foot plant; steps counts plants and foot alternates 0 and 1.
     stepDist: 0, steps: 0, foot: 0,
@@ -158,12 +155,18 @@ export function createMovement({
     },
     // Health hit zero: crawl from wherever the player is. revive() stands them up again.
     down() { m.go('downed', {}); },
+    // Action states (actionStates.js). Each returns whether it started.
+    bash(yaw) { return ACTION_ENTRY.bash(m, yaw); },
+    rev(on) { return ACTION_ENTRY.rev(m, on); },
+    execute(target, time) { return ACTION_ENTRY.execute(m, target, time); },
+    reviveTobble(pos) { return ACTION_ENTRY.reviveTobble(m, pos); },
     revive() { if (m.state === 'downed') m.go('move', {}); },
     place(pos, yaw) {
       states[m.state].exit?.(m);
       m.state = 'move'; m.stateTime = 0; m.firing = false; m.cover = null; m.coverTarget = null; m.scratch = {};
       m.pos[0] = m.prevPos[0] = pos[0]; m.pos[1] = m.prevPos[1] = pos[1]; m.pos[2] = m.prevPos[2] = pos[2];
       m.vel[0] = m.vel[1] = m.vel[2] = 0; m.runVel[0] = m.runVel[1] = 0; m.hitTime = m.autoTimer = 0;
+      m.grenadeAim = false; m.bashReadyAt = 0;
       if (yaw !== undefined) m.facing = m.prevFacing = m.heading = yaw;
       else m.prevFacing = m.facing;
     },
@@ -171,6 +174,8 @@ export function createMovement({
       m.prevPos[0] = m.pos[0]; m.prevPos[1] = m.pos[1]; m.prevPos[2] = m.pos[2];
       m.prevFacing = m.facing;
       m.firing = false; // only the move state sets it, from intent.fire
+      if (dt > 0) m.clock += dt;
+      m.grenadeAim = !!intent.grenade && (m.state === 'move' || m.state === 'sprint' || m.state === 'cover');
       if (intent.tap && states[m.state].acceptsTap) {
         for (const a of contextActions) if (a.when(m, intent)) { m.go(a.state, intent); break; }
       }

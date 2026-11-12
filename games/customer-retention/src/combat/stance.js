@@ -3,9 +3,12 @@ import { TUNING } from '../tuning.js';
 import { pointInBoxes } from '../world/collide.js';
 import { edgePoint } from '../world/cover.js';
 import { cameraSideOf } from '../actors/coverStates.js';
+import { ACTION_STATES } from '../actors/actionStates.js';
 
 // 'aim' | 'hip' | 'blind' | null. Null means no fire: sprint, roll, slide, vault, swap, a half-risen pop or blind.
+// A kettlebell in hand and the action states (bash, rev, execute, reviveTobble) never fire either.
 export function fireStance(m) {
+  if (m.grenadeAim || Object.hasOwn(ACTION_STATES, m.state)) return null;
   if (m.state === 'move') return m.aiming ? 'aim' : m.firing ? 'hip' : null;
   if (m.state === 'cover' && m.cover) {
     if (m.cover.pop === 1) return 'aim';

@@ -146,7 +146,20 @@ export const TUNING = {
     standInRevive: 0,     // 1: stands in for Tobble, the player gets up after reviveTime
     reviveTime: 3,        // s
     reviveHealth: 0.5,    // fraction of max health on getting up
+    giveUpHold: 1.0,      // s, interact held while downed to give up and go back to the checkpoint
     godMode: 0,           // 1: health never drops below 1 (dev switch)
+  },
+  // Melee and Cheat Day. Times in s, distances in m, angles in deg (full cones), speeds in m/s, damage in hp.
+  melee: {
+    holdTime: 0.2, bashTime: 0.45, bashHitAt: 0.15, bashRange: 1.8, bashAngle: 60, bashDamage: 30, bashLunge: 0.6,
+    bashCooldown: 0.6, revSpeed: 2.5, revPulse: 0.25, cutterReach: 1.1, cutterAngle: 50, cutTime: 1.1,
+    finishTime: 0.7, executeRange: 1.6, executeAngle: 70, promptRange: 4, cutterSpin: 40,
+  },
+  // Kettlebells. Speeds in m/s, gravity in m/s^2, distances in m, times in s, damage in hp, angles in deg.
+  grenade: {
+    carry: 4, start: 4, throwSpeed: 13, throwLift: 10, gravity: 12, ballRadius: 0.12, restitution: 0.35, friction: 0.6,
+    fuse: 1.6, radius: 4, damage: 160, killRadius: 1.2, killDamage: 200, selfDamage: 0.5, padReach: 0.8,
+    arcTime: 2.0, throwTime: 0.35,
   },
   // Target dummies (the grey room's Associates). Health in hit points, times in s, speeds in m/s.
   dummy: { health: 100, respawnTime: 3, railSpeed: 1.5 },

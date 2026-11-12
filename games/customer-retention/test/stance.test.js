@@ -141,3 +141,18 @@ test('blind fire over low cover clears the own wall for a standing target 3 m an
     }
   }
 });
+
+test('fireStance is null while grenadeAim and in bash, rev, execute and reviveTobble', () => {
+  const m = mk([FLOOR], [0, 0, 0]);
+  step(m, I({ aim: true, fire: true }), 3); assert.equal(fireStance(m), 'aim');
+  step(m, I({ aim: true, fire: true, grenade: true }), 3); assert.equal(m.grenadeAim, true); assert.equal(fireStance(m), null);
+  step(m, I({ fire: true, grenade: true }), 3); assert.equal(fireStance(m), null);
+  step(m, I({ fire: true }), 3); assert.equal(fireStance(m), 'hip', 'back once G is released');
+  for (const start of [x => x.bash(), x => x.rev(true), x => x.execute([0, 3], 1), x => x.reviveTobble([0, 0, 2])]) {
+    const a = mk([FLOOR], [0, 0, 0]); assert.ok(start(a));
+    step(a, I({ aim: true, fire: true, interactHeld: true }), 3); assert.equal(fireStance(a), null, a.state);
+  }
+  // in cover with a kettlebell in hand, a pop does not make a fire stance
+  const c = wallA(); step(c, I({ aim: true, grenade: true }), 20); assert.equal(fireStance(c), null);
+  step(c, I({ aim: true }), 20); assert.equal(fireStance(c), 'aim');
+});

@@ -1,7 +1,7 @@
 import { TUNING } from '../tuning.js';
 
 // The tunable numbers: every number in TUNING.move (but radius and height),
-// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.health, TUNING.associate, TUNING.director, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
+// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.health, TUNING.melee, TUNING.grenade, TUNING.associate, TUNING.director, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
 // Pure data and helpers; no DOM.
 
 const n = (path, min, max, step) => ({ path, min, max, step });
@@ -76,7 +76,7 @@ export const PANEL = Object.freeze([
   n('combat.hitPad', 0, 0.3, 0.005), n('combat.crouchHead', 0, 3, 0.01), n('combat.crouchBodyTop', 0, 3, 0.01),
   n('combat.shoulderDrop', 0, 1, 0.01), n('combat.pickupRadius', 0.2, 3, 0.05),
   n('health.max', 1, 500, 1), n('health.regenDelay', 0, 15, 0.1), n('health.regenTime', 0, 15, 0.1), n('health.downedTime', 0, 60, 0.5),
-  n('health.standInRevive', 0, 1, 1), n('health.reviveTime', 0, 10, 0.1), n('health.reviveHealth', 0, 1, 0.05), n('health.godMode', 0, 1, 1),
+  n('health.standInRevive', 0, 1, 1), n('health.reviveTime', 0, 10, 0.1), n('health.reviveHealth', 0, 1, 0.05), n('health.godMode', 0, 1, 1), n('health.giveUpHold', 0, 5, 0.01),
   n('associate.radius', 0, 3, 0.01), n('associate.height', 0, 3, 0.01), n('associate.pointSpacing', 0.2, 3, 0.01),
   n('associate.reserveRadius', 0, 3, 0.01), n('associate.popShift', 0, 3, 0.01), n('associate.linkMax', 2, 15, 0.5),
   n('associate.health', 1, 1000, 1), n('associate.runSpeed', 0, 12, 0.1), n('associate.turnRate', 0.5, 40, 0.5), n('associate.arriveDist', 0.01, 1, 0.01), n('associate.stuckTime', 0.1, 5, 0.1),
@@ -103,6 +103,18 @@ export const PANEL = Object.freeze([
   n('feedback.enemyFlashSize', 0.05, 1.5, 0.05), n('feedback.enemyTracerTime', 0.01, 0.3, 0.01), n('feedback.enemyTracerWidth', 0.005, 0.2, 0.005), n('feedback.glintSize', 0.02, 0.4, 0.01),
   n('feedback.blasterVolume', 0, 1, 0.05), n('feedback.chargeVolume', 0, 1, 0.05), n('feedback.pickupVolume', 0, 1, 0.05),
   n('feedback.barkTime', 0.2, 6, 0.1), n('feedback.barkGap', 0, 12, 0.5),
+
+  n('melee.holdTime', 0, 5, 0.01), n('melee.bashTime', 0, 5, 0.01), n('melee.bashHitAt', 0, 5, 0.01), n('melee.bashRange', 0, 10, 0.05),
+  n('melee.bashAngle', 0, 180, 1), n('melee.bashDamage', 0, 500, 1), n('melee.bashLunge', 0, 10, 0.05), n('melee.bashCooldown', 0, 5, 0.01),
+  n('melee.revSpeed', 0, 30, 0.1), n('melee.revPulse', 0.05, 5, 0.01), n('melee.cutterReach', 0, 10, 0.05), n('melee.cutterAngle', 0, 180, 1),
+  n('melee.cutTime', 0, 5, 0.01), n('melee.finishTime', 0, 5, 0.01), n('melee.executeRange', 0, 10, 0.05), n('melee.executeAngle', 0, 180, 1),
+  n('melee.promptRange', 0, 10, 0.05), n('melee.cutterSpin', 0, 100, 1),
+
+  n('grenade.carry', 0, 10, 1), n('grenade.start', 0, 10, 1), n('grenade.throwSpeed', 0, 30, 0.1), n('grenade.throwLift', 0, 180, 1),
+  n('grenade.gravity', 0.5, 30, 0.1), n('grenade.ballRadius', 0.02, 1, 0.01), n('grenade.restitution', 0, 1, 0.01), n('grenade.friction', 0, 1, 0.01),
+  n('grenade.fuse', 0, 5, 0.01), n('grenade.radius', 0, 10, 0.05), n('grenade.damage', 0, 500, 1), n('grenade.killRadius', 0, 10, 0.05),
+  n('grenade.killDamage', 0, 500, 1), n('grenade.selfDamage', 0, 2, 0.05), n('grenade.padReach', 0, 10, 0.05),
+  n('grenade.arcTime', 0, 5, 0.01), n('grenade.throwTime', 0, 5, 0.01),
 ]);
 
 const PANEL_BY_PATH = new Map(PANEL.map(p => [p.path, p]));
@@ -165,5 +177,5 @@ function text(v, indent) {
 
 // The move, camera, look, cover, weapons, combat, health, associate, director, dummy and feedback blocks as object-literal text to paste into src/tuning.js.
 export function formatForTuningFile(current = TUNING) {
-  return ['associate', 'camera', 'combat', 'cover', 'director', 'dummy', 'feedback', 'health', 'look', 'move', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
+  return ['associate', 'camera', 'combat', 'cover', 'director', 'dummy', 'feedback', 'grenade', 'health', 'look', 'melee', 'move', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
 }
