@@ -81,7 +81,7 @@ export const TUNING = {
     swapMaxOffset: 0.6,   // m, widest sideways stagger between the two stand lines
     slamSquash: 0.2,      // squash fraction on arriving at cover
     slamSquashTime: 0.15, // s, squash duration
-    thudVolume: 0.5,      // 0 to 1
+    thudVolume: 0.75,     // 0 to 1
     autoSlam: 1,          // 1 on, 0 off: running straight into cover slams you in with no tap
     autoAngle: 40,        // deg, widest approach angle off straight at the face for a run-in
     autoDist: 0.25,       // m, a run-in grabs once the stand point is this close (you are bumping the wall)
@@ -173,7 +173,7 @@ export const TUNING = {
     stepDip: 0.015,     // m, the lens dips this far on each foot plant
     stepVolume: 0.3,    // 0 to 1, a footstep (the 'step' sound recipe)
     reticleMinGap: 6,   // px, the reticle's arms at zero spread
-    shotVolume: 0.35, hitVolume: 0.3, killVolume: 0.45, reloadVolume: 0.35,
+    shotVolume: 0.55, hitVolume: 0.3, killVolume: 0.45, reloadVolume: 0.35,
     gunSquash: 0.18, gunSquashTime: 0.08, gunKick: 0.05, bodyKick: 0.04,
     dummyBurstTime: 0.12, dummyRespawnPop: 0.2,
     faceMaxOpacity: 0.85, edgeMaxOpacity: 0.55, // damage face and screen edge glow at zero health

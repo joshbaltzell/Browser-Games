@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSfx } from '../src/audio/sfx.js';
 
-const NAMES = ['rifle', 'pistol', 'dry', 'hit', 'head', 'kill', 'magOut', 'magIn', 'perfect', 'good', 'jam', 'thud', 'blaster', 'charge', 'hurt', 'downed', 'clear', 'pickup'];
+const NAMES = ['rifle', 'pistol', 'dry', 'hit', 'head', 'kill', 'magOut', 'magIn', 'perfect', 'good', 'jam', 'thud', 'blaster', 'charge', 'hurt', 'downed', 'clear', 'pickup', 'step'];
 
 function fakeCtor(log, { state = 'running', panner = false } = {}) {
   const param = () => ({ value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {} });
@@ -62,4 +62,12 @@ test('play takes a pan: it goes through a StereoPanner (clamped) when the contex
   const s2 = createSfx({ AudioContextCtor: fakeCtor(plain) });
   for (const n of NAMES) s2.play(n, 0.4, 0.7);
   assert.equal(plain.panners, undefined);
+});
+
+test('the heavier recipes layer a crack, a body, a sub and a tail; a footstep is a thump plus a soft noise', () => {
+  const count = (name) => { const log = newLog(); createSfx({ AudioContextCtor: fakeCtor(log) }).play(name, 0.5); return log.nodes; };
+  assert.ok(count('rifle') >= 10, 'rifle layers');
+  assert.ok(count('pistol') >= 10, 'pistol layers');
+  assert.ok(count('thud') >= 8, 'thud layers');
+  assert.ok(count('step') >= 4, 'step is a thump and a noise');
 });

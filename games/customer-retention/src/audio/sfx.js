@@ -51,8 +51,19 @@ export function createSfx({ AudioContextCtor = globalThis.AudioContext } = {}) {
   const click = (t, freq, vol) => { const g = voice(t, 0.03, vol); hiss(g, 'bandpass', freq, t, 0.03); };
 
   const RECIPES = {
-    rifle: (t, v) => { const g = voice(t, 0.09, v); hiss(g, 'bandpass', 1800, t, 0.09); tone(g, 'sine', 110, 55, t, 0.09); },
-    pistol: (t, v) => { const g = voice(t, 0.12, v); hiss(g, 'lowpass', 2500, t, 0.12); tone(g, 'sine', 160, 60, t, 0.12); },
+    // Guns: a short noisy crack on top, a low body, a sub thump under it and a lowpassed tail.
+    rifle: (t, v) => {
+      hiss(voice(t, 0.05, v * 0.55), 'bandpass', 2200, t, 0.05);
+      tone(voice(t, 0.16, v * 0.9), 'sine', 150, 48, t, 0.16);
+      tone(voice(t, 0.22, v * 0.8), 'sine', 62, 34, t, 0.22);
+      hiss(voice(t, 0.26, v * 0.35), 'lowpass', 700, t, 0.26);
+    },
+    pistol: (t, v) => {
+      hiss(voice(t, 0.06, v * 0.6), 'bandpass', 2000, t, 0.06);
+      tone(voice(t, 0.2, v * 0.9), 'sine', 130, 42, t, 0.2);
+      tone(voice(t, 0.26, v * 0.85), 'sine', 56, 30, t, 0.26);
+      hiss(voice(t, 0.3, v * 0.4), 'lowpass', 600, t, 0.3);
+    },
     dry: (t, v) => tone(voice(t, 0.02, v), 'square', 1200, 1200, t, 0.02),
     hit: (t, v) => tone(voice(t, 0.04, v), 'sine', 1600, 1600, t, 0.04),
     head: (t, v) => { const g = voice(t, 0.06, v); tone(g, 'sine', 2400, 2400, t, 0.06); tone(g, 'sine', 3200, 3200, t, 0.06); },
@@ -76,8 +87,14 @@ export function createSfx({ AudioContextCtor = globalThis.AudioContext } = {}) {
     downed: (t, v) => tone(voice(t, 0.6, v), 'sine', 400, 80, t, 0.6),
     clear: (t, v) => { [523, 659, 784].forEach((f, i) => tone(voice(t + i * 0.12, 0.15, v), 'sine', f, f, t + i * 0.12, 0.15)); },
     pickup: (t, v) => { tone(voice(t, 0.06, v), 'sine', 880, 880, t, 0.06); tone(voice(t + 0.07, 0.08, v), 'sine', 1320, 1320, t + 0.07, 0.08); },
-    // the milestone-2 slam thud: a low-passed noise burst under a 70 Hz sine
-    thud: (t, v) => { const g = voice(t, 0.12, v); hiss(g, 'lowpass', 220, t, 0.12); tone(g, 'sine', 70, 70, t, 0.12); },
+    // the slam thud: a deep falling sine, a low-passed noise body and a short crunch on top
+    thud: (t, v) => {
+      tone(voice(t, 0.32, v), 'sine', 60, 30, t, 0.32);
+      hiss(voice(t, 0.28, v * 0.6), 'lowpass', 260, t, 0.28);
+      hiss(voice(t, 0.07, v * 0.3), 'bandpass', 900, t, 0.07);
+    },
+    // a footstep: a soft heavy thump
+    step: (t, v) => { tone(voice(t, 0.1, v), 'sine', 95, 50, t, 0.1); hiss(voice(t, 0.07, v * 0.5), 'lowpass', 280, t, 0.07); },
   };
 
   return {

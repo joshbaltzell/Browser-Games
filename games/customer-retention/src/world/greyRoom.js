@@ -5,6 +5,7 @@ import { createToonMaterial } from '../render/toon.js';
 import { addOutline, computeOutlineNormals } from '../render/outline.js';
 import { makeFloor, makeSign } from './kit.js';
 import { makeBox } from './collide.js';
+import { propGeometry } from './props.js';
 
 const deepFreeze = (o) => {
   if (o && typeof o === 'object' && !Object.isFrozen(o)) {
@@ -73,8 +74,6 @@ export const GREY_ROOM = deepFreeze({
   ammoCrates: [{ pos: [-11, 0, 8.5] }],
 });
 
-const KIND_COLOR = { wall: PALETTE.lilac, low: PALETTE.teal, tall: PALETTE.hotPink, pillar: PALETTE.cream };
-
 function boxGeometry(list) {
   const parts = list.map((b) => {
     const g = new THREE.BoxGeometry(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]);
@@ -114,11 +113,11 @@ export function buildGreyRoom(room = GREY_ROOM) {
   const group = new THREE.Group();
   const floorBox = room.boxes.find(b => b.kind === 'floor');
   group.add(makeFloor({ w: floorBox.max[0] - floorBox.min[0], d: floorBox.max[2] - floorBox.min[2] }));
-  for (const kind of Object.keys(KIND_COLOR)) {
-    const list = room.boxes.filter(b => b.kind === kind);
-    if (!list.length) continue;
-    const mesh = new THREE.Mesh(computeOutlineNormals(boxGeometry(list)), createToonMaterial({ color: KIND_COLOR[kind] }));
-    mesh.name = `grey-${kind}`;
+  // Every box except the floor is drawn as a mall prop (see props.js): one vertex-coloured mesh, outlined.
+  const solids = room.boxes.filter(b => b.kind !== 'floor');
+  if (solids.length) {
+    const mesh = new THREE.Mesh(computeOutlineNormals(propGeometry(solids, floorBox)), createToonMaterial({ vertexColors: true }));
+    mesh.name = 'grey-props';
     addOutline(mesh);
     group.add(mesh);
   }
