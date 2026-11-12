@@ -11,8 +11,10 @@ export function reticleGap(spreadDeg, fov, viewportH) {
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 // marker is the hit marker kind ('body' | 'head' | 'kill') or null; reloadFlash is 'perfect' | 'good' | 'jam' or null.
+// face is the damageFaceModel result (or null); objective is a line of text; bark is { speaker, text } or null;
+// banner is { title, hint } or null. The last four pass through unchanged.
 export function hudModel({ arsenal, stance, firing, spreadDeg, fov, viewportH, marker = null, reloadFlash = null,
-  weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
+  face = null, objective = '', bark = null, banner = null, weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
   const id = arsenal.current();
   const row = weapons[id], am = arsenal.ammo[id];
   const r = arsenal.reload;
@@ -28,6 +30,7 @@ export function hudModel({ arsenal, stance, firing, spreadDeg, fov, viewportH, m
     reticle: { show: stance === 'aim' || !!firing, gap: feedback.reticleMinGap + reticleGap(spreadDeg, fov, viewportH) },
     reload,
     hit: { show: !!marker, kind: marker || null },
+    face, objective, bark, banner,
   };
 }
 
@@ -41,6 +44,33 @@ export function createHud(root = document.body) {
     return e;
   };
   const hud = el('div', '', root); hud.id = 'cr-hud';
+  // Behind everything else: the screen edge glows, the damage face and the centre banner.
+  const edges = {};
+  for (const k of ['top', 'right', 'bottom', 'left']) edges[k] = el('div', `cr-edge cr-edge-${k}`, hud);
+  const SVG = 'http://www.w3.org/2000/svg';
+  const sv = (tag, attrs, parent) => {
+    const e = document.createElementNS(SVG, tag);
+    for (const k of Object.keys(attrs)) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const faceEl = el('div', 'cr-face', hud);
+  const svg = sv('svg', { viewBox: '0 0 100 100' }, faceEl);
+  const defs = sv('defs', {}, svg);
+  sv('circle', { cx: 50, cy: 50, r: 46 }, sv('clipPath', { id: 'cr-face-clip' }, defs));
+  sv('circle', { cx: 50, cy: 50, r: 46, fill: '#fff3d6' }, svg);
+  const fill = sv('rect', { x: 0, width: 100, y: 96, height: 0, fill: '#e0243c', 'clip-path': 'url(#cr-face-clip)' }, svg);
+  sv('circle', { cx: 50, cy: 50, r: 46, fill: 'none', stroke: '#1b1f3b', 'stroke-width': 4 }, svg);
+  sv('circle', { cx: 35, cy: 40, r: 5.5, fill: '#1b1f3b' }, svg);
+  sv('circle', { cx: 65, cy: 40, r: 5.5, fill: '#1b1f3b' }, svg);
+  const mouth = sv('path', { d: '', fill: 'none', stroke: '#1b1f3b', 'stroke-width': 4.5, 'stroke-linecap': 'round' }, svg);
+  const bannerEl = el('div', 'cr-banner', hud);
+  const bannerTitle = el('div', 'cr-banner-title', bannerEl);
+  const bannerHint = el('div', 'cr-banner-hint', bannerEl);
+  const objectiveEl = el('div', 'cr-objective', hud);
+  const barkEl = el('div', 'cr-bark', hud);
+  const barkWho = el('span', 'cr-bark-who', barkEl);
+  const barkText = el('span', 'cr-bark-text', barkEl);
   const panel = el('div', 'cr-weapon', hud);
   const name = el('div', 'cr-weapon-name', panel);
   const ammo = el('div', 'cr-ammo', panel);
@@ -70,6 +100,17 @@ export function createHud(root = document.body) {
       set('flash', m.reload.flash, v => { result.textContent = v ? v.toUpperCase().replace('JAM', 'JAMMED') : ''; result.dataset.kind = v || ''; });
       set('ret.show', m.reticle.show, v => { reticle.hidden = !v; });
       set('ret.gap', Math.round(m.reticle.gap), g => { arms.forEach(a => a.style.setProperty('--gap', `${g}px`)); });
+      const fc = m.face;
+      set('face.show', !!fc, v => { faceEl.hidden = !v; });
+      if (fc) {
+        set('face.op', Math.round(fc.face.opacity * 100), () => { faceEl.style.opacity = fc.face.opacity.toFixed(2); });
+        set('face.frown', Math.round(fc.face.frown * 50), () => { mouth.setAttribute('d', `M 30 72 Q 50 ${(72 - 24 * fc.face.frown).toFixed(1)} 70 72`); });
+        set('face.fill', Math.round(fc.face.fill * 50), () => { const h = 92 * fc.face.fill; fill.setAttribute('y', (96 - h).toFixed(1)); fill.setAttribute('height', h.toFixed(1)); });
+        for (const k of Object.keys(edges)) set(`edge.${k}`, Math.round(fc.edges[k] * 50), () => { edges[k].style.opacity = fc.edges[k].toFixed(2); });
+      }
+      set('banner', m.banner ? `${m.banner.title}|${m.banner.hint}` : '', v => { bannerEl.hidden = !m.banner; if (m.banner) { bannerTitle.textContent = m.banner.title; bannerHint.textContent = m.banner.hint; } });
+      set('objective', m.objective || '', v => { objectiveEl.textContent = v; objectiveEl.hidden = !v; });
+      set('bark', m.bark ? `${m.bark.speaker}|${m.bark.text}` : '', () => { barkEl.hidden = !m.bark; if (m.bark) { barkWho.textContent = m.bark.speaker; barkText.textContent = m.bark.text; } });
       set('hit', m.hit.show ? m.hit.kind : '', v => { hit.hidden = !v; hit.dataset.kind = v; });
     },
   };

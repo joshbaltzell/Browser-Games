@@ -21,6 +21,8 @@ const TUMBLE_Y = 0.5; // the roll spins about this height
 // Which clip a mover state plays and how fast.
 export function pickClip(mover, tuning = mover.tuning || TUNING.move) {
   const s = mover.state, v = mover.speed();
+  // Crawling: the clip runs at crawl pace and holds when the player is still.
+  if (s === 'downed') return { name: 'crawl', rate: clamp(v / Math.max(tuning.crawlSpeed, 1e-6), 0, 2) };
   if (s === 'roll') return { name: 'roll', rate: CLIPS.roll.duration / tuning.rollTime };
   if (s === 'sprint') return { name: 'sprint', rate: clamp(v / RUN_SPEED, tuning.sprintRateMin, tuning.sprintRateMax) };
   if (s === 'move') {
@@ -152,7 +154,7 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
     gun.place([_v.x, _v.y, _v.z], _dir);
     if (aim && aim.shot) gun.shot();
     gun.update(dt);
-    gun.group.visible = mover.state !== 'roll';
+    gun.group.visible = mover.state !== 'roll' && mover.state !== 'downed';
   }
   // The barrel end in world space, for the muzzle flash and the tracer.
   function gunTip(out = [0, 0, 0]) {

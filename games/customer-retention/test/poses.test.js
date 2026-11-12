@@ -174,13 +174,13 @@ test('samplePose with `out` reuses it and matches a fresh sample', () => {
 
 test('clips are frozen, with the brief\'s durations and their spring half-lives', () => {
   assert.ok(Object.isFrozen(CLIPS));
-  assert.deepEqual(Object.keys(CLIPS), ['idle', 'run', 'aim', 'flinch', 'talk', 'roll', 'sprint', 'coverLow', 'coverLowMove', 'coverTall', 'coverTallMove', 'coverPop', 'vault', 'coverBlindLow', 'coverBlindTallL', 'coverBlindTallR']);
+  assert.deepEqual(Object.keys(CLIPS), ['idle', 'run', 'aim', 'flinch', 'talk', 'roll', 'sprint', 'coverLow', 'coverLowMove', 'coverTall', 'coverTallMove', 'coverPop', 'vault', 'coverBlindLow', 'coverBlindTallL', 'coverBlindTallR', 'crawl']);
   const d = Object.fromEntries(Object.entries(CLIPS).map(([k, c]) => [k, [c.duration, c.loop, c.ease]]));
   // The run is too fast for the default 0.05 s springs, which lag it ~45 degrees.
   assert.deepEqual(d, {
     idle: [2.4, true, 0.05], run: [0.56, true, 0.008], aim: [1.6, true, 0.05], flinch: [0.35, false, 0.05], talk: [2.4, true, 0.05], roll: [0.55, false, 0.02], sprint: [0.56, true, 0.008],
     coverLow: [2.4, true, 0.05], coverLowMove: [0.5, true, 0.05], coverTall: [2.4, true, 0.05], coverTallMove: [0.5, true, 0.05], coverPop: [1.6, true, 0.05], vault: [0.5, false, 0.02],
-    coverBlindLow: [1.6, true, 0.05], coverBlindTallL: [1.6, true, 0.05], coverBlindTallR: [1.6, true, 0.05],
+    coverBlindLow: [1.6, true, 0.05], coverBlindTallL: [1.6, true, 0.05], coverBlindTallR: [1.6, true, 0.05], crawl: [1.0, true, 0.05],
   });
 });
 
@@ -359,5 +359,38 @@ test('coverBlindTallL: handL out past x 0.5 at shoulder height +- 0.15, handR on
     assert.ok(R.handR[0] < -0.5 && Math.abs(R.handR[1] - shR) <= 0.15, `R out hand ${R.handR}`);
     assert.ok(R.handL[0] > 0.15, 'R other hand on its own side');
     assert.ok(dist(bodyPoint(S, L, S.shoulderL), L.handL) <= S.armLength && dist(bodyPoint(S, R, S.shoulderR), R.handR) <= S.armLength, 'out of reach');
+  }
+});
+
+test('crawl: finite, loops, hips <= 0.35, a hand and a foot within 0.1 of the floor at their lowest, arms never across the body, limbs in reach', () => {
+  assert.equal(CLIPS.crawl.loop, true);
+  let lowHand = 9, lowFoot = 9;
+  for (let i = 0; i <= 100; i++) {
+    const p = samplePose('crawl', (i / 100) * CLIPS.crawl.duration, S);
+    assert.ok(flat(p).every(Number.isFinite));
+    assert.ok(p.hipsY <= 0.35 && p.lean > 0.9, `hips ${p.hipsY} lean ${p.lean}`);
+    assert.ok(p.footL[1] >= 0 && p.footR[1] >= 0 && p.handL[1] >= 0 && p.handR[1] >= 0);
+    assert.ok(p.handL[0] > 0.15 && p.handR[0] < -0.15, 'arms cross or hug the belly');
+    assert.ok(p.handL[2] > 0.2 && p.handR[2] > 0.2, 'hands reach ahead');
+    assert.ok(p.footL[2] < 0 && p.footR[2] < 0, 'feet trail');
+    lowHand = Math.min(lowHand, p.handL[1], p.handR[1]); lowFoot = Math.min(lowFoot, p.footL[1], p.footR[1]);
+    assert.ok(dist(bodyPoint(S, p, S.shoulderL), p.handL) <= S.armLength && dist(bodyPoint(S, p, S.shoulderR), p.handR) <= S.armLength, 'hand out of reach');
+    assert.ok(dist(bodyPoint(S, p, S.hipL), [p.footL[0], p.footL[1] + S.ankleHeight, p.footL[2]]) <= S.legLength, 'foot out of reach');
+  }
+  assert.ok(lowHand <= 0.1 && lowFoot <= 0.1, `lowest hand ${lowHand} foot ${lowFoot}`);
+  const a = flat(samplePose('crawl', 0, S)), z = flat(samplePose('crawl', 1.0, S));
+  a.forEach((v, k) => assert.ok(Math.abs(v - z[k]) < 1e-6));
+  // the legs push alternately: the feet are never at the same z
+  const q = samplePose('crawl', 0.1, S);
+  assert.ok(Math.abs(q.footL[2] - q.footR[2]) > 0.02);
+});
+test('Associate in coverLow with lowDrawBack: head top <= 0.95 and the head behind the wall face, as for Doc', () => {
+  const standoff = TUNING.move.radius + TUNING.cover.gap, back = TUNING.cover.lowDrawBack;
+  for (let i = 0; i <= 50; i++) {
+    const p = samplePose('coverLow', (i / 50) * CLIPS.coverLow.duration, S);
+    const pts = [[0.3, 0.2], [0.5, 0.15], [0.1, 0.17], [0.59, 0.05], [0.6, 0], [0.3, -0.235]]
+      .map(([y, z]) => bodyPoint(S, p, [0, S.neckY + y * Math.cos(p.headPitch) - z * Math.sin(p.headPitch), y * Math.sin(p.headPitch) + z * Math.cos(p.headPitch)]));
+    assert.ok(Math.max(...pts.map(q => q[1])) * p.squash <= 0.95);
+    assert.ok(Math.max(...pts.map(q => q[2])) / Math.sqrt(p.squash) - back <= standoff);
   }
 });

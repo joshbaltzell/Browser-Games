@@ -57,3 +57,13 @@ test('hudModel: hit marker kinds body, head, kill; the reload flash shows the re
   assert.equal(base(a, { reloadFlash: 'perfect' }).reload.flash, 'perfect');
   assert.equal(base(a).reload.flash, null);
 });
+
+test('hudModel passes face, objective, bark and banner through unchanged; null bark and banner hide them', () => {
+  const a = createArsenal();
+  const face = { face: { opacity: 0.4, frown: 0.5, fill: 0.5 }, edges: { top: 0, right: 0.2, bottom: 0, left: 0 }, downed: { show: false, seconds: 0 } };
+  const bark = { speaker: 'Associate', text: 'Restocking!' }, banner = { title: 'DOWNED 12', hint: 'E / X give up' };
+  const m = base(a, { face, objective: 'Clear Kiosk Row', bark, banner });
+  assert.equal(m.face, face); assert.equal(m.objective, 'Clear Kiosk Row'); assert.equal(m.bark, bark); assert.equal(m.banner, banner);
+  const none = base(a);
+  assert.equal(none.face, null); assert.equal(none.objective, ''); assert.equal(none.bark, null); assert.equal(none.banner, null);
+});

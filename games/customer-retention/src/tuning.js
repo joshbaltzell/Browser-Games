@@ -174,5 +174,8 @@ export const TUNING = {
     hitFlashTime: 0.4,    // s, the edge flash toward a shooter
     hitKick: 0.5,         // deg, camera kick when the player is hit
     hurtVolume: 0.45,
+    enemyFlashSize: 0.3, enemyTracerTime: 0.08, enemyTracerWidth: 0.04, glintSize: 0.12, // m, s, m, m (acid-green enemy fire; the glint pulses at the blaster tip)
+    blasterVolume: 0.3, chargeVolume: 0.25, pickupVolume: 0.35, // 0 to 1
+    barkTime: 1.8, barkGap: 4, // s, a bark line stays this long and at most one shows per gap
   },
 };

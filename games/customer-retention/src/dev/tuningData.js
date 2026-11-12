@@ -98,6 +98,9 @@ export const PANEL = Object.freeze([
   n('feedback.dummyBurstTime', 0.01, 1, 0.01), n('feedback.dummyRespawnPop', 0, 1, 0.01),
   n('feedback.faceMaxOpacity', 0, 1, 0.05), n('feedback.edgeMaxOpacity', 0, 1, 0.05), n('feedback.hitFlashTime', 0.05, 2, 0.01),
   n('feedback.hitKick', 0, 3, 0.05), n('feedback.hurtVolume', 0, 1, 0.05),
+  n('feedback.enemyFlashSize', 0.05, 1.5, 0.05), n('feedback.enemyTracerTime', 0.01, 0.3, 0.01), n('feedback.enemyTracerWidth', 0.005, 0.2, 0.005), n('feedback.glintSize', 0.02, 0.4, 0.01),
+  n('feedback.blasterVolume', 0, 1, 0.05), n('feedback.chargeVolume', 0, 1, 0.05), n('feedback.pickupVolume', 0, 1, 0.05),
+  n('feedback.barkTime', 0.2, 6, 0.1), n('feedback.barkGap', 0, 12, 0.5),
 ]);
 
 const PANEL_BY_PATH = new Map(PANEL.map(p => [p.path, p]));

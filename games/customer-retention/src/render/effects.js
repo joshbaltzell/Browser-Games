@@ -1,5 +1,5 @@
 // Shot effects: muzzle flash, tracer, sparks, gel and receipts. Each kind is one pooled
-// InstancedMesh in toon material, so the whole kit costs five draw calls.
+// InstancedMesh in toon material, so the whole kit costs seven draw calls (the player's flash and tracer, the Associates' acid-green pair, sparks, gel, receipts).
 import * as THREE from 'three';
 import { TUNING } from '../tuning.js';
 import { PALETTE } from './palette.js';
@@ -23,6 +23,8 @@ export function createEffects(scene, fb = () => TUNING.feedback) {
   }
   const flashes = kind(new THREE.OctahedronGeometry(0.5, 0), PALETTE.playerOrange, 8);
   const tracers = kind(new THREE.BoxGeometry(1, 1, 1), PALETTE.playerOrange, 24);
+  const eFlashes = kind(new THREE.OctahedronGeometry(0.5, 0), PALETTE.gel, 8);
+  const eTracers = kind(new THREE.BoxGeometry(1, 1, 1), PALETTE.gel, 24);
   const sparks = kind(new THREE.BoxGeometry(0.05, 0.05, 0.05), PALETTE.cream, 48);
   const gels = kind(new THREE.IcosahedronGeometry(0.5, 0), PALETTE.gel, 96);
   const papers = kind(new THREE.BoxGeometry(0.16, 0.2, 0.012), PALETTE.cream, 48);
@@ -64,37 +66,51 @@ export function createEffects(scene, fb = () => TUNING.feedback) {
   ballistic(sparks, () => fb().sparkTime, () => 1, false);
   ballistic(gels, () => fb().gelTime, (i) => 0.05 + gels.aux[i * 4 + 3] * 0.07, false);
   ballistic(papers, () => fb().receiptTime, () => 1, true);
-  kinds.push({ k: flashes, shown: new Uint8Array(8), life: () => fb().flashTime, step() {}, draw(i) {
-    const f = 1 - flashes.pool.ages[i] / fb().flashTime;
-    dummy.position.set(flashes.pos[i * 3], flashes.pos[i * 3 + 1], flashes.pos[i * 3 + 2]);
-    dummy.scale.setScalar(fb().flashSize * (0.5 + 0.5 * Math.max(0, f)));
-    dummy.rotation.set(flashes.aux[i * 4], flashes.aux[i * 4 + 1], flashes.aux[i * 4 + 2]);
-    place(flashes, i);
-  } });
-  kinds.push({ k: tracers, shown: new Uint8Array(24), life: () => fb().tracerTime, step() {}, draw(i) {
-    const f = Math.max(0, 1 - tracers.pool.ages[i] / fb().tracerTime);
-    const w = fb().tracerWidth * f, len = tracers.aux[i * 4];
-    dummy.position.set(tracers.pos[i * 3], tracers.pos[i * 3 + 1], tracers.pos[i * 3 + 2]);
-    dummy.quaternion.setFromUnitVectors(UP, axis.set(tracers.vel[i * 3], tracers.vel[i * 3 + 1], tracers.vel[i * 3 + 2]));
-    dummy.scale.set(w, w, len);
-    place(tracers, i);
-  } });
+  // A flash or tracer kind, sized by the named feedback numbers.
+  function flashKind(k, sizeKey) {
+    kinds.push({ k, shown: new Uint8Array(k.pool.ages.length), life: () => fb().flashTime, step() {}, draw(i) {
+      const f = 1 - k.pool.ages[i] / fb().flashTime;
+      dummy.position.set(k.pos[i * 3], k.pos[i * 3 + 1], k.pos[i * 3 + 2]);
+      dummy.scale.setScalar(fb()[sizeKey] * (0.5 + 0.5 * Math.max(0, f)));
+      dummy.rotation.set(k.aux[i * 4], k.aux[i * 4 + 1], k.aux[i * 4 + 2]);
+      place(k, i);
+    } });
+  }
+  function tracerKind(k, timeKey, widthKey) {
+    kinds.push({ k, shown: new Uint8Array(k.pool.ages.length), life: () => fb()[timeKey], step() {}, draw(i) {
+      const f = Math.max(0, 1 - k.pool.ages[i] / fb()[timeKey]);
+      const w = fb()[widthKey] * f, len = k.aux[i * 4];
+      dummy.position.set(k.pos[i * 3], k.pos[i * 3 + 1], k.pos[i * 3 + 2]);
+      dummy.quaternion.setFromUnitVectors(UP, axis.set(k.vel[i * 3], k.vel[i * 3 + 1], k.vel[i * 3 + 2]));
+      dummy.scale.set(w, w, len);
+      place(k, i);
+    } });
+  }
+  flashKind(flashes, 'flashSize');
+  flashKind(eFlashes, 'enemyFlashSize');
+  tracerKind(tracers, 'tracerTime', 'tracerWidth');
+  tracerKind(eTracers, 'enemyTracerTime', 'enemyTracerWidth');
+
+  const spawnFlash = (k, pos, dir) => {
+    const i = k.pool.spawn();
+    put(k, i, pos[0] + dir[0] * 0.1, pos[1] + dir[1] * 0.1, pos[2] + dir[2] * 0.1);
+    k.aux[i * 4] = rnd(3); k.aux[i * 4 + 1] = rnd(3); k.aux[i * 4 + 2] = rnd(3);
+  };
+  const spawnTracer = (k, from, to) => {
+    const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2];
+    const len = Math.hypot(dx, dy, dz);
+    if (!(len > 1e-6)) return;
+    const i = k.pool.spawn();
+    put(k, i, from[0] + dx / 2, from[1] + dy / 2, from[2] + dz / 2);
+    vel(k, i, dx / len, dy / len, dz / len);
+    k.aux[i * 4] = len;
+  };
 
   return {
-    flash(pos, dir) {
-      const i = flashes.pool.spawn();
-      put(flashes, i, pos[0] + dir[0] * 0.1, pos[1] + dir[1] * 0.1, pos[2] + dir[2] * 0.1);
-      flashes.aux[i * 4] = rnd(3); flashes.aux[i * 4 + 1] = rnd(3); flashes.aux[i * 4 + 2] = rnd(3);
-    },
-    tracer(from, to) {
-      const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2];
-      const len = Math.hypot(dx, dy, dz);
-      if (!(len > 1e-6)) return;
-      const i = tracers.pool.spawn();
-      put(tracers, i, from[0] + dx / 2, from[1] + dy / 2, from[2] + dz / 2);
-      vel(tracers, i, dx / len, dy / len, dz / len);
-      tracers.aux[i * 4] = len;
-    },
+    flash(pos, dir) { spawnFlash(flashes, pos, dir); },
+    tracer(from, to) { spawnTracer(tracers, from, to); },
+    enemyFlash(pos, dir) { spawnFlash(eFlashes, pos, dir); },
+    enemyTracer(from, to) { spawnTracer(eTracers, from, to); },
     spark(pos, normal) {
       for (let n = 0; n < fb().sparkCount; n++) {
         const i = sparks.pool.spawn();

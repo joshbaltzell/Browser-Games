@@ -446,6 +446,44 @@ function coverBlindTall(t, spec, p, side) {
   return p;
 }
 
+// The downed crawl: a commando crawl on the forearms. The hips sit low, the body is pitched well forward with the head
+// up, each hand reaches ahead on its own side, plants and pulls back, and the opposite foot pushes while the other
+// swings forward. Hands and feet touch the floor at their lowest. Nothing crosses the body.
+const CRAWL_HIPS = 0.3, CRAWL_LEAN = 1.2;
+const CRAWL_HAND_Z = [0.4, 0.62], CRAWL_FOOT_Z = [-0.6, -0.36];
+// One limb at cycle fraction s: planted for the first half (sliding from `far` to `near`, y on the floor), then
+// lifted and swung back out to `far`. Written as [y, z] into out.
+function crawlLimb(s, far, near, lift, floor, out) {
+  s -= Math.floor(s);
+  if (s < 0.5) { out[0] = floor; out[1] = far + (near - far) * (s / 0.5); return out; }
+  const k = (s - 0.5) / 0.5;
+  out[0] = floor + lift * Math.sin(Math.PI * k);
+  out[1] = near + (far - near) * (k * k * (3 - 2 * k));
+  return out;
+}
+function crawl(t, spec, p) {
+  const f = frame(spec);
+  const u = t / CLIPS.crawl.duration;
+  const ph = TAU * u;
+  p.hipsY = CRAWL_HIPS + 0.012 * Math.cos(2 * ph);
+  p.lean = CRAWL_LEAN + 0.03 * Math.cos(2 * ph);
+  p.twist = 0.1 * Math.sin(ph);
+  p.headYaw = -0.1 * Math.sin(ph);
+  p.headPitch = -0.75;
+  p.squash = 1;
+  p.elbows = 1;
+  // Left hand and right foot go together; right hand and left foot half a cycle later.
+  crawlLimb(u, CRAWL_HAND_Z[1], CRAWL_HAND_Z[0], 0.16, 0.04, _f);
+  set3(p.handL, f.sx + 0.12, _f[0], _f[1]);
+  crawlLimb(u + 0.5, CRAWL_HAND_Z[1], CRAWL_HAND_Z[0], 0.16, 0.04, _f);
+  set3(p.handR, -f.sx - 0.12, _f[0], _f[1]);
+  crawlLimb(u, CRAWL_FOOT_Z[1], CRAWL_FOOT_Z[0], 0.16, 0, _f);
+  set3(p.footR, -f.fx - 0.02, _f[0], _f[1]);
+  crawlLimb(u + 0.5, CRAWL_FOOT_Z[1], CRAWL_FOOT_Z[0], 0.16, 0, _f);
+  set3(p.footL, f.fx + 0.02, _f[0], _f[1]);
+  return p;
+}
+
 // ease is the half-life (seconds) of the rig's springs while the clip plays:
 // they smooth the cross-fades and the hits. The run is a fast cycle that the
 // default 0.05 s would lag (about 45 degrees) and flatten, so its springs are
@@ -472,6 +510,7 @@ export const CLIPS = Object.freeze({
   coverBlindLow: clip(1.6, true, coverBlindLow),
   coverBlindTallL: clip(1.6, true, (t, spec, p) => coverBlindTall(t, spec, p, 1)),
   coverBlindTallR: clip(1.6, true, (t, spec, p) => coverBlindTall(t, spec, p, -1)),
+  crawl: clip(1.0, true, crawl),
 });
 
 // The run clip's planted-foot speed in m/s, so a footfall matches the ground at this speed.

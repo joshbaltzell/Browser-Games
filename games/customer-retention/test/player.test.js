@@ -224,3 +224,9 @@ test('blind over low cover: the pitched-up gun barrel clears a 1 m wall from the
   const tip = v.gunTip([0, 0, 0]);
   assert.ok(tip[1] >= 1.02, `gun tip height ${tip[1]}`);
 });
+
+test('pickClip: downed -> crawl at speed / crawlSpeed, held at speed 0', () => {
+  assert.deepEqual(pickClip(fake({ state: 'downed', v: 0 })), { name: 'crawl', rate: 0 });
+  assert.deepEqual(pickClip(fake({ state: 'downed', v: TUNING.move.crawlSpeed })), { name: 'crawl', rate: 1 });
+  assert.equal(pickClip(fake({ state: 'downed', v: 0.5 * TUNING.move.crawlSpeed })).rate, 0.5);
+});
