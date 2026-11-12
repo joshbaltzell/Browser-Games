@@ -59,7 +59,17 @@ export const GREY_ROOM = deepFreeze({
     lane: { pos: [-10.5, 0, 10.5], yaw: Math.PI / 2 },
     coverRow: { pos: [-7.5, 0, 9], yaw: Math.PI },
     coverTall: { pos: [8, 0, 8.5], yaw: Math.PI },
+    range: { pos: [-7.5, 0, 4], yaw: Math.PI },
   },
+  // Target Associates for the shooting range. Not in boxes, so cover edges are unchanged.
+  dummies: [
+    { id: 'open', pos: [-7.5, 0, -1], yaw: 0 },
+    { id: 'lowCover', pos: [-3, 0, -3.6], yaw: 0 },
+    { id: 'rail', pos: [-8.5, 0, -5.5], yaw: 0, rail: { axis: 'x', half: 2 } },
+    { id: 'far', pos: [0, 0, -10], yaw: 0 },
+    { id: 'tallEnd', pos: [7, 0, -2.5], yaw: 0 },
+  ],
+  ammoCrates: [{ pos: [-11, 0, 8.5] }],
 });
 
 const KIND_COLOR = { wall: PALETTE.lilac, low: PALETTE.teal, tall: PALETTE.hotPink, pillar: PALETTE.cream };

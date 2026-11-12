@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { GREY_ROOM, buildGreyRoom } from '../src/world/greyRoom.js';
 import { pointInBoxes, sweepSphere } from '../src/world/collide.js';
+import { castRay } from '../src/combat/hits.js';
+import { HIT_SHAPES } from '../src/combat/targets.js';
 import { TUNING } from '../src/tuning.js';
 import { deriveCoverEdges, edgeOptions, findCoverTarget, findSwapTarget } from '../src/world/cover.js';
 
@@ -87,4 +89,58 @@ test('cover: from features.coverRow and features.coverTall, a tap straight ahead
     const r = findCoverTarget(edges, GREY_ROOM.boxes, f.pos, [Math.sin(f.yaw), Math.cos(f.yaw)], f.yaw, TUNING.cover, TUNING.move.radius);
     assert.ok(r && r.dist <= 2.5);
   }
+});
+
+const SOLID = GREY_ROOM.boxes.filter(b => b.kind !== 'floor');
+const chestOf = d => [d.pos[0], 0.9, d.pos[2]];
+const clear = (from, to) => {
+  const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2], len = Math.hypot(dx, dy, dz);
+  const h = castRay(from, [dx / len, dy / len, dz / len], len, GREY_ROOM.boxes, []);
+  return h.kind === 'none' ? true : h.t >= len - 1e-6;
+};
+test('dummies: five, none inside a box, rail ends clear of every box', () => {
+  const ds = GREY_ROOM.dummies;
+  assert.deepEqual(ds.map(d => d.id), ['open', 'lowCover', 'rail', 'far', 'tallEnd']);
+  const r = TUNING.move.radius;
+  for (const d of ds) {
+    assert.equal(pointInBoxes(SOLID, [d.pos[0], 1, d.pos[2]], r), false, d.id);
+    if (d.rail) for (const e of [-1, 1]) {
+      const p = d.rail.axis === 'x' ? [d.pos[0] + e * d.rail.half, 1, d.pos[2]] : [d.pos[0], 1, d.pos[2] + e * d.rail.half];
+      assert.equal(pointInBoxes(SOLID, p, r), false, `${d.id} rail end ${e}`);
+    }
+  }
+  assert.ok(Object.isFrozen(ds[0]) && ds.find(d => d.rail).rail.half === 2);
+});
+test('sight lines: from coverRow popped (head height 1.5) to the open dummy\'s chest and the lowCover dummy\'s head; from the range feature to every dummy\'s chest; from coverTall popped at its left end to tallEnd\'s chest: all clear', () => {
+  const D = Object.fromEntries(GREY_ROOM.dummies.map(d => [d.id, d]));
+  const edges = deriveCoverEdges(GREY_ROOM.boxes, { ...edgeOptions(), exclude: GREY_ROOM.coverExclude });
+  // The popped eye: on the stand line of the +z face the coverRow spot leads to.
+  const S = TUNING.move.radius + TUNING.cover.gap;
+  const row = GREY_ROOM.features.coverRow.pos, rowEdge = edges.find(e => e.normal[1] === 1 && e.a[1] > 7 && e.a[1] < 8 && row[0] >= e.a[0] && row[0] <= e.b[0]);
+  assert.ok(rowEdge);
+  const eye = [row[0], 1.5, rowEdge.a[1]];
+  assert.ok(clear(eye, chestOf(D.open)), 'row -> open chest');
+  assert.ok(clear(eye, [D.lowCover.pos[0], HIT_SHAPES.head.cy, D.lowCover.pos[2]]), 'row -> lowCover head');
+  const rf = GREY_ROOM.features.range.pos;
+  // The lowCover dummy's chest is behind its 1 m box by design (head and shoulders show), so its head stands in.
+  for (const d of GREY_ROOM.dummies) assert.ok(clear([rf[0], 1.4, rf[2]], d.id === 'lowCover' ? [d.pos[0], HIT_SHAPES.head.cy, d.pos[2]] : chestOf(d)), `range -> ${d.id}`);
+  const shoulder = [D.lowCover.pos[0], 1.1, D.lowCover.pos[2]];
+  assert.equal(clear([rf[0], 1.4, rf[2]], chestOf(D.lowCover)), false, 'the lowCover chest is covered');
+  assert.ok(clear([rf[0], 1.4, rf[2]], shoulder), 'its shoulders show');
+  // The tall wall's left end: the stand line starts endInset in, and a pop shifts popShift past the corner.
+  const tall = edges.find(e => e.kind === 'tall' && e.normal[1] === 1 && e.a[1] > 6 && e.a[0] > 5 && e.a[0] < 7);
+  assert.ok(tall);
+  const pop = [tall.a[0] - TUNING.cover.popShift, 1.5, tall.a[1]];
+  assert.ok(clear(pop, chestOf(D.tallEnd)), 'tall left end -> tallEnd chest');
+  assert.ok(S > 0);
+});
+test('the ammo crate is clear of the lane and of every box', () => {
+  assert.equal(GREY_ROOM.ammoCrates.length, 1);
+  const c = GREY_ROOM.ammoCrates[0].pos, lane = GREY_ROOM.features.lane;
+  assert.equal(pointInBoxes(SOLID, [c[0], 1, c[2]], TUNING.move.radius + TUNING.combat.crateRadius * 0.5), false);
+  // The lane runs along z = lane.pos[2] from x = lane.pos[0] for 20 m.
+  assert.ok(Math.abs(c[2] - lane.pos[2]) > TUNING.combat.crateRadius + TUNING.move.radius);
+  // The crate and every dummy and the range spot do not share a footprint.
+  for (const d of GREY_ROOM.dummies) assert.ok(Math.hypot(d.pos[0] - c[0], d.pos[2] - c[2]) > TUNING.combat.crateRadius);
+  assert.ok(Object.isFrozen(GREY_ROOM.ammoCrates[0]));
 });

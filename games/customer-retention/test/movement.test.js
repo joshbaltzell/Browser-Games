@@ -176,3 +176,21 @@ test('movement thresholds live in TUNING.move and are read when used', () => {
   assert.equal(m.facing, 0);
   m.tuning.faceMinSpeed = 0.2;
 });
+
+test('fire held in move faces the camera at aimTurnRate and sets m.firing; sprint ignores it and m.firing is false', () => {
+  const m = mover(); m.update(I({ fire: true, camYaw: 2 }), DT);
+  assert.equal(m.firing, true); assert.equal(m.aiming, false);
+  assert.ok(m.facing <= TUNING.move.aimTurnRate * DT + 1e-9 && m.facing > 0);
+  step(m, I({ fire: true, camYaw: 2 }), 12); near(m.facing, 2, 1e-9);
+  // Fire does not slow the jog.
+  step(m, I({ fire: true, camYaw: 0, moveY: -1 }), 30); near(m.speed(), TUNING.move.jog, 1e-9);
+  m.update(I(), DT); assert.equal(m.firing, false);
+  const s = mover(); step(s, I({ sprint: true, moveY: -1, fire: true }), 12);
+  assert.equal(s.state, 'sprint'); assert.equal(s.firing, false);
+  const r = mover(); r.update(I({ tap: true, fire: true }), DT); assert.equal(r.state, 'roll'); assert.equal(r.firing, false);
+  const p = mover(); p.update(I({ fire: true }), DT); p.place([0, 0, 0]); assert.equal(p.firing, false);
+});
+test('an intent without fire behaves as before: firing false and facing follows motion', () => {
+  const m = mover(); step(m, I({ moveX: -1, camYaw: 0 }), 30);
+  assert.equal(m.firing, false); near(m.facing, Math.PI / 2, 1e-6);
+});

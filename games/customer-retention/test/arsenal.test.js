@@ -119,8 +119,7 @@ test('spread: stance base plus bloom; bloom grows per shot to bloomMax and recov
   assert.equal(a.spreadOf('aim'), 0.6 + 0.25);
   const hip = make().update(I({ fire: true }), 'hip', DT)[0]; assert.equal(hip.spread, 2.5);
   const blind = make().update(I({ fire: true }), 'blind', DT)[0]; assert.equal(blind.spread, 7);
-  // The rifle's steady fire (9 shots/s x 0.25 = 2.25 deg/s) is below its recovery (5 deg/s), so with the
-  // shipped numbers its bloom settles under the cap. Check the cap with recovery off, then recovery on its own.
+  // Check the cap with recovery off, then recovery on its own.
   const w = structuredClone(W); w.regret.bloomRecover = 0;
   const b = make(w);
   let shots = 0;
@@ -128,11 +127,11 @@ test('spread: stance base plus bloom; bloom grows per shot to bloomMax and recov
   assert.equal(b.spreadOf('aim'), 0.6 + 2);
   const w5 = structuredClone(W); const b5 = make(w5); b5.ammo.regret.bloom = 2;
   run(b5, I(), 'aim', 1);
-  assert.ok(Math.abs(b5.spreadOf('aim') - (0.6 + Math.max(0, 2 - 5))) < 1e-9);
+  assert.ok(Math.abs(b5.spreadOf('aim') - (0.6 + Math.max(0, 2 - W.regret.bloomRecover))) < 1e-9);
   // Partial recovery.
   const c = make(); c.ammo.regret.bloom = 2;
   run(c, I(), 'aim', 0.2);
-  assert.ok(Math.abs(c.ammo.regret.bloom - 1) < 1e-6);
+  assert.ok(Math.abs(c.ammo.regret.bloom - (2 - 0.2 * W.regret.bloomRecover)) < 1e-6);
 });
 
 test('reloadZone: 0.38 and 0.46 are perfect, 0.30 and 0.62 good, 0.29 and 0.63 jam; inverted ranges match nothing', () => {

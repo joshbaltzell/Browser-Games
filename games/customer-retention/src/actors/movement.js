@@ -32,10 +32,11 @@ export const STATES = {
       const t = m.tuning;
       if (canSprint(m, intent, t)) return 'sprint';
       m.aiming = intent.aim;
+      m.firing = !!intent.fire;
       const top = intent.aim ? t.aimWalk : t.jog;
       wishOf(intent, wish);
       steer(m, wish[0] * top, wish[1] * top, top, dt, t);
-      if (intent.aim) m.facing = turnToward(m.facing, intent.camYaw, t.aimTurnRate * dt);
+      if (intent.aim || intent.fire) m.facing = turnToward(m.facing, intent.camYaw, t.aimTurnRate * dt);
       else if (m.speed() > t.faceMinSpeed) m.facing = turnToward(m.facing, Math.atan2(m.vel[0], m.vel[2]), t.turnRate * dt);
       m.heading = m.facing;
       return null;
@@ -102,7 +103,7 @@ export function createMovement({
   const m = {
     state: 'move', stateTime: 0, entries: 0,
     pos: [spawn[0], spawn[1], spawn[2]], prevPos: [spawn[0], spawn[1], spawn[2]],
-    vel: [0, 0, 0], facing: 0, prevFacing: 0, aiming: false, heading: 0,
+    vel: [0, 0, 0], facing: 0, prevFacing: 0, aiming: false, firing: false, heading: 0,
     tuning, boxes, coverTuning, coverEdges, onState,
     cover: null, coverTarget: null, slams: 0,
     // Run-in slam bookkeeping. runVel is the velocity (x, z) the state asked for this step, taken before
@@ -140,7 +141,7 @@ export function createMovement({
     },
     place(pos, yaw) {
       states[m.state].exit?.(m);
-      m.state = 'move'; m.stateTime = 0; m.cover = null; m.coverTarget = null; m.scratch = {};
+      m.state = 'move'; m.stateTime = 0; m.firing = false; m.cover = null; m.coverTarget = null; m.scratch = {};
       m.pos[0] = m.prevPos[0] = pos[0]; m.pos[1] = m.prevPos[1] = pos[1]; m.pos[2] = m.prevPos[2] = pos[2];
       m.vel[0] = m.vel[1] = m.vel[2] = 0; m.runVel[0] = m.runVel[1] = 0; m.hitTime = m.autoTimer = 0;
       if (yaw !== undefined) m.facing = m.prevFacing = m.heading = yaw;
@@ -149,6 +150,7 @@ export function createMovement({
     update(intent, dt) {
       m.prevPos[0] = m.pos[0]; m.prevPos[1] = m.pos[1]; m.prevPos[2] = m.pos[2];
       m.prevFacing = m.facing;
+      m.firing = false; // only the move state sets it, from intent.fire
       if (intent.tap && states[m.state].acceptsTap) {
         for (const a of contextActions) if (a.when(m, intent)) { m.go(a.state, intent); break; }
       }

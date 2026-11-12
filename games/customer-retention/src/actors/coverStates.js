@@ -51,6 +51,16 @@ export function autoSlamCandidate(m, intent) {
   return -(m.runVel[0] * n[0] + m.runVel[1] * n[1]) >= c.autoMinSpeed ? tg : null;
 }
 
+// Whether a pop or a blind fire can rise here: low cover anywhere, tall cover only at an open end.
+function canPopAt(e, t, c) {
+  const end = atEnd(e, t, c);
+  return e.kind === 'low' || (end !== 0 && isOpen(e, end));
+}
+export function canFireFromCover(m) {
+  const k = m.cover;
+  return !!k && canPopAt(k.edge, k.t, m.coverTuning);
+}
+
 export function coverEdgeOf(m) {
   return m.cover ? m.cover.edge : (m.scratch.edge || null);
 }
@@ -102,7 +112,7 @@ function travel(m, dt, turnRate, faceYaw) {
   m.heading = m.facing;
   if (u < 1) return null;
   if (Math.hypot(m.pos[0] - sc.to[0], m.pos[2] - sc.to[2]) > 0.1) return 'move';
-  m.cover = { edge: sc.edge, t: sc.t, pop: 0, popEnd: 0, exposed: false, endPush: 0 };
+  m.cover = { edge: sc.edge, t: sc.t, pop: 0, popEnd: 0, exposed: false, endPush: 0, blind: 0, blindEnd: 0 };
   m.vel[0] = m.vel[1] = m.vel[2] = 0;
   m.slams++;
   return 'cover';
@@ -183,19 +193,23 @@ const STATE_DEFS = {
         }
       }
 
-      // 3. pop: low cover pops anywhere; tall cover only at an open end.
+      // 3. pop and blind fire: low cover works anywhere, tall cover only at an open end. Aim beats fire.
       const end = atEnd(e, k.t, c);
-      const canPop = e.kind === 'low' || (end !== 0 && isOpen(e, end));
+      const canPop = canPopAt(e, k.t, c);
       const goal = intent.aim && canPop ? 1 : 0;
+      const blindGoal = intent.fire && !intent.aim && canPop ? 1 : 0;
       const popStep = c.popTime > 0 ? dt / c.popTime : 1;
       k.pop = k.pop < goal ? Math.min(goal, k.pop + popStep) : Math.max(goal, k.pop - popStep);
+      const blindStep = c.blindTime > 0 ? dt / c.blindTime : 1;
+      k.blind = k.blind < blindGoal ? Math.min(blindGoal, k.blind + blindStep) : Math.max(blindGoal, k.blind - blindStep);
       k.popEnd = k.pop > 0 && e.kind !== 'low' ? end : 0;
+      k.blindEnd = k.blind > 0 && e.kind !== 'low' ? end : 0;
       k.exposed = k.pop >= 0.5;
       m.aiming = k.exposed;
 
-      // 4. along: only while tucked.
+      // 4. along: only while tucked. A tall blind fire slides to its end instead, so the arm reaches past the corner.
       let pushedOut = false;
-      if (k.pop === 0) {
+      if (k.pop === 0 && k.blind === 0) {
         const a = wish[0] * e.tangent[0] + wish[1] * e.tangent[1];
         if (Math.abs(a) >= c.alongDeadzone) {
           const nt = k.t + a * c.moveSpeed * dt;
@@ -206,6 +220,8 @@ const STATE_DEFS = {
             if (k.endPush >= c.endLeaveTime) return leaveWith(e.tangent[0] * Math.sign(a), e.tangent[1] * Math.sign(a));
           }
         }
+      } else if (k.blindEnd !== 0 && blindGoal === 1) {
+        k.t = clamp(k.t + k.blindEnd * c.moveSpeed * dt, 0, e.length);
       }
       if (!pushedOut) k.endPush = 0;
 

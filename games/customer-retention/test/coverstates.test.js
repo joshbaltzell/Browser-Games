@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createMovement, STATES, CONTEXT_ACTIONS } from '../src/actors/movement.js';
 import { wrap } from '../src/actors/moveMath.js';
 import {
-  COVER_STATE_NAMES, COVER_STATES, coverAction, approachDir, cameraModeOf, cameraSideOf, coverEdgeOf,
+  COVER_STATE_NAMES, COVER_STATES, coverAction, approachDir, cameraModeOf, cameraSideOf, coverEdgeOf, canFireFromCover,
 } from '../src/actors/coverStates.js';
 import { makeBox, pointInBoxes } from '../src/world/collide.js';
 import { deriveCoverEdges, edgeOptions, capsuleClear } from '../src/world/cover.js';
@@ -361,4 +361,78 @@ test('run-in: a roll that ends against a wall with the stick held in does not gr
   const w = mover({ boxes: [FLOOR, LOW, makeBox([-2, 0, -0.4], [2, 1, 0], 'low')], spawn: [0, 0, 1.2] });
   w.update(I({ moveY: 1, tap: true }), DT); assert.equal(w.state, 'roll');
   for (let i = 0; i < 60; i++) { w.update(I({ moveY: 1 }), DT); assert.notEqual(w.state, 'coverSlide', 'step ' + i); }
+});
+
+// Blind fire: fire held without aim.
+test('fire held in low cover (no aim): blind rises to 1 in blindTime; exposed stays false; release lowers it', () => {
+  const m = inCover(); step(m, I({ fire: true }), 3);
+  assert.ok(m.cover.blind > 0.6 && m.cover.blind < 0.65, `${m.cover.blind}`);
+  step(m, I({ fire: true }), 3);
+  near(m.cover.blind, 1, 1e-9); assert.equal(m.cover.exposed, false); assert.equal(m.cover.pop, 0); assert.equal(m.aiming, false);
+  step(m, I({ fire: true }), 30); near(m.cover.blind, 1, 1e-9);
+  step(m, I(), 6); near(m.cover.blind, 0, 1e-9);
+  step(m, I({ fire: true }), 6); near(m.cover.blind, 1, 1e-9); // press again works at once
+});
+test('aim beats fire: both held pops (pop 1, blind 0)', () => {
+  const m = inCover(); step(m, I({ aim: true, fire: true }), 10);
+  near(m.cover.pop, 1, 1e-9); near(m.cover.blind, 0, 1e-9); assert.equal(m.cover.exposed, true);
+  // Fire held, then aim added: blind hands over to the pop.
+  const k = inCover(); step(k, I({ fire: true }), 10); step(k, I({ fire: true, aim: true }), 10);
+  near(k.cover.pop, 1, 1e-9); near(k.cover.blind, 0, 1e-9);
+});
+test('while blind the stick does not shuffle; pulling away still leaves on the same step', () => {
+  const m = inCover(); step(m, I({ fire: true }), 10); const x = m.pos[0], t = m.cover.t;
+  step(m, I({ fire: true, moveX: -1 }), 30); near(m.pos[0], x, 1e-9); near(m.cover.t, t, 1e-9); assert.equal(m.cover.endPush, 0);
+  m.update(I({ fire: true, moveY: 1 }), DT); assert.equal(m.state, 'move'); assert.equal(m.cover, null); assert.ok(m.speed() > 4);
+  assert.equal(m.firing, false, 'a pull-away step is not a move-state fire step');
+  // Tucked low cover shuffles as before.
+  const k = inCover(); step(k, I({ moveX: -1 }), 30); near(k.pos[0], 1.5, 0.02);
+});
+test('tall cover: fire in the middle does nothing (blind 0); at an open end blind rises, blindEnd is that end, t slides to the end', () => {
+  const m = inCover(TALL); step(m, I({ fire: true }), 20); assert.equal(m.cover.blind, 0); assert.equal(m.cover.blindEnd, 0);
+  for (const sign of [-1, 1]) {
+    const k = inCover(TALL); let n = 0;
+    const end = sign > 0 ? k.cover.edge.length : 0;
+    // Walk to within the corner zone, fire held: blind rises there and the player slides the rest of the way.
+    while (Math.abs(k.cover.t - end) > 0.25 && n++ < 400) k.update(I({ moveX: -sign }), DT);
+    assert.ok(Math.abs(k.cover.t - end) > 1e-3 && k.cover.t > 0.01 && k.cover.t < k.cover.edge.length - 0.01);
+    step(k, I({ fire: true }), 12);
+    near(k.cover.blind, 1, 1e-9); assert.equal(k.cover.blindEnd, sign); near(k.cover.t, end, 1e-9);
+    assert.equal(k.cover.pop, 0); assert.equal(k.cover.exposed, false);
+    assert.ok(capsuleClear([FLOOR, TALL], k.pos, 0.35, 1.8));
+    step(k, I(), 12); near(k.cover.blind, 0, 1e-9); assert.equal(k.cover.blindEnd, 0);
+  }
+});
+test('canFireFromCover matches the pop rule: low anywhere, tall only at an open end, never at a closed end', () => {
+  const m = inCover(); assert.equal(canFireFromCover(m), true);
+  step(m, I({ moveX: -1 }), 30); assert.equal(canFireFromCover(m), true);
+  const t = inCover(TALL); assert.equal(canFireFromCover(t), false);
+  let n = 0; while (t.cover.t < t.cover.edge.length - 1e-6 && n++ < 400) t.update(I({ moveX: -1 }), DT);
+  assert.equal(canFireFromCover(t), true);
+  const wall = makeBox([-3, 0, 1], [-2, 3, 4]);
+  const closed = inCover(TALL, 0, [wall]); // the +x end is open, the -x end hits the wall
+  n = 0; while (closed.cover.t > 1e-6 && n++ < 400) closed.update(I({ moveX: 1 }), DT);
+  assert.equal(closed.cover.edge.openA && closed.cover.edge.openB, false, 'one end is a wall');
+  assert.equal(canFireFromCover(closed), closed.cover.edge.openA, 'the t = 0 end');
+  step(closed, I({ fire: true }), 20); assert.equal(closed.cover.blind > 0, closed.cover.edge.openA);
+  assert.equal(canFireFromCover(mover()), false); // not in cover at all
+});
+test('dt 0 and dt 5 while blind: finite, never inside a box', () => {
+  const nonFloor = [LOW, TALL];
+  for (const box of [LOW, TALL]) for (const dt of [0, 5, DT]) {
+    const m = inCover(box); if (box === TALL) toEnd(m);
+    m.update(I({ fire: true }), dt); m.update(I({ fire: true }), dt);
+    assert.ok(m.pos.every(Number.isFinite) && Number.isFinite(m.cover.blind) && Number.isFinite(m.cover.t));
+    assert.equal(pointInBoxes(nonFloor, [m.pos[0], 0.9, m.pos[2]], 0.33), false);
+    assert.ok(m.cover.blind >= 0 && m.cover.blind <= 1);
+  }
+});
+test('blindTime 0 is a one-step rise and does not lock up', () => {
+  const m = inCover(); m.coverTuning = { ...TUNING.cover, blindTime: 0 };
+  m.update(I({ fire: true }), DT); assert.equal(m.cover.blind, 1);
+  m.update(I(), DT); assert.equal(m.cover.blind, 0);
+});
+test('travel() creates the cover object with blind and blindEnd at 0; leaving clears it', () => {
+  const m = inCover(); assert.equal(m.cover.blind, 0); assert.equal(m.cover.blindEnd, 0);
+  assert.equal(m.firing, false);
 });

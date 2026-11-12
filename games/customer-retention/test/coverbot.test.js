@@ -15,13 +15,14 @@ const nonFloor = boxes.filter(b => b.kind !== 'floor');
 const edges = deriveCoverEdges(boxes, { ...edgeOptions(), exclude: GREY_ROOM.coverExclude });
 const C = TUNING.cover, R = TUNING.move.radius;
 
-function run(seed, taps) {
+function run(seed, taps, fire = false) {
   const rand = rng(seed);
+  const fireRand = rng(seed + 1000); // its own stream, so the legs match the no-fire run
   const between = (a, b) => a + (b - a) * rand();
   const pick = list => list[Math.floor(rand() * list.length)];
   const out = {
     stateNames: new Set(), nearLegs: 0, grabs: 0, rolls: 0, leaves: 0, vaults: 0, swaps: 0,
-    mismatches: [], badSteps: [], bad: 0, autos: 0, skimEntries: [], autoKinds: {},
+    mismatches: [], badSteps: [], bad: 0, blindSteps: 0, autos: 0, skimEntries: [], autoKinds: {},
   };
   let stepNo = 0, tapStep = -1, leg = null, entered = [];
   const m = createMovement({
@@ -70,7 +71,7 @@ function run(seed, taps) {
   const d = [0, 0];
   for (; stepNo < STEPS; stepNo++) {
     const coverNow = m.state === 'cover';
-    if (!leg || leg.left <= 0 || (coverNow !== leg.cover)) { leg = newLeg(coverNow); leg.cover = coverNow; leg.n = 0; }
+    if (!leg || leg.left <= 0 || (coverNow !== leg.cover)) { leg = newLeg(coverNow); leg.cover = coverNow; leg.n = 0; leg.intent.fire = fire && fireRand() < 0.3; }
     const it = { ...leg.intent, tap: leg.tapAt === leg.n };
     leg.n++; leg.left--;
     const prevState = m.state, wasCover = prevState === 'cover';
@@ -78,6 +79,7 @@ function run(seed, taps) {
       ? findCoverTarget(edges, boxes, m.pos, approachDir(m, it, d), it.camYaw, C, R) : null;
     entered = [];
     m.update(it, DT);
+    if (m.cover && m.cover.blind === 1) out.blindSteps++;
     const gotSlide = entered.some(([n, p]) => n === 'coverSlide');
     if (expected !== null && !gotSlide) out.mismatches.push([stepNo, prevState, 'tap did not grab', expected.edge.id]);
     // A slide with no accepted tap must be a run-in: the pure helper agrees (pos and runVel are
@@ -104,7 +106,7 @@ function run(seed, taps) {
 
 // Seed 44 was picked from a sweep: the room has few swap pairs, so many seeds never swap.
 const SEEDS = (process.env.BOT_SEEDS || '7,44').split(',').map(Number);
-const noTaps = run(SEEDS[0], false), withTaps = run(SEEDS[1], true);
+const noTaps = run(SEEDS[0], false), withTaps = run(SEEDS[1], true), noTapsFire = run(SEEDS[0], false, true);
 if (process.env.BOT_SEEDS) console.log('COUNTS', SEEDS, noTaps.autos, noTaps.autoKinds, withTaps.autos, withTaps.grabs, withTaps.rolls, withTaps.leaves, withTaps.vaults, withTaps.swaps, withTaps.mismatches.length, withTaps.badSteps.length);
 
 test('5 minutes with no taps: every cover entry is a run-in the auto conditions allow, never a skim', () => {
@@ -129,4 +131,14 @@ test('5 minutes with taps: every grab is a tap that findCoverTarget accepts (and
 });
 test('5 minutes with taps: every step finite and never inside a box outside a vault', () => {
   assert.deepEqual(withTaps.badSteps.slice(0, 3), []);
+});
+
+test('the blind channel never changes a grab: the no-tap run-around with fire held in 30% of legs still grabs only on run-ins', () => {
+  assert.ok(noTapsFire.blindSteps > 100, `blind steps ${noTapsFire.blindSteps}`);
+  assert.deepEqual(noTapsFire.mismatches, []);
+  assert.ok(noTapsFire.autos >= 5, `run-in grabs ${noTapsFire.autos}`);
+  for (const n of ['vault', 'coverSwap']) assert.equal(noTapsFire.stateNames.has(n), false, n);
+  assert.equal(noTapsFire.badSteps.length, 0);
+  const sideways = noTapsFire.skimEntries.filter(([, , n, d]) => -(n[0] * d[0] + n[1] * d[1]) < Math.cos(C.autoAngle * Math.PI / 180) - 1e-9);
+  assert.deepEqual(sideways, []);
 });

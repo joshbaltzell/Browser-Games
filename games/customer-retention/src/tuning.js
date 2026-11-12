@@ -59,6 +59,7 @@ export const TUNING = {
     endLeaveTime: 0.3,    // s, pushing past an open end this long leaves cover
     cornerZone: 0.3,      // m, near an end counts as at the corner
     popTime: 0.12,        // s, rise to peek or fire over or around cover
+    blindTime: 0.08,      // s, arms rise for blind fire (fire without aim)
     popShift: 0.55,       // m, sideways shift of a corner pop
     pushAngle: 40,        // deg, stick angle into the face that starts a vault
     lowDrawBack: 0.38,    // m, low cover draws the body this far back from the wall so the head hides behind it
@@ -87,7 +88,7 @@ export const TUNING = {
       mag: 50, reserveStart: 250, reserveMax: 400, infiniteReserve: 0, // rounds
       auto: 1, rate: 9, damage: 16, headMult: 2, range: 60,            // shots/s, damage per body hit, head multiplier, m
       spreadAim: 0.6, spreadHip: 2.5, spreadBlind: 7,                  // deg, cone by stance
-      bloomPerShot: 0.25, bloomMax: 2, bloomRecover: 5,                // deg per shot, deg cap, deg/s recovery
+      bloomPerShot: 0.25, bloomMax: 2, bloomRecover: 1.5,              // deg per shot, deg cap, deg/s recovery
       kickPitch: 0.7, kickYaw: 0.25,                                   // deg of camera kick per shot (yaw is plus or minus)
       reloadTime: 2.2,                                                 // s, whole reload bar
       perfectStart: 0.38, perfectEnd: 0.46, goodStart: 0.30, goodEnd: 0.62, // fractions of the bar
@@ -114,5 +115,13 @@ export const TUNING = {
     autoReload: 1,        // 1 on, 0 off: firing an empty magazine starts a reload
     minRate: 0.1,         // shots/s, floor for a weapon's rate
     minReloadTime: 0.05,  // s, floor for a weapon's reloadTime
+    muzzleUp: 1.35,       // m, aimed or hip muzzle height above the feet
+    muzzleRight: 0.22,    // m, muzzle offset toward the camera side
+    muzzleForward: 0.55,  // m, muzzle offset along the camera heading
+    blindLift: 0.15,      // m, blind muzzle height above low cover's top
+    blindReach: 0.15,     // m, blind muzzle reach past the wall face or a tall corner
+    crateRadius: 1.0,     // m, walk within this of an ammo crate to refill
   },
+  // Target dummies (the grey room's Associates). Health in hit points, times in s, speeds in m/s.
+  dummy: { health: 100, respawnTime: 3, railSpeed: 1.5 },
 };
