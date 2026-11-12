@@ -172,7 +172,7 @@ export function createPlayerActions({ mover, fight, arsenal, bag, cam, sfx, effe
 
     // Interact: first match wins (interactAction). A tap finishes or starts another set; holding revives Tobble.
     const tb = fight.tobble;
-    const act = interactAction({ downed: false, clear: fight.clear, tobble: tb, pos: m.pos, yaw: m.facing, enemies: fight.enemies, boxes });
+    const act = interactAction({ downed: false, clear: fight.clear && !fight.boss, tobble: tb, pos: m.pos, yaw: m.facing, enemies: fight.enemies, boxes });
     if (act.kind === 'again' && inp.interactPressed) { restart(); return; }
     if (act.kind === 'finish' && inp.interactPressed && CAN_INTERACT.has(m.state)) { if (startExecution(act.target, k.finishTime, 'stomp')) cam.bump(0.6); }
     if (act.kind === 'reviveTobble' && inp.interactHeld && CAN_INTERACT.has(m.state)) m.reviveTobble(tb.pos);

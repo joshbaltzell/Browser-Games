@@ -7,7 +7,7 @@ need() { command -v "$1" >/dev/null 2>&1 || { echo "smoke FAILED: '$1' is not in
 need python3
 need playwright-cli
 
-PORT=8765
+PORT="${CR_PORT:-8765}"
 SESSION="cr-smoke-$$"
 SHOT_DIR="${CR_SHOT_DIR:-$(mktemp -d)}"
 mkdir -p "$SHOT_DIR"
@@ -451,7 +451,7 @@ GPU_SM=$(ev "(() => { const g = __cr.gpu(); return g.geometries + '/' + g.textur
 # Walk into the gate: fade, swap to the Desk, fade in.
 ev "(async () => { const g = __cr.gate(); __cr.at(g.pos[0], g.pos[2] - 4.5, 0); __cr.drive({ moveY: -1 }); window.__sawFade = false; const t0 = performance.now(); while (performance.now() - t0 < 6000 && __cr.run().arena === 'smoothie') { if (__cr.run().fade > 0.3) window.__sawFade = true; await __w(20); } __cr.drive({}); await __until(() => __cr.run().phase === 'play', 3000); return 'ok'; })()" >/dev/null
 rexpect "walking into the open gate fades and swaps to the Cancellation Desk; the checkpoint is the Desk" "(() => { const r = __cr.run(); return window.__sawFade && r.arena === 'desk' && r.checkpoint === 2 && r.phase === 'play' && r.fade === 0 && __cr.level() === 'cancellationDesk' ? 'ok' : 'bad ' + window.__sawFade; })()"
-rexpect "the Desk is a placeholder boss arena: no Reps, no fight, two saunas" "(() => { const f = __cr.fight(); return f.enemies.every(e => !e.alive) && !f.started && __cr.pads().length === 2 ? 'ok' : 'bad'; })()"
+rexpect "the Desk opens with the Overlord (one boss, not started) and two dormant saunas" "(() => { const f = __cr.fight(), b = __cr.boss(); return f.enemies.filter(e => e.alive).length === 1 && f.enemies[0].kind === 'boss' && !f.started && __cr.pads().length === 2 && __cr.pads().every(p => p.state === 'dormant') && b && b.phase === 1 && !b.invuln ? 'ok' : 'bad'; })()"
 rexpect "the hours line says By appointment" "__cr.run().hours === 'Cancellation hours: By appointment' ? 'ok' : 'bad ' + __cr.run().hours"
 ev "(() => { __cr.place('start'); __cr.look(0, 0.12); return 'ok'; })()" >/dev/null
 sleep 1.2
@@ -463,6 +463,62 @@ echo "cancellation desk: $D_FPS fps, $D_CALLS calls, $D_TRIS triangles"
 ev "(async () => { __cr.go('turnstiles'); __cr.drive({}); await __w(1500); window.__g0 = __cr.gpu(); for (const n of ['smoothie', 'desk', 'turnstiles', 'smoothie', 'desk', 'turnstiles']) { __cr.go(n); __cr.drive({}); await __w(400); } await __w(1200); window.__g1 = __cr.gpu(); return 'ok'; })()" >/dev/null
 rexpect "going round the arenas twice leaves the same geometries, textures, programs and draw calls (the old arena is disposed)" "(() => { const a = window.__g0, b = window.__g1; return a.geometries === b.geometries && a.textures === b.textures && a.programs === b.programs && Math.abs(a.calls - b.calls) <= 8 ? 'ok' : 'bad ' + JSON.stringify([a, b]); })()"
 rexpect "the Desk holds far fewer resources than the arenas around it (it really replaced them)" "(async () => { __cr.go('desk'); await __w(800); const d = __cr.gpu(); return d.geometries < window.__g1.geometries ? 'ok' : 'bad ' + JSON.stringify([d, window.__g1]); })()"
+# ---- The Membership Overlord and the ending (piece 3) ----
+bexpect() { # label, js expression returning 'ok' or a description
+  local r
+  r=$(ev "$2")
+  [ "$r" = "ok" ] || fail "boss: $1: $(pw --raw eval "JSON.stringify([__cr.boss(), __cr.ending(), __cr.pads(), __cr.fight().started])") ($r)"
+}
+ev "(async () => { __cr.go('desk'); __cr.god(true); __cr.drive({}); await __w(800); __cr.clearFightLog(); __cr.place('mid'); __cr.look(0, 0.1); await __until(() => __cr.fight().started, 2000); await __until(() => __cr.boss().state === 'telegraph', 15000); return 'ok'; })()" >/dev/null
+shotc boss-telegraph
+bexpect "past the trigger the fight starts and the Overlord telegraphs" "(() => { const b = __cr.boss(); return b.state === 'telegraph' && b.phase === 1 && !b.invuln && !!document.querySelector('.cr-boss') && !document.querySelector('.cr-boss').hidden && /OVERLORD/.test(document.querySelector('.cr-boss-name').textContent) ? 'ok' : 'bad'; })()"
+ev "(async () => { await __until(() => __cr.fightLog().some(x => x.type === 'enemyShot' && x.id === 'overlord'), 8000); return 'ok'; })()" >/dev/null
+bexpect "its telegraph came before its first shot" "(() => { const l = __cr.fightLog(), t = l.findIndex(x => x.type === 'telegraph' && x.id === 'overlord'), s = l.findIndex(x => x.type === 'enemyShot' && x.id === 'overlord'); return t >= 0 && s > t ? 'ok' : 'bad ' + t + ' ' + s; })()"
+ev "(async () => { await __until(() => __cr.boss().markers.length > 0, 40000); return 'ok'; })()" >/dev/null
+sleep 0.4
+shotc boss-lob
+bexpect "a terms-of-service lob shows its floor marker (radius 2.5) before it lands" "(() => { const b = __cr.boss(); const l = __cr.fightLog(); return b.markers.length > 0 && b.markers[0].radius === 2.5 && !l.some(x => x.type === 'lobLand') ? 'ok' : 'bad ' + JSON.stringify(b.markers); })()"
+ev "(async () => { await __until(() => __cr.fightLog().some(x => x.type === 'lobLand'), 8000); return 'ok'; })()" >/dev/null
+bexpect "the page lands after its telegraph (lobLand logged, telegraph kind lob first)" "(() => { const l = __cr.fightLog(); const t = l.findIndex(x => x.type === 'telegraph' && x.kind === 'lob'), g = l.findIndex(x => x.type === 'bossLob'), d = l.findIndex(x => x.type === 'lobLand'); return t >= 0 && g > t && d > g ? 'ok' : 'bad ' + t + ' ' + g + ' ' + d; })()"
+# Phase 2: a huge hit crosses 66%; it retreats, invulnerable, and both saunas open.
+ev "(async () => { __cr.hurtBoss(1e6, 'head'); await __until(() => __cr.boss().state === 'hiding', 10000); await __w(600); return 'ok'; })()" >/dev/null
+shotc boss-phase2
+bexpect "phase 2: hiding behind the desk, invulnerable, both saunas open, the bar greyed with its hint" "(() => { const b = __cr.boss(), el = document.querySelector('.cr-boss'); return b.phase === 2 && b.invuln && b.state === 'hiding' && __cr.pads().every(p => p.state === 'open') && el.dataset.invuln === '1' && /INVULNERABLE/.test(document.querySelector('.cr-boss-hint').textContent) ? 'ok' : 'bad'; })()"
+bexpect "invulnerable while it hides: a hit changes nothing" "(() => { const h = __cr.boss().health; const r = __cr.hurtBoss(500, 'head'); return r === 'immune' && __cr.boss().health === h ? 'ok' : 'bad ' + r; })()"
+# A restart now (the boss checkpoint) puts everything back.
+ev "(async () => { __cr.restart(); __cr.drive({}); await __w(500); return 'ok'; })()" >/dev/null
+bexpect "restart at the boss checkpoint: boss idle at full health in phase 1, saunas dormant, no ending, no bar" "(() => { const b = __cr.boss(), e = __cr.ending(); return b.state === 'idle' && b.phase === 1 && !b.invuln && b.alive && b.health === 4500 && __cr.pads().every(p => p.state === 'dormant' && p.spawned === 0) && e.state === 'off' && !e.lit && document.querySelector('.cr-boss').hidden && __cr.fight().enemies.filter(x => x.alive).length === 1 ? 'ok' : 'bad ' + JSON.stringify([b, e]); })()"
+# The whole thing again, to the end: phase 2, close the saunas, phase 3, the last hit.
+ev "(async () => { __cr.place('mid'); __cr.look(0, 0.1); await __until(() => __cr.fight().started, 2000); await __w(1500); __cr.hurtBoss(1e6, 'head'); await __until(() => __cr.boss().state === 'hiding', 10000); __cr.closePads(); await __until(() => __cr.boss().phase === 3, 12000); await __w(3000); return 'ok'; })()" >/dev/null
+CALLS_B=$(ev "__cr.stats().calls"); TRIS_B=$(ev "__cr.stats().tris"); FPS_B=$(ev "Math.round(__cr.stats().fps)")
+shotc boss-phase3
+bexpect "phase 3: it is back out and vulnerable, with the saunas closed" "(() => { const b = __cr.boss(); return b.phase === 3 && !b.invuln && __cr.pads().every(p => p.state !== 'open' && p.state !== 'dormant') ? 'ok' : 'bad'; })()"
+[ "$CALLS_B" -lt 400 ] 2>/dev/null || fail "boss fight: draw calls '$CALLS_B', expected under 400"
+[ "$TRIS_B" -lt 300000 ] 2>/dev/null || fail "boss fight: triangles '$TRIS_B', expected under 300000"
+echo "boss fight (phase 3, god mode): $FPS_B fps, $CALLS_B calls, $TRIS_B triangles"
+ev "(async () => { __cr.bossReady(); __cr.hurtBoss(50, 'head'); await __until(() => __cr.ending().state === 'slump', 3000); return 'ok'; })()" >/dev/null
+sleep 0.5
+shotc boss-slump
+bexpect "the Overlord falls: the fight clears and the ending slumps, nothing else alive, saunas closed" "(() => { const f = __cr.fight(), e = __cr.ending(); return f.clear && f.enemies.every(x => !x.alive) && e.state === 'slump' && !e.lit && __cr.pads().every(p => p.state === 'closed' || p.state === 'spent') ? 'ok' : 'bad'; })()"
+ev "(async () => { await __until(() => __cr.ending().state === 'desk', 6000); __cr.place('desk'); await __w(500); return 'ok'; })()" >/dev/null
+shotc ending-desk
+bexpect "the desk lights up with its sign and the cancel prompt, and no 'another set' banner" "(() => { const a = document.querySelector('.cr-action'); return __cr.ending().state === 'desk' && __cr.ending().lit && a && !a.hidden && /CANCEL/.test(a.textContent) && document.querySelector('.cr-banner').hidden ? 'ok' : 'bad ' + (a && a.textContent); })()"
+ev "(async () => { __cr.drive({ interactHeld: true }); await __until(() => __cr.ending().state === 'cards', 3000); __cr.drive({}); await __w(600); return 'ok'; })()" >/dev/null
+shotc ending-card1
+bexpect "holding interact for a second at the desk cancels: card 1, MEMBERSHIP CANCELLED." "(() => { const e = document.querySelector('.cr-ending'); return __cr.ending().state === 'cards' && __cr.ending().card === 0 && !e.hidden && /MEMBERSHIP CANCELLED\\./.test(e.textContent) ? 'ok' : 'bad ' + e.textContent; })()"
+ev "(async () => { await __until(() => __cr.ending().card === 1, 6000); await __w(500); return 'ok'; })()" >/dev/null
+shotc ending-card2
+bexpect "card 2 is the email with the cancellation fee" "(() => /49\\.99 cancellation fee/.test(document.querySelector('.cr-ending').textContent) ? 'ok' : 'bad')()"
+ev "(async () => { await __until(() => __cr.ending().card === 2, 9000); await __w(400); return 'ok'; })()" >/dev/null
+shotc ending-card3
+ev "(async () => { await __until(() => __cr.ending().card === 3, 9000); await __w(1800); return 'ok'; })()" >/dev/null
+shotc ending-card4
+bexpect "card 4 is the thanks card, waiting for a key" "(() => { const e = document.querySelector('.cr-ending'); return /thanks for playing/.test(e.textContent) && /GlorpFit/.test(e.textContent) && /any key/i.test(e.textContent) ? 'ok' : 'bad ' + e.textContent; })()"
+ev "(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ' })); await __w(600); return 'ok'; })()" >/dev/null
+bexpect "any key goes back to the start of a new run (the Turnstiles, checkpoint reset)" "(() => { const r = __cr.run(); return r.arena === 'turnstiles' && r.checkpoint === 0 && __cr.ending().state === 'off' && document.querySelector('.cr-ending').hidden ? 'ok' : 'bad ' + JSON.stringify(r); })()"
+ev "__cr.god(false)" >/dev/null
+check_console
+
 # Both down restarts the current arena, not the run.
 ev "(async () => { __cr.go('smoothie'); __cr.god(false); __cr.drive({}); __cr.place('open'); await __w(500); __cr.hurtTobble(9999); __cr.hurt(9999); await __until(() => __cr.fightLog().some(x => x.type === 'checkpoint'), 4000); await __w(500); return 'ok'; })()" >/dev/null
 rexpect "both down restarts the Smoothie Bar (full health, idle Reps), not the run" "(() => { const r = __cr.run(), f = __cr.fight(), h = __cr.health(); return r.arena === 'smoothie' && r.checkpoint === 1 && !f.started && h.hp === h.max && !h.downed && f.enemies.filter(e => e.alive).every(e => e.state === 'idle') ? 'ok' : 'bad ' + JSON.stringify([r, h]); })()"
@@ -476,7 +532,7 @@ ev "document.querySelector('.cr-continue-yes').click()" >/dev/null
 sleep 1
 rexpect "Continue loads the saved arena" "(() => { const r = __cr.run(); return r.arena === 'smoothie' && r.checkpoint === 1 && !document.getElementById('cr-continue') ? 'ok' : 'bad ' + JSON.stringify(r); })()"
 ev "(() => { localStorage.clear(); return 'ok'; })()" >/dev/null
-echo "run: smoothie bar $SM_FPS fps $SM_CALLS calls $SM_TRIS tris; desk $D_FPS fps $D_CALLS calls $D_TRIS tris"
+echo "run: smoothie bar $SM_FPS fps $SM_CALLS calls $SM_TRIS tris; desk $D_FPS fps $D_CALLS calls $D_TRIS tris; boss fight $FPS_B fps $CALLS_B calls $TRIS_B tris"
 check_console
 
 echo "smoke ok: ready, look test driven, grey room and Check-in Turnstiles fight driven, Smoothie Bar and Cancellation Desk run (gates, swaps, disposal, checkpoint, Continue) (Tobble, finishers, bash, Cheat Day, kettlebells, Spawn Sauna, revives), perf $CALLS_ON calls ($CALLS_OFF without outlines), $TRIS triangles, no console errors; screenshots at $SHOT_DIR"

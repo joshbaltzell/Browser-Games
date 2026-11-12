@@ -77,3 +77,21 @@ html, body { margin: 0; height: 100%; background: #1b1f3b; overflow: hidden; fon
 #cr-continue button { font: 800 22px/1 system-ui, sans-serif; letter-spacing: .05em; padding: 14px 28px; min-width: 320px; border: 3px solid #1b1f3b; border-radius: 6px; cursor: pointer; background: #fff3d6; color: #1b1f3b; }
 #cr-continue .cr-continue-yes { background: #b6ff3c; }
 #cr-continue button:hover, #cr-continue button:focus-visible { outline: 3px solid #ff4f9a; }
+
+/* The Membership Overlord's health bar (top centre, under the objective) and the ending cards. */
+.cr-boss { position: absolute; left: 50%; top: 84px; transform: translateX(-50%); width: min(560px, 70vw); text-align: center; }
+.cr-boss-name { font-size: 16px; font-weight: 800; letter-spacing: .16em; color: #ffcf3a; text-shadow: 0 1px 3px rgba(27,31,59,.95); }
+.cr-boss-bar { position: relative; height: 16px; margin-top: 4px; border: 2px solid #1b1f3b; border-radius: 3px; background: rgba(27,31,59,.78); box-sizing: border-box; overflow: hidden; }
+.cr-boss-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(to right, #7a3cff, #ffcf3a); }
+.cr-boss[data-invuln="1"] .cr-boss-fill { background: repeating-linear-gradient(45deg, #8c8fa8 0 8px, #5c5f78 8px 16px); }
+.cr-boss-tick { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff3d6; opacity: .8; }
+.cr-boss-tick-a { left: 33%; } .cr-boss-tick-b { left: 66%; }
+.cr-boss-hint { min-height: 18px; margin-top: 4px; font-size: 14px; font-weight: 700; color: #ffe9a8; }
+.cr-ending { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: rgba(27,31,59,.82); text-align: center; padding: 0 8vw; }
+.cr-ending[hidden] { display: none; }
+.cr-ending-line { font-size: 26px; font-weight: 700; line-height: 1.45; max-width: 760px; }
+.cr-ending-first { font-size: 44px; font-weight: 800; letter-spacing: .06em; }
+.cr-ending[data-tone="mail"] .cr-ending-first { font-size: 30px; color: #b6ff3c; }
+.cr-ending[data-tone="mail"] .cr-ending-line { font-size: 24px; }
+.cr-ending[data-tone="talk"] .cr-ending-first { font-size: 34px; color: #7ee8b0; }
+.cr-ending-hint { font-size: 16px; opacity: .8; letter-spacing: .1em; min-height: 20px; }

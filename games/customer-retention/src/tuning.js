@@ -178,7 +178,7 @@ export const TUNING = {
     staggerTime: 0.9, diveWarn: 1.0, diveRadius: 4.5, diveChance: 0.75, diveReaction: 0.25, diveDistance: 3, diveTime: 0.6,
   },
   // Spawn Saunas (the spec's Hiring Pads). Radius in m, times in s. A kettlebell closes one within radius + grenade.padReach.
-  pad: { radius: 1.1, openAfterKills: 2, openAfterKillsSmoothie: 3, openAfter: 25, interval: 5, maxAlive: 2, total: 6, riseTime: 0.8, trainerShare: 0, trainerShareSmoothie: 0.5 },
+  pad: { radius: 1.1, openAfterKills: 2, openAfterKillsSmoothie: 3, openAfter: 25, interval: 5, maxAlive: 2, total: 6, riseTime: 0.8, trainerShare: 0, trainerShareSmoothie: 0.5, trainerShareBoss: 0.4 },
   // The Personal Trainer (a rusher, no cover, no attack token). scaleW and scaleH size it against an Associate (its capsule and hit volumes).
   // Times in s, distances in m, speeds in m/s, damage in hp, angles in deg, chances 0 to 1. A swing only lands if Doc is inside swingRange + swingSlack
   // and swingArc wide of the facing locked lockTime before the blow; two blows are never within swingGap of each other.
@@ -238,4 +238,20 @@ export const TUNING = {
   // of its door, in front of it) fades to black over fadeOut, holds black for blackHold while the next arena loads, then fades in over
   // fadeIn. hoursTime is how long the cancellation-hours line shows after a checkpoint.
   run: { fadeOut: 0.6, blackHold: 0.25, fadeIn: 0.6, gateReach: 1.6, hoursTime: 6, gateOpenTime: 0.8 },
+  // The Membership Overlord (the boss; an enemy slot of kind 'boss', no cover points, no attack token). scale sizes the Rep rig and its hit volumes;
+  // crouchY is how tall it stands (a fraction) while it is tucked behind the desk. headMult is on top of the weapon's own head multiplier.
+  // Phase 1 down to phase2At of its health, phase 2 (hiding, invulnerable, both saunas open) until they are closed or spent, phase 3 below phase3At.
+  // Every attack is telegraphed: a burst by popTime + telegraphTime (fastTelegraph in phase 3), a terms-of-service lob by popTime + lobWindup and then
+  // lobFlight more seconds of its marker on the floor. Times in s, distances in m, speeds in m/s, damage in hp, chances 0 to 1.
+  boss: {
+    health: 4500, scale: 2, crouchY: 0.5, headMult: 2, phase2At: 0.66, phase3At: 0.33,
+    popTime: 0.5, telegraphTime: 1.0, burstTime: 2.4, rate: 5, damage: 6, spread: 2.5, aimLag: 0.25, muzzleUp: 1.35,
+    coverWaitMin: 1.2, coverWaitMax: 2.2, shiftTime: 0.8,
+    lobEvery: 2, lobWindup: 1.2, lobFlight: 1.5, lobRecover: 0.7, lobRadius: 2.5, lobDamage: 32, lobTobbleDamage: 32, lobFalloff: 0.5,
+    retreatSpeed: 4.5, returnSpeed: 4.5, minHide: 2,
+    fastTelegraph: 0.8, fastBurstTime: 2.0, fastRate: 7, fastWaitMin: 0.5, fastWaitMax: 1.1, offerGap: 0.4,
+  },
+  // The ending: after the Overlord falls, deathDelay s of slump and goo, then the desk lights up and holds for holdTime s of interact within
+  // deskReach m of it; then the cards (cardTime each for the first three, a press after skipLock s skips one, the last waits for a press after finalLock s).
+  ending: { deathDelay: 2.2, deskReach: 2.6, holdTime: 1, card1Time: 2.2, card2Time: 6, card3Time: 3.4, skipLock: 0.7, finalLock: 1.2 },
 };

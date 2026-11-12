@@ -159,12 +159,24 @@ export function buildGreyRoom(room = GREY_ROOM) {
     sign.rotation.y = S.yaw;
     group.add(sign);
   }
+  // The boss room's cancel sign on the desk: dark until the Overlord falls (setCancelLit).
+  let cancel = null;
+  if (room.cancelSign) {
+    const C = room.cancelSign;
+    cancel = makeSign({ text: C.text, w: C.w, h: C.h, bg: C.bg, seed: 6 });
+    cancel.name = 'cancel-sign';
+    cancel.position.set(C.pos[0], C.pos[1], C.pos[2]);
+    cancel.rotation.y = C.yaw;
+    cancel.visible = false;
+    group.add(cancel);
+  }
   // The exit gate (arenas that lead on): closed until setGateOpen(true).
   const gate = room.exit ? buildGate(room.exit) : null;
   if (gate) group.add(gate.group);
   return {
     group, boxes: room.boxes, gate,
     setGateOpen(on, instant = false) { if (gate) gate.setOpen(on, instant); },
+    setCancelLit(on) { if (cancel) cancel.visible = !!on; },
     update(dt) { if (gate) gate.update(dt); },
   };
 }

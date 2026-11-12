@@ -4,7 +4,7 @@ import { TUNING } from '../tuning.js';
 import { PALETTE } from '../render/palette.js';
 import { createToonMaterial } from '../render/toon.js';
 import { addOutline, computeOutlineNormals } from '../render/outline.js';
-import { ASSOCIATE, TRAINER } from './associate.js';
+import { ASSOCIATE, TRAINER, OVERLORD, GOLD } from './associate.js';
 import { kettlebellGeometry } from '../render/grenadeView.js';
 import { buildRig } from './rig.js';
 import { createAnimator } from './animator.js';
@@ -49,7 +49,7 @@ export function pickAssociateClip(e) {
 // The yaw an Associate wants: the wall while tucked or blind firing, the player (the aim point) while telegraphing
 // or bursting, the way it is going while running; else the brain's own yaw.
 export function associateFacing(e) {
-  if (e.kind === 'trainer') return e.yaw;
+  if (e.kind === 'trainer' || e.kind === 'boss') return e.yaw;
   if ((e.state === 'idle' || e.state === 'cover' || e.state === 'reload' || e.state === 'flinch' || e.state === 'suppress') && e.point) {
     return yawOf(-e.point.normal[0], -e.point.normal[1]);
   }
@@ -73,8 +73,20 @@ export function pickTrainerClip(e) {
   }
 }
 
+// Which clip the Membership Overlord plays: the throw's raise while it winds the page up and its slam as it lets go, the run on its retreat and its
+// return, the aim while it shoots.
+export function pickBossClip(e) {
+  switch (e.state) {
+    case 'retreat': case 'return': return 'run';
+    case 'telegraph': case 'burst': return 'aim';
+    case 'lobWindup': case 'lobRecover': return 'throw';
+    default: return 'idle';
+  }
+}
+
 export function faceOf(e) {
   if (e.state === 'dead' || !e.alive) return 'dead';
+  if (e.kind === 'boss') return e.state === 'telegraph' || e.state === 'burst' || e.state === 'lobWindup' || e.state === 'lobRecover' ? 'angry' : e.state === 'retreat' || e.state === 'hiding' ? 'scared' : 'smug';
   if (e.kind === 'trainer' && (e.state === 'run' || e.state === 'windup' || e.state === 'swing')) return 'angry';
   if (SHOOTING.has(e.state)) return 'angry';
   if (e.state === 'flinch' || e.state === 'stagger' || e.state === 'downed' || e.state === 'executed' || e.state === 'dive') return 'scared';
@@ -127,9 +139,53 @@ function buildKettlebell() {
 
 // One drawn character: a rig with its animator, its dive tumble and its weapon. A view owns the Rep's, and builds a Trainer's the first
 // time its slot holds a Trainer (a hidden one costs no draw calls).
+// The Overlord's crown (a gold band with five points) and its lanyard of keycards, each one vertex-coloured mesh.
+function paintGeo(g, color) {
+  g = g.toNonIndexed();
+  g.deleteAttribute('uv');
+  const c = new THREE.Color(color), n = g.getAttribute('position').count, col = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+function crownMesh() {
+  const parts = [paintGeo(new THREE.CylinderGeometry(0.2, 0.22, 0.09, 16, 1, true).translate(0, 0.045, 0), GOLD)];
+  for (let i = 0; i < 5; i++) {
+    const a = i / 5 * Math.PI * 2;
+    parts.push(paintGeo(new THREE.ConeGeometry(0.045, 0.14, 4).translate(Math.sin(a) * 0.2, 0.16, Math.cos(a) * 0.2), i % 2 ? GOLD : PALETTE.hotPink));
+  }
+  const m = new THREE.Mesh(mergeGeometries(parts, false), createToonMaterial({ vertexColors: true, rim: 0.1 }));
+  m.name = 'crown';
+  return m;
+}
+function keycardsMesh() {
+  const colors = [PALETTE.hotPink, PALETTE.teal, PALETTE.cream, PALETTE.gel, PALETTE.lilac];
+  const parts = colors.map((c, i) => paintGeo(new THREE.BoxGeometry(0.075, 0.105, 0.012).translate(-0.12 + i * 0.06, 0.3 - Math.abs(i - 2) * 0.03 - (i % 2) * 0.03, 0.215), c));
+  const m = new THREE.Mesh(mergeGeometries(parts, false), createToonMaterial({ vertexColors: true, rim: 0.1 }));
+  m.name = 'keycards';
+  return m;
+}
+// The terms-of-service page in its right hand: green fine print, with a glint while it winds up.
+function termsPage() {
+  const parts = [paintGeo(new THREE.BoxGeometry(0.3, 0.4, 0.014), '#9be15d')];
+  for (let i = 0; i < 5; i++) parts.push(paintGeo(new THREE.BoxGeometry(0.22, 0.014, 0.018).translate(0, 0.14 - i * 0.07, 0), PALETTE.ink));
+  const g = new THREE.Group();
+  g.name = 'termsPage';
+  g.add(new THREE.Mesh(mergeGeometries(parts, false), createToonMaterial({ vertexColors: true, rim: 0.1 })));
+  const glint = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), new THREE.MeshBasicMaterial({ color: PALETTE.gel, toneMapped: false }));
+  glint.name = 'glint';
+  glint.position.set(0, 0.24, 0);
+  glint.visible = false;
+  g.add(glint);
+  g.visible = false;
+  g.position.set(0, 0.1, 0.12);
+  g.rotation.x = -0.5;
+  return { group: g, glint };
+}
+
 function buildChar(kind) {
-  const trainer = kind === 'trainer';
-  const rig = buildRig(trainer ? TRAINER : ASSOCIATE);
+  const trainer = kind === 'trainer', boss = kind === 'boss';
+  const rig = buildRig(trainer ? TRAINER : boss ? OVERLORD : ASSOCIATE);
   const anim = createAnimator(rig);
   const root = new THREE.Group();
   root.name = kind;
@@ -142,15 +198,24 @@ function buildChar(kind) {
   root.add(rig.shadow);
   const handR = rig.root.getObjectByName('body').children[2]; // buildRig adds hips, then handL, handR
   const weapon = trainer ? buildKettlebell() : buildBlaster();
+  let terms = null;
   if (trainer) handR.add(weapon.group);
   else root.add(weapon.group);
-  return { kind, rig, anim, root, tumble, handR, weapon };
+  if (boss) {
+    const crown = crownMesh();
+    crown.position.set(0, OVERLORD.head.centerY + OVERLORD.head.ry - 0.04, 0);
+    rig.root.getObjectByName('head').add(crown);
+    rig.root.getObjectByName('hips').add(keycardsMesh());
+    terms = termsPage();
+    handR.add(terms.group);
+  }
+  return { kind, rig, anim, root, tumble, handR, weapon, terms };
 }
 
 export function createAssociateView(e) {
   const group = new THREE.Group();
   group.name = `associate-${e.id}`;
-  const chars = { associate: buildChar('associate'), trainer: null };
+  const chars = { associate: buildChar('associate'), trainer: null, boss: null };
   let cur = chars.associate;
   group.add(cur.root);
   const blaster = cur.weapon;   // the Rep's, for tests and the muzzle
@@ -161,7 +226,11 @@ export function createAssociateView(e) {
   // A slot that now holds the other kind swaps its character (a Trainer's is built the first time it is needed).
   function useKind(kind) {
     if (cur.kind === kind) return;
-    if (!chars[kind]) { chars[kind] = buildChar(kind); group.add(chars[kind].root); }
+    if (!chars[kind]) {
+      chars[kind] = buildChar(kind);
+      group.add(chars[kind].root);
+      if (kind === 'boss') group.add(chars.boss.weapon.group);   // its gun lives in the view's space, not the squashed, scaled character's
+    }
     cur.root.visible = false;
     cur = chars[kind];
     cur.root.visible = true;
@@ -175,6 +244,7 @@ export function createAssociateView(e) {
     clip = ''; expression = ''; flinchT = 0;
     blaster.emitter.scale.setScalar(1);
     if (chars.trainer) chars.trainer.weapon.glint.visible = false;
+    if (chars.boss) { chars.boss.terms.glint.visible = false; chars.boss.terms.group.visible = false; }
   }
 
   function update(alpha, dt) {
@@ -187,14 +257,19 @@ export function createAssociateView(e) {
     if (mode === 'live') group.visible = true;
     if (mode === 'burst') {
       deathT += dt;
-      const k = fb.dummyBurstTime > 0 ? Math.min(deathT / fb.dummyBurstTime, 1) : 1;
+      // The Overlord slumps for most of ending.deathDelay before it bursts; everything else bursts at once.
+      const span = e.kind === 'boss' ? TUNING.ending.deathDelay * 0.9 : fb.dummyBurstTime;
+      const k = span > 0 ? Math.min(deathT / span, 1) : 1;
       group.scale.setScalar(1 + 0.2 * k);
       if (k >= 1) { mode = 'gone'; group.visible = false; }
     }
     if (mode === 'gone') return;
     const dead = mode === 'burst';
-    const { rig, anim, tumble, handR } = cur, tr = cur.kind === 'trainer', TT = TUNING.trainer;
-    cur.root.scale.set(tr ? TT.scaleW : 1, tr ? TT.scaleH : 1, tr ? TT.scaleW : 1);
+    const { rig, anim, tumble, handR } = cur, tr = cur.kind === 'trainer', bo = cur.kind === 'boss', TT = TUNING.trainer, BB = TUNING.boss;
+    // The Overlord is boss.scale times a Rep, and stands only crouchY of that tall while it is tucked behind the desk (its hit volumes do the same).
+    if (bo) { const sy = BB.scale * (BB.crouchY + (1 - BB.crouchY) * clamp(e.pop, 0, 1)); cur.root.scale.set(BB.scale, sy, BB.scale); }
+    else cur.root.scale.set(tr ? TT.scaleW : 1, tr ? TT.scaleH : 1, tr ? TT.scaleW : 1);
+    if (bo && dead) cur.root.scale.y *= 1 - 0.45 * clamp(deathT / Math.max(TUNING.ending.deathDelay * 0.9, 1e-3), 0, 1);
     // Position: interpolated, and low cover draws the body back from the wall so the head and hands sit behind it.
     const p = e.pos, q = e.prevPos;
     const low = !dead && e.point && e.point.kind === 'low' && e.state !== 'run' && e.state !== 'dead';
@@ -206,18 +281,18 @@ export function createAssociateView(e) {
     const rise = e.state === 'spawn' ? RISE_FROM * (1 - clamp(e.stateT / Math.max(TUNING.pad.riseTime, 1e-3), 0, 1)) : 0;
     group.position.set(q[0] + (p[0] - q[0]) * alpha + nx * back, q[1] + (p[1] - q[1]) * alpha + rise, q[2] + (p[2] - q[2]) * alpha + nz * back);
     // Facing: the brain's yaw, interpolated, except that a tucked or blind-firing Associate sits square to its wall.
-    const want = tr || e.state === 'run' || SHOOTING.has(e.state) ? e.prevYaw + wrapAngle(e.yaw - e.prevYaw) * alpha : associateFacing(e);
+    const want = tr || bo || e.state === 'run' || SHOOTING.has(e.state) ? e.prevYaw + wrapAngle(e.yaw - e.prevYaw) * alpha : associateFacing(e);
     yaw = turnToward(yaw, want, (tr ? TT.turnRate : T.turnRate) * 1.5 * dt);
     group.rotation.y = yaw;
     if (dead) return;
-    const name = tr ? pickTrainerClip(e) : pickAssociateClip(e);
-    const key = tr ? name + ':' + e.state : name;
+    const name = tr ? pickTrainerClip(e) : bo ? pickBossClip(e) : pickAssociateClip(e);
+    const key = tr || bo ? name + ':' + e.state : name;
     const D = CLIPS.throw.duration;
     if (key !== clip) {
-      if (tr && name === 'throw') {
+      if ((tr || bo) && name === 'throw') {
         // The raise starts at the top of the clip; the slam picks up from the held raise (u 0.4) with no fade.
-        const at = e.state === 'swing' ? THROW_RAISED * D : 0;
-        anim.play(name, { fade: e.state === 'swing' ? 0.02 : 0.08, at }); clipT = at;
+        const slam = e.state === 'swing' || e.state === 'lobRecover', at = slam ? THROW_RAISED * D : 0;
+        anim.play(name, { fade: slam ? 0.02 : 0.08, at }); clipT = at;
       } else anim.play(name, name === 'flinch' ? undefined : { fade: 0.1 });
       clip = key; flinchT = 0;
     } else if (e.state === 'executed') {
@@ -225,10 +300,12 @@ export function createAssociateView(e) {
       flinchT += dt;
       if (flinchT >= CLIPS.flinch.duration) { flinchT = 0; anim.play('flinch'); }
     }
-    let rate = name === 'run' ? clamp((tr ? TT.runSpeed : T.runSpeed) / RUN_SPEED, 0.5, 3) : 1;
+    let rate = name === 'run' ? clamp((tr ? TT.runSpeed : bo ? BB.retreatSpeed : T.runSpeed) / RUN_SPEED, 0.5, 3) : 1;
     if (name === 'crawl') rate = Math.hypot(p[0] - q[0], p[2] - q[2]) > 1e-5 ? 1 : 0;   // it only crawls while it moves
     if (name === 'roll') rate = CLIPS.roll.duration / Math.max(T.diveReaction + T.diveTime, 1e-3);   // the roll fills the whole dive
     if (tr && e.state === 'windup') rate = clipT < THROW_RAISED * D - 1e-6 ? THROW_RAISED * D / Math.max(TT.windup, 1e-3) : 0;   // the raise ends with the wind-up and holds
+    if (bo && e.state === 'lobWindup') rate = clipT < THROW_RAISED * D - 1e-6 ? THROW_RAISED * D / Math.max(BB.popTime + BB.lobWindup, 1e-3) : 0;
+    if (bo && e.state === 'lobRecover') rate = (1 - THROW_RAISED) * D / Math.max(BB.lobRecover, 1e-3);
     if (tr && e.state === 'swing') rate = (1 - THROW_RAISED) * D / Math.max(TT.swingTime, 1e-3);
     clipT += dt * rate;
     tumble.rotation.x = name === 'roll' ? rollSpin(clamp(e.stateT / Math.max(T.diveReaction + T.diveTime, 1e-3), 0, 1)) : 0;
@@ -236,7 +313,8 @@ export function createAssociateView(e) {
     rig.update(dt);
     const ex = faceOf(e);
     if (ex !== expression) { rig.face.setExpression(ex); expression = ex; }
-    if (tr) updateKettlebell(dt); else updateBlaster(name, dt, handR);
+    if (tr) updateKettlebell(dt);
+    else if (bo) { cur.weapon.group.scale.setScalar(BB.scale); updateTerms(dt); updateBlaster(name, dt, handR, cur.weapon, e.state === 'lobWindup' || e.state === 'lobRecover'); } else updateBlaster(name, dt, handR);
   }
 
   // The Trainer's glint pulses while it winds up.
@@ -246,10 +324,18 @@ export function createAssociateView(e) {
     if (g.visible) { glintT += dt; g.scale.setScalar(1 + 0.6 * (0.5 + 0.5 * Math.sin(glintT * 2 * Math.PI * 8))); }
   }
 
+  // The Overlord's page shows while it winds up (with a glint) and is gone the moment it is thrown.
+  function updateTerms(dt) {
+    const t = chars.boss.terms;
+    t.group.visible = e.state === 'lobWindup';
+    t.glint.visible = glintOn && e.state === 'lobWindup';
+    if (t.glint.visible) { glintT += dt; t.glint.scale.setScalar(1 + 0.6 * (0.5 + 0.5 * Math.sin(glintT * 2 * Math.PI * 8))); }
+  }
+
   // The blaster sits at the right hand and points at the aim point while shooting, up over a low wall while blind
   // firing, and forward and down otherwise (in the group's space).
-  function updateBlaster(name, dt, handR) {
-    blaster.group.visible = e.state !== 'downed' && e.state !== 'dive';
+  function updateBlaster(name, dt, handR, blaster = chars.associate.weapon, hide = false) {
+    blaster.group.visible = e.state !== 'downed' && e.state !== 'dive' && !hide;
     group.updateMatrixWorld(true);
     handR.getWorldPosition(_v);
     const wx = _v.x, wy = _v.y, wz = _v.z;
@@ -281,7 +367,7 @@ export function createAssociateView(e) {
     // The muzzle (the Rep's emitter) or the Trainer's kettlebell in world space, for the muzzle flash and the tracer.
     tip(out = [0, 0, 0]) {
       group.updateMatrixWorld(true);
-      (cur.kind === 'trainer' ? cur.weapon.glint : blaster.emitter).getWorldPosition(_v);
+      (cur.kind === 'trainer' ? cur.weapon.glint : cur.weapon.emitter).getWorldPosition(_v);
       out[0] = _v.x; out[1] = _v.y; out[2] = _v.z;
       return out;
     },

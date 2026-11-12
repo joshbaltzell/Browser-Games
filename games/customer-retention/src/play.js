@@ -39,6 +39,7 @@ import { createHealth } from './combat/health.js';
 import { createFight } from './director/fight.js';
 import { damageFaceModel, hitAngle } from './ui/damageFace.js';
 import { createFightView } from './fightView.js';
+import { createEnding, nearDesk, CARDS } from './ending.js';
 
 // The grey-box play scene: the player, the camera, cover and a room to
 // run round in. Simulation runs at fixed steps, drawing interpolates.
@@ -81,7 +82,7 @@ export function gatePlayerInput(intent, arsenalIn, { downed = false, busy = fals
 const TRANSITION_CAP = 2000;
 const SHOT_LOG_CAP = 500;
 const FIGHT_LOG_CAP = 500;
-const LOGGED = new Set(['enemyShot', 'playerHit', 'telegraph', 'death', 'clear', 'bark', 'down', 'explode', 'padOpen', 'padClosed', 'padSpawn', 'tobbleShot', 'tobbleHit', 'revived', 'checkpoint']);
+const LOGGED = new Set(['bossLob', 'lobLand', 'bossPhase', 'enemyShot', 'playerHit', 'telegraph', 'death', 'clear', 'bark', 'down', 'explode', 'padOpen', 'padClosed', 'padSpawn', 'tobbleShot', 'tobbleHit', 'revived', 'checkpoint']);
 
 // localStorage, or null when the browser will not give it to us (file:// in a private window can throw).
 function safeStorage() {
@@ -135,6 +136,8 @@ export function startPlay({ canvas, gl, params }) {
   const button = createContextButton();
   const sfx = createSfx({ AudioContextCtor: window.AudioContext || window.webkitAudioContext });
   const trigger = createTrigger();
+  const ending = createEnding();
+  let anyPress = false;   // any key, click or button since the last step (the ending's last card waits for one)
   const arsenal = createArsenal();
   const effects = createEffects(scene);
   const hud = createHud(document.body);
@@ -195,6 +198,7 @@ export function startPlay({ canvas, gl, params }) {
     targetList = fight ? fight.targets() : dummyList;
     room.setGateOpen(false, true);
     gateWasOpen = false;
+    ending.reset(); room.setCancelLit(false);
   }
   let gateWasOpen = false;
   const hits = [];                 // damage face flashes: { t, angle }
@@ -239,6 +243,9 @@ export function startPlay({ canvas, gl, params }) {
   document.addEventListener('pointerlockchange', () => { if (!input.isLocked()) resetButton(); });
   const unlockSound = () => sfx.unlock();
   window.addEventListener('pointerdown', unlockSound);
+  const markPress = () => { anyPress = true; };
+  window.addEventListener('keydown', markPress);
+  window.addEventListener('pointerdown', markPress);
   window.addEventListener('keydown', unlockSound);
 
   window.addEventListener('keydown', (e) => {
@@ -271,6 +278,7 @@ export function startPlay({ canvas, gl, params }) {
     // The current arena again: the gate shuts, the checkpoint is its own entry.
     run.restart();
     room.setGateOpen(false, true); gateWasOpen = false;
+    ending.reset(); room.setCancelLit(false);
   }
 
   // Doc steps into an arena (a swap, the ?arena jump, Continue): it is built, Doc and Tobble stand at its entry with full health
@@ -285,6 +293,7 @@ export function startPlay({ canvas, gl, params }) {
 
   // The arena is clear: the gate opens (when there is a next arena).
   function onCleared() {
+    if (fight.boss) { ending.start(); return; }   // the boss arena: the desk and the ending, not a gate
     if (run.markClear() && !gateWasOpen) { gateWasOpen = true; room.setGateOpen(true); sfx.play('saunaOpen', TUNING.feedback.saunaVolume); }
   }
 
@@ -294,6 +303,24 @@ export function startPlay({ canvas, gl, params }) {
     arsenal.cancelReload();
     sfx.play('downed', TUNING.feedback.hurtVolume);
     if (fv) fv.forceBark('downed');
+  }
+
+  // The ending: the desk lights up, a hold at it, the cards; any key at the last one goes back to the start.
+  function stepEnding(dt) {
+    const press = anyPress; anyPress = false;
+    if (ending.state === 'off') return;
+    const lvl = LEVEL.overlord;
+    for (const ev of ending.step(dt, { atDesk: !health.downed && nearDesk(mover.pos, lvl && lvl.desk, TUNING.ending.deskReach), hold: held.interact, press })) {
+      logEvent(ev);
+      if (ev.type === 'deskLit') { room.setCancelLit(true); sfx.play('saunaOpen', TUNING.feedback.saunaVolume); }
+      else if (ev.type === 'cancelled') sfx.play('clear', TUNING.feedback.killVolume);
+      else if (ev.type === 'toTitle') toTitle();
+    }
+  }
+  // Back to the title. Until the title screen exists (hooks.toTitle, set by it) this starts a new run at the Turnstiles.
+  function toTitle() {
+    if (typeof hooks.toTitle === 'function') { hooks.toTitle(); return; }
+    run.newRun(); enterArena(ARENAS[0]);
   }
 
   function logEvent(ev) {
@@ -332,10 +359,31 @@ export function startPlay({ canvas, gl, params }) {
 
   function objectiveText() {
     const title = ARENA_TITLES[run.arena];
-    if (LEVEL.boss) return title;
+    if (LEVEL.boss) {
+      const b = fight.boss;
+      if (ending.state === 'slump') return 'The Membership Overlord has fallen';
+      if (ending.state === 'desk') return 'Cancel your membership at the desk';
+      if (ending.locked) return '';
+      if (!b || !fight.started) return title;
+      if (b.invuln) return `Invulnerable! ${promptText('sauna', input.device())}`;
+      return `${title}: shoot the Overlord. Head shots count double`;
+    }
     if (fight.clear) return run.gateOpen ? `${title}: clear \u2014 head for the GO gate` : `${title}: set complete`;
     if (fight.pads.some(p => p.state === 'open')) return promptText('sauna', input.device());
     return fight.started ? (run.arena === 'turnstiles' ? 'Get past the front desk' : `${title}: clear the room`) : 'Walk in';
+  }
+
+  const BOSS_NAME = 'THE MEMBERSHIP OVERLORD';
+  // The boss bar: from the lockdown until it falls. Phase 2 greys the bar and says what to do.
+  function bossModel() {
+    const b = fight && fight.boss;
+    if (!b || !fight.started || !b.alive) return null;
+    return { name: BOSS_NAME, fraction: b.health / TUNING.boss.health, phase: b.phase, invuln: b.invuln, hint: b.invuln ? 'INVULNERABLE \u2014 close the Spawn Saunas' : '' };
+  }
+  function endingModel() {
+    if (ending.state !== 'cards' && ending.state !== 'done') return null;
+    const c = CARDS[Math.min(ending.card, CARDS.length - 1)];
+    return { card: ending.card, lines: c.lines, tone: c.tone, final: ending.card === CARDS.length - 1 };
   }
 
   function placeAt(pos, yaw) {
@@ -376,6 +424,12 @@ export function startPlay({ canvas, gl, params }) {
   cr.clearArena = () => (fight ? fight.forceClear() : false);
   // GPU resources as the renderer counts them, for the "old arena was disposed" check.
   cr.gpu = () => { const i = renderer.info; return { geometries: i.memory.geometries, textures: i.memory.textures, programs: (i.programs || []).length, calls, tris }; };
+  cr.boss = () => { const b = fight && fight.boss; return b ? { state: b.state, phase: b.phase, invuln: b.invuln, health: b.health, alive: b.alive, pos: b.pos.slice(), pop: b.pop, saunasOpen: b.saunasOpen, markers: fight.lobMarkers.map(m => ({ pos: m.pos.slice(), radius: m.radius })) } : null; };
+  cr.ending = () => ({ state: ending.state, card: ending.card, hold: ending.hold, lit: ending.lit });
+  // Dev (smoke tests): hurts the Overlord, and the boss at 1 hp in its last phase so the next hit ends it.
+  cr.hurtBoss = (n, kind = 'body') => { const b = fight && fight.boss; return b ? fight.hurt(b, n, kind) : null; };
+  cr.closePads = () => (fight ? fight.closePads() : false);
+  cr.bossReady = () => { if (fight && fight.boss) { fight.readyBoss(); return true; } return false; };
   cr.fight = () => (fight ? {
     started: fight.started, clear: fight.clear, tokens: fight.tokens.held(), pickups: fv.count(), pickupPos: fv.pickups(),
     enemies: fight.enemies.filter(e => e.state !== 'unused').map(e => ({ id: e.id, slot: fight.enemies.indexOf(e), kind: e.kind || 'associate', state: e.state, health: e.health, alive: e.alive, pos: e.pos.slice(), holds: fight.tokens.holds(e.id), role: e.role, point: e.point ? e.point.index : null, pop: e.pop })),
@@ -570,6 +624,7 @@ export function startPlay({ canvas, gl, params }) {
   const loop = createLoop({
     before(realSeconds) {
       snap = input.poll();
+      if (Object.values(snap.pressed).some(Boolean)) anyPress = true;
       const driving = !!drive || driveTap;
       simulating = driving || shouldSimulate({ locked: input.isLocked(), device: input.device(), panelOpen: hooks.panelOpen() });
       pauseBox.hidden = simulating;
@@ -592,16 +647,17 @@ export function startPlay({ canvas, gl, params }) {
       const inp = buildIntent(dt);
       gatePlayerInput(inp, arsenalIn, { downed: !!fight && health.downed, busy: arsenal.reload !== null || arsenal.switching > 0 });
       // Between arenas (the fade out, the black hold, the fade in) Doc stands still and holds fire.
-      if (run.fading) { inp.moveX = 0; inp.moveY = 0; inp.tap = false; inp.sprint = false; inp.fire = false; inp.grenade = false; arsenalIn.fire = false; arsenalIn.firePressed = false; }
+      if (run.fading || ending.locked) { inp.moveX = 0; inp.moveY = 0; inp.tap = false; inp.sprint = false; inp.fire = false; inp.grenade = false; arsenalIn.fire = false; arsenalIn.firePressed = false; }
       if (actions) {
-        actions.step(dt, { meleeHeld: held.melee, meleePressed: press.melee, grenadeHeld: held.grenade, interactHeld: held.interact, interactPressed: press.interact, device: input.device(), camYaw: cam.yaw, camPitch: cam.pitch });
+        const still = ending.locked;   // the ending's cards: Doc does nothing
+        actions.step(dt, { meleeHeld: held.melee && !still, meleePressed: press.melee && !still, grenadeHeld: held.grenade && !still, interactHeld: held.interact && !still, interactPressed: press.interact && !still, device: input.device(), camYaw: cam.yaw, camPitch: cam.pitch });
         if (actions.busy()) { arsenalIn.fire = false; arsenalIn.firePressed = false; inp.fire = false; }   // a throw in progress: no fire
       }
       mover.update(inp, dt);
       stance = fireStance(mover);
       const events = arsenal.update(arsenalIn, stance, dt);
       for (const e of events) handleEvent(e);
-      if (fight) { fv.tick(dt); stepFight(dt); }
+      if (fight) { fv.tick(dt); stepFight(dt); stepEnding(dt); }
       for (const d of dummies) stepDummy(d, dt);
       if (crateTouch(mover.pos, LEVEL.ammoCrates, TUNING.combat.crateRadius)) { arsenal.refill(); bag.refill(); }
       if (restartPending) restart();
@@ -621,7 +677,7 @@ export function startPlay({ canvas, gl, params }) {
       for (const v of views) v.update(alpha, dt);
       if (fv) {
         fv.update(dt);
-        gv.update(fight.grenades.live, alpha, dt); pv.update(dt);
+        gv.update(fight.grenades.live, alpha, dt, fight.lobMarkers); pv.update(dt);
         if (tv) { tv.group.visible = !!fight.tobble; if (fight.tobble) tv.update(alpha, dt); }
       }
       const p = mover.pos, q = mover.prevPos;
@@ -658,8 +714,9 @@ export function startPlay({ canvas, gl, params }) {
         viewportH: canvas.clientHeight || window.innerHeight, marker, reloadFlash,
         face: fm, bark: fv ? fv.bark() : null,
         objective: fight ? objectiveText() : '',
-        banner: !fight ? null : health.downed ? { title: `You've hit a plateau ${fm.downed.seconds}`, hint: promptText(fight.tobble && !fight.tobble.downed ? 'giveUpTobble' : 'giveUp', input.device()), hold: actions.giveUpFrac() } : fight.clear ? { title: 'SET COMPLETE', hint: `${run.gateOpen ? 'Head for the GO gate!  ' : 'Rest 60 seconds!  '}${input.device() === 'pad' ? 'X' : 'E'} for another set` } : null,
-        grenades: fight ? bag.count : null, action: actions ? actions.prompt() : null,
+        boss: bossModel(), ending: endingModel(),
+        banner: !fight ? null : health.downed ? { title: `You've hit a plateau ${fm.downed.seconds}`, hint: promptText(fight.tobble && !fight.tobble.downed ? 'giveUpTobble' : 'giveUp', input.device()), hold: actions.giveUpFrac() } : fight.clear && !fight.boss ? { title: 'SET COMPLETE', hint: `${run.gateOpen ? 'Head for the GO gate!  ' : 'Rest 60 seconds!  '}${input.device() === 'pad' ? 'X' : 'E'} for another set` } : null,
+        grenades: fight ? bag.count : null, action: ending.state === 'desk' && nearDesk(mover.pos, LEVEL.overlord && LEVEL.overlord.desk, TUNING.ending.deskReach) ? { text: promptText('cancel', input.device()), hold: ending.hold } : actions ? actions.prompt() : null,
         hours: hoursT > 0 ? hoursLine(run.checkpoint) : '',
       }));
       sky.update(performance.now() / 1000);

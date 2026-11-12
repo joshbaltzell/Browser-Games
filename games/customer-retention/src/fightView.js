@@ -51,6 +51,7 @@ export function createFightView({ scene, effects, sfx, fight, views, cam = null,
   const dummy = new THREE.Object3D();
   let clock = 0;
   const barkLine = createBarkLine();
+  const goo = [];                     // the Overlord's slump: { t, pos } until it bursts
 
   const pan = (listener, from) => Math.sin(hitAngle(listener.yaw, listener.pos, from));
   // A sound at a point in the world: louder when it is near, panned to where it is.
@@ -61,6 +62,14 @@ export function createFightView({ scene, effects, sfx, fight, views, cam = null,
   // A Rep died by anything but Doc's gun (the gun's kills are drawn in play.js, with the shot).
   function deathFx(ev, listener) {
     const fb = TUNING.feedback, kind = ev.kind;
+    if (ev.boss) {
+      // It slumps first (the view); the burst of goo and keycards comes when the slump ends.
+      goo.push({ t: TUNING.ending.deathDelay * 0.9, pos: [ev.pos[0], ev.pos[1], ev.pos[2]] });
+      effects.gel(mid(ev.pos, 1.5), dirv, fb.gelCount);
+      sfx.play('kill', fb.killVolume, pan(listener, ev.pos));
+      if (hooks.marker) hooks.marker('kill');
+      return;
+    }
     if (kind === 'body' || kind === 'head') return;
     const at = mid(ev.pos), n = kind === 'execute' ? fb.killGelCount * 2 : kind === 'bleed' ? fb.gelCount : fb.killGelCount;
     effects.gel(at, dirv, n);
@@ -111,6 +120,20 @@ export function createFightView({ scene, effects, sfx, fight, views, cam = null,
       else if (ev.type === 'cloneRevive') { const h = enemyById.get(ev.id); if (h) sfx.play('revive', fb.reviveVolume * 0.6 * near(listener, h.pos), pan(listener, h.pos)); }
       else if (ev.type === 'down') { if (hooks.marker) hooks.marker('kill'); effects.gel(mid(ev.pos), dirv, 6); sfx.play('hit', fb.hitVolume, pan(listener, ev.pos)); }
       else if (ev.type === 'death') deathFx(ev, listener);
+      else if (ev.type === 'bossLob') {
+        const h = enemyById.get(ev.id);
+        sfx.play('throw', fb.throwVolume, h ? pan(listener, h.pos) : 0);
+      } else if (ev.type === 'lobLand') {
+        // A page of fine print goes off: a blast and a spray of paper, a kick that gets stronger the nearer it was.
+        effects.blast(ev.pos);
+        effects.receipts(mid(ev.pos, 0.6), fb.receiptCount);
+        const d = Math.hypot(ev.pos[0] - listener.pos[0], ev.pos[2] - listener.pos[2]), k = Math.min(1, 8 / Math.max(d, 1e-3));
+        sfx.play('boom', fb.boomVolume * Math.max(0.4, k), pan(listener, ev.pos));
+        if (cam) { cam.kick(3 * k, (Math.random() * 2 - 1) * 2 * k); cam.bump(k); }
+      } else if (ev.type === 'bossPhase') {
+        sfx.play(ev.phase === 2 ? 'saunaOpen' : 'charge', ev.phase === 2 ? fb.saunaVolume : fb.chargeVolume);
+        if (cam) cam.bump(1.5);
+      }
       else if (ev.type === 'checkpoint') { if (hooks.restart) hooks.restart(); }
       else if (ev.type === 'telegraph') {
         glints.set(ev.id, ev.time !== undefined ? ev.time : A.popTime + A.telegraphTime);
@@ -159,6 +182,15 @@ export function createFightView({ scene, effects, sfx, fight, views, cam = null,
     update(dt) {
       if (!(dt > 0)) return;
       clock += dt;
+      for (let i = goo.length - 1; i >= 0; i--) {
+        goo[i].t -= dt;
+        if (goo[i].t > 0) continue;
+        const g = goo.splice(i, 1)[0], fb = TUNING.feedback;
+        effects.gel(mid(g.pos, 1.5), dirv, fb.killGelCount * 3);
+        effects.receipts(mid(g.pos, 2.0), fb.receiptCount * 3);   // the keycards
+        sfx.play('finish', fb.bashVolume);
+        if (cam) cam.bump(2);
+      }
       for (const [id, left] of glints) {
         if (left - dt <= 0) { glints.delete(id); const v = byId.get(id); if (v) v.glint(false); } else glints.set(id, left - dt);
       }
@@ -178,7 +210,7 @@ export function createFightView({ scene, effects, sfx, fight, views, cam = null,
     pickups: () => pickups.map(p => p.pos.slice()),
     reset() {
       pickups.length = 0; mesh.count = 0; mesh.instanceMatrix.needsUpdate = true;
-      glints.clear(); barkLine.reset();
+      glints.clear(); barkLine.reset(); goo.length = 0;
     },
   };
 }

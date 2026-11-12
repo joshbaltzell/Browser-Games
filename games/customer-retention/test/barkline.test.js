@@ -74,7 +74,7 @@ test('gatePlayerInput: downed blocks reload, weapon switch and fire; reloading o
 
 test('the bark pools: about two dozen lines in all, read in turn (no immediate repeat), and no line sounds like a person being hurt', () => {
   const all = Object.values(BARKS).flat().map(l => (typeof l === 'string' ? l : l.text));
-  const reps = Object.values(BARKS).flat().filter(l => typeof l === 'string' || l.speaker !== 'Tobble' && l.speaker !== 'Trainer');   // Tobble's and the Trainers' pools are counted in their own tests
+  const reps = Object.values(BARKS).flat().filter(l => typeof l === 'string' || l.speaker !== 'Tobble' && l.speaker !== 'Trainer' && l.speaker !== 'Overlord' && l.speaker !== 'Doc');   // Tobble's, the Trainers' and the Overlord's pools are counted in their own tests
   assert.ok(all.length >= 10 && reps.length <= 24, `${reps.length} lines`);
   const line = createBarkLine();
   const seen = [];
@@ -119,7 +119,7 @@ test('Tobble keys exist with speaker Tobble; SPEAKER_COLORS gives Rep glorpPurpl
     assert.equal(line.say(key, true), true);
     assert.equal(line.current().speaker, 'Tobble');
   }
-  assert.deepEqual({ ...SPEAKER_COLORS }, { Rep: PALETTE.glorpPurple, PA: PALETTE.cream, Tobble: PALETTE.tobbleMint, Trainer: PALETTE.planet });
+  assert.deepEqual({ ...SPEAKER_COLORS }, { Rep: PALETTE.glorpPurple, PA: PALETTE.cream, Tobble: PALETTE.tobbleMint, Trainer: PALETTE.planet, Overlord: '#ffcf3a', Doc: PALETTE.cream });
   assert.equal(PALETTE.tobbleMint, '#7ee8b0');
   assert.ok(Object.isFrozen(SPEAKER_COLORS));
   assert.ok(BARKS.tobbleRevive.some(l => l.text === 'I got you! PUSH!'));

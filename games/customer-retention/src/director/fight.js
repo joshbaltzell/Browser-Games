@@ -6,6 +6,7 @@ import { playerTarget, shotAtPlayer } from '../combat/playerHits.js';
 import { moveCapsule } from '../world/collide.js';
 import { wrap } from '../actors/moveMath.js';
 import { trainerRadius } from '../actors/trainerBrain.js';
+import { bossRadius, readyToDie } from '../actors/bossBrain.js';
 import { coverPoints } from '../world/coverPoints.js';
 import { buildGraph } from '../world/waypoints.js';
 import { coverEdgeOf } from '../actors/coverStates.js';
@@ -39,9 +40,11 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
   const reserved = new Map();
   const tobbleOn = () => !!level.tobble && tuning.tobble.enabled > 0;
   const events = [], late = [];
-  // The level's Reps fill the first slots; the rest are empty ('unused') until a sauna or the dev hook fills them.
-  const starts = level.associates.length;
-  const enemies = level.associates.map(a => createAssociate(a, tuning.associate, tuning));
+  // The level's Reps fill the first slots (the Overlord, when the level has one, is the very first); the rest are empty ('unused') until a sauna or the dev hook fills them.
+  const bossLevel = level.overlord || null;
+  const startList = bossLevel ? [{ id: 'overlord', kind: 'boss', pos: [bossLevel.spots[0].hide[0], 0, bossLevel.spots[0].hide[1]] }, ...level.associates] : level.associates;
+  const starts = startList.length;
+  const enemies = startList.map(a => createAssociate(a, tuning.associate, tuning));
   for (let i = starts; i < MAX_SLOTS; i++) enemies.push(unuseAssociate(createAssociate({ id: `r${i + 1}`, pos: [0, 0, 0] }, tuning.associate, tuning)));
   const readSlots = () => Math.max(starts, Math.min(MAX_SLOTS, Math.round(tuning.director.maxEnemies)));
   let slotLimit = readSlots();   // director.maxEnemies applies at creation and at each restart
@@ -52,8 +55,9 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
     tuning, director: tuning.director, others: enemies, started: false, aim: undefined,
     // Tobble's view of the fight: the Reps, whether Doc is down, a hit on a Rep and Doc's revive.
     tobble: null, enemies, playerDowned: false, m: null, health: null, hurtRep: null, reviveDoc: null,
+    bossLevel, saunasDone: () => pads.allDone(),
   };
-  const f = { enemies, tokens, points, graph, started: false, clear: false, now: 0, hideT: 0, stayT: 0, startT: 0, kills: 0, grenades, pads: pads.list, tobble: null };
+  const f = { enemies, tokens, points, graph, started: false, clear: false, now: 0, hideT: 0, stayT: 0, startT: 0, kills: 0, grenades, pads: pads.list, tobble: null, boss: enemies.find(e => e.kind === 'boss') || null, lobMarkers: [] };
   let checkpointed = false, headKills = 0;
   const settle = [0, 0];
   let wasDowned = false, settled = false;
@@ -61,7 +65,7 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
   function claimStarts() {
     reserved.clear();
     for (const e of enemies.slice(0, starts)) {
-      if (e.kind === 'trainer') continue;   // a Trainer holds no cover point
+      if (e.kind !== 'associate') continue;   // a Trainer or the Overlord holds no cover point
       let best = null, bd = Infinity;
       for (const p of points) {
         const d = Math.hypot(p.pos[0] - e.pos[0], p.pos[1] - e.pos[2]);
@@ -102,7 +106,14 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
     ctx.events = events;
     if (r === 'kill') onKill(e);
     if (r === 'kill' && kind === 'head' && tobbleUp() && ++headKills % 3 === 0) bark('tobble', 'tobbleHeadshot', sink);
+    if (r === 'kill' && e.kind === 'boss') bossDown(sink);
     return r;
+  }
+
+  // The Overlord fell: its team goes with it (every live Rep and Trainer bursts), the saunas close, and the fight clears on the next step.
+  function bossDown(sink) {
+    for (const x of enemies) if (x.alive && x.kind !== 'boss') damage(x, 1e6, 'blast', sink);
+    for (const p of pads.list) if (p.state === 'dormant' || p.state === 'open') p.state = 'closed';
   }
   ctx.hurtRep = (e, amount) => damage(e, amount, 'tobble', events);
   ctx.reviveDoc = () => {
@@ -133,7 +144,7 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
     if (inCover) { if (!player.exposed) f.hideT += dt; } else f.hideT = 0;
     if (!settled || Math.hypot(m.pos[0] - settle[0], m.pos[2] - settle[1]) > D.stayRadius) { settle[0] = m.pos[0]; settle[1] = m.pos[2]; settled = true; f.stayT = 0; } else f.stayT += dt;
     if (f.hideT >= D.pushAfter && !enemies.some(e => e.alive && e.role === 'push')) {
-      const cands = enemies.filter(e => e.alive && e.role === 'hold' && CALM.has(e.state) && !tokens.holds(e.id))
+      const cands = enemies.filter(e => e.kind === 'associate' && e.alive && e.role === 'hold' && CALM.has(e.state) && !tokens.holds(e.id))
         .sort((a, b) => dist3(a.pos, player.pos) - dist3(b.pos, player.pos));
       let done = null;
       for (const e of cands) {
@@ -146,7 +157,7 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
     if (f.stayT >= D.flankAfter && !enemies.some(e => e.alive && e.role === 'flank')) {
       let done = null, bs = -Infinity;
       for (const e of enemies) {
-        if (!e.alive || e.role !== 'hold' || !CALM.has(e.state) || tokens.holds(e.id)) continue;
+        if (e.kind !== 'associate' || !e.alive || e.role !== 'hold' || !CALM.has(e.state) || tokens.holds(e.id)) continue;
         e.role = 'flank';
         const s = scorePick(e, ctx);
         e.role = 'hold';
@@ -164,7 +175,7 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
       if (!d.alive || d.state !== 'downed' || d.helper) continue;
       let best = null, bd = Infinity;
       for (const h of enemies) {
-        if (!h.alive || !HELPERS.has(h.state) || h.role !== 'hold' || tokens.holds(h.id)) continue;
+        if (h.kind !== 'associate' || !h.alive || !HELPERS.has(h.state) || h.role !== 'hold' || tokens.holds(h.id)) continue;
         const dd = dist3(h.pos, d.pos);
         if (dd <= range && dd < bd) { bd = dd; best = h; }
       }
@@ -260,17 +271,59 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
     events.push({ type: 'explode', pos: [pos[0], pos[1], pos[2]], kills, closed });
   }
 
+  // The Overlord's terms-of-service page lands: Doc and Tobble inside its radius take the damage for their distance (no cover stops a page of fine
+  // print; the marker on the floor and the long flight are the warning). Reps are not hurt by it and no sauna closes.
+  function lobBlast(ev, m, health) {
+    const h = ev.hostile, B = tuning.boss, pos = ev.pos;
+    const amountAt = (at, base) => {
+      const d = Math.hypot(at[0] - pos[0], at[2] - pos[2]);
+      return d <= h.radius ? base * (1 - B.lobFalloff * d / Math.max(h.radius, 1e-6)) : 0;
+    };
+    const a = amountAt(m.pos, h.damage);
+    if (!health.downed && a > 0) {
+      const result = health.damage(a);
+      if (result !== null) {
+        events.push({ type: 'playerHit', id: h.id, from: [pos[0], pos[1], pos[2]], amount: a, result, lob: true });
+        if (result === 'downed') { if (m.state !== 'downed') m.down(); releaseAll(); }
+      }
+    }
+    const tb = f.tobble, ta = tb && !tb.downed ? amountAt(tb.pos, B.lobTobbleDamage) : 0;
+    if (ta > 0) events.push({ type: 'tobbleHit', id: h.id, from: [pos[0], pos[1], pos[2]], result: hurtTobble(tb, ta, ctx) });
+    events.push({ type: 'lobLand', id: h.id, pos: [pos[0], pos[1], pos[2]], radius: h.radius });
+  }
+
   function stepKettlebells(dt, m, health) {
     for (const ev of grenades.step(dt, boxes)) {
-      if (ev.type === 'explode') explode(ev.pos, m, health); else events.push(ev);
+      if (ev.type !== 'explode') events.push(ev);
+      else if (ev.hostile) lobBlast(ev, m, health);
+      else explode(ev.pos, m, health);
     }
+  }
+
+  // The Overlord throws its page: a ball in the kettlebell flight that arrives at `ev.to` after `ev.flight` s (it goes off on the first thing it
+  // touches, see grenades.js), marked for the view by f.lobMarkers.
+  function throwLob(ev) {
+    const G = tuning.grenade.gravity, t = Math.max(ev.flight, 0.2), r = tuning.grenade.ballRadius;
+    const vel = [(ev.to[0] - ev.from[0]) / t, (r - ev.from[1] + 0.5 * G * t * t) / t, (ev.to[2] - ev.from[2]) / t];
+    grenades.throw(ev.from, vel, t + 0.3, { id: ev.id, to: [ev.to[0], 0, ev.to[2]], radius: tuning.boss.lobRadius, damage: tuning.boss.lobDamage });
+  }
+  function stepLobs() {
+    for (const ev of events) if (ev.type === 'bossLob') throwLob(ev);
+  }
+  // Floor markers for the view: where a page is about to land (a winding-up Overlord's locked target, then each page in the air).
+  function refreshMarkers() {
+    const out = f.lobMarkers;
+    out.length = 0;
+    const b = f.boss;
+    if (b && b.alive && b.state === 'lobWindup') out.push({ pos: b.lobTo, radius: tuning.boss.lobRadius, t: b.stateT, windup: true });
+    for (const ball of grenades.live) if (ball.hostile) out.push({ pos: ball.hostile.to, radius: ball.hostile.radius, t: 0, windup: false });
   }
 
   // A kettlebell with diveWarn s of fuse left makes each Rep within diveRadius roll once, in enemy order, to dive clear.
   function stepDives() {
     const T = A();
     for (const ball of grenades.live) {
-      if (ball.fuse > T.diveWarn) continue;
+      if (ball.fuse > T.diveWarn || ball.hostile) continue;
       for (const e of enemies) {
         if (!e.alive || e.state === 'downed' || e.state === 'executed' || e.state === 'dive') continue;
         if (ball.rolled && ball.rolled.has(e.id)) continue;
@@ -289,9 +342,9 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
   };
   function separate(m) {
     const r = tuning.associate.radius, h = tuning.associate.height;
-    const rOf = e => (e.kind === 'trainer' ? trainerRadius(tuning) : r), hOf = e => (e.kind === 'trainer' ? h * tuning.trainer.scaleH : h);
+    const rOf = e => (e.kind === 'trainer' ? trainerRadius(tuning) : e.kind === 'boss' ? bossRadius(tuning) : r), hOf = e => (e.kind === 'trainer' ? h * tuning.trainer.scaleH : e.kind === 'boss' ? h * tuning.boss.scale : h);
     const push = (e, dx, dz) => {
-      if (e.state === 'executed') return;
+      if (e.state === 'executed' || e.kind === 'boss') return;   // a held Rep and the Overlord stay put
       const res = moveCapsule(boxes, e.pos, [dx, 0, dz], rOf(e), hOf(e));
       e.pos[0] = res.pos[0]; e.pos[2] = res.pos[2];
     };
@@ -371,7 +424,7 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
         // A shot at Tobble meets the boxes and Tobble alone; tucked behind low cover his crouched shapes sit under the wall.
         const tb = f.tobble, r = castRay(ev.from, dir, a.range, boxes, tobbleList);
         if (tb && !tb.downed && (r.kind === 'head' || r.kind === 'body')) {
-          const result = hurtTobble(tb, a.damage, ctx);
+          const result = hurtTobble(tb, ev.damage !== undefined ? ev.damage : a.damage, ctx);
           events.push({ type: 'tobbleHit', id: ev.id, from: ev.from, result });
         }
         events.push({ type: 'shotFx', from: ev.from, to: r.point, accurate: true });
@@ -379,8 +432,8 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
         const r = shotAtPlayer(ev.from, dir, a.range, boxes, m, tuning.combat);
         let to = r.point;
         if (r.kind === 'head' || r.kind === 'body') {
-          const result = health.damage(a.damage);
-          events.push({ type: 'playerHit', id: ev.id, from: ev.from, amount: a.damage, result });
+          const amount = ev.damage !== undefined ? ev.damage : a.damage, result = health.damage(amount);
+          events.push({ type: 'playerHit', id: ev.id, from: ev.from, amount, result });
           if (result === 'downed') {
             if (m.state !== 'downed') m.down();
             releaseAll();
@@ -424,12 +477,18 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
     if (f.tobble) { updateTobble(f.tobble, ctx, dt); tobbleShapes(f.tobble, tuning.combat); }
     const n0 = events.length;
     for (const e of enemies) updateAssociate(e, ctx, dt);
-    for (let i = n0; i < events.length; i++) if (events[i].type === 'death') onKill(enemies.find(e => e.id === events[i].id));   // bleed-outs
+    for (let i = n0; i < events.length; i++) {
+      const ev = events[i];
+      if (ev.type === 'death') onKill(enemies.find(e => e.id === ev.id));   // bleed-outs
+      else if (ev.type === 'bossSaunas') for (const p of pads.list) openPad(p.id, events);   // phase 2: both saunas open
+    }
+    stepLobs();
     shoot(m, health);
     resolveSwings(m, health);
     separate(m);
     for (const e of enemies) associateShapes(e, tuning.combat, tuning);
     if (f.tobble) tobbleShapes(f.tobble, tuning.combat);
+    refreshMarkers();
     // Doc and Tobble both down at the end of a step (in either order, or together): one checkpoint event; the caller restarts.
     const bothDown = !!f.tobble && f.tobble.downed && health.downed;
     if (bothDown && !checkpointed) events.push({ type: 'checkpoint' });
@@ -437,8 +496,8 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
     if (f.started && !f.clear && enemies.every(e => !e.alive) && pads.allDone()) {
       f.clear = true;
       events.push({ type: 'clear' });
-      bark(enemies[0].id, 'clear');
-      if (f.tobble) { reviveTobble(f.tobble, ctx); bark('tobble', 'tobbleClear'); }
+      if (!bossLevel) bark(enemies[0].id, 'clear');
+      if (f.tobble) { reviveTobble(f.tobble, ctx); if (!bossLevel) bark('tobble', 'tobbleClear'); }
     }
     return events;
   };
@@ -468,18 +527,20 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
   f.releaseExecution = (e) => releaseExecuted(e);
 
   // Dev: open a dormant sauna now (the PA line and Tobble's callout come with it, on the next step). False when it is not dormant.
-  f.openPad = (id) => {
+  function openPad(id, sink) {
     const p = pads.list.find(x => x.id === id);
     if (!p || p.state !== 'dormant') return false;
     p.state = 'open'; p.nextT = f.now + tuning.pad.interval;
-    late.push({ type: 'padOpen', id });
-    bark(id, 'padOpen', late, true);
-    if (tobbleUp()) bark('tobble', 'tobblePad', late, true);
+    sink.push({ type: 'padOpen', id });
+    bark(id, 'padOpen', sink, true);
+    if (tobbleUp()) bark('tobble', 'tobblePad', sink, true);
     return true;
-  };
+  }
+  f.openPad = (id) => openPad(id, late);
 
   // Dev (smoke tests, god mode): every live Rep dies and every sauna closes, so the fight reports 'clear' on its next step.
   f.forceClear = () => {
+    if (f.boss && f.boss.alive) { readyToDie(f.boss); damage(f.boss, 1e6, 'blast', late); }
     for (const e of enemies) if (e.alive) damage(e, 1e6, 'blast', late);
     for (const p of pads.list) if (p.state === 'dormant' || p.state === 'open') p.state = 'closed';
     return true;
@@ -514,6 +575,10 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
     ctx.events = events;
     return r;
   };
+  // Dev (smoke tests): every sauna closes (the end of the Overlord's phase 2).
+  f.closePads = () => { for (const p of pads.list) if (p.state === 'dormant' || p.state === 'open') p.state = 'closed'; return true; };
+  // Dev and tests: the Overlord at phase 3 with 1 hp (the next hit ends it).
+  f.readyBoss = () => { if (f.boss && f.boss.alive) readyToDie(f.boss); };
   f.reserved = reserved;   // cover point index -> holder id (read-only for callers)
   // Doc revives Tobble (the hold on interact finished). False when there is no Tobble or he is not down.
   f.reviveTobble = () => {
@@ -534,7 +599,7 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
     claimStarts();
     f.tobble = ctx.tobble = tobbleOn() ? (f.tobble ? resetTobble(f.tobble) : createTobble(level.tobble, tuning.tobble)) : null;
     checkpointed = false; headKills = 0; ctx.playerDowned = false;
-    events.length = 0; late.length = 0;
+    events.length = 0; late.length = 0; f.lobMarkers.length = 0;
     f.started = f.clear = false; f.now = 0; f.startT = 0; f.kills = 0; f.hideT = f.stayT = 0;
     ctx.now = 0; ctx.started = false; ctx.aim = undefined; wasDowned = false; settled = false;
     for (const e of enemies) associateShapes(e, tuning.combat, tuning);

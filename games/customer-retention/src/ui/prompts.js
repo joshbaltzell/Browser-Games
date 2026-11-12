@@ -14,6 +14,7 @@ const LINES = {
   giveUp: k => `Hold ${k.interact}  renew your membership`,
   giveUpTobble: k => `Tobble is coming! Hold ${k.interact} to renew your membership`,
   sauna: k => `Close the Spawn Sauna (${k.grenade} kettlebell)`,
+  cancel: k => `Hold ${k.interact}  CANCEL`,
 };
 
 // device is 'kbm' or 'pad'; anything else reads as kbm. An unknown kind gives ''.

@@ -17,10 +17,12 @@ const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 // face is the damageFaceModel result (or null); objective is a line of text; bark is { speaker, text } or null;
 // banner is { title, hint, hold? } or null (hold 0..1 draws the ring on the hint); bark.color is the speaker's colour. The last four pass through unchanged.
 // grenades is the kettlebell count (null hides the line); action is { text, hold: 0..1 | null } or null (the prompt line under the reload alert).
+// boss is { name, fraction, phase, invuln, hint } or null (the big health bar; invuln dims it and shows the hint); ending is { card, lines, tone, final } or null (a text card
+// over a dimmed scene).
 // covered: the player is tucked or blind in cover (not popped); the reticle then shows dimmed, at the same screen point the
 // aimed shot's camera ray goes through. device is 'kbm' or 'pad': it picks the key name in the reload prompt.
 export function hudModel({ arsenal, stance, firing, covered = false, device = 'kbm', spreadDeg, fov, viewportH, marker = null, reloadFlash = null,
-  face = null, objective = '', hours = '', bark = null, banner = null, grenades = null, action = null, weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
+  face = null, objective = '', hours = '', bark = null, banner = null, grenades = null, action = null, boss = null, ending = null, weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
   const id = arsenal.current();
   const row = weapons[id], am = arsenal.ammo[id];
   const r = arsenal.reload;
@@ -59,6 +61,8 @@ export function hudModel({ arsenal, stance, firing, covered = false, device = 'k
     faceShow: !!face && !banner && !face.downed.show,
     face, objective, hours: hours || '', bark, banner,
     grenades: Number.isFinite(grenades) ? grenades : null,
+    boss: boss ? { name: boss.name, fraction: clamp01(boss.fraction), phase: boss.phase, invuln: !!boss.invuln, hint: boss.hint || '' } : null,
+    ending: ending ? { card: ending.card, lines: ending.lines, tone: ending.tone || 'big', final: !!ending.final } : null,
     action: action && action.text ? { text: action.text, hold: Number.isFinite(action.hold) ? clamp01(action.hold) : null } : null,
   };
 }
@@ -101,6 +105,15 @@ export function createHud(root = document.body) {
   const actionText = el('span', 'cr-action-text', actionEl);
   const actionRing = el('i', 'cr-ring', actionEl);
   const objectiveEl = el('div', 'cr-objective', hud);
+  const bossEl = el('div', 'cr-boss', hud);
+  const bossName = el('div', 'cr-boss-name', bossEl);
+  const bossBar = el('div', 'cr-boss-bar', bossEl);
+  const bossFill = el('i', 'cr-boss-fill', bossBar);
+  el('i', 'cr-boss-tick cr-boss-tick-a', bossBar); el('i', 'cr-boss-tick cr-boss-tick-b', bossBar);
+  const bossHint = el('div', 'cr-boss-hint', bossEl);
+  const endEl = el('div', 'cr-ending', hud);
+  const endText = el('div', 'cr-ending-text', endEl);
+  const endHint = el('div', 'cr-ending-hint', endEl);
   const hoursEl = el('div', 'cr-hours', hud);
   const barkEl = el('div', 'cr-bark', hud);
   const barkWho = el('span', 'cr-bark-who', barkEl);
@@ -155,6 +168,17 @@ export function createHud(root = document.body) {
       set('banner.hold', bh, v => { bannerRing.hidden = v < 0; bannerRing.style.setProperty('--hold', `${Math.max(v, 0) * 3.6}deg`); });
       set('banner', m.banner ? `${m.banner.title}|${m.banner.hint}` : '', v => { bannerEl.hidden = !m.banner; if (m.banner) { bannerTitle.textContent = m.banner.title; bannerHint.textContent = m.banner.hint; } });
       set('objective', m.objective || '', v => { objectiveEl.textContent = v; objectiveEl.hidden = !v; });
+      const bs = m.boss;
+      set('boss', bs ? `${bs.name}|${bs.phase}|${bs.invuln}|${bs.hint}` : '', () => { bossEl.hidden = !bs; if (bs) { bossName.textContent = bs.name; bossEl.dataset.invuln = bs.invuln ? '1' : '0'; bossHint.textContent = bs.hint; } });
+      set('boss.fill', bs ? Math.round(bs.fraction * 500) : -1, () => { if (bs) bossFill.style.width = pct(bs.fraction); });
+      const en = m.ending;
+      set('ending', en ? `${en.card}|${en.final}` : '', () => {
+        endEl.hidden = !en;
+        if (!en) return;
+        endEl.dataset.tone = en.tone;
+        endText.replaceChildren(...en.lines.map((l, i) => el('div', i === 0 ? 'cr-ending-line cr-ending-first' : 'cr-ending-line', null, l)));
+        endHint.textContent = en.final ? 'Press any key' : '';
+      });
       set('hours', m.hours || '', v => { hoursEl.textContent = v; hoursEl.hidden = !v; });
       set('bark', m.bark ? `${m.bark.speaker}|${m.bark.text}` : '', () => { barkEl.hidden = !m.bark; if (m.bark) { barkWho.textContent = m.bark.speaker; barkWho.style.color = m.bark.color || ''; barkText.textContent = m.bark.text; } });
       set('hit', m.hit.show ? m.hit.kind : '', v => { hit.hidden = !v; hit.dataset.kind = v; });

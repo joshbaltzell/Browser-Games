@@ -28,6 +28,7 @@ function deepFreeze(o) {
 }
 
 const SHIRT = PALETTE.glorpPurple;
+export const GOLD = '#ffcf3a';
 
 // Every enemy kind's colourway, in one table (the alien recolour changes it here). The Rep is a purple polo and khakis; the Personal
 // Trainer a tank top and teal shorts, the same skin and hair.
@@ -60,6 +61,22 @@ export const ENEMY_COLORS = deepFreeze({
     badge: PALETTE.cream,
     badgeStripe: PALETTE.teal,
     headset: PALETTE.ink,
+    mic: PALETTE.hotPink,
+  },
+  // The Membership Overlord: purple and gold.
+  boss: {
+    shirt: mix(SHIRT, PALETTE.ink, 0.15),
+    collar: GOLD,
+    logo: GOLD,
+    pants: mix(SHIRT, PALETTE.ink, 0.55),
+    skin: PALETTE.daleSkin,
+    hair: GOLD,
+    shoe: GOLD,
+    sole: PALETTE.ink,
+    lanyard: GOLD,
+    badge: PALETTE.cream,
+    badgeStripe: PALETTE.hotPink,
+    headset: GOLD,
     mic: PALETTE.hotPink,
   },
 });
@@ -119,4 +136,12 @@ export const TRAINER = deepFreeze({
   torso: { ...ASSOCIATE.torso, sleeve: 0.02 },
   outfit: { collar: false, lanyard: false, logo: false, headset: false },
   face: { ...ASSOCIATE.face, seed: 11 },
+});
+
+// The Membership Overlord: the Rep's rig in purple and gold (the view scales it by TUNING.boss.scale and adds the crown and the keycard lanyard).
+export const OVERLORD = deepFreeze({
+  ...ASSOCIATE,
+  name: 'overlord',
+  colors: ENEMY_COLORS.boss,
+  face: { ...ASSOCIATE.face, seed: 21 },
 });

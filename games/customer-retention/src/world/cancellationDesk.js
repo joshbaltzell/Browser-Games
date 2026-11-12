@@ -1,6 +1,7 @@
 // The Cancellation Desk: the boss arena, 24 x 20 m. The desk is at the far (+z) end, with four velvet-rope counters and two pillars as cover
-// and two sauna sockets in the far corners. Piece 3 fills the fight; here it is geometry, cover, nav and a placeholder: `boss: true`, no Reps,
-// and a trigger that never fires, so nothing opens or spawns until the boss exists. Pure data: no WebGL, no DOM.
+// and two sauna sockets in the far corners. The Membership Overlord's fight lives here: `boss: true`, `overlord` holds its two firing spots (each a
+// hidden spot behind the desk and a popped one past the desk's end) and the middle of the desk where it hides in phase 2; `cancelSign` is the sign that
+// lights once it falls. No Reps at the start; the saunas are manual (the boss opens them). Pure data: no WebGL, no DOM.
 import { makeBox } from './collide.js';
 import { gridPoints } from './gridPoints.js';
 
@@ -38,15 +39,21 @@ export const CANCELLATION_DESK = deepFreeze({
   marks: [],
   coverExclude: ['1-z#0', '2+z#0', '3-x#0', '4+x#0'],
   spawn: { pos: [0, 0, -8.5], yaw: 0 },
-  trigger: { z: Infinity },
+  trigger: { z: -6.5 },
   features: {
     start: { pos: [0, 0, -8.5], yaw: 0 },
     mid: { pos: [0, 0, -4.5], yaw: 0 },
     desk: { pos: [0, 0, 5.8], yaw: 0 },
   },
   associates: [],
-  // Two sauna sockets in the far corners, flanking the desk. Dormant here: piece 3 opens them in the boss's second phase.
-  pads: [{ id: 'sauna1', pos: [-9, 0, 8.4], spawns: 'associate' }, { id: 'sauna2', pos: [9, 0, 8.4], spawns: 'associate' }],
+  overlord: {
+    spots: [{ hide: [-3.2, 8.9], pop: [-5.4, 8.5] }, { hide: [3.2, 8.9], pop: [5.4, 8.5] }],
+    deskHide: [0, 8.9],
+    desk: { x0: -4, x1: 4, z: 7.2 },
+  },
+  cancelSign: { pos: [0, 1.75, 7.2 - 0.12], yaw: Math.PI, text: 'PRESS E / X TO CANCEL', w: 3.8, h: 0.9, bg: '#2a9d2a' },
+  // Two sauna sockets in the far corners, flanking the desk. Manual: the Overlord opens both in its second phase, and the saunas end it.
+  pads: [{ id: 'sauna1', pos: [-9, 0, 8.4], spawns: 'associate', manual: true, shareKey: 'trainerShareBoss' }, { id: 'sauna2', pos: [9, 0, 8.4], spawns: 'associate', manual: true, shareKey: 'trainerShareBoss' }],
   tobble: { pos: [1.5, 0, -8.7], yaw: 0 },
   waypoints,
   ammoCrates: [{ pos: [-10.5, 0, -8.8] }],

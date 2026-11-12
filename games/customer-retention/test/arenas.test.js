@@ -115,7 +115,7 @@ test('Smoothie Bar has two flank routes: with the east lane walled off the path 
   assert.equal(route([makeBox([-20, 0, -1], [-7.01, 2, 1]), makeBox([7.01, 0, -1], [20, 2, 1])]), null, 'sealed');
 });
 
-test('the Cancellation Desk is a 24 x 20 m boss room: the desk at the far end, four low counters, two pillars, two saunas, no Reps, no fight start', () => {
+test('the Cancellation Desk is a 24 x 20 m boss room: the desk at the far end, four low counters, two pillars, two manual saunas, no Reps, its two firing spots behind the desk', () => {
   const floor = D.boxes.find(b => b.kind === 'floor');
   assert.deepEqual([floor.max[0] - floor.min[0], floor.max[2] - floor.min[2]], [24, 20]);
   assert.equal(solids(D).filter(b => b.kind === 'low').length, 4);
@@ -125,7 +125,9 @@ test('the Cancellation Desk is a 24 x 20 m boss room: the desk at the far end, f
   assert.equal(D.pads.length, 2);
   assert.equal(D.boss, true);
   assert.deepEqual(D.associates, []);
-  assert.equal(D.trigger.z, Infinity);
+  assert.ok(Number.isFinite(D.trigger.z) && D.trigger.z < D.spawn.pos[2] + 3, 'the fight starts a few steps in (piece 3; it was a placeholder that never started)');
+  assert.ok(D.pads.every(p => p.manual === true), 'the boss opens the saunas itself');
+  assert.equal(D.overlord.spots.length, 2);
   assert.equal(D.landmark.text, 'CANCELLATION DESK');
   assert.ok(D.signs.some(s => s.text === 'PLEASE TAKE A NUMBER — NOW SERVING: 3'));
   assert.equal(D.exit, undefined);
@@ -208,15 +210,14 @@ test('the sauna stays dormant until the third kill, then opens; the fight clears
   assert.ok(cleared && f.clear);
 });
 
-test('the Cancellation Desk fight never starts, so nothing opens or spawns while the boss is a placeholder', () => {
+test('the Cancellation Desk: nothing opens or spawns on its own (the saunas are manual and no Rep starts); the Overlord is its one starting enemy', () => {
   const edges = edgesOf(D);
   const f = createFight({ level: D, boxes: D.boxes, edges, rand: rng(1) });
   const m = createMovement({ boxes: D.boxes, spawn: D.features.desk.pos, coverEdges: edges });
   const health = createHealth();
   const idle = { moveX: 0, moveY: 0, camYaw: 0, aim: false, sprint: false, tap: false };
   for (let i = 0; i < 60 * 40; i++) { m.update(idle, 1 / 60); f.step(1 / 60, { m, health, aim: { lens: [0, 1.55, 0], dir: [0, 0, 1], active: false } }); }
-  assert.equal(f.started, false);
-  assert.ok(f.pads.every(p => p.state === 'dormant'));
-  assert.equal(f.enemies.filter(e => e.alive).length, 0);
+  assert.ok(f.pads.every(p => p.state === 'dormant'), 'even 40 s into the fight no sauna opens by itself');
+  assert.deepEqual(f.enemies.filter(e => e.alive).map(e => e.kind), ['boss']);
   assert.ok(f.tobble && Number.isFinite(f.tobble.pos[0]));
 });

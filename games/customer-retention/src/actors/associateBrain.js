@@ -10,6 +10,7 @@ import { turnToward } from './moveMath.js';
 import {
   initTrainer, trainerShapes, updateTrainer, staggerTrainer, diveTrainer, executeTrainer, releaseTrainer, finishTrainer, hurtTrainer,
 } from './trainerBrain.js';
+import { initBoss, bossShapes, updateBoss, hurtBoss } from './bossBrain.js';
 
 const MAX_DT = 0.25;
 // States where a Rep cannot be hit, staggered or sent diving: held still (executed), an empty slot or a corpse.
@@ -22,7 +23,8 @@ const clamp01 = v => Math.max(0, Math.min(1, v));
 const dist2 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);       // [x, z] and [x, z]
 const distXZ = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);      // [x, y, z] and [x, y, z]
 
-// e.kind is 'associate' (a Rep) or 'trainer' (a Personal Trainer, trainerBrain.js): a slot is one of them for as long as it lives.
+// e.kind is 'associate' (a Rep), 'trainer' (a Personal Trainer, trainerBrain.js) or 'boss' (the Membership Overlord, bossBrain.js, only ever a level's start slot):
+// a slot is one of them for as long as it lives.
 export function resetAssociate(e, tuning = TUNING.associate, all = TUNING) {
   e.pos[0] = e.start[0]; e.pos[1] = e.start[1]; e.pos[2] = e.start[2];
   e.prevPos[0] = e.start[0]; e.prevPos[1] = e.start[1]; e.prevPos[2] = e.start[2];
@@ -33,7 +35,7 @@ export function resetAssociate(e, tuning = TUNING.associate, all = TUNING) {
   e.wait = 0; e.wantSuppress = null; e.shots = 0; e.relocT = 0; e.pointT = 0; e.mustMove = false;
   e.stuckT = 0; e.stuckRef[0] = e.start[0]; e.stuckRef[1] = e.start[2]; e.stuckCount = 0;
   e.helper = null; e.helping = null; e.target = 'player'; e.diveDir[0] = e.diveDir[1] = 0; e.divePoint = null; e.claimed = false; e.diedAt = -Infinity; e.wasDowned = false;
-  e.kind = e.startKind; if (e.kind === 'trainer') initTrainer(e, all);
+  e.kind = e.startKind; if (e.kind === 'trainer') initTrainer(e, all); else if (e.kind === 'boss') initBoss(e, all);
   associateShapes(e, all.combat, all);
   return e;
 }
@@ -82,6 +84,7 @@ export function createAssociate({ id, pos, kind = 'associate' }, tuning = TUNING
 // Crouch shapes when tucked behind low cover, standing shapes when popped or out of cover.
 export function associateShapes(e, combat = TUNING.combat, all = TUNING) {
   if (e.kind === 'trainer') return trainerShapes(e, combat, all);
+  if (e.kind === 'boss') return bossShapes(e, combat, all);
   const [x, y, z] = e.pos, s = e.shapes;
   if (e.state === 'downed') {
     // Lying down: a capsule along the facing from 0.2 m behind to 0.6 m in front (r 0.25, y 0.25) and the head at the front end.
@@ -478,6 +481,7 @@ function afterStagger(e, ctx, T) {
 
 export function staggerAssociate(e, ctx) {
   if (e.kind === 'trainer') return staggerTrainer(e);
+  if (e.kind === 'boss') return false;   // too big to stagger
   if (!e.alive || LOCKED.has(e.state) || e.state === 'downed') return false;
   if (e.role === 'revive') cancelRevive(e, ctx);
   releaseToken(e, ctx);
@@ -488,6 +492,7 @@ export function staggerAssociate(e, ctx) {
 // Starts a dive away from `from` ([x, ?, z]): a wait of diveReaction, then diveDistance in diveTime. It gives up token and point.
 export function diveAssociate(e, from, ctx) {
   if (e.kind === 'trainer') return diveTrainer(e, from);
+  if (e.kind === 'boss') return false;
   if (!e.alive || LOCKED.has(e.state) || e.state === 'downed' || e.state === 'dive') return false;
   if (e.role === 'revive') cancelRevive(e, ctx);
   releaseToken(e, ctx);
@@ -520,6 +525,7 @@ function dive(e, ctx, T, dt) {
 // Doc's cutter or stomp takes hold of e: it freezes, shoots nothing and gives up token, point and helper (a revive on it is cancelled).
 export function executeAssociate(e, ctx) {
   if (e.kind === 'trainer') return executeTrainer(e);
+  if (e.kind === 'boss') return false;   // Cheat Day does not take the Overlord
   if (!e.alive || LOCKED.has(e.state) || e.state === 'dive') return false;
   if (e.role === 'revive') cancelRevive(e, ctx);
   releaseToken(e, ctx);
@@ -543,6 +549,7 @@ export function releaseExecuted(e) {
 // The bite completes: an executed Rep dies (kind 'execute' from the cutter or the stomp). 'kill', or null when it was not held.
 export function finishAssociate(e, ctx, kind = 'execute') {
   if (e.kind === 'trainer') return finishTrainer(e, ctx, kind);
+  if (e.kind === 'boss') return null;
   if (!e.alive || e.state !== 'executed') return null;
   e.health = 0;
   return kill(e, ctx, kind);
@@ -561,7 +568,7 @@ function kill(e, ctx, kind) {
 
 // The Rep goes down instead of dying: still alive at 1 hp, off its point and its token, lying still for bleedTime.
 export function downAssociate(e, ctx) {
-  if (e.kind === 'trainer') return null;   // a Trainer never downs
+  if (e.kind === 'trainer' || e.kind === 'boss') return null;   // a Trainer or the Overlord never downs
   if (!e.alive || LOCKED.has(e.state) || e.state === 'downed') return null;
   releaseToken(e, ctx);
   if (e.role === 'revive') cancelRevive(e, ctx);
@@ -581,6 +588,7 @@ export function updateAssociate(e, ctx, dt) {
   e.prevPos[0] = e.pos[0]; e.prevPos[1] = e.pos[1]; e.prevPos[2] = e.pos[2]; e.prevYaw = e.yaw;
   e.stateT += dt;
   if (e.kind === 'trainer') { updateTrainer(e, ctx, dt); return; }
+  if (e.kind === 'boss') { updateBoss(e, ctx, dt); return; }
   switch (e.state) {
     case 'idle': if (ctx.started) seek(e, ctx, T); break;
     case 'seek': seek(e, ctx, T); break;
@@ -614,6 +622,7 @@ export function updateAssociate(e, ctx, dt) {
 // A hit while shooting flinches and gives the token back; a hurt helper flinches and its revive is cancelled. A held (executed) or empty slot ignores hits.
 export function hurtAssociate(e, amount, ctx, kind = 'body') {
   if (e.kind === 'trainer') return hurtTrainer(e, amount, ctx, kind);
+  if (e.kind === 'boss') return hurtBoss(e, amount, ctx, kind);
   if (!e.alive || !(amount > 0) || e.state === 'executed' || e.state === 'unused') return null;
   if (e.state === 'downed') { e.health = 0; return kill(e, ctx, kind); }
   e.health -= amount;

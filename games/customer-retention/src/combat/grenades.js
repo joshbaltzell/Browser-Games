@@ -151,9 +151,9 @@ export function createGrenades(g = TUNING.grenade) {
   const live = [];
   return {
     live,
-    // A new ball at `from` with velocity vel. Its fuse starts at g.fuse.
-    throw(from, vel) {
-      const b = { pos: [from[0], from[1], from[2]], vel: [vel[0], vel[1], vel[2]], prevPos: [from[0], from[1], from[2]], resting: false, fuse: g.fuse };
+    // A new ball at `from` with velocity vel. Its fuse starts at g.fuse (or `fuse`); `hostile` marks the Overlord's lob.
+    throw(from, vel, fuse = g.fuse, hostile = null) {
+      const b = { pos: [from[0], from[1], from[2]], vel: [vel[0], vel[1], vel[2]], prevPos: [from[0], from[1], from[2]], resting: false, fuse, hostile };
       live.push(b);
       return b;
     },
@@ -163,8 +163,11 @@ export function createGrenades(g = TUNING.grenade) {
       for (let i = 0; i < live.length; i++) {
         const b = live[i];
         b.fuse -= dt;
-        if (stepBall(b, dt, boxes, g) === 'clank') events.push({ type: 'clank', pos: [b.pos[0], b.pos[1], b.pos[2]] });
-        if (b.fuse <= 1e-9) { events.push({ type: 'explode', pos: [b.pos[0], b.pos[1], b.pos[2]] }); live.splice(i--, 1); }
+        const r = stepBall(b, dt, boxes, g);
+        if (r === 'clank' && !b.hostile) events.push({ type: 'clank', pos: [b.pos[0], b.pos[1], b.pos[2]] });
+        // A hostile ball (the Overlord's terms-of-service page, b.hostile = { id, to, radius, damage }) goes off on its first touch of anything.
+        if (b.hostile && (r !== null || b.pos[1] <= g.ballRadius + 0.02)) b.fuse = 0;
+        if (b.fuse <= 1e-9) { events.push(b.hostile ? { type: 'explode', pos: [b.pos[0], b.pos[1], b.pos[2]], hostile: b.hostile } : { type: 'explode', pos: [b.pos[0], b.pos[1], b.pos[2]] }); live.splice(i--, 1); }
       }
       return events;
     },
