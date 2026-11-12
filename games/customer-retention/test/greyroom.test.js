@@ -41,11 +41,11 @@ test('the speed lane has 20 m clear ahead', () => {
   const walls = GREY_ROOM.boxes.filter(b => b.kind !== 'floor');
   assert.equal(sweepSphere(walls, [l.pos[0], 0.9, l.pos[2]], to, TUNING.move.radius), 1);
 });
-test('buildGreyRoom draws in at most 12 meshes, outlines included', () => {
+test('buildGreyRoom draws in at most 14 meshes, outlines included (12 and the ammo crate)', () => {
   const room = buildGreyRoom();
   let n = 0;
   room.group.traverse(o => { if (o instanceof THREE.Mesh) n++; });
-  assert.ok(n <= 12, `${n} meshes`);
+  assert.ok(n <= 14, `${n} meshes`);
   assert.equal(room.boxes, GREY_ROOM.boxes);
 });
 

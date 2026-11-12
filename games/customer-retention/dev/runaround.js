@@ -3,7 +3,7 @@
 // Use: __runAround.start(20); wait; __runAround.done(); __runAround.result().
 (function () {
   const TICK_MS = 50;
-  const M = (o, t = 0) => ({ t, i: o });
+  const M = (o, t = 0) => ({ t, i: { fire: false, ...o } });
   // Each leg: place, expected outcome, length in seconds, and timed intents (last one at or before now applies).
   const LEGS = [
     { name: 'coverRow right + tap', place: 'coverRow', expect: 'none', len: 1.5, steps: [M({ moveX: 1 }), M({ moveX: 1, tap: true }, 0.5), M({ moveX: 1 }, 0.55)] },

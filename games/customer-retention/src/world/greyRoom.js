@@ -131,5 +131,18 @@ export function buildGreyRoom(room = GREY_ROOM) {
     mk.name = 'grey-marks';
     group.add(mk);
   }
+  // Ammo crates: a box with a wider lid, one orange mesh (the room stays under 12 meshes). Visual only;
+  // walking within crateRadius refills the reserves.
+  if (room.ammoCrates && room.ammoCrates.length) {
+    const parts = [];
+    for (const c of room.ammoCrates) {
+      parts.push({ min: [c.pos[0] - 0.35, 0, c.pos[2] - 0.25], max: [c.pos[0] + 0.35, 0.4, c.pos[2] + 0.25] });
+      parts.push({ min: [c.pos[0] - 0.39, 0.4, c.pos[2] - 0.29], max: [c.pos[0] + 0.39, 0.5, c.pos[2] + 0.29] });
+    }
+    const m = new THREE.Mesh(computeOutlineNormals(boxGeometry(parts)), createToonMaterial({ color: PALETTE.playerOrange }));
+    m.name = 'grey-crate';
+    addOutline(m);
+    group.add(m);
+  }
   return { group, boxes: room.boxes, update(dt) {} };
 }

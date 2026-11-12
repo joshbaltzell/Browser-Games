@@ -194,6 +194,52 @@ shotc cover-tall-end
 ev "(async () => { __cr.drive({ moveY: 1 }); await __until(() => __cr.player().state === 'move'); __cr.drive({}); return 'ok'; })()" >/dev/null
 expect "pull back leaves cover" "__cr.player().state === 'move' ? 'ok' : 'bad'"
 
+# ---- gunplay ----------------------------------------------------------------
+# Aim the camera at a dummy's chest: set yaw and pitch from the lens, wait for the camera to settle, twice.
+ev "(() => { window.__aimAt = async (id, h = 1.2) => { for (let k = 0; k < 3; k++) { const d = __cr.dummies().find(x => x.id === id), l = __cr.camera().pos; const dx = d.pos[0] - l[0], dy = d.pos[1] + h - l[1], dz = d.pos[2] - l[2]; __cr.look(Math.atan2(dx, dz), Math.asin(dy / Math.hypot(dx, dy, dz))); await __w(150); } }; window.__hits = (id) => __cr.shots().filter(s => s.target === id).length; return 'ok'; })()" >/dev/null
+
+ev "__cr.place('range')" >/dev/null
+ev "(async () => { __cr.setGun('regret', { mag: 50, reserve: 250 }); __cr.drive({ aim: true }); await __w(400); await __aimAt('open'); __cr.clearShots(); __cr.drive({ aim: true, fire: true }); await __w(1000); __cr.drive({ aim: true }); return 'ok'; })()" >/dev/null
+expect "aimed fire 1 s: at least 8 shots, mag down by the shot count, the open dummy hurt or dead" "(() => { const n = __cr.shots().length, g = __cr.gun(), d = __cr.dummies().find(x => x.id === 'open'); return n >= 8 && g.mag === 50 - n && (d.health < 100 || !d.alive) && __cr.shots().every(s => s.stance === 'aim') ? 'ok' : 'bad n=' + n + ' mag=' + g.mag + ' hp=' + d.health; })()"
+ev "(async () => { await __until(() => __cr.dummies().find(x => x.id === 'open').alive && __cr.dummies().find(x => x.id === 'open').health === 100, 5000); __cr.drive({ aim: true }); return 'ok'; })()" >/dev/null
+ev "(async () => { await __until(() => __cr.dummies().find(x => x.id === 'open').health === 100, 5000); __cr.setGun('regret', { mag: 50, reserve: 250 }); await __aimAt('open'); __cr.drive({ aim: true, fire: true }); await __w(150); return 'ok'; })()" >/dev/null
+shotc fire-aim
+ev "(async () => { __cr.drive({ aim: true }); await __until(() => __cr.dummies().find(x => x.id === 'open').health === 100, 6000); __cr.clearShots(); await __aimAt('open'); __cr.drive({ aim: true, fire: true }); await __until(() => !__cr.dummies().find(x => x.id === 'open').alive, 3000); __cr.drive({ aim: true }); window.__killT = performance.now(); return 'ok'; })()" >/dev/null
+expect "the open dummy dies in at most 7 body hits" "(() => { const d = __cr.dummies().find(x => x.id === 'open'); const hits = __hits('open'); return !d.alive && hits >= 1 && hits <= 8 ? 'ok' : 'bad hits=' + hits + ' alive=' + d.alive; })()"
+ev "(async () => { await __until(() => __cr.dummies().find(x => x.id === 'open').alive, 5000); return 'ok'; })()" >/dev/null
+expect "the open dummy respawns at full health" "(() => { const d = __cr.dummies().find(x => x.id === 'open'); return d.alive && d.health === 100 && performance.now() - window.__killT >= 2800 ? 'ok' : 'bad ' + d.health + ' ' + (performance.now() - window.__killT); })()"
+
+# Empty magazine: firing starts a reload. A press on the bright zone is perfect, and the next magazine is boosted.
+ev "(async () => { __cr.setGun('regret', { mag: 0, reserve: 250 }); __cr.drive({ aim: true, fire: true }); await __until(() => __cr.gun().reload); __cr.drive({ aim: true }); await __until(() => __cr.gun().reload && __cr.gun().reload.u >= 0.42, 3000); __cr.drive({ aim: true, reload: true }); await __until(() => !__cr.gun().reload, 3000); __cr.drive({ aim: true }); return 'ok'; })()" >/dev/null
+expect "empty mag starts a reload; a press at u 0.42 is perfect: boost, mag 50" "(() => { const g = __cr.gun(); return g.boost === true && g.mag === 50 ? 'ok' : 'bad ' + JSON.stringify(g); })()"
+# The reload bar, mid-reload, for a screenshot.
+ev "(async () => { __cr.setGun('regret', { mag: 10, reserve: 250 }); __cr.drive({ aim: true, reload: true }); await __until(() => __cr.gun().reload && __cr.gun().reload.u >= 0.1); __cr.drive({ aim: true }); return 'ok'; })()" >/dev/null
+shotc reload-bar
+ev "(async () => { await __until(() => !__cr.gun().reload, 4000); return 'ok'; })()" >/dev/null
+# A press on the early zone jams: slower than not pressing, still running at 2.3 s.
+ev "(async () => { __cr.setGun('regret', { mag: 10, reserve: 250 }); __cr.drive({ aim: true, reload: true }); await __until(() => __cr.gun().reload); __cr.drive({ aim: true, reload: true }); await __until(() => __cr.gun().reload && __cr.gun().reload.press); window.__jam = __cr.gun().reload.press; await __until(() => __cr.gun().reload && __cr.gun().reload.u >= 2.3 / 2.2, 4000); window.__jamAt23 = !!__cr.gun().reload; __cr.drive({ aim: true }); await __until(() => !__cr.gun().reload, 4000); return 'ok'; })()" >/dev/null
+expect "an early press jams and the reload is still running at 2.3 s" "window.__jam === 'jam' && window.__jamAt23 === true ? 'ok' : 'bad ' + window.__jam + ' ' + window.__jamAt23"
+
+# Pistol: weapon 3, semi-auto.
+ev "(async () => { __step({ weapon: 3 }); await __until(() => __cr.gun().id === 'pistol' && !__cr.gun().switching, 2000); __cr.clearShots(); __cr.drive({ fire: true }); await __w(1000); __cr.drive({}); window.__pistolHold = __cr.shots().length; __cr.clearShots(); await __step({ fire: true }); await __w(240); await __step({ fire: true }); await __w(100); window.__pistolTaps = __cr.shots().length; return 'ok'; })()" >/dev/null
+expect "pistol: held fire is one shot, two presses 0.3 s apart are two" "window.__pistolHold === 1 && window.__pistolTaps === 2 ? 'ok' : 'bad ' + window.__pistolHold + ' ' + window.__pistolTaps"
+ev "(async () => { __step({ weapon: 1 }); await __until(() => __cr.gun().id === 'regret' && !__cr.gun().switching, 2000); return 'ok'; })()" >/dev/null
+
+# Blind fire over low cover, then aimed fire from it.
+ev "__cr.place('coverRow')" >/dev/null
+ev "(async () => { __cr.setGun('regret', { mag: 50, reserve: 250 }); await __step({ moveY: -1, tap: true }); await __until(() => __cr.player().state === 'cover'); __cr.drive({}); await __w(300); __cr.clearShots(); __cr.drive({ fire: true }); await __until(() => __cr.player().blind === 1 && __cr.shots().length >= 3, 3000); return 'ok'; })()" >/dev/null
+expect "fire in low cover without aim is blind fire, head down" "(() => { const p = __cr.player(), s = __cr.shots(); return p.blind === 1 && p.cover.exposed === false && s.length >= 3 && s.every(x => x.stance === 'blind') ? 'ok' : 'bad ' + JSON.stringify(s.map(x => x.stance)); })()"
+shotc blind-low
+ev "(async () => { __cr.drive({}); await __w(300); __cr.clearShots(); __cr.drive({ aim: true, fire: true }); await __until(() => __cr.shots().length >= 4, 3000); __cr.drive({}); return 'ok'; })()" >/dev/null
+expect "aimed fire from cover is aim stance and never hits its own wall" "(() => { const s = __cr.shots(), b = { min: [-9, 0, 6.5], max: [-6, 1, 7.1] }, e = 0.02; const inside = s.filter(x => x.point.every((v, i) => v > b.min[i] + e && v < b.max[i] - e)); return s.length >= 4 && s.every(x => x.stance === 'aim') && inside.length === 0 ? 'ok' : 'bad ' + s.length + ' ' + inside.length; })()"
+ev "(async () => { __cr.drive({}); await __w(300); __cr.drive({ moveY: 1 }); await __until(() => __cr.player().state === 'move'); __cr.drive({}); return 'ok'; })()" >/dev/null
+
+# Sprinting with fire held fires nothing.
+ev "__cr.place('lane')" >/dev/null
+ev "(async () => { __cr.clearShots(); __cr.drive({ moveY: -1, sprint: true, fire: true }); await __w(1000); __cr.drive({}); return 'ok'; })()" >/dev/null
+expect "sprint with fire held: no shots" "__cr.shots().length === 0 ? 'ok' : 'bad ' + __cr.shots().length"
+ev "__cr.place('spawn')" >/dev/null
+
 # Run-around: the page-side bot, 20 s.
 ev "(() => { const s = document.createElement('script'); s.src = 'dev/runaround.js'; document.head.appendChild(s); return 'ok'; })()" >/dev/null
 sleep 1
