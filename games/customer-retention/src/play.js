@@ -10,9 +10,13 @@ import { buildGreyRoom, GREY_ROOM } from './world/greyRoom.js';
 import { pointInBoxes } from './world/collide.js';
 import { createTuningPanel } from './dev/tuningPanel.js';
 import { createMovement } from './actors/movement.js';
+import { cameraModeOf, cameraSideOf } from './actors/coverStates.js';
+import { deriveCoverEdges, edgeOptions, findCoverTarget } from './world/cover.js';
+import { approachDir } from './actors/coverStates.js';
+import { createThud } from './audio/thud.js';
 import { createPlayerView } from './actors/player.js';
 
-// The milestone-1 grey-box play scene: the player, the camera and a room to
+// The grey-box play scene: the player, the camera, cover and a room to
 // run round in. Simulation runs at fixed steps, drawing interpolates.
 
 const MAX_DT = 0.05;
@@ -22,6 +26,13 @@ const MAX_DT = 0.05;
 export function shouldSimulate({ locked, device, panelOpen }) {
   return !!(locked || device === 'pad' || panelOpen);
 }
+
+// Key for the tuning that shapes the cover edges: when it changes they are derived again.
+export function edgesKey(cover) {
+  return `${cover.gap}|${cover.endInset}|${cover.minLength}`;
+}
+
+const TRANSITION_CAP = 2000;
 
 export function startPlay({ canvas, gl, params }) {
   const gfx = createRenderer(canvas, gl);
@@ -44,12 +55,25 @@ export function startPlay({ canvas, gl, params }) {
   const boxes = room.boxes;
 
   const spawn = GREY_ROOM.spawn;
-  const mover = createMovement({ boxes, spawn: spawn.pos });
+  const deriveEdges = () => deriveCoverEdges(boxes, { ...edgeOptions(), exclude: GREY_ROOM.coverExclude });
+  let edgeKey = edgesKey(TUNING.cover);
+  const transitions = [];
+  let simTime = 0;
+  let lastTap = false;
+  const mover = createMovement({
+    boxes, spawn: spawn.pos, coverEdges: deriveEdges(),
+    onState(state, from) {
+      transitions.push({ state, from, t: simTime, tapped: lastTap });
+      if (transitions.length > TRANSITION_CAP) transitions.shift();
+    },
+  });
   mover.place(spawn.pos, spawn.yaw);
   const view = createPlayerView(mover);
   scene.add(view.group);
   const cam = createCameraRig();
   const button = createContextButton();
+  const thud = createThud();
+  let seenSlams = 0;
   const target = [0, 0, 0];
   cam.snap(spawn.pos, spawn.yaw, 'normal', 1);
 
@@ -83,24 +107,35 @@ export function startPlay({ canvas, gl, params }) {
     } else if (e.code === 'KeyH') readout.style.display = readout.style.display === 'none' ? '' : 'none';
   });
 
-  function modeOf() {
-    if (mover.state === 'sprint') return 'sprint';
-    if (mover.aiming) return 'aim';
-    return 'normal';
-  }
-
   function placeAt(pos, yaw) {
     mover.place(pos, yaw);
-    cam.snap(pos, yaw, 'normal', 1);
+    cam.snap(pos, yaw, cameraModeOf(mover), cameraSideOf(mover));
+    seenSlams = mover.slams;
   }
 
   let fps = 0, ms = 0, accFrames = 0, accSeconds = 0, calls = 0, tris = 0, panelClock = 0;
   const cr = window.__cr;
   cr.stats = () => ({ fps, ms, calls, tris, scale: gfx.scale(), characters: 1 });
-  cr.player = () => ({ pos: mover.pos.slice(), state: mover.state, speed: mover.speed(), facing: mover.facing, entries: mover.entries });
+  cr.player = () => {
+    const c = mover.cover;
+    return {
+      pos: mover.pos.slice(), state: mover.state, speed: mover.speed(), facing: mover.facing, entries: mover.entries,
+      cover: c ? { id: c.edge.id, kind: c.edge.kind, t: c.t, length: c.edge.length, pop: c.pop, exposed: c.exposed } : null,
+      slams: mover.slams,
+    };
+  };
   cr.camera = () => {
     const r = camState;
-    return { pos: r.pos.slice(), fov: r.fov, inside: pointInBoxes(boxes, r.pos, 0.1) };
+    return { pos: r.pos.slice(), fov: r.fov, inside: pointInBoxes(boxes, r.pos, 0.1), mode: camMode, side: camSide };
+  };
+  cr.transitions = () => transitions.map(x => ({ ...x }));
+  cr.clearTransitions = () => { transitions.length = 0; };
+  cr.coverTarget = () => {
+    const i = drive || { moveX: snap ? snap.moveX : 0, moveY: snap ? snap.moveY : 0 };
+    const t = findCoverTarget(mover.coverEdges, boxes, mover.pos,
+      approachDir(mover, { moveX: i.moveX || 0, moveY: i.moveY || 0, camYaw: cam.yaw }, [0, 0]),
+      cam.yaw, TUNING.cover, TUNING.move.radius);
+    return t ? { id: t.edge.id, kind: t.edge.kind, dist: t.dist } : null;
   };
   cr.place = (name) => {
     const f = name === 'spawn' ? spawn : GREY_ROOM.features[name];
@@ -130,18 +165,27 @@ export function startPlay({ canvas, gl, params }) {
     }
     pending.cover = false;
     intent.camYaw = cam.yaw;
+    lastTap = intent.tap;
     return intent;
   }
 
   const f1 = (v) => v.toFixed(1);
+  function coverLine() {
+    const c = mover.cover;
+    if (c) return `cover: ${c.edge.kind} ${c.edge.id}  t ${c.t.toFixed(2)}/${c.edge.length.toFixed(2)}  pop ${c.pop.toFixed(2)}`;
+    const g = cr.coverTarget();
+    return g ? `tap grabs: ${g.kind} ${g.dist.toFixed(1)} m` : 'tap grabs: nothing';
+  }
   function writePanel() {
     const pad = input.padStatus();
     readout.textContent = [
-      'MOVEMENT TEST',
-      'Mouse + keys: WASD move, mouse look, right mouse aim, Space tap roll / hold sprint, Shift sprint',
-      'Gamepad: left stick move, right stick look, left trigger aim, A tap roll / hold sprint',
+      'COVER TEST',
+      'Mouse + keys: WASD move, mouse look, right mouse aim / pop out, Space tap: take cover (toward it) or roll, hold: sprint, Shift sprint',
+      'Gamepad: left stick move, right stick look, left trigger aim / pop out, A tap: take cover or roll, hold: sprint',
+      'In cover: push along to move, aim to pop out, push in + tap to vault, push toward a gap + tap to swap, pull away to leave',
       '',
       `${mover.state}   ${mover.speed().toFixed(2)} m/s`,
+      coverLine(),
       `${Math.round(fps)} fps   ${f1(ms)} ms   scale ${gfx.scale()}`,
       `${calls} draw calls   ${tris} triangles`,
       `Pointer lock: ${input.isLocked() ? 'yes' : 'no'}   Gamepad: ${pad}`,
@@ -150,6 +194,7 @@ export function startPlay({ canvas, gl, params }) {
   }
 
   const camState = { pos: [0, 0, 0], fov: 70 };
+  let camMode = 'normal', camSide = 1;
 
   const loop = createLoop({
     before(realSeconds) {
@@ -165,6 +210,9 @@ export function startPlay({ canvas, gl, params }) {
     },
     step(dt) {
       if (!simulating) return;
+      const key = edgesKey(TUNING.cover);
+      if (key !== edgeKey) { edgeKey = key; mover.coverEdges = deriveEdges(); }
+      simTime += dt;
       mover.update(buildIntent(dt), dt);
     },
     render(alpha, realSeconds) {
@@ -172,7 +220,9 @@ export function startPlay({ canvas, gl, params }) {
       view.update(alpha, dt);
       const p = mover.pos, q = mover.prevPos;
       for (let i = 0; i < 3; i++) target[i] = q[i] + (p[i] - q[i]) * alpha;
-      const r = cam.update(dt, { target, mode: modeOf(), side: 1 }, boxes);
+      if (mover.slams > seenSlams) { seenSlams = mover.slams; cam.bump(); thud.play(TUNING.cover.thudVolume); }
+      camMode = cameraModeOf(mover); camSide = cameraSideOf(mover);
+      const r = cam.update(dt, { target, mode: camMode, side: camSide }, boxes);
       camState.pos[0] = r.pos[0]; camState.pos[1] = r.pos[1]; camState.pos[2] = r.pos[2]; camState.fov = r.fov;
       if (camera.fov !== r.fov) { camera.fov = r.fov; camera.updateProjectionMatrix(); }
       camera.position.set(r.pos[0], r.pos[1], r.pos[2]);

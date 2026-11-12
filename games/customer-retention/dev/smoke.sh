@@ -49,7 +49,7 @@ fi
 
 check_console() {
   local errors
-  errors=$(pw console error 2>&1)
+  errors=$(pw console error 2>&1 | grep -v 'favicon.ico') # a missing favicon over http is not a game error
   if echo "$errors" | grep -qiE '\[error\]|error:|exception'; then
     echo "smoke FAILED: console errors:" >&2
     echo "$errors" >&2
@@ -126,11 +126,11 @@ ev "__cr.drive(null)" >/dev/null
 ev "__cr.place('lane')" >/dev/null
 sleep 0.5
 ev "window.__rollStart = { pos: __cr.player().pos, entries: __cr.player().entries }" >/dev/null
-ev "__cr.drive({ moveY: -1, tap: true })" >/dev/null
-ev "__cr.drive(null)" >/dev/null
-sleep 0.25
+# The tap and the release go in one call: separate calls are ~0.6 s apart, which would jog on after the roll.
+ev "(async () => { __cr.drive({ moveY: -1, tap: true }); await new Promise(r => setTimeout(r, 60)); __cr.drive({}); return 'ok'; })()" >/dev/null
 pw screenshot --filename "$SHOT_DIR/roll.png" >/dev/null
 sleep 1
+ev "__cr.drive(null)" >/dev/null
 expect "roll 5 m" "(() => { const a = window.__rollStart, p = __cr.player(); const d = Math.hypot(p.pos[0] - a.pos[0], p.pos[2] - a.pos[2]); return p.entries > a.entries && Math.abs(d - 5) <= 0.3 ? 'ok' : 'bad d=' + d; })()"
 
 ev "__cr.place('wall')" >/dev/null
@@ -152,6 +152,68 @@ sleep 0.6
 expect "aim fov 50" "Math.abs(__cr.camera().fov - 50) <= 1 ? 'ok' : 'bad'"
 pw screenshot --filename "$SHOT_DIR/aim.png" >/dev/null
 ev "__cr.drive(null)" >/dev/null
+
+# ---- cover ------------------------------------------------------------------
+# The page only simulates while a drive is set (no pointer lock here), so idle is drive({}), not drive(null).
+shotc() { pw screenshot --filename "$SHOT_DIR/$1.png" >/dev/null; }
+
+ev "__cr.place('coverRow')" >/dev/null
+sleep 0.3
+ev "(async () => { const w = (ms) => new Promise(r => setTimeout(r, ms)); const t0 = performance.now(); __cr.drive({ moveY: -1, tap: true }); await w(60); __cr.drive({ moveY: -1 }); while (performance.now() - t0 < 3000 && __cr.player().state !== 'cover') await w(10); __cr.drive({}); return 'ok'; })()" >/dev/null
+expect "coverRow forward + tap takes low cover" "(() => { const p = __cr.player(), c = __cr.camera(); return p.cover && p.cover.kind === 'low' && c.mode === 'coverLow' && !c.inside ? 'ok' : 'bad'; })()"
+sleep 0.5
+shotc cover-low
+ev "(async () => { const w = (ms) => new Promise(r => setTimeout(r, ms)); __cr.drive({ aim: true }); const t0 = performance.now(); while (performance.now() - t0 < 3000 && !(__cr.player().cover && __cr.player().cover.pop === 1)) await w(10); await w(200); return 'ok'; })()" >/dev/null
+expect "aim pops out of low cover" "(() => { const p = __cr.player(); return Math.abs(__cr.camera().fov - 50) <= 1 && p.cover && p.cover.pop === 1 ? 'ok' : 'bad'; })()"
+shotc cover-pop
+ev "__cr.drive({})" >/dev/null
+sleep 0.4
+ev "(async () => { const w = (ms) => new Promise(r => setTimeout(r, ms)); __cr.clearTransitions(); __cr.drive({ moveY: -1, tap: true }); await w(60); __cr.drive({ moveY: -1 }); const t0 = performance.now(); while (performance.now() - t0 < 4000 && !__cr.transitions().some(x => x.state === 'vault' && true) ) await w(10); while (performance.now() - t0 < 4000 && __cr.player().state !== 'move') await w(10); return 'ok'; })()" >/dev/null
+expect "push in + tap vaults, then moves, past the box" "(() => { const s = __cr.transitions().map(x => x.state).join(','), p = __cr.player(); return s.indexOf('vault,move') >= 0 && p.pos[2] < 6.5 ? 'ok' : 'bad ' + s; })()"
+ev "__cr.drive({})" >/dev/null
+
+# Each playwright-cli call takes about 0.6 s and the page's clock can lag it, so timed holds run
+# page-side in one call and wait on the game's own state (__until) instead of wall-clock time.
+ev "(() => { window.__w = (ms) => new Promise(r => setTimeout(r, ms)); window.__until = async (f, ms = 4000) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (f()) return true; await __w(10); } return false; }; window.__step = async (i) => { __cr.drive(i); await __w(60); __cr.drive({}); }; return 'ok'; })()" >/dev/null
+
+# Swap: walk to A's +x end (stop as soon as we are there, never 0.3 s past it), then tap toward the gap.
+ev "__cr.place('coverRow')" >/dev/null
+ev "(async () => { const slams0 = __cr.player().slams; await __step({ moveY: -1, tap: true }); await __until(() => __cr.player().state === 'cover'); await __w(100); window.__swap = { id: __cr.player().cover.id, slams: slams0 }; __cr.drive({ moveX: 1 }); await __until(() => { const c = __cr.player().cover; return c && c.t >= c.length - 0.05; }); await __step({ moveX: 1, tap: true }); await __until(() => __cr.player().state === 'cover' && __cr.player().cover.id !== __swap.id); return 'ok'; })()" >/dev/null
+expect "swap to a different cover (grab + swap = two slams)" "(() => { const a = window.__swap, p = __cr.player(); return a.id && p.cover && p.cover.id !== a.id && p.slams === a.slams + 2 ? 'ok' : 'bad ' + a.id + ' slams ' + a.slams; })()"
+ev "(async () => { __cr.drive({ moveY: 1 }); await __until(() => __cr.player().state === 'move'); __cr.drive({}); return 'ok'; })()" >/dev/null
+
+# Tall cover: aim in the middle stays covered; walk to the -x end (stop at it), then pop around the corner.
+ev "__cr.place('coverTall')" >/dev/null
+ev "(async () => { await __step({ moveY: -1, tap: true }); await __until(() => __cr.player().state === 'cover'); __cr.drive({ aim: true }); await __w(800); return 'ok'; })()" >/dev/null
+expect "tall cover: aim in the middle does not pop" "(() => { const p = __cr.player(); return p.cover && p.cover.kind === 'tall' && p.cover.pop === 0 && Math.abs(__cr.camera().fov - 70) <= 1 ? 'ok' : 'bad'; })()"
+ev "(async () => { __cr.drive({ moveX: -1 }); await __until(() => { const c = __cr.player().cover; return c && c.t <= 0.05; }); __cr.drive({}); await __until(() => __cr.camera().side === -1); return 'ok'; })()" >/dev/null
+expect "tall cover: end gives side -1" "__cr.camera().side === -1 ? 'ok' : 'bad'"
+ev "(async () => { __cr.drive({ aim: true }); await __until(() => __cr.player().cover && __cr.player().cover.pop === 1); await __w(300); return 'ok'; })()" >/dev/null
+expect "tall cover: aim at the end pops" "(() => { const p = __cr.player(); return p.cover && p.cover.pop === 1 && !__cr.camera().inside ? 'ok' : 'bad'; })()"
+shotc cover-tall-end
+ev "(async () => { __cr.drive({ moveY: 1 }); await __until(() => __cr.player().state === 'move'); __cr.drive({}); return 'ok'; })()" >/dev/null
+expect "pull back leaves cover" "__cr.player().state === 'move' ? 'ok' : 'bad'"
+
+# Run-around: the page-side bot, 20 s.
+ev "(() => { const s = document.createElement('script'); s.src = 'dev/runaround.js'; document.head.appendChild(s); return 'ok'; })()" >/dev/null
+sleep 1
+ev "(__runAround.start(20), 'ok')" >/dev/null
+for _ in $(seq 1 30); do
+  sleep 1
+  [ "$(ev "__runAround.done()")" = "true" ] && break
+done
+RA=$(pw --raw eval "JSON.stringify(__runAround.result())")
+echo "$RA" | python3 -c "
+import json,sys
+raw=sys.stdin.read().strip()
+r=json.loads(raw)
+if isinstance(r,str): r=json.loads(r)
+for l in r['legs']: print('  %-40s expect %-5s entries %d untapped %d' % (l['name'],l['expect'],l['coverEntries'],l['untapped']))
+print('  failures:', r['failures'])
+"
+[ "$(ev "__runAround.result().failures.length === 0 && __runAround.result().legs.length >= 9")" = "true" ] || fail "run-around: $RA"
+ev "__cr.drive(null)" >/dev/null
+ev "__cr.place('spawn')" >/dev/null
 
 sleep 1.5
 PCALLS=$(ev "__cr.stats().calls")
