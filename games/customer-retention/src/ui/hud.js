@@ -17,12 +17,13 @@ const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 // face is the damageFaceModel result (or null); objective is a line of text; bark is { speaker, text } or null;
 // banner is { title, hint, hold? } or null (hold 0..1 draws the ring on the hint); bark.color is the speaker's colour. The last four pass through unchanged.
 // grenades is the kettlebell count (null hides the line); action is { text, hold: 0..1 | null } or null (the prompt line under the reload alert).
+// pop is { text, kind } or null (a short pop-up line: PR!, +25 scoops, Progress photo saved.).
 // boss is { name, fraction, phase, invuln, hint } or null (the big health bar; invuln dims it and shows the hint); ending is { card, lines, tone, final } or null (a text card
 // over a dimmed scene).
 // covered: the player is tucked or blind in cover (not popped); the reticle then shows dimmed, at the same screen point the
 // aimed shot's camera ray goes through. device is 'kbm' or 'pad': it picks the key name in the reload prompt.
 export function hudModel({ arsenal, stance, firing, covered = false, device = 'kbm', spreadDeg, fov, viewportH, marker = null, reloadFlash = null,
-  face = null, objective = '', hours = '', bark = null, banner = null, grenades = null, action = null, boss = null, ending = null, weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
+  face = null, objective = '', hours = '', bark = null, banner = null, grenades = null, action = null, boss = null, ending = null, pop = null, weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
   const id = arsenal.current();
   const row = weapons[id], am = arsenal.ammo[id];
   const r = arsenal.reload;
@@ -63,6 +64,7 @@ export function hudModel({ arsenal, stance, firing, covered = false, device = 'k
     grenades: Number.isFinite(grenades) ? grenades : null,
     boss: boss ? { name: boss.name, fraction: clamp01(boss.fraction), phase: boss.phase, invuln: !!boss.invuln, hint: boss.hint || '' } : null,
     ending: ending ? { card: ending.card, lines: ending.lines, tone: ending.tone || 'big', final: !!ending.final } : null,
+    pop: pop && pop.text ? { text: pop.text, kind: pop.kind || '' } : null,
     action: action && action.text ? { text: action.text, hold: Number.isFinite(action.hold) ? clamp01(action.hold) : null } : null,
   };
 }
@@ -114,6 +116,7 @@ export function createHud(root = document.body) {
   const endEl = el('div', 'cr-ending', hud);
   const endText = el('div', 'cr-ending-text', endEl);
   const endHint = el('div', 'cr-ending-hint', endEl);
+  const popEl = el('div', 'cr-pop', hud);
   const hoursEl = el('div', 'cr-hours', hud);
   const barkEl = el('div', 'cr-bark', hud);
   const barkWho = el('span', 'cr-bark-who', barkEl);
@@ -179,6 +182,7 @@ export function createHud(root = document.body) {
         endText.replaceChildren(...en.lines.map((l, i) => el('div', i === 0 ? 'cr-ending-line cr-ending-first' : 'cr-ending-line', null, l)));
         endHint.textContent = en.final ? 'Press any key' : '';
       });
+      set('pop', m.pop ? `${m.pop.kind}|${m.pop.text}` : '', () => { popEl.hidden = !m.pop; if (m.pop) { popEl.textContent = m.pop.text; popEl.dataset.kind = m.pop.kind; } });
       set('hours', m.hours || '', v => { hoursEl.textContent = v; hoursEl.hidden = !v; });
       set('bark', m.bark ? `${m.bark.speaker}|${m.bark.text}` : '', () => { barkEl.hidden = !m.bark; if (m.bark) { barkWho.textContent = m.bark.speaker; barkWho.style.color = m.bark.color || ''; barkText.textContent = m.bark.text; } });
       set('hit', m.hit.show ? m.hit.kind : '', v => { hit.hidden = !v; hit.dataset.kind = v; });

@@ -271,7 +271,7 @@ echo "play: $PFPS fps, $PCALLS calls, $PTRIS triangles"
 check_console
 
 # ---- Check-in Turnstiles: the first fight (milestone 4, the default page) --------------
-pw goto "http://localhost:$PORT/index.html" >/dev/null || fail "could not open Check-in Turnstiles"
+pw goto "http://localhost:$PORT/index.html?skipTitle" >/dev/null || fail "could not open Check-in Turnstiles"
 sleep 2
 READY=$(ev "window.__cr && window.__cr.ready && !!window.__cr.fight")
 [ "$READY" = "true" ] || fail "kiosk row: not ready ($READY)"
@@ -515,7 +515,15 @@ ev "(async () => { await __until(() => __cr.ending().card === 3, 9000); await __
 shotc ending-card4
 bexpect "card 4 is the thanks card, waiting for a key" "(() => { const e = document.querySelector('.cr-ending'); return /thanks for playing/.test(e.textContent) && /GlorpFit/.test(e.textContent) && /any key/i.test(e.textContent) ? 'ok' : 'bad ' + e.textContent; })()"
 ev "(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ' })); await __w(600); return 'ok'; })()" >/dev/null
-bexpect "any key goes back to the start of a new run (the Turnstiles, checkpoint reset)" "(() => { const r = __cr.run(); return r.arena === 'turnstiles' && r.checkpoint === 0 && __cr.ending().state === 'off' && document.querySelector('.cr-ending').hidden ? 'ok' : 'bad ' + JSON.stringify(r); })()"
+bexpect "any key goes back to the title with a new run (the Turnstiles, checkpoint reset)" "(() => { const r = __cr.run(); return r.arena === 'turnstiles' && r.checkpoint === 0 && __cr.ending().state === 'off' && document.querySelector('.cr-ending').hidden ? 'ok' : 'bad ' + JSON.stringify(r); })()"
+bexpect "the title is up after the ending: no Continue (checkpoint reset), New Run first, the HUD hidden" "(() => { const m = __cr.menu(); return m.open && m.onTitle && m.items[0] === 'new' && !m.items.includes('continue') && document.body.classList.contains('cr-on-title') ? 'ok' : 'bad ' + JSON.stringify(m); })()"
+ev "__cr.menuChoose('new')" >/dev/null
+sleep 0.3
+bexpect "New Run on the first play shows the opening story card" "(() => { const m = __cr.menu(), t = document.getElementById('cr-menu').textContent; return m.open && m.screen === 'intro' && /January 2nd/.test(t) && /He went twice/.test(t) && /It is Tuesday\\. It is 1:30\\./.test(t) ? 'ok' : 'bad ' + JSON.stringify(m) + t; })()"
+shotc intro-card
+ev "window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ' }))" >/dev/null
+sleep 0.3
+bexpect "any key closes the card and play begins" "(() => { const m = __cr.menu(); return !m.open && !m.onTitle && !document.body.classList.contains('cr-on-title') ? 'ok' : 'bad ' + JSON.stringify(m); })()"
 ev "__cr.god(false)" >/dev/null
 check_console
 
@@ -523,16 +531,45 @@ check_console
 ev "(async () => { __cr.go('smoothie'); __cr.god(false); __cr.drive({}); __cr.place('open'); await __w(500); __cr.hurtTobble(9999); __cr.hurt(9999); await __until(() => __cr.fightLog().some(x => x.type === 'checkpoint'), 4000); await __w(500); return 'ok'; })()" >/dev/null
 rexpect "both down restarts the Smoothie Bar (full health, idle Reps), not the run" "(() => { const r = __cr.run(), f = __cr.fight(), h = __cr.health(); return r.arena === 'smoothie' && r.checkpoint === 1 && !f.started && h.hp === h.max && !h.downed && f.enemies.filter(e => e.alive).every(e => e.state === 'idle') ? 'ok' : 'bad ' + JSON.stringify([r, h]); })()"
 ev "__cr.god(true)" >/dev/null
-# The checkpoint persists across a reload, which offers Continue.
+# The checkpoint persists across a reload, which opens the title with Continue.
 pw goto "http://localhost:$PORT/index.html" >/dev/null || fail "could not reload"
 sleep 2
-rexpect "a reload with a saved checkpoint opens the Turnstiles and offers Continue (Smoothie Bar) and New run" "(() => { const c = document.getElementById('cr-continue'); return c && __cr.run().saved === 1 && /Continue/.test(c.textContent) && /Smoothie Bar/.test(c.textContent) && /New run/.test(c.textContent) ? 'ok' : 'bad ' + (c && c.textContent) + ' ' + __cr.run().saved; })()"
-shotc continue
-ev "document.querySelector('.cr-continue-yes').click()" >/dev/null
+rexpect "a reload with a saved checkpoint opens the title: GYMS OF WAR, NO PAIN NO CANCEL, Continue (Smoothie Bar) first, nothing simulating, the HUD hidden" "(() => { const m = __cr.menu(), c = document.getElementById('cr-menu'); return m.open && m.onTitle && m.screen === 'title' && /GYMS OF WAR/.test(c.textContent) && /NO PAIN, NO CANCEL/.test(c.textContent) && m.items[0] === 'continue' && /Continue.*Smoothie Bar/.test(c.textContent) && /New Run/.test(c.textContent) && /Back to games/.test(c.textContent) && getComputedStyle(document.getElementById('cr-hud')).display === 'none' ? 'ok' : 'bad ' + JSON.stringify(m); })()"
+ev "(() => { window.__w = (ms) => new Promise(r => setTimeout(r, ms)); return 'ok'; })()" >/dev/null
+rexpect "the dev read-out is hidden by default" "getComputedStyle(document.getElementById('cr-readout')).display === 'none' ? 'ok' : 'bad'"
+ev "(async () => { const a = __cr.player().pos.slice(); __cr.drive({ moveY: -1, sprint: true, fire: true, tap: true }); await __w(500); __cr.drive({}); const b = __cr.player().pos; window.__titleMoved = Math.hypot(a[0] - b[0], a[2] - b[2]) + __cr.shots().length; return 'ok'; })()" >/dev/null
+rexpect "nothing moves, fires or rolls behind the title (drive input ignored)" "window.__titleMoved === 0 ? 'ok' : 'bad ' + window.__titleMoved"
+shotc title
+ev "window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowDown' }))" >/dev/null
+rexpect "arrow keys move the selection on the title" "document.querySelectorAll('#cr-menu .cr-menu-item')[1].classList.contains('sel') ? 'ok' : 'bad'"
+ev "__cr.menuChoose('controls')" >/dev/null
+rexpect "Controls shows keys and pad side by side" "(() => { const t = document.getElementById('cr-menu').textContent; return __cr.menu().screen === 'controls' && /Keyboard \\+ mouse/.test(t) && /Gamepad/.test(t) && /Right stick/.test(t) && /Hold E|Space/.test(t) ? 'ok' : 'bad ' + t; })()"
+shotc controls
+ev "__cr.menuChoose('close')" >/dev/null
+ev "__cr.menuChoose('continue')" >/dev/null
 sleep 1
-rexpect "Continue loads the saved arena" "(() => { const r = __cr.run(); return r.arena === 'smoothie' && r.checkpoint === 1 && !document.getElementById('cr-continue') ? 'ok' : 'bad ' + JSON.stringify(r); })()"
+rexpect "Continue loads the saved arena" "(() => { const r = __cr.run(), m = __cr.menu(); return r.arena === 'smoothie' && r.checkpoint === 1 && !m.open && !m.onTitle ? 'ok' : 'bad ' + JSON.stringify([r, m]); })()"
+# Pause: nothing fires behind it, settings save, controls, resume.
+ev "(async () => { __cr.god(true); __cr.drive({}); __cr.pause(); await __w(100); return 'ok'; })()" >/dev/null
+rexpect "the pause menu opens with Resume, Settings, Controls, Restart arena, Quit to title" "(() => { const m = __cr.menu(); return m.open && m.screen === 'pause' && m.items.join() === 'resume,settings,controls,restart,quit' ? 'ok' : 'bad ' + JSON.stringify(m); })()"
+ev "(async () => { const n = __cr.shots().length, a = __cr.player().pos.slice(); __cr.drive({ aim: true, fire: true, moveX: 1, tap: true }); await __w(600); __cr.drive({}); const b = __cr.player().pos; window.__pauseLeak = (__cr.shots().length - n) + Math.hypot(a[0] - b[0], a[2] - b[2]); return 'ok'; })()" >/dev/null
+rexpect "no shot, roll or step happens behind the pause menu" "window.__pauseLeak === 0 ? 'ok' : 'bad ' + window.__pauseLeak"
+shotc pause
+ev "__cr.menuChoose('settings')" >/dev/null
+rexpect "Settings lists volume, mouse sensitivity, invert Y and pad look sensitivity" "(() => { const t = document.getElementById('cr-menu').textContent; return __cr.menu().screen === 'settings' && /Master volume/.test(t) && /Mouse sensitivity/.test(t) && /Invert Y/.test(t) && /Pad look sensitivity/.test(t) ? 'ok' : 'bad ' + t; })()"
+ev "(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowLeft' })); return 'ok'; })()" >/dev/null
+rexpect "the settings save to localStorage" "(() => { const s = JSON.parse(localStorage.getItem('gyms-of-war.settings')); return s.volume === 0.9 && __cr.menu().settings.volume === 0.9 ? 'ok' : 'bad ' + JSON.stringify(s); })()"
+shotc settings
+ev "__cr.menuChoose('close')" >/dev/null
+ev "(async () => { __cr.menuChoose('resume'); await __w(200); return 'ok'; })()" >/dev/null
+rexpect "Resume closes the menu and the game runs again" "(() => !__cr.menu().open ? 'ok' : 'bad')()"
+ev "(async () => { const a = __cr.player().pos.slice(); __cr.drive({ moveX: 1 }); await __w(600); __cr.drive({}); const b = __cr.player().pos; window.__resumed = Math.hypot(a[0] - b[0], a[2] - b[2]); return 'ok'; })()" >/dev/null
+rexpect "Doc moves again after Resume" "window.__resumed > 0.5 ? 'ok' : 'bad ' + window.__resumed"
+ev "__cr.pause(); " >/dev/null
+ev "__cr.menuChoose('quit')" >/dev/null
+rexpect "Quit to title shows the title over the Turnstiles, Continue still offered" "(() => { const m = __cr.menu(); return m.open && m.onTitle && m.items[0] === 'continue' && __cr.level() === 'kioskRow' ? 'ok' : 'bad ' + JSON.stringify(m); })()"
 ev "(() => { localStorage.clear(); return 'ok'; })()" >/dev/null
 echo "run: smoothie bar $SM_FPS fps $SM_CALLS calls $SM_TRIS tris; desk $D_FPS fps $D_CALLS calls $D_TRIS tris; boss fight $FPS_B fps $CALLS_B calls $TRIS_B tris"
 check_console
 
-echo "smoke ok: ready, look test driven, grey room and Check-in Turnstiles fight driven, Smoothie Bar and Cancellation Desk run (gates, swaps, disposal, checkpoint, Continue) (Tobble, finishers, bash, Cheat Day, kettlebells, Spawn Sauna, revives), perf $CALLS_ON calls ($CALLS_OFF without outlines), $TRIS triangles, no console errors; screenshots at $SHOT_DIR"
+echo "smoke ok: ready, title and pause menus checked, look test driven, grey room and Check-in Turnstiles fight driven, Smoothie Bar and Cancellation Desk run (gates, swaps, disposal, checkpoint, Continue) (Tobble, finishers, bash, Cheat Day, kettlebells, Spawn Sauna, revives), perf $CALLS_ON calls ($CALLS_OFF without outlines), $TRIS triangles, no console errors; screenshots at $SHOT_DIR"

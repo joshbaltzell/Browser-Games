@@ -8,7 +8,9 @@ import { createSky } from './render/sky.js';
 import { createCameraRig } from './render/cameraRig.js';
 import { buildGreyRoom, GREY_ROOM } from './world/greyRoom.js';
 import { ARENA_LEVELS } from './world/arenas.js';
-import { ARENAS, ARENA_TITLES, arenaIndex, createRun, hoursLine, inGate } from './run.js';
+import { ARENAS, ARENA_TITLES, arenaIndex, createRun, hoursLine, inGate, loadCheckpoint } from './run.js';
+import { loadSettings, saveSettings, introSeen, markIntroSeen } from './settings.js';
+import { createMenus } from './ui/menus.js';
 import { disposeTree } from './render/dispose.js';
 import { pointInBoxes } from './world/collide.js';
 import { createTuningPanel } from './dev/tuningPanel.js';
@@ -79,6 +81,11 @@ export function gatePlayerInput(intent, arsenalIn, { downed = false, busy = fals
   return intent;
 }
 
+// The title screen shows unless the URL jumps straight into play: ?room (the grey room), ?arena=... or ?skipTitle (the smoke harness).
+export function showsTitle(params) {
+  return !(params && (params.has('room') || params.has('arena') || params.has('skipTitle')));
+}
+
 const TRANSITION_CAP = 2000;
 const SHOT_LOG_CAP = 500;
 const FIGHT_LOG_CAP = 500;
@@ -94,6 +101,7 @@ export function startPlay({ canvas, gl, params }) {
   const renderer = gfx.renderer;
   const input = createInput(canvas);
   const readout = document.getElementById('cr-readout');
+  readout.style.display = 'none';   // the dev read-out is hidden until H
   const pauseBox = document.getElementById('cr-pause');
   const hooks = { panelOpen: () => false };
   window.__cr.hooks = hooks;
@@ -135,6 +143,11 @@ export function startPlay({ canvas, gl, params }) {
   const cam = createCameraRig();
   const button = createContextButton();
   const sfx = createSfx({ AudioContextCtor: window.AudioContext || window.webkitAudioContext });
+  const storage = safeStorage();
+  let settings = loadSettings(storage);
+  // The player's settings win over the dev panel's look.invertY and the tuned speeds (they scale them).
+  function applySettings() { sfx.setVolume(settings.volume); TUNING.look.invertY = settings.invertY; }
+  applySettings();
   const trigger = createTrigger();
   const ending = createEnding();
   let anyPress = false;   // any key, click or button since the last step (the ending's last card waits for one)
@@ -202,6 +215,12 @@ export function startPlay({ canvas, gl, params }) {
   }
   let gateWasOpen = false;
   const hits = [];                 // damage face flashes: { t, angle }
+  // The pop-up line (PR!, +25 scoops, Progress photo saved., the game-over line): a higher priority is not replaced by a lower one while it shows.
+  let popState = null;
+  function pop(text, kind = '', time = 1.4, prio = 0) {
+    if (popState && popState.t > 0 && popState.prio > prio) return;
+    popState = { text, kind, t: time, prio };
+  }
   const fightLog = [];
   const listener = { pos: [0, 0, 0], yaw: 0 };
   const shotLog = [];
@@ -269,6 +288,9 @@ export function startPlay({ canvas, gl, params }) {
     restartPending = false;
   }
 
+  // Both down (or Doc bled out): the arena starts again, with the gym's line.
+  function gameOver() { restart(); pop('Your membership has been renewed.', 'over', 3.2, 3); }
+
   function restart() {
     if (fight) fight.reset();
     resetPlayerSide();
@@ -288,13 +310,17 @@ export function startPlay({ canvas, gl, params }) {
     resetPlayerSide();
     cam.snap(spawn.pos, spawn.yaw, 'normal', 1);
     hoursT = name === 'greyRoom' ? 0 : TUNING.run.hoursTime;
+    popState = null;
+    // The PA between arenas.
+    if (fv && name === 'smoothie') fv.forceBark('paSmoothie');
+    else if (fv && name === 'desk') fv.forceBark('paDesk');
   }
   let hoursT = 0;
 
   // The arena is clear: the gate opens (when there is a next arena).
   function onCleared() {
     if (fight.boss) { ending.start(); return; }   // the boss arena: the desk and the ending, not a gate
-    if (run.markClear() && !gateWasOpen) { gateWasOpen = true; room.setGateOpen(true); sfx.play('saunaOpen', TUNING.feedback.saunaVolume); }
+    if (run.markClear() && !gateWasOpen) { gateWasOpen = true; room.setGateOpen(true); sfx.play('saunaOpen', TUNING.feedback.saunaVolume); fv.forceBark('paGate'); }
   }
 
   // Health hit zero: the fight has already put the mover down (or this is the dev hook); the sound and the line.
@@ -317,7 +343,7 @@ export function startPlay({ canvas, gl, params }) {
       else if (ev.type === 'toTitle') toTitle();
     }
   }
-  // Back to the title. Until the title screen exists (hooks.toTitle, set by it) this starts a new run at the Turnstiles.
+  // The end of the ending: back to the title with the run reset (hooks.toTitle, set below by the title screen).
   function toTitle() {
     if (typeof hooks.toTitle === 'function') { hooks.toTitle(); return; }
     run.newRun(); enterArena(ARENAS[0]);
@@ -349,10 +375,13 @@ export function startPlay({ canvas, gl, params }) {
     while (hits.length && simTime - hits[0].t > fb.hitFlashTime) hits.shift();
     const h = health.update(dt, { standIn: !fight.tobble });
     if (h === 'revived') mover.revive();
-    if (h === 'bleedOut' || restartPending) { restart(); return; }
+    if (h === 'bleedOut' || restartPending) { gameOver(); return; }
     const got = health.downed ? 0 : fv.collect(mover.pos, TUNING.combat.pickupRadius);
     if (got) {
+      const before = arsenal.ammo.regret.reserve;
       arsenal.addReserve('regret', got * TUNING.associate.ammoDrop);
+      const gain = Math.round(arsenal.ammo.regret.reserve - before);
+      if (gain > 0) pop(`+${gain} scoops`, 'scoops', 1.2, 1);
       sfx.play('pickup', fb.pickupVolume);
     }
   }
@@ -545,7 +574,7 @@ export function startPlay({ canvas, gl, params }) {
       lines.push(`tobble: ${tb ? `${tb.state} hp ${tb.hp.toFixed(0)}` : 'off'}`, `sauna: ${sa ? `${sa.state} ${sa.spawned}/${TUNING.pad.total}` : '-'}   kettlebells ${bag.count}`);
     } else lines.push(`dummies: ${dummyList.filter(d => d.alive).length}/${dummyList.length}  last: ${lastKind} ${lastTarget}`);
     lines.push(`${Math.round(fps)} fps   ${f1(ms)} ms   scale ${gfx.scale()}`, `${calls} draw calls   ${tris} triangles`,
-      `Pointer lock: ${input.isLocked() ? 'yes' : 'no'}   Gamepad: ${pad}`, '` tuning panel    ?look look test    H hide panel');
+      `Pointer lock: ${input.isLocked() ? 'yes' : 'no'}   Gamepad: ${pad}`, '` tuning panel    ?look look test    H show/hide this read-out');
     readout.textContent = lines.join('\n');
   }
 
@@ -616,6 +645,7 @@ export function startPlay({ canvas, gl, params }) {
         if (!fight) dv.hit(f.hit.kind);
         effects.gel(f.hit.point, back);
         marker = f.hit.kind; markerT = fb.hitMarkerTime;
+        if (fight && f.hit.kind === 'head') pop('PR!', 'pr', 0.9, 0);
         sfx.play(f.hit.kind === 'head' ? 'head' : 'hit', fb.hitVolume);
       }
     }
@@ -624,14 +654,26 @@ export function startPlay({ canvas, gl, params }) {
   const loop = createLoop({
     before(realSeconds) {
       snap = input.poll();
+      // The menus read the pad themselves (and swallow the keys); a menu that was open at the start of this frame owns the whole frame, so
+      // the press that picked an item (Space, A, Start) never reaches the game.
+      const menuWas = menus.open;
+      menus.pad(realSeconds);
+      const blocked = menuWas || menus.open;
+      if (!blocked && snap.pressed.pause && !onTitle && !drive) openPause();
+      if (inputGate) {
+        // After a menu closes: buttons still held from picking the item stay dead until they are let go.
+        const h = snap.held;
+        if (GATED.some(a => h[a])) for (const a of GATED) { h[a] = false; snap.pressed[a] = false; } else inputGate = false;
+      }
+      if (blocked) for (const a of GATED) snap.pressed[a] = false;
       if (Object.values(snap.pressed).some(Boolean)) anyPress = true;
       const driving = !!drive || driveTap;
-      simulating = driving || shouldSimulate({ locked: input.isLocked(), device: input.device(), panelOpen: hooks.panelOpen() });
-      pauseBox.hidden = simulating;
+      simulating = !blocked && !menus.open && (driving || shouldSimulate({ locked: input.isLocked(), device: input.device(), panelOpen: hooks.panelOpen() }));
+      pauseBox.hidden = simulating || blocked || menus.open;
       if (!simulating) { button.reset(); trigger.reset(); pending.cover = false; pending.fire = false; pending.reload = false; pending.weapon = null; pending.interact = false; pending.melee = false; return; }
       const dt = Math.min(realSeconds, MAX_DT);
       aimHeld = snap.held.aim || (drive && drive.aim);
-      cam.look(snap.lookDX, snap.lookDY, snap.lookX, snap.lookY, dt, aimHeld, padScale);
+      cam.look(snap.lookDX * settings.mouseSens, snap.lookDY * settings.mouseSens, snap.lookX, snap.lookY, dt, aimHeld, padScale * settings.padSens);
       if (snap.pressed.cover) pending.cover = true;
       if (snap.pressed.fire) pending.fire = true;
       if (snap.pressed.reload) pending.reload = true;
@@ -659,16 +701,22 @@ export function startPlay({ canvas, gl, params }) {
       for (const e of events) handleEvent(e);
       if (fight) { fv.tick(dt); stepFight(dt); stepEnding(dt); }
       for (const d of dummies) stepDummy(d, dt);
-      if (crateTouch(mover.pos, LEVEL.ammoCrates, TUNING.combat.crateRadius)) { arsenal.refill(); bag.refill(); }
-      if (restartPending) restart();
+      if (crateTouch(mover.pos, LEVEL.ammoCrates, TUNING.combat.crateRadius)) {
+        const before = arsenal.ammo.regret.reserve;
+        arsenal.refill(); bag.refill();
+        const gain = Math.round(arsenal.ammo.regret.reserve - before);
+        if (gain > 0) pop(`+${gain} scoops`, 'scoops', 1.4, 1);   // a protein tub
+      }
+      if (restartPending) gameOver();
       // Walking into the open gate starts the fade to the next arena.
       if (fight && gateWasOpen && !run.fading && inGate(LEVEL.exit, mover.pos) && run.touchGate()) sfx.play('clear', TUNING.feedback.killVolume);
     },
     render(alpha, realSeconds) {
       const dt = simulating ? Math.min(realSeconds, MAX_DT) : 0;
       // The fade between arenas runs on real time. At 'swap' the screen is black: the next arena is built and the old one freed.
-      for (const ev of run.step(Math.min(realSeconds, MAX_DT))) if (ev.type === 'swap') enterArena(ev.to);
+      for (const ev of run.step(Math.min(realSeconds, MAX_DT))) if (ev.type === 'swap') { enterArena(ev.to); pop('Progress photo saved.', 'photo', 2.6, 2); }
       if (hoursT > 0 && simulating) hoursT = Math.max(0, hoursT - dt);
+      if (popState && popState.t > 0) popState.t -= dt;
       setFade(run.fade);
       aimIn.shot = fxQueue.length > 0;
       aimIn.dir = camState.dir; aimIn.stance = stance; aimIn.weapon = arsenal.current(); aimIn.kettlebell = !!actions && actions.armed();
@@ -697,6 +745,7 @@ export function startPlay({ canvas, gl, params }) {
       view.fadeHeadFor(r.pos, TUNING.camera.headHideDist, TUNING.camera.headHideMargin);
       camera.position.set(r.pos[0], r.pos[1], r.pos[2]);
       camera.lookAt(r.pos[0] + r.dir[0], r.pos[1] + r.dir[1], r.pos[2] + r.dir[2]);
+      if (onTitle) orbitCamera(realSeconds);
       for (const f of fxQueue) playFeedback(f);
       fxQueue.length = 0;
       effects.update(dt);
@@ -714,7 +763,7 @@ export function startPlay({ canvas, gl, params }) {
         viewportH: canvas.clientHeight || window.innerHeight, marker, reloadFlash,
         face: fm, bark: fv ? fv.bark() : null,
         objective: fight ? objectiveText() : '',
-        boss: bossModel(), ending: endingModel(),
+        boss: bossModel(), ending: endingModel(), pop: popState && popState.t > 0 ? popState : null,
         banner: !fight ? null : health.downed ? { title: `You've hit a plateau ${fm.downed.seconds}`, hint: promptText(fight.tobble && !fight.tobble.downed ? 'giveUpTobble' : 'giveUp', input.device()), hold: actions.giveUpFrac() } : fight.clear && !fight.boss ? { title: 'SET COMPLETE', hint: `${run.gateOpen ? 'Head for the GO gate!  ' : 'Rest 60 seconds!  '}${input.device() === 'pad' ? 'X' : 'E'} for another set` } : null,
         grenades: fight ? bag.count : null, action: ending.state === 'desk' && nearDesk(mover.pos, LEVEL.overlord && LEVEL.overlord.desk, TUNING.ending.deskReach) ? { text: promptText('cancel', input.device()), hold: ending.hold } : actions ? actions.prompt() : null,
         hours: hoursT > 0 ? hoursLine(run.checkpoint) : '',
@@ -745,26 +794,76 @@ export function startPlay({ canvas, gl, params }) {
     fadeEl.style.opacity = (q / 100).toFixed(2);
   }
 
-  // Open in the arena the URL asks for, or the first one; a saved checkpoint past the first arena offers Continue.
+  // ---- the menus: the title, the pause, the opening card
+  const GATED = ['cover', 'fire', 'aim', 'melee', 'interact', 'grenade', 'reload', 'sprint'];
+  let inputGate = false;      // true after a menu closes, until the buttons held from picking an item are let go
+  let onTitle = false;        // the title screen (and its Settings / Controls cards): the attract camera runs, the HUD is hidden
+  let orbitT = 0;
+  let introShown = introSeen(storage);
+  const releaseLock = () => { try { if (document.exitPointerLock) document.exitPointerLock(); } catch (e) { /* not locked */ } };
+  // Back into play: the pointer is asked for again (this runs inside the click or key that picked the item).
+  function beginPlay() { inputGate = true; onTitle = false; input.requestLock(); }
+  function openPause() {
+    if (menus.open || onTitle) return;
+    releaseLock();
+    menus.showPause();
+  }
+  function goTitle() {
+    run.restart();   // a fade in progress (a pause during the swap) must not swap an arena in under the title
+    ending.reset();
+    enterArena(ARENAS[0]);
+    hoursT = 0; popState = null;
+    onTitle = true;
+    releaseLock();
+    menus.showTitle();
+  }
+  const menus = createMenus({
+    settings,
+    saved: () => loadCheckpoint(storage),
+    arenaTitle: (i) => ARENA_TITLES[ARENAS[i]] || '',
+    onSettings(next) { settings = next; applySettings(); saveSettings(storage, settings); },
+    actions: {
+      continue() { run.goTo(loadCheckpoint(storage)); enterArena(run.arena); beginPlay(); },
+      newRun() {
+        run.newRun(); enterArena(ARENAS[0]);
+        if (introShown) beginPlay();
+        else { introShown = true; markIntroSeen(storage); onTitle = false; menus.showIntro(beginPlay); }
+      },
+      back() { window.location.href = '../../index.html'; },
+      resume() { inputGate = true; input.requestLock(); },
+      restart() { restart(); inputGate = true; input.requestLock(); },
+      quit() { goTitle(); },
+    },
+  });
+  hooks.toTitle = () => { run.newRun(); goTitle(); };
+  // The pointer lock went away while playing (Esc, or the window lost focus): the pause menu. The tuning panel closing the lock on purpose
+  // does not count, and a pad needs no lock.
+  document.addEventListener('pointerlockchange', () => {
+    if (input.isLocked() || menus.open || onTitle || hooks.panelOpen() || drive) return;
+    if (input.device() === 'pad') return;
+    openPause();
+  });
+  // The title's attract mode: the camera circles the arena from above its walls.
+  const floorBox = () => boxes.find(b => b.kind === 'floor');
+  function orbitCamera(dt) {
+    orbitT += dt * TUNING.run.attractSpeed;
+    const f = floorBox();
+    if (!f) return;
+    const cx = (f.min[0] + f.max[0]) / 2, cz = (f.min[2] + f.max[2]) / 2;
+    const rx = (f.max[0] - f.min[0]) / 2 + TUNING.run.attractMargin, rz = (f.max[2] - f.min[2]) / 2 * 0.8 + TUNING.run.attractMargin;
+    camera.position.set(cx + Math.cos(orbitT) * rx, TUNING.run.attractHeight, cz + Math.sin(orbitT) * rz);
+    camera.lookAt(cx, 1, cz);
+  }
+  cr.menu = () => ({ open: menus.open, screen: menus.screen, items: menus.items(), onTitle, settings: { ...settings } });
+  cr.menuChoose = (id) => menus.choose(id);
+  cr.pause = () => openPause();
+  cr.setSettings = (o) => { settings = { ...settings, ...o }; applySettings(); saveSettings(storage, settings); };
+
+  // Open in the arena the URL asks for, or the title (over the first arena, which the camera circles).
   if (first.name !== 'greyRoom' && first.jumped) { run.goTo(arenaIndex(first.name)); enterArena(first.name); }
   else enterArena(first.name === 'greyRoom' ? 'greyRoom' : ARENAS[0]);
-  if (first.name !== 'greyRoom' && !first.jumped && run.saved > 0) showContinue();
+  if (showsTitle(params)) { onTitle = true; hoursT = 0; menus.showTitle(); }
 
-  // "Continue" (the saved checkpoint's arena) or "New run" (from the Turnstiles, and the saved checkpoint resets).
-  function showContinue() {
-    const box = document.createElement('div');
-    box.id = 'cr-continue';
-    hoursT = 0;
-    const add = (text, fn, cls) => {
-      const b = document.createElement('button');
-      b.textContent = text; b.className = cls;
-      b.addEventListener('click', (e) => { e.stopPropagation(); box.remove(); fn(); });
-      box.appendChild(b);
-    };
-    add(`Continue \u2014 ${ARENA_TITLES[ARENAS[run.saved]]}`, () => { run.goTo(run.saved); enterArena(run.arena); }, 'cr-continue-yes');
-    add('New run', () => { run.newRun(); hoursT = TUNING.run.hoursTime; }, 'cr-continue-no');
-    document.body.appendChild(box);
-  }
   snap = input.poll();
   cam.update(0, { target: spawn.pos, mode: 'normal', side: 1 }, boxes);
   writePanel();

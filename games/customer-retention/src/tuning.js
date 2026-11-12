@@ -236,8 +236,9 @@ export const TUNING = {
   },
   // The run (src/run.js): arena swaps. Times in s, distances in m. A cleared arena's exit gate opens; walking into it (within gateReach
   // of its door, in front of it) fades to black over fadeOut, holds black for blackHold while the next arena loads, then fades in over
-  // fadeIn. hoursTime is how long the cancellation-hours line shows after a checkpoint.
-  run: { fadeOut: 0.6, blackHold: 0.25, fadeIn: 0.6, gateReach: 1.6, hoursTime: 6, gateOpenTime: 0.8 },
+  // fadeIn. hoursTime is how long the cancellation-hours line shows after a checkpoint. attractSpeed (rad/s), attractMargin (m past the floor) and
+  // attractHeight (m) are the title screen's orbiting camera.
+  run: { fadeOut: 0.6, blackHold: 0.25, fadeIn: 0.6, gateReach: 1.6, hoursTime: 6, gateOpenTime: 0.8, attractSpeed: 0.12, attractMargin: 6, attractHeight: 10 },
   // The Membership Overlord (the boss; an enemy slot of kind 'boss', no cover points, no attack token). scale sizes the Rep rig and its hit volumes;
   // crouchY is how tall it stands (a fraction) while it is tucked behind the desk. headMult is on top of the weapon's own head multiplier.
   // Phase 1 down to phase2At of its health, phase 2 (hiding, invulnerable, both saunas open) until they are closed or spent, phase 3 below phase3At.

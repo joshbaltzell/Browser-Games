@@ -46,6 +46,7 @@ uniform float bandEdge;
 uniform float shadowLift;
 uniform float shadowMix;
 uniform float rim;
+uniform vec3 rimColor;
 
 varying vec3 vViewNormal;
 varying vec3 vViewPos;
@@ -84,7 +85,7 @@ void main() {
   vec3 col = mix(shade, base, lit);
   float rimAmount = lit * (1.0 - pixelStep(RIM_EDGE, facing, facingWidth))
     * step(RIM_MIN_CURVATURE, curvature);
-  col = mix(col, mix(col, vec3(1.0), rim), rimAmount);
+  col = mix(col, mix(col, rimColor, rim), rimAmount);
 
   gl_FragColor = vec4(col, 1.0);
   #include <colorspace_fragment>
@@ -93,13 +94,14 @@ void main() {
 
 // Two-tone cartoon material: one hard step between the lit colour and the
 // purple shadow colour, plus a thin light rim on the lit side.
-export function createToonMaterial({ color = '#ffffff', vertexColors = false, shadowMix = 0.55, rim = 0.25 } = {}) {
+export function createToonMaterial({ color = '#ffffff', vertexColors = false, shadowMix = 0.55, rim = 0.25, rimColor = '#ffffff' } = {}) {
   return new THREE.ShaderMaterial({
     name: 'toon',
     uniforms: {
       baseColor: { value: new THREE.Color(color) },
       shadowMix: { value: shadowMix },
       rim: { value: rim },
+      rimColor: { value: new THREE.Color(rimColor) },
       lightDir: TOON_SHARED.lightDir,
       shadowTint: TOON_SHARED.shadowTint,
       bandEdge: TOON_SHARED.bandEdge,

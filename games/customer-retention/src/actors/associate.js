@@ -1,7 +1,7 @@
 import { PALETTE } from '../render/palette.js';
 
 // The Associate: a cloned customer-retention agent. Purple polo, lanyard,
-// headset, slick hair, khakis, and a smile that never leaves.
+// headset, slick hair, khakis, and a smile that never leaves. (Now an alien: acid-green skin and glowing eyes.)
 //
 // A character spec is plain data (metres, the character faces +Z so its left
 // is +X, feet at y = 0). poses.js reads the numeric fields at the top; rig.js
@@ -29,6 +29,11 @@ function deepFreeze(o) {
 
 const SHIRT = PALETTE.glorpPurple;
 export const GOLD = '#ffcf3a';
+// The Glorp: acid-green jelly skin with a pale lime glow on the lit edge (the toon rim, tinted), and two glowing yellow-green eyes.
+export const ALIEN_SKIN = '#8fe04a';
+const ALIEN_HAIR = mix(ALIEN_SKIN, PALETTE.ink, 0.6);
+const ALIEN_RIM = { rim: 0.55, rimColor: '#e4ff8a' };
+export const ALIEN_EYES = Object.freeze({ eyeColor: '#e8ff3a', eyeGlow: true });
 
 // Every enemy kind's colourway, in one table (the alien recolour changes it here). The Rep is a purple polo and khakis; the Personal
 // Trainer a tank top and teal shorts, the same skin and hair.
@@ -38,8 +43,9 @@ export const ENEMY_COLORS = deepFreeze({
     collar: mix(SHIRT, PALETTE.ink, 0.25),
     logo: PALETTE.gel,
     pants: mix(PALETTE.planet, PALETTE.ink, 0.3),        // khakis
-    skin: PALETTE.daleSkin,
-    hair: PALETTE.daleHair,
+    skin: ALIEN_SKIN,
+    hair: ALIEN_HAIR,
+    ...ALIEN_RIM,
     shoe: mix(PALETTE.ink, SHIRT, 0.3),
     sole: PALETTE.cream,
     lanyard: PALETTE.hotPink,
@@ -53,8 +59,9 @@ export const ENEMY_COLORS = deepFreeze({
     collar: PALETTE.planet,
     logo: PALETTE.gel,
     pants: mix(PALETTE.teal, PALETTE.ink, 0.45),           // shorts
-    skin: PALETTE.daleSkin,
-    hair: PALETTE.daleHair,
+    skin: ALIEN_SKIN,
+    hair: ALIEN_HAIR,
+    ...ALIEN_RIM,
     shoe: PALETTE.cream,
     sole: PALETTE.ink,
     lanyard: PALETTE.hotPink,
@@ -69,8 +76,9 @@ export const ENEMY_COLORS = deepFreeze({
     collar: GOLD,
     logo: GOLD,
     pants: mix(SHIRT, PALETTE.ink, 0.55),
-    skin: PALETTE.daleSkin,
+    skin: mix(PALETTE.lilac, SHIRT, 0.4),                  // a purple queen
     hair: GOLD,
+    rim: 0.5, rimColor: '#ffe9a8',
     shoe: GOLD,
     sole: PALETTE.ink,
     lanyard: GOLD,
@@ -124,6 +132,7 @@ export const ASSOCIATE = deepFreeze({
     eyeRadius: 0.072, eyeSpacing: 0.158, eyeY: 0.035, eyeZ: 0.204,
     mouthY: -0.105, mouthWidth: 0.15, mouthZ: 0.19,
     brow: 'pair', seed: 6, fixedSmile: 0.75,
+    ...ALIEN_EYES,
   },
 });
 
@@ -134,7 +143,7 @@ export const TRAINER = deepFreeze({
   name: 'trainer',
   colors: ENEMY_COLORS.trainer,
   torso: { ...ASSOCIATE.torso, sleeve: 0.02 },
-  outfit: { collar: false, lanyard: false, logo: false, headset: false },
+  outfit: { collar: false, lanyard: false, logo: false, headset: false, badge: true },
   face: { ...ASSOCIATE.face, seed: 11 },
 });
 
@@ -143,5 +152,5 @@ export const OVERLORD = deepFreeze({
   ...ASSOCIATE,
   name: 'overlord',
   colors: ENEMY_COLORS.boss,
-  face: { ...ASSOCIATE.face, seed: 21 },
+  face: { ...ASSOCIATE.face, seed: 21, eyeColor: GOLD },
 });

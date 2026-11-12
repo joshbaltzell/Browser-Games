@@ -61,7 +61,7 @@ const smooth01 = (t) => { const c = t < 0 ? 0 : t > 1 ? 1 : t; return c * c * (3
 
 export function createFace({
   eyeRadius = 0.1, eyeSpacing = 0.26, eyeY = 0.05, eyeZ = 0.3, mouthY = -0.12, mouthWidth = 0.22,
-  mouthZ = eyeZ, brow = 'pair', seed = 1, lidColor = PALETTE.ink, fixedSmile = 0,
+  mouthZ = eyeZ, brow = 'pair', seed = 1, lidColor = PALETTE.ink, fixedSmile = 0, eyeColor = PALETTE.eyeWhite, eyeGlow = false,
 } = {}) {
   const R = eyeRadius;
   const half = eyeSpacing / 2;
@@ -117,7 +117,8 @@ export function createFace({
   }
   const eyes = new THREE.Mesh(
     mergeGeometries(parts, false),
-    createToonMaterial({ color: PALETTE.eyeWhite, shadowMix: 0.35, rim: 0 }),
+    // eyeGlow: a flat, unlit colour (the aliens' glowing eyes) instead of the toon-shaded white.
+    eyeGlow ? new THREE.MeshBasicMaterial({ color: eyeColor, toneMapped: false }) : createToonMaterial({ color: eyeColor, shadowMix: 0.35, rim: 0 }),
   );
   eyes.name = 'eyes';
   addOutline(eyes, { px: 2 });

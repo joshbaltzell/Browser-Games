@@ -245,6 +245,30 @@ const GAMES = [
         <path d="M84 56 l10 9 -4.5 0.6 2.4 5 -2.2 1 -2.4-5 -3.3 3z" fill="#1a1a1a" stroke="#fffaf3" stroke-width="0.8" />
       </svg>`,
   },
+  {
+    title: "Gyms of War: No Pain, No Cancel",
+    description:
+      "Aliens took over your gym and won't let you cancel. Go cancel in person.",
+    path: "games/customer-retention/index.html",
+    tags: ["Shooter", "3D", "Satire"],
+    accent: "#b6ff3c",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="0" y="0" width="120" height="80" fill="#2a1450" />
+        <rect x="0" y="58" width="120" height="22" fill="#4b2c86" />
+        <path d="M0 58 L120 58" stroke="#ff4f9a" stroke-width="2" />
+        <ellipse cx="38" cy="38" rx="17" ry="20" fill="#8fe04a" stroke="#1b1f3b" stroke-width="2" />
+        <ellipse cx="31" cy="35" rx="5" ry="4" fill="#e8ff3a" stroke="#1b1f3b" stroke-width="1.4" />
+        <ellipse cx="45" cy="35" rx="5" ry="4" fill="#e8ff3a" stroke="#1b1f3b" stroke-width="1.4" />
+        <rect x="29.5" y="33.5" width="3" height="3" rx="1" fill="#1b1f3b" />
+        <rect x="43.5" y="33.5" width="3" height="3" rx="1" fill="#1b1f3b" />
+        <path d="M30 47 Q38 53 46 47" fill="none" stroke="#1b1f3b" stroke-width="2" stroke-linecap="round" />
+        <rect x="22" y="58" width="32" height="12" rx="3" fill="#7a3cff" />
+        <path d="M84 40 a10 10 0 0 1 20 0" fill="none" stroke="#1b1f3b" stroke-width="4" />
+        <circle cx="94" cy="54" r="15" fill="#ff8a1f" stroke="#1b1f3b" stroke-width="2" />
+        <path d="M86 50 Q94 44 102 50" fill="none" stroke="#fff3d6" stroke-width="2" opacity="0.7" />
+      </svg>`,
+  },
 ];
 
 function buildCard(game) {

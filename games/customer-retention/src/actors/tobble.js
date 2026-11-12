@@ -27,11 +27,14 @@ export const TOBBLE = deepFreeze({
     collar: mix(PALETTE.cream, PALETTE.ink, 0.2),
     skin: PALETTE.tobbleMint,
     hair: mix(PALETTE.tobbleMint, PALETTE.ink, 0.45),
-    backpack: PALETTE.teal,
+    backpack: '#ffd23f',                      // a yellow backpack
+    lanyard: '#ffd23f',                       // and a visitor badge (cream card, yellow stripe)
+    badgeStripe: '#ffd23f',
+    rim: 0.25, rimColor: '#ffffff',
     mat: PALETTE.lilac,
   },
   outfit: { collar: false, lanyard: true, logo: false, headset: false },
-  face: { ...ASSOCIATE.face, brow: 'pair', fixedSmile: 0.4 },
+  face: { ...ASSOCIATE.face, brow: 'pair', fixedSmile: 0.4, eyeColor: PALETTE.eyeWhite, eyeGlow: false },   // friendly white eyes, not the Glorp's glow
   thirdEye: { y: 0.13, r: 0.05 },
   backpack: { w: 0.5, h: 0.6, d: 0.3 },
 });

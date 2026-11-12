@@ -97,12 +97,13 @@ function rod(a, b, r) {
   return g;
 }
 
-function finishMesh(parts, name) {
+// colors.rim and colors.rimColor (optional) tint the lit-edge glow: the aliens' jelly look.
+function finishMesh(parts, name, colors = {}) {
   const g = mergeGeometries(parts, false);
   if (!g) throw new Error(`rig: could not merge the ${name} parts`);
   computeOutlineNormals(g);
   g.computeBoundingSphere();
-  const mesh = new THREE.Mesh(g, createToonMaterial({ color: '#ffffff', vertexColors: true }));
+  const mesh = new THREE.Mesh(g, createToonMaterial({ color: '#ffffff', vertexColors: true, ...(colors.rim !== undefined ? { rim: colors.rim } : {}), ...(colors.rimColor ? { rimColor: colors.rimColor } : {}) }));
   mesh.name = name;
   addOutline(mesh);
   return mesh;
@@ -158,6 +159,15 @@ function torsoMesh(spec) {
     place(g, x, y, front(x, y) + 0.003, Math.PI / 2 - 0.15, 0, 0);
     parts.push(paint(g, c.logo));
   }
+  if (o.badge && !o.lanyard) {
+    // A staff badge clipped to the chest, no straps (the Personal Trainer's tank top).
+    const by = 0.2, bz = front(0.09, by) + 0.012;
+    const badge = new THREE.BoxGeometry(0.075, 0.1, 0.014);
+    place(badge, 0.09, by, bz, -0.05, 0, 0.04);
+    const stripe = new THREE.BoxGeometry(0.077, 0.026, 0.016);
+    place(stripe, 0.09, by + 0.028, bz, -0.05, 0, 0.04);
+    parts.push(paint(badge, c.badge), paint(stripe, c.badgeStripe));
+  }
   if (o.lanyard) {
     // Two straps from the collar down over the chest to a badge.
     const by = 0.15;
@@ -174,7 +184,7 @@ function torsoMesh(spec) {
     place(stripe, 0, by + 0.028, bz, -0.05, 0, 0.04);
     parts.push(paint(badge, c.badge), paint(stripe, c.badgeStripe));
   }
-  return finishMesh(parts, 'torso');
+  return finishMesh(parts, 'torso', c);
 }
 
 function headMesh(spec) {
@@ -223,7 +233,7 @@ function headMesh(spec) {
     mic.computeVertexNormals();
     parts.push(paint(mic, c.mic));
   }
-  return finishMesh(parts, 'headMesh');
+  return finishMesh(parts, 'headMesh', c);
 }
 
 // Hair: a shell over the skull from the crown down to the hairline, built on
@@ -310,7 +320,7 @@ function handMesh(spec, side) {
   const thumb = ball(10, 8);
   place(thumb, r * 0.3, r * 0.45, side * r * 0.75, side * -0.6, 0, 0.3, r * 0.34, r * 0.55, r * 0.34);
   thumb.computeVertexNormals();
-  return finishMesh([paint(palm, c.skin), paint(thumb, c.skin)], side > 0 ? 'handL' : 'handR');
+  return finishMesh([paint(palm, c.skin), paint(thumb, c.skin)], side > 0 ? 'handL' : 'handR', c);
 }
 
 function shoeMesh(spec, side) {
@@ -329,7 +339,7 @@ function shoeMesh(spec, side) {
     p[1] = Math.min(Math.max(sole * 0.5 + y * sole, 0), sole);
     p[2] = toe + z * (hl + 0.008);
   }, 20, 6);
-  return finishMesh([paint(upper, c.shoe), paint(bottom, c.sole)], side > 0 ? 'footL' : 'footR');
+  return finishMesh([paint(upper, c.shoe), paint(bottom, c.sole)], side > 0 ? 'footL' : 'footR', c);
 }
 
 // ---------------------------------------------------------------- rig

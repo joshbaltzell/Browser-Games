@@ -26,6 +26,10 @@ export const BARKS = Object.freeze({
   dive: Object.freeze(['Incoming weight!', 'Drop set! DROP SET!']),
   cloneDown: Object.freeze(['Just\u2026 resting between sets\u2026']),
   cloneRevive: Object.freeze(['On your feet! Membership quotas!']),
+  // The PA between arenas: as the gate opens, and as Doc steps into the next arena.
+  paGate: Object.freeze([{ speaker: 'PA', text: 'Members who attempt to leave will be enrolled in our Loyalty Program.' }]),
+  paSmoothie: Object.freeze([{ speaker: 'PA', text: 'The pool is closed. The pool has always been closed.' }]),
+  paDesk: Object.freeze([{ speaker: 'PA', text: 'Reminder: re-racking weights is mandatory. Re-racking members is also mandatory.' }]),
   padOpen: Object.freeze([{ speaker: 'PA', text: 'The sauna is now a spawning pool. Please enjoy responsibly.' }]),
   padClosed: Object.freeze([{ speaker: 'PA', text: 'The sauna is closed for cleaning. Forever.' }]),
   // The Personal Trainers (the rushers): a shout as one starts to run at Doc, the one at the top of every swing, and the last words.

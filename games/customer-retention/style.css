@@ -69,14 +69,10 @@ html, body { margin: 0; height: 100%; background: #1b1f3b; overflow: hidden; fon
 .cr-banner .cr-ring { display: block; margin: 10px auto 0; width: 34px; height: 34px; }
 .cr-banner .cr-ring[hidden] { display: none; }
 
-/* The run (piece 1): the hours line, the fade between arenas, and the Continue / New run choice. */
+/* The run (piece 1): the hours line and the fade between arenas. */
 .cr-hours { position: absolute; left: 0; right: 0; top: 46px; text-align: center; font-size: 15px; font-weight: 700; letter-spacing: .05em; color: #fff3d6; text-shadow: 0 1px 3px rgba(27,31,59,.95); }
 .cr-hours[hidden] { display: none; }
 #cr-fade { position: fixed; inset: 0; background: #1b1f3b; opacity: 0; pointer-events: none; z-index: 20; }
-#cr-continue { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(27,31,59,.8); }
-#cr-continue button { font: 800 22px/1 system-ui, sans-serif; letter-spacing: .05em; padding: 14px 28px; min-width: 320px; border: 3px solid #1b1f3b; border-radius: 6px; cursor: pointer; background: #fff3d6; color: #1b1f3b; }
-#cr-continue .cr-continue-yes { background: #b6ff3c; }
-#cr-continue button:hover, #cr-continue button:focus-visible { outline: 3px solid #ff4f9a; }
 
 /* The Membership Overlord's health bar (top centre, under the objective) and the ending cards. */
 .cr-boss { position: absolute; left: 50%; top: 84px; transform: translateX(-50%); width: min(560px, 70vw); text-align: center; }
@@ -95,3 +91,42 @@ html, body { margin: 0; height: 100%; background: #1b1f3b; overflow: hidden; fon
 .cr-ending[data-tone="mail"] .cr-ending-line { font-size: 24px; }
 .cr-ending[data-tone="talk"] .cr-ending-first { font-size: 34px; color: #7ee8b0; }
 .cr-ending-hint { font-size: 16px; opacity: .8; letter-spacing: .1em; min-height: 20px; }
+
+/* Pop-up lines (PR!, +N scoops, Progress photo saved., the game-over line). */
+.cr-pop { position: absolute; left: 0; right: 0; top: 27vh; text-align: center; font-size: 30px; font-weight: 800; letter-spacing: .06em; color: #b6ff3c; text-shadow: 0 2px 0 #1b1f3b, 0 0 10px rgba(27,31,59,.9); animation: cr-pop .22s ease-out; }
+.cr-pop[hidden] { display: none; }
+.cr-pop[data-kind="pr"] { color: #ffcf3a; font-size: 38px; }
+.cr-pop[data-kind="photo"] { color: #fff3d6; font-size: 24px; }
+.cr-pop[data-kind="over"] { color: #ff4f9a; font-size: 34px; }
+@keyframes cr-pop { from { transform: scale(1.35); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* The menus: title, pause, settings, controls and the opening card (src/ui/menus.js). They sit over everything and own the input. */
+#cr-menu { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: rgba(27,31,59,.62); color: #fff; user-select: none; }
+#cr-menu[hidden] { display: none; }
+body.cr-on-title #cr-menu { background: linear-gradient(to right, rgba(27,31,59,.82), rgba(27,31,59,.25) 70%); justify-content: flex-start; padding-left: 8vw; }
+body.cr-on-title #cr-hud, body.cr-on-title #cr-fade { display: none; }
+.cr-menu-box { display: flex; flex-direction: column; gap: 10px; min-width: 340px; max-width: min(92vw, 760px); max-height: 94vh; overflow: auto; }
+.cr-menu-title { font-size: clamp(44px, 9vw, 96px); font-weight: 900; line-height: .95; letter-spacing: .04em; color: #b6ff3c; -webkit-text-stroke: 3px #1b1f3b; paint-order: stroke fill; text-shadow: 5px 5px 0 #ff4f9a; }
+.cr-menu-tag { font-size: clamp(16px, 2.4vw, 26px); font-weight: 800; letter-spacing: .28em; color: #fff3d6; margin-bottom: 22px; text-shadow: 0 2px 0 #1b1f3b; }
+.cr-menu-head { font-size: 34px; font-weight: 900; letter-spacing: .2em; color: #b6ff3c; text-shadow: 0 3px 0 #1b1f3b; margin-bottom: 8px; }
+.cr-menu-kicker { font-size: 16px; font-weight: 800; letter-spacing: .3em; color: #ff4f9a; margin-bottom: 6px; }
+#cr-menu[data-screen="intro"] .cr-menu-box { gap: 14px; max-width: 640px; }
+#cr-menu[data-screen="intro"] { cursor: pointer; background: rgba(27,31,59,.9); }
+.cr-intro-line { font-size: 22px; line-height: 1.4; font-weight: 600; color: #fff3d6; }
+.cr-intro-last { font-weight: 900; color: #ffcf3a; font-size: 26px; margin-top: 8px; }
+.cr-menu-list { display: flex; flex-direction: column; gap: 10px; align-self: flex-start; }
+body.cr-menu-open .back { display: none; }
+.cr-menu-item { font: 800 22px/1 system-ui, sans-serif; letter-spacing: .06em; padding: 14px 24px; min-width: 300px; box-sizing: border-box; border: 3px solid #1b1f3b; border-radius: 6px; cursor: pointer; background: #fff3d6; color: #1b1f3b; }
+.cr-menu-item.sel { background: #b6ff3c; outline: 3px solid #ff4f9a; transform: translateX(8px); }
+.cr-menu-item { transition: transform .08s; }
+.cr-setting { display: flex; align-items: center; justify-content: space-between; gap: 24px; font-size: 18px; }
+.cr-set-ctl { display: inline-flex; align-items: center; gap: 10px; }
+.cr-set-val { min-width: 64px; text-align: center; }
+.cr-set-step { display: inline-block; width: 30px; height: 30px; line-height: 28px; text-align: center; border: 2px solid #1b1f3b; border-radius: 4px; background: #fff; font-size: 22px; }
+.cr-set-step:hover { background: #ff4f9a; color: #fff; }
+.cr-menu-hint { margin-top: 14px; font-size: 14px; letter-spacing: .08em; opacity: .75; }
+.cr-controls { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; font-size: 16px; }
+.cr-ctl-row { display: grid; grid-template-columns: 1fr 150px 110px; gap: 14px; padding: 5px 10px; background: rgba(27,31,59,.55); border-radius: 3px; }
+.cr-ctl-head { background: none; font-weight: 800; color: #ffcf3a; letter-spacing: .08em; }
+.cr-ctl-key, .cr-ctl-pad { font-weight: 800; color: #b6ff3c; }
+@media (max-width: 640px) { body.cr-on-title #cr-menu { padding-left: 5vw; } .cr-ctl-row { grid-template-columns: 1fr 110px 80px; } }

@@ -190,3 +190,11 @@ test('hudModel passes grenades, action (text and hold) and bark color through; a
   assert.equal(base(a, { action: null, grenades: 0 }).action, null);
   assert.equal(base(a, { grenades: 0 }).grenades, 0);
 });
+
+test('hudModel pop: { text, kind } passes through, empty or missing is null', () => {
+  const arsenal = createArsenal();
+  assert.deepEqual(base(arsenal, { pop: { text: 'PR!', kind: 'pr' } }).pop, { text: 'PR!', kind: 'pr' });
+  assert.deepEqual(base(arsenal, { pop: { text: '+25 scoops' } }).pop, { text: '+25 scoops', kind: '' });
+  assert.equal(base(arsenal).pop, null);
+  assert.equal(base(arsenal, { pop: { text: '' } }).pop, null);
+});

@@ -36,10 +36,10 @@ test('TOBBLE is a frozen spec with the Associate proportions, mint skin, a lanya
   for (const k of ['height', 'hipHeight', 'armLength', 'legLength', 'neckY', 'shoulderL', 'hipL']) assert.deepEqual(TOBBLE[k], ASSOCIATE[k], k);
   assert.equal(TOBBLE.colors.skin, PALETTE.tobbleMint);
   assert.equal(TOBBLE.colors.shirt, PALETTE.cream);
-  assert.equal(TOBBLE.colors.backpack, PALETTE.teal);
+  assert.equal(TOBBLE.colors.backpack, '#ffd23f');   // Gyms of War: a yellow backpack (was teal)
   assert.deepEqual(TOBBLE.outfit, { collar: false, lanyard: true, logo: false, headset: false });
   assert.equal(TOBBLE.hair.quiff, false);
-  assert.deepEqual(TOBBLE.face, { ...ASSOCIATE.face, brow: 'pair', fixedSmile: 0.4 });
+  assert.deepEqual(TOBBLE.face, { ...ASSOCIATE.face, brow: 'pair', fixedSmile: 0.4, eyeColor: PALETTE.eyeWhite, eyeGlow: false });   // Gyms of War: white, friendly eyes (the Glorp's glow)
   assert.deepEqual(TOBBLE.thirdEye, { y: 0.13, r: 0.05 });
   assert.deepEqual(TOBBLE.backpack, { w: 0.5, h: 0.6, d: 0.3 });
   assert.ok(buildRig(TOBBLE), 'the rig builds from it');

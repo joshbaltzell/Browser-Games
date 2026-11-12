@@ -5,6 +5,7 @@ const NOISE_LENGTH = 0.4;
 
 export function createSfx({ AudioContextCtor = globalThis.AudioContext } = {}) {
   let ctx = null, noise = null, failed = false, out = null; // out: where this play's voices connect
+  let master = 1;   // the player's master volume (0 to 1), a multiplier on every play
 
   function ensure() {
     if (ctx || failed || !AudioContextCtor) return ctx;
@@ -121,9 +122,10 @@ export function createSfx({ AudioContextCtor = globalThis.AudioContext } = {}) {
   return {
     play(name, volume, pan = 0) {
       const recipe = RECIPES[name];
-      if (!recipe || !(volume > 0) || !ensure()) return;
-      try { resume(); out = outFor(pan); recipe(ctx.currentTime, volume); } catch { /* audio is a nicety */ }
+      if (!recipe || !(volume * master > 0) || !ensure()) return;
+      try { resume(); out = outFor(pan); recipe(ctx.currentTime, volume * master); } catch { /* audio is a nicety */ }
     },
+    setVolume(v) { master = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1; },
     unlock() {
       if (!ensure()) return;
       try { resume(); } catch { /* audio is a nicety */ }
