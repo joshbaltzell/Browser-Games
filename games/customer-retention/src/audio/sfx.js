@@ -98,11 +98,15 @@ export function createSfx({ AudioContextCtor = globalThis.AudioContext } = {}) {
     clear: (t, v) => { [523, 659, 784].forEach((f, i) => tone(voice(t + i * 0.12, 0.15, v), 'sine', f, f, t + i * 0.12, 0.15)); },
     pickup: (t, v) => { tone(voice(t, 0.06, v), 'sine', 880, 880, t, 0.06); tone(voice(t + 0.07, 0.08, v), 'sine', 1320, 1320, t + 0.07, 0.08); },
     // the slam thud: a deep falling sine, a low-passed noise body and a short crunch on top
+    // (piece 4b: deeper and heavier: a lower, longer fall with a long low-passed body and a harder crunch; still one oscillator)
     thud: (t, v) => {
-      tone(voice(t, 0.32, v), 'sine', 60, 30, t, 0.32);
-      hiss(voice(t, 0.28, v * 0.6), 'lowpass', 260, t, 0.28);
-      hiss(voice(t, 0.07, v * 0.3), 'bandpass', 900, t, 0.07);
+      tone(voice(t, 0.42, v), 'sine', 52, 22, t, 0.42);
+      hiss(voice(t, 0.38, v * 0.9), 'lowpass', 150, t, 0.38);
+      hiss(voice(t, 0.22, v * 0.5), 'lowpass', 420, t, 0.22);
+      hiss(voice(t, 0.09, v * 0.45), 'bandpass', 800, t, 0.09);
     },
+    // The active reload's tick: a short click that rises in pitch with arg (0 far from the bright zone, 1 at it).
+    reloadTick: (t, v, a) => { const f = 900 + 1500 * Math.max(0, Math.min(1, a || 0)); tone(voice(t, 0.04, v), 'square', f, f, t, 0.04); },
     // the milestone-5 sounds, each under 0.6 s
     bash: (t, v) => { tone(voice(t, 0.2, v), 'sine', 120, 40, t, 0.2); hiss(voice(t, 0.06, v * 0.6), 'bandpass', 1800, t, 0.06); },
     rev: (t, v) => { tone(voice(t, 0.25, v * 0.5), 'sawtooth', 180, 260, t, 0.25); hiss(voice(t, 0.25, v * 0.25), 'bandpass', 2600, t, 0.25); },
@@ -119,12 +123,62 @@ export function createSfx({ AudioContextCtor = globalThis.AudioContext } = {}) {
     step: (t, v) => { tone(voice(t, 0.1, v), 'sine', 95, 50, t, 0.1); hiss(voice(t, 0.07, v * 0.5), 'lowpass', 280, t, 0.07); },
   };
 
+  // The chainsaw motor: a looping voice (two detuned saws and a buzz, through a low-pass, with a noisy grind under it) that runs until stopped.
+  // update(mode, level, volume) every frame: mode 'rev' (pitch and bite rise with level, 0 to 1) or 'grind' (low and rough); stop() fades it out and frees it.
+  const SILENT = { update() {}, stop() {}, active: false };
+  function motor() {
+    if (!ensure()) return SILENT;
+    try {
+      resume();
+      const t0 = ctx.currentTime;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0); g.connect(ctx.destination);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(700, t0); lp.connect(g);
+      const mk = (type, f) => { const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, t0); o.connect(lp); o.start(t0); return o; };
+      const saw = mk('sawtooth', 80), saw2 = mk('sawtooth', 83), sq = mk('square', 40);
+      // the buzz: a slow oscillator wobbling the gain
+      const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.setValueAtTime(20, t0);
+      const lfoAmt = ctx.createGain(); lfoAmt.gain.setValueAtTime(0, t0);
+      lfo.connect(lfoAmt); lfoAmt.connect(g.gain); lfo.start(t0);
+      // the grind: looped noise through a band-pass
+      const gr = ctx.createGain(); gr.gain.setValueAtTime(0.0001, t0); gr.connect(g);
+      const src = ctx.createBufferSource(); src.buffer = noise; src.loop = true;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(1100, t0);
+      src.connect(bp); bp.connect(gr); src.start(t0);
+      const nodes = [saw, saw2, sq, lfo, src];
+      let dead = false;
+      return {
+        active: true,
+        update(mode, level = 1, volume = 1) {
+          if (dead || !(volume * master > 0)) { if (!dead) g.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 0.05); return; }
+          const now = ctx.currentTime, k = Math.max(0, Math.min(1, level)), v = volume * master;
+          const grind = mode === 'grind';
+          const f = grind ? 62 + 10 * k : 64 + 120 * k;
+          saw.frequency.setValueAtTime(f, now); saw2.frequency.setValueAtTime(f * 1.04, now); sq.frequency.setValueAtTime(f * 0.5, now);
+          lp.frequency.setValueAtTime(grind ? 650 : 500 + 1500 * k, now);
+          lfo.frequency.setValueAtTime(grind ? 14 : 16 + 16 * k, now);
+          lfoAmt.gain.setValueAtTime(v * (grind ? 0.3 : 0.12 + 0.2 * k), now);
+          g.gain.linearRampToValueAtTime(v * (grind ? 0.7 : 0.3 + 0.35 * k), now + 0.05);
+          gr.gain.linearRampToValueAtTime(grind ? 0.9 : 0.1 + 0.25 * k, now + 0.05);
+          bp.frequency.setValueAtTime(grind ? 900 : 1300 + 1200 * k, now);
+        },
+        stop() {
+          if (dead) return;
+          dead = true;
+          const now = ctx.currentTime;
+          try { g.gain.linearRampToValueAtTime(0.0001, now + 0.08); } catch { /* audio is a nicety */ }
+          for (const n of nodes) { try { n.stop(now + 0.1); } catch { /* already stopped */ } }
+        },
+      };
+    } catch { return SILENT; }
+  }
+
   return {
-    play(name, volume, pan = 0) {
+    play(name, volume, pan = 0, arg = 0) {
       const recipe = RECIPES[name];
       if (!recipe || !(volume * master > 0) || !ensure()) return;
-      try { resume(); out = outFor(pan); recipe(ctx.currentTime, volume * master); } catch { /* audio is a nicety */ }
+      try { resume(); out = outFor(pan); recipe(ctx.currentTime, volume * master, arg); } catch { /* audio is a nicety */ }
     },
+    motor,
     setVolume(v) { master = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1; },
     unlock() {
       if (!ensure()) return;

@@ -33,6 +33,12 @@ function buildDisc() {
     teeth.push(new THREE.BoxGeometry(0.02, 0.026, 0.05).rotateY(a).translate(Math.sin(a) * (DISC_RADIUS - 0.03), 0, Math.cos(a) * (DISC_RADIUS - 0.03)));
   }
   part(g, mergeGeometries(teeth, false), PALETTE.ink);
+  // The blur ring: a pale translucent disc a little wider than the blade, shown (and faded in) while the cutter spins up, so the spin reads as a blur.
+  const blur = new THREE.Mesh(new THREE.CylinderGeometry(DISC_RADIUS * 1.12, DISC_RADIUS * 1.12, 0.012, 28),
+    new THREE.MeshBasicMaterial({ color: PALETTE.cream, transparent: true, opacity: 0, depthWrite: false }));
+  blur.name = 'discBlur';
+  blur.visible = false;
+  g.add(blur);
   return g;
 }
 
@@ -67,7 +73,9 @@ export function createGunView() {
   models.pistol.visible = false;
   const base = new THREE.Vector3(), dir = new THREE.Vector3(0, 0, 1);
   const disc = models.regret.getObjectByName('disc');
+  const blur = disc.getObjectByName('discBlur');
   let s = Infinity; // seconds since the last shot
+  let revK = 0;     // 0 to 1, how far the cutter has spun up (the disc grows and the blur ring fades in)
 
   function setWeapon(id) {
     if (!models[id] || id === weapon) return;
@@ -97,8 +105,26 @@ export function createGunView() {
     place,
     shot() { s = 0; apply(); },
     // spin: the disc's turn rate in rad/s (0 when the cutter is off).
-    update(dt, spin = 0) { s += dt > 0 ? dt : 0; if (dt > 0 && spin) disc.rotation.y += spin * dt; apply(); },
+    update(dt, spin = 0) {
+      s += dt > 0 ? dt : 0;
+      if (dt > 0 && spin) disc.rotation.y += spin * dt;
+      // The disc swells to feedback.discScale times its size while it spins; the blur ring fades in with it.
+      if (dt > 0) revK += ((spin ? 1 : 0) - revK) * (1 - Math.exp(-dt / 0.06));
+      const fb = TUNING.feedback;
+      disc.scale.setScalar(1 + (Math.max(fb.discScale, 1) - 1) * revK);
+      blur.visible = revK > 0.05 && fb.discBlur > 0;
+      blur.material.opacity = fb.discBlur * revK;
+      apply();
+    },
     disc,
+    // The cutter's leading edge in the parent's space (where sparks fly), written into out.
+    blade(out = [0, 0, 0]) {
+      group.updateMatrix();
+      _p.set(disc.position.x, disc.position.y, disc.position.z + DISC_RADIUS * disc.scale.x).applyMatrix4(group.matrix);
+      out[0] = _p.x; out[1] = _p.y; out[2] = _p.z;
+      return out;
+    },
+    revK: () => revK,
     // The barrel end in the parent's space, written into out.
     tip(out = [0, 0, 0]) {
       const t = TIPS[weapon];

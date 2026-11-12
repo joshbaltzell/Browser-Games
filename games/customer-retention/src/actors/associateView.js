@@ -220,7 +220,7 @@ export function createAssociateView(e) {
   group.add(cur.root);
   const blaster = cur.weapon;   // the Rep's, for tests and the muzzle
 
-  let clip = '', flinchT = 0, expression = '', drawW = 0, yaw = e.yaw, mode = 'live', deathT = 0, glintOn = false, glintT = 0;
+  let clip = '', flinchT = 0, expression = '', drawW = 0, yaw = e.yaw, mode = 'live', deathT = 0, glintOn = false, glintT = 0, jitT = 0;
   let nx = 0, nz = 0, clipT = 0;
 
   // A slot that now holds the other kind swaps its character (a Trainer's is built the first time it is needed).
@@ -280,6 +280,13 @@ export function createAssociateView(e) {
     const back = drawW * ct.lowDrawBack + blindW * ct.blindDrawBack;
     const rise = e.state === 'spawn' ? RISE_FROM * (1 - clamp(e.stateT / Math.max(TUNING.pad.riseTime, 1e-3), 0, 1)) : 0;
     group.position.set(q[0] + (p[0] - q[0]) * alpha + nx * back, q[1] + (p[1] - q[1]) * alpha + rise, q[2] + (p[2] - q[2]) * alpha + nz * back);
+    // Held under the cutter it struggles: the body jitters about (m, feedback.executeJitter) and rocks a little.
+    jitT += dt;
+    if (e.state === 'executed') {
+      const j = TUNING.feedback.executeJitter, w = 2 * Math.PI * jitT;
+      group.position.x += Math.sin(w * 17) * j; group.position.z += Math.sin(w * 13 + 1) * j;
+      cur.root.rotation.z = Math.sin(w * 15 + 2) * j * 1.6;
+    } else cur.root.rotation.z = 0;
     // Facing: the brain's yaw, interpolated, except that a tucked or blind-firing Associate sits square to its wall.
     const want = tr || bo || e.state === 'run' || SHOOTING.has(e.state) ? e.prevYaw + wrapAngle(e.yaw - e.prevYaw) * alpha : associateFacing(e);
     yaw = turnToward(yaw, want, (tr ? TT.turnRate : T.turnRate) * 1.5 * dt);

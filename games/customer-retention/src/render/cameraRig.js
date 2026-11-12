@@ -34,6 +34,10 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
   const dip = { x: 0, v: 0 };      // footstep dip: metres the lens is below where it would be
   const slam = { t: 0, amp: 0 };   // slam shake: seconds left and the peak offset in metres (a transient, not a camera mode)
   const recoil = { p: { x: 0, v: 0 }, y: { x: 0, v: 0 } }; // gun kick offsets, degrees
+  const fk = { x: 0, v: 0 };       // slam fov kick: degrees added to the lens fov, springing back
+  const sus = { shake: { x: 0, v: 0 }, fov: { x: 0, v: 0 }, pull: { x: 0, v: 0 } }; // sustained shake (m), fov change (deg) and pull-in (m), eased toward this frame's asks
+  const ask = { shake: 0, fov: 0, pull: 0 };
+  let turn = null;                 // a timed turn toward a point: { t, dur, y0, dy, p0, dp }
   const free = [0, 0, 0];          // un-lagged head, where the pivot may not be dragged through a corner from
   const shakeW = { x: 0, v: 0 };   // mode shake weight, blended like the other mode params
   const piv = [{ x: 0, v: 0 }, { x: 0, v: 0 }, { x: 0, v: 0 }];
@@ -50,7 +54,7 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
   const cam = {
     yaw: 0, pitch: 0,
     look(dxPx, dyPx, padX, padY, dt, aiming, padScale = 1) {
-      if (dxPx || dyPx || padX || padY) held.on = false; // the player took the view back
+      if (dxPx || dyPx || padX || padY) { held.on = false; turn = null; } // the player took the view back
       const s = aiming ? look.aimScale : 1;
       const inv = look.invertY ? -1 : 1;
       this.yaw -= dxPx * look.mouse * s;
@@ -68,6 +72,29 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       const s = tuning.slamShake;
       if (s && s.amount > 0 && s.time > 0) { slam.t = s.time; slam.amp = s.amount * scale; }
     },
+    // A slam into cover: the bump and the shake, plus a fov kick (tuning.slamFovKick deg) that springs back over slamFovHalfLife.
+    slam(scale = 1) {
+      this.bump(scale);
+      const k = tuning.slamFovKick;
+      if (Number.isFinite(k) && k !== 0 && scale > 0) fk.x = Math.max(-20, Math.min(20, fk.x + k * scale));
+    },
+    // Asks for a sustained effect this frame (call every frame it should run): a shake of `shake` m, a fov change of `fov` deg and a pull-in of `pull` m.
+    // They ease in and out over tuning.sustainHalfLife; several asks in one frame take the largest shake and pull and add the fov.
+    sustain({ shake = 0, fov = 0, pull = 0 } = {}) {
+      if (Number.isFinite(shake) && shake > ask.shake) ask.shake = shake;
+      if (Number.isFinite(pull) && pull > ask.pull) ask.pull = pull;
+      if (Number.isFinite(fov)) ask.fov += fov;
+    },
+    // Turns the view to yaw (and pitch, when given) over `time` s, easing in and out, by the short way round. Looking cancels it.
+    turnTo(yaw, pitch = null, time = tuning.objectiveTurnTime) {
+      if (!Number.isFinite(yaw)) return false;
+      const TWO = Math.PI * 2;
+      const dy = yaw - this.yaw, wrapped = dy - TWO * Math.round(dy / TWO);
+      turn = { t: 0, dur: Math.max(time, 1e-3), y0: this.yaw, dy: wrapped, p0: this.pitch, dp: Number.isFinite(pitch) ? Math.max(tuning.pitchMin, Math.min(tuning.pitchMax, pitch)) - this.pitch : 0 };
+      held.on = false;
+      return true;
+    },
+    turning() { return turn !== null; },
     // A foot plant: the lens dips by `amount` m and springs back (at the bump's half-life).
     dip(amount) {
       if (Number.isFinite(amount) && amount > 0) dip.x = Math.min(dip.x + amount, 0.1);
@@ -101,7 +128,8 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       side.x = sideArg; side.v = 0;
       shakeW.x = shakeWeightOf(tuning, mode); shakeW.v = 0;
       for (let i = 0; i < 3; i++) { piv[i].x = target[i]; piv[i].v = 0; }
-      kick.x = 0; kick.v = 0; dip.x = 0; dip.v = 0; slam.t = 0;
+      kick.x = 0; kick.v = 0; dip.x = 0; dip.v = 0; slam.t = 0; fk.x = 0; fk.v = 0; turn = null;
+      for (const k of ['shake', 'fov', 'pull']) { sus[k].x = 0; sus[k].v = 0; ask[k] = 0; }
       recoil.p.x = 0; recoil.p.v = 0; recoil.y.x = 0; recoil.y.v = 0;
       ratio = 1; ready = true; held.on = false;
     },
@@ -117,11 +145,19 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       springStep(kick, 0, tuning.bump ? tuning.bump.halfLife : 0, dt);
       springStep(dip, 0, tuning.bump ? tuning.bump.halfLife : 0, dt);
 
+      springStep(fk, 0, tuning.slamFovHalfLife, dt);
+      for (const k of ['shake', 'fov', 'pull']) { springStep(sus[k], ask[k], tuning.sustainHalfLife, dt); ask[k] = 0; }
+      if (turn) {
+        turn.t += dt;
+        const u = Math.min(1, turn.t / turn.dur), e = u * u * (3 - 2 * u);
+        this.yaw = turn.y0 + turn.dy * e; this.pitch = turn.p0 + turn.dp * e;
+        if (u >= 1) turn = null;
+      }
       const rh = tuning.recoil ? tuning.recoil.halfLife : 0;
       springStep(recoil.p, 0, rh, dt); springStep(recoil.y, 0, rh, dt);
       const DEG = Math.PI / 180;
       const r = tuning.probeRadius;
-      const back = sp.back.x;
+      const back = Math.max(sp.back.x - sus.pull.x, Math.min(sp.back.x, tuning.minBack));
       let cy = 1, sy = 0;
       // Head, shoulder, lens and view for the current yaw and pitch. The wall pull-in eases only on the first pass.
       const place = (first) => {
@@ -185,6 +221,14 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
         pos[2] += rz * sx + rx * dir[1] * shakeUp;
       }
       pos[1] -= dip.x;
+      // sustained shake: blind fire, Cheat Day and the grind
+      if (sus.shake.x > 1e-6) {
+        const a = sus.shake.x, sx = Math.sin(TAU * 17 * clock) * a, su = Math.sin(TAU * 23 * clock + 0.7) * a;
+        const rx = -cy, rz = sy;
+        pos[0] += rx * sx - rz * dir[1] * su;
+        pos[1] += (rz * dir[0] - rx * dir[2]) * su;
+        pos[2] += rz * sx + rx * dir[1] * su;
+      }
       // 5. slam shake: a decaying jitter across the view, for slam.t seconds
       const sl = tuning.slamShake;
       if (slam.t > 0 && sl && sl.time > 0) {
@@ -196,7 +240,7 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
         pos[1] += (rz * dir[0] - rx * dir[2]) * sy2;
         pos[2] += rz * sx + rx * dir[1] * sy2;
       }
-      result.fov = sp.fov.x;
+      result.fov = sp.fov.x + fk.x + sus.fov.x;
       return result;
     },
   };

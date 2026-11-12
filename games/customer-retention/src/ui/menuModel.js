@@ -21,7 +21,7 @@ export const PAUSE_ITEMS = Object.freeze([
   Object.freeze({ id: 'quit', label: 'Quit to title' }),
 ]);
 
-// Keys and pad side by side. The bash, interact and kettlebell keys come from prompts.js, so the card always matches the live prompts.
+// Keys and pad side by side (the pad is the Gears of War layout). The bash, interact, kettlebell and finish keys come from prompts.js, so the card always matches the live prompts.
 export function controlRows(keys = KEYS) {
   const k = keys.kbm, p = keys.pad;
   return [
@@ -29,13 +29,17 @@ export function controlRows(keys = KEYS) {
     ['Look', 'Mouse', 'Right stick'],
     ['Aim (pop out of cover)', 'Right mouse', 'LT'],
     ['Fire (no aim in cover: blind fire)', 'Left mouse', 'RT'],
-    ['Reload (again on the bright zone)', 'R', 'RB'],
-    ['Take cover, vault, roll (tap) / sprint (hold)', 'Space', 'A'],
+    ['Reload (again on the bright zone)', k.reload, p.reload],
+    ['Take cover, vault, roll (tap) / sprint (hold)', k.cover, p.cover],
     ['Bash (tap) / rev Cheat Day (hold)', k.melee, p.melee],
-    ['Kettlebell: hold to aim, release to throw', k.grenade, p.grenade],
-    ['Finish a Rep, revive Tobble, renew, cancel', k.interact, p.interact],
-    ['Switch weapon', '1 2 3 or wheel', 'D-pad'],
+    ['Kettlebell: hold to aim, release to throw (pad: equip, LT aim, RT throw)', k.grenade, p.grenade],
+    ['Pick up, revive Tobble, renew, cancel', k.interact, p.interact],
+    ['Finish a downed alien', k.finish, p.finish],
+    ['Turn toward the objective (tap)', 'Tab', 'Y'],
+    ['Tac/Com: objective and Tobble marked (hold)', '\u2014', 'LB'],
+    ['The Regret / Guest Pass', '1 / 3 or wheel', 'D-pad Right / Down'],
     ['Pause', 'Esc', 'Start'],
+    ['This card', '\u2014', 'View'],
   ];
 }
 

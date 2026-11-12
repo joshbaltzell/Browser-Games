@@ -65,7 +65,8 @@ test('controls card matches the live prompts (bash, interact, kettlebell keys co
   const find = (re) => rows.find(r => re.test(r[0]));
   assert.deepEqual(find(/Bash/).slice(1), [KEYS.kbm.melee, KEYS.pad.melee]);
   assert.deepEqual(find(/Kettlebell/).slice(1), [KEYS.kbm.grenade, KEYS.pad.grenade]);
-  assert.deepEqual(find(/Finish/).slice(1), [KEYS.kbm.interact, KEYS.pad.interact]);
+  assert.deepEqual(find(/Finish/).slice(1), [KEYS.kbm.finish, KEYS.pad.finish]);
+  assert.deepEqual(find(/revive Tobble/).slice(1), [KEYS.kbm.interact, KEYS.pad.interact]);
   assert.ok(rows.every(r => r.length === 3 && r.every(x => typeof x === 'string' && x)));
 });
 

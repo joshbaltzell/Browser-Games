@@ -29,6 +29,7 @@ export function createMenus(opts) {
   let items = [];         // the current screen's rows: { id, label, row? }
   let settings = opts.settings;
   let introDone = null;
+  let tutorialReset = false;   // the Controls card's 'Reset tutorial hints' was pressed (the label says so)
 
   const api = {
     get open() { return screen !== null; },
@@ -36,6 +37,8 @@ export function createMenus(opts) {
     get settings() { return settings; },
     showTitle() { parent = 'title'; go('title'); },
     showPause() { parent = 'pause'; go('pause'); },
+    // The controls card straight over the game (View on a pad); closing it goes back into play.
+    showControls() { parent = 'game'; go('controls'); },
     showIntro(done) { introDone = done; go('intro'); },
     hide() { screen = null; root.hidden = true; document.body.classList.remove('cr-menu-open', 'cr-on-title'); root.replaceChildren(); },
     // Pad input, once per frame (also while closed, so a button that opened the menu is not read as a fresh press).
@@ -46,7 +49,7 @@ export function createMenus(opts) {
   };
 
   function go(next) {
-    screen = next; sel = 0; root.hidden = false;
+    screen = next; sel = 0; root.hidden = false; tutorialReset = false;
     document.body.classList.add('cr-menu-open');
     document.body.classList.toggle('cr-on-title', next === 'title' || ((next === 'settings' || next === 'controls') && parent === 'title'));
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
@@ -57,7 +60,7 @@ export function createMenus(opts) {
     if (screen === 'title') items = titleItems({ saved: opts.saved ? opts.saved() : 0, arenaTitle: opts.arenaTitle ? opts.arenaTitle(opts.saved()) : '' });
     else if (screen === 'pause') items = PAUSE_ITEMS.map(x => ({ ...x }));
     else if (screen === 'settings') items = [...SETTING_ROWS.map(r => ({ id: r.key, label: r.label, row: r })), { id: 'close', label: 'Back' }];
-    else if (screen === 'controls') items = [{ id: 'close', label: 'Back' }];
+    else if (screen === 'controls') items = [{ id: 'resetTutorial', label: tutorialReset ? 'Tutorial hints will show again' : 'Reset tutorial hints' }, { id: 'close', label: 'Back' }];
     else items = [];
   }
 
@@ -130,8 +133,12 @@ export function createMenus(opts) {
     if (done) done();
   }
 
+  // Settings or Controls closed: back to the screen they were opened from (the title or the pause menu), or into play when opened over the game.
+  function leave() {
+    if (parent === 'game') { api.hide(); opts.actions.resume(); } else go(parent);
+  }
   function back() {
-    if (screen === 'settings' || screen === 'controls') go(parent);
+    if (screen === 'settings' || screen === 'controls') leave();
     else if (screen === 'pause') { api.hide(); opts.actions.resume(); }
     else if (screen === 'intro') dismissIntro();
   }
@@ -149,7 +156,8 @@ export function createMenus(opts) {
       case 'resume': api.hide(); a.resume(); break;
       case 'restart': api.hide(); a.restart(); break;
       case 'quit': api.hide(); a.quit(); break;
-      case 'close': go(parent); break;
+      case 'close': leave(); break;
+      case 'resetTutorial': if (a.resetTutorial) a.resetTutorial(); tutorialReset = true; render(); break;
       default: if (it.row) adjust(1);   // a settings row: Enter steps it up (a toggle flips)
     }
   }
@@ -175,7 +183,7 @@ export function createMenus(opts) {
   root.addEventListener('contextmenu', (e) => e.preventDefault());
 
   // ---- pad
-  let prev = { up: false, down: false, left: false, right: false, a: false, b: false, start: false };
+  let prev = { up: false, down: false, left: false, right: false, a: false, b: false, start: false, select: false };
   let holdT = { up: 0, down: 0, left: 0, right: 0 };
   function readPad() {
     let pads = [];
@@ -186,14 +194,14 @@ export function createMenus(opts) {
       return {
         up: b(12) || (ax[1] || 0) < -0.6, down: b(13) || (ax[1] || 0) > 0.6,
         left: b(14) || (ax[0] || 0) < -0.6, right: b(15) || (ax[0] || 0) > 0.6,
-        a: b(0), b: b(1), start: b(9),
+        a: b(0), b: b(1), start: b(9), select: b(8),
       };
     }
     return null;
   }
   function padStep(dt) {
     const s = readPad();
-    if (!s) { prev = { up: false, down: false, left: false, right: false, a: false, b: false, start: false }; return; }
+    if (!s) { prev = { up: false, down: false, left: false, right: false, a: false, b: false, start: false, select: false }; return; }
     const was = prev; prev = s;
     if (screen === null) { holdT = { up: 0, down: 0, left: 0, right: 0 }; return; }
     // A direction fires on press, then again while held (after a pause, then quickly).
@@ -213,6 +221,7 @@ export function createMenus(opts) {
     if (edge('a')) activate();
     else if (edge('b')) back();
     else if (edge('start')) { if (screen === 'pause') back(); else if (screen === 'title') activate(); }
+    else if (edge('select') && screen === 'controls' && parent === 'game') back();
   }
 
   return api;

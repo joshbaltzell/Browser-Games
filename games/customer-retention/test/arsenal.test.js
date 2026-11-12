@@ -118,7 +118,7 @@ test('spread: stance base plus bloom; bloom grows per shot to bloomMax and recov
   assert.equal(first.spread, 0.8);
   assert.equal(a.spreadOf('aim'), 0.8 + 0.25);
   const hip = make().update(I({ fire: true }), 'hip', DT)[0]; assert.equal(hip.spread, 4);
-  const blind = make().update(I({ fire: true }), 'blind', DT)[0]; assert.equal(blind.spread, 11.2);
+  const blind = make().update(I({ fire: true }), 'blind', DT)[0]; assert.equal(blind.spread, 22.4);
   // Check the cap with recovery off, then recovery on its own.
   const w = structuredClone(W); w.regret.bloomRecover = 0;
   const b = make(w);

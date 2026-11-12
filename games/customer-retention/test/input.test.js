@@ -44,6 +44,7 @@ test('ACTIONS is frozen and complete', () => {
   assert.deepEqual([...ACTIONS], [
     'aim', 'fire', 'cover', 'sprint', 'reload', 'melee', 'interact', 'grenade',
     'weapon1', 'weapon2', 'weapon3', 'weaponNext', 'weaponPrev', 'objective', 'pause',
+    'tacCom', 'equipKb', 'controls',
   ]);
 });
 test('releaseAll clears held actions and look deltas', () => {

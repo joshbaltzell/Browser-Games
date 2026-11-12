@@ -20,31 +20,39 @@ const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 // pop is { text, kind } or null (a short pop-up line: PR!, +25 scoops, Progress photo saved.).
 // boss is { name, fraction, phase, invuln, hint } or null (the big health bar; invuln dims it and shows the hint); ending is { card, lines, tone, final } or null (a text card
 // over a dimmed scene).
+// hint is { text, opacity } or null (a tutorial hint under the reticle); tac is { show, items: [{ id, kind, label, x, y, off, angle, frac, down }] } or null (the Tac/Com markers,
+// x and y as screen fractions, off + angle for an arrow at the screen edge).
 // covered: the player is tucked or blind in cover (not popped); the reticle then shows dimmed, at the same screen point the
 // aimed shot's camera ray goes through. device is 'kbm' or 'pad': it picks the key name in the reload prompt.
 export function hudModel({ arsenal, stance, firing, covered = false, device = 'kbm', spreadDeg, fov, viewportH, marker = null, reloadFlash = null,
-  face = null, objective = '', hours = '', bark = null, banner = null, grenades = null, action = null, boss = null, ending = null, pop = null, weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
+  face = null, objective = '', hours = '', bark = null, banner = null, grenades = null, action = null, boss = null, ending = null, pop = null, hint = null, tac = null, weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
   const id = arsenal.current();
   const row = weapons[id], am = arsenal.ammo[id];
   const r = arsenal.reload;
   const key = device === 'pad' ? 'RB' : 'R';
-  let reload = { show: false, marker: 0, good: [row.goodStart, row.goodEnd], perfect: [row.perfectStart, row.perfectEnd], flash: reloadFlash, prompt: '' };
+  const gap = feedback.reticleMinGap + reticleGap(spreadDeg, fov, viewportH);
+  // The reload bar sits to the right of the reticle (offset: px from the screen centre, past the reticle's arms and the tunable gap), scaled up and pulsing.
+  // flashScale is the result flash's size against the bar's own scale (the whole box scales by barScale).
+  const barScale = Math.max(feedback.reloadBarScale, 0.1);
+  let reload = { show: false, marker: 0, good: [row.goodStart, row.goodEnd], perfect: [row.perfectStart, row.perfectEnd], flash: reloadFlash, prompt: '',
+    barScale, offset: gap + 8 + Math.max(0, feedback.reloadBarGap), pulseHz: Math.max(0, feedback.reloadPulseHz), flashScale: feedback.reloadFlashScale / barScale };
   if (r) {
     const T = Math.max(row.reloadTime, combat.minReloadTime);
-    reload = { ...reload, show: true, marker: clamp01(r.t / T), prompt: r.press === null ? `${key} again on the bright zone` : '' };
+    reload = { ...reload, show: true, marker: clamp01(r.t / T), prompt: r.press === null ? `PRESS ${key} AGAIN IN THE BRIGHT ZONE` : '' };
   } else if (am.mag <= 0) reload.prompt = `${key} to reload`;
   // The alert under the reticle: low magazine and idle. Hidden while reloading (the bar's prompt takes over). RELOAD shows only
   // when there is a reserve to load from. NO AMMO means the magazine and the reserve are both empty; rounds still in the
   // magazine with no reserve just say LOW AMMO. The pistol's reserve is infinite, so it never says either.
   const lowMag = am.mag <= Math.max(0, feedback.lowAmmoFrac) * row.mag;
   const noReserve = row.infiniteReserve <= 0 && am.reserve <= 0;
-  const alert = { show: false, text: '', kind: '' };
+  const alert = { show: false, text: '', kind: '', scale: 1, pulseHz: 0 };
   if (!r && lowMag && !banner) {
     alert.show = true;
     if (noReserve && am.mag <= 0) { alert.text = 'NO AMMO'; alert.kind = 'none'; }
     else if (noReserve) { alert.text = 'LOW AMMO'; alert.kind = 'low'; }
-    else if (am.mag <= 0) { alert.text = `EMPTY \u2014 RELOAD  ${key}`; alert.kind = 'empty'; }
-    else { alert.text = `RELOAD  ${key}`; alert.kind = 'low'; }
+    else if (am.mag <= 0) { alert.text = `EMPTY \u2014 RELOAD \u2014 ${key}`; alert.kind = 'empty'; }
+    else { alert.text = `RELOAD \u2014 ${key}`; alert.kind = 'low'; }
+    alert.scale = feedback.reloadAlertScale; alert.pulseHz = Math.max(0, feedback.reloadPulseHz);
   }
   const popped = stance === 'aim';
   return {
@@ -53,7 +61,7 @@ export function hudModel({ arsenal, stance, firing, covered = false, device = 'k
     reserve: row.infiniteReserve > 0 ? '∞' : am.reserve,
     reticle: {
       show: popped || !!firing || covered,
-      gap: feedback.reticleMinGap + reticleGap(spreadDeg, fov, viewportH),
+      gap,
       opacity: covered && !popped ? feedback.coverReticleOpacity : 1,
     },
     reload, alert,
@@ -65,6 +73,8 @@ export function hudModel({ arsenal, stance, firing, covered = false, device = 'k
     boss: boss ? { name: boss.name, fraction: clamp01(boss.fraction), phase: boss.phase, invuln: !!boss.invuln, hint: boss.hint || '' } : null,
     ending: ending ? { card: ending.card, lines: ending.lines, tone: ending.tone || 'big', final: !!ending.final } : null,
     pop: pop && pop.text ? { text: pop.text, kind: pop.kind || '' } : null,
+    hint: hint && hint.text ? { text: hint.text, opacity: clamp01(Number.isFinite(hint.opacity) ? hint.opacity : 1) } : null,
+    tac: tac && tac.show ? { show: true, items: (tac.items || []).filter(i => i && Number.isFinite(i.x) && Number.isFinite(i.y)) } : null,
     action: action && action.text ? { text: action.text, hold: Number.isFinite(action.hold) ? clamp01(action.hold) : null } : null,
   };
 }
@@ -117,6 +127,9 @@ export function createHud(root = document.body) {
   const endText = el('div', 'cr-ending-text', endEl);
   const endHint = el('div', 'cr-ending-hint', endEl);
   const popEl = el('div', 'cr-pop', hud);
+  const hintEl = el('div', 'cr-hint', hud);
+  const tacEl = el('div', 'cr-tac', hud);
+  const tacItems = {};
   const hoursEl = el('div', 'cr-hours', hud);
   const barkEl = el('div', 'cr-bark', hud);
   const barkWho = el('span', 'cr-bark-who', barkEl);
@@ -126,11 +139,14 @@ export function createHud(root = document.body) {
   const ammo = el('div', 'cr-ammo', panel);
   const kbEl = el('div', 'cr-kb', panel);
   const prompt = el('div', 'cr-prompt', panel);
-  const bar = el('div', 'cr-reload', panel);
+  // The reload bar lives beside the reticle, not in the weapon panel: prompt on top, the bar, the result flash under it.
+  const reloadBox = el('div', 'cr-reloadbox', hud);
+  const barPrompt = el('div', 'cr-reload-prompt', reloadBox);
+  const bar = el('div', 'cr-reload', reloadBox);
   const grey = el('div', 'cr-zone cr-zone-good', bar);
   const bright = el('div', 'cr-zone cr-zone-perfect', bar);
   const mark = el('div', 'cr-marker', bar);
-  const result = el('div', 'cr-result', panel);
+  const result = el('div', 'cr-result', reloadBox);
   const alertEl = el('div', 'cr-alert', hud);
   const reticle = el('div', 'cr-reticle', hud);
   const arms = ['up', 'down', 'left', 'right'].map(d => el('div', `cr-arm cr-arm-${d}`, reticle));
@@ -146,13 +162,26 @@ export function createHud(root = document.body) {
     render(m) {
       set('weapon', m.weapon, v => { name.textContent = v; });
       set('ammo', `${m.mag}|${m.reserve}`, () => { ammo.textContent = `${m.mag} / ${m.reserve}`; });
-      set('prompt', m.reload.prompt, v => { prompt.textContent = v; });
+      // While reloading the prompt rides the bar; otherwise (an empty magazine) it is the small line in the weapon panel.
+      set('prompt', m.reload.show ? '' : m.reload.prompt, v => { prompt.textContent = v; });
+      set('barPrompt', m.reload.show ? m.reload.prompt : '', v => { barPrompt.textContent = v; barPrompt.hidden = !v; });
       set('reload.show', m.reload.show, v => { bar.hidden = !v; });
+      set('reload.box', `${m.reload.show || !!m.reload.flash}`, v => { reloadBox.hidden = v !== 'true'; });
+      set('reload.look', `${Math.round(m.reload.offset)}|${m.reload.barScale}|${m.reload.pulseHz}|${m.reload.flashScale}`, () => {
+        reloadBox.style.setProperty('--off', `${m.reload.offset.toFixed(0)}px`);
+        reloadBox.style.setProperty('--s', String(m.reload.barScale));
+        reloadBox.style.setProperty('--fs', String(m.reload.flashScale));
+        reloadBox.style.setProperty('--pulse', m.reload.pulseHz > 0 ? `${(1 / m.reload.pulseHz).toFixed(3)}s` : '0s');
+      });
       set('good', `${m.reload.good}`, () => zone(grey, m.reload.good));
       set('perfect', `${m.reload.perfect}`, () => zone(bright, m.reload.perfect));
       set('marker', Math.round(m.reload.marker * 500), () => { mark.style.left = pct(m.reload.marker); });
       set('flash', m.reload.flash, v => { result.textContent = v ? (FLASH_TEXT[v] || '') : ''; result.dataset.kind = v || ''; });
-      set('alert', m.alert.show ? `${m.alert.kind}|${m.alert.text}` : '', () => { alertEl.hidden = !m.alert.show; alertEl.textContent = m.alert.text; alertEl.dataset.kind = m.alert.kind; });
+      set('alert', m.alert.show ? `${m.alert.kind}|${m.alert.text}|${m.alert.scale}|${m.alert.pulseHz}` : '', () => {
+        alertEl.hidden = !m.alert.show; alertEl.textContent = m.alert.text; alertEl.dataset.kind = m.alert.kind;
+        alertEl.style.setProperty('--as', String(m.alert.scale));
+        alertEl.style.setProperty('--pulse', m.alert.pulseHz > 0 ? `${(1 / m.alert.pulseHz).toFixed(3)}s` : '0s');
+      });
       set('ret.show', m.reticle.show, v => { reticle.hidden = !v; });
       set('ret.op', Math.round(m.reticle.opacity * 100), () => { reticle.style.opacity = m.reticle.opacity.toFixed(2); });
       set('ret.gap', Math.round(m.reticle.gap), g => { arms.forEach(a => a.style.setProperty('--gap', `${g}px`)); });
@@ -183,6 +212,25 @@ export function createHud(root = document.body) {
         endHint.textContent = en.final ? 'Press any key' : '';
       });
       set('pop', m.pop ? `${m.pop.kind}|${m.pop.text}` : '', () => { popEl.hidden = !m.pop; if (m.pop) { popEl.textContent = m.pop.text; popEl.dataset.kind = m.pop.kind; } });
+      set('hint', m.hint ? m.hint.text : '', v => { hintEl.hidden = !v; hintEl.textContent = v; });
+      set('hint.op', m.hint ? Math.round(m.hint.opacity * 50) : -1, () => { if (m.hint) hintEl.style.opacity = m.hint.opacity.toFixed(2); });
+      // Tac/Com: one marker per item (built the first time), placed by screen fraction; an off-screen one is an arrow pinned to the edge.
+      const items = m.tac ? m.tac.items : [];
+      tacEl.hidden = !m.tac;
+      for (const k of Object.keys(tacItems)) tacItems[k].root.hidden = !items.some(i => i.id === k);
+      for (const it of items) {
+        let t = tacItems[it.id];
+        if (!t) {
+          const root = el('div', `cr-tac-item cr-tac-${it.kind}`, tacEl);
+          t = tacItems[it.id] = { root, arrow: el('i', 'cr-tac-arrow', root), label: el('span', 'cr-tac-label', root), bar: el('i', 'cr-tac-bar', root), fill: el('b', '', null) };
+          t.bar.appendChild(t.fill);
+        }
+        t.root.style.left = pct(it.x); t.root.style.top = pct(it.y);
+        t.root.dataset.off = it.off ? '1' : '0'; t.root.dataset.down = it.down ? '1' : '0';
+        t.arrow.style.transform = `rotate(${(it.angle || 0).toFixed(2)}rad)`;
+        set(`tac.${it.id}.label`, it.label, v => { t.label.textContent = v; });
+        set(`tac.${it.id}.bar`, it.frac === undefined ? -1 : Math.round(it.frac * 100), v => { t.bar.hidden = v < 0; if (v >= 0) t.fill.style.width = `${v}%`; });
+      }
       set('hours', m.hours || '', v => { hoursEl.textContent = v; hoursEl.hidden = !v; });
       set('bark', m.bark ? `${m.bark.speaker}|${m.bark.text}` : '', () => { barkEl.hidden = !m.bark; if (m.bark) { barkWho.textContent = m.bark.speaker; barkWho.style.color = m.bark.color || ''; barkText.textContent = m.bark.text; } });
       set('hit', m.hit.show ? m.hit.kind : '', v => { hit.hidden = !v; hit.dataset.kind = v; });

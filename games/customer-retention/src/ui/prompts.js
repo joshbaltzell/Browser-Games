@@ -1,13 +1,14 @@
 // The on-screen prompt lines, with the key swapped for the device in use. Pure strings: no DOM.
 export const KEYS = Object.freeze({
-  kbm: Object.freeze({ melee: 'F', interact: 'E', grenade: 'G' }),
-  pad: Object.freeze({ melee: 'B', interact: 'X', grenade: 'LB' }),
+  kbm: Object.freeze({ melee: 'F', interact: 'E', grenade: 'G', finish: 'E', cover: 'Space', aim: 'right mouse', pop: 'right mouse', reload: 'R', throw: 'Release G', rev: 'F' }),
+  pad: Object.freeze({ melee: 'B', interact: 'X', grenade: 'D-pad Up', finish: 'Y', cover: 'A', aim: 'LT', pop: 'LT', reload: 'RB', throw: 'RT', rev: 'B' }),
 });
 
 const LINES = {
-  throw: k => `Release ${k.grenade}  throw`,
+  throw: k => `${k.throw}  throw`,
+  equipped: k => `${k.aim} aim  ${k.throw} throw`,
   reviveTobble: k => `Hold ${k.interact}  revive Tobble`,
-  finish: k => `${k.interact}  finish`,
+  finish: k => `${k.finish}  finish`,
   revving: () => 'Cheat Day: run into a Rep',
   bash: k => `${k.melee}  bash`,
   rev: k => `Hold ${k.melee}  rev Cheat Day`,

@@ -11,8 +11,11 @@ export const TUNING = {
     coverLow: { fov: 70, right: 0.55, up: 1.0, back: 1.9 },
     coverTall: { fov: 70, right: 0.65, up: 1.35, back: 1.9 },
     downed: { fov: 70, up: 0.8, back: 2.4 },
-    bump: { amount: 0.3, halfLife: 0.07 },  // slam kick toward the player, m and s
-    slamShake: { amount: 0.06, time: 0.18, hz: 24 }, // slam shake: peak lens offset in m, how long it rings in s, and its rate
+    bump: { amount: 0.5, halfLife: 0.07 },  // slam kick toward the player, m and s
+    slamShake: { amount: 0.12, time: 0.26, hz: 24 }, // slam shake: peak lens offset in m, how long it rings in s, and its rate
+    slamFovKick: 4, slamFovHalfLife: 0.12, // deg the lens widens on a slam (negative narrows), and s to halve as it springs back
+    objectiveTurnTime: 0.4,    // s, the camera's turn toward the objective (Y on a pad)
+    sustainHalfLife: 0.06,     // s to halve, the sustained shake, zoom and pull-in (blind fire, Cheat Day, the grind) easing in and out
     recoil: { halfLife: 0.09, max: 6 },     // gun kick spring: s to halve, and the cap in deg
     blendHalfLife: 0.07,       // mode changes: offsets and fov
     holdTime: 0.6,             // s, the reticle's world point is held through a blend into aim (0 = off)
@@ -58,7 +61,7 @@ export const TUNING = {
     gap: 0.03,            // m, space between a capsule on the stand line and the face
     endInset: 0.2,        // m, stand line stops this far short of an open end
     minLength: 0.3,       // m, shortest stand line that counts as cover
-    slideSpeed: 10,       // m/s, slide into cover
+    slideSpeed: 14,       // m/s, slide into cover
     slideMinTime: 0.06, slideMaxTime: 0.25, // s, slide duration clamp
     slideTurnRate: 20,    // rad/s, turn to face away from the cover
     moveSpeed: 3,         // m/s, shuffle along cover
@@ -81,9 +84,9 @@ export const TUNING = {
     swapSpeed: 9,         // m/s, cover swap
     swapAngle: 30,        // deg, widest difference between facing normals
     swapMaxOffset: 0.6,   // m, widest sideways stagger between the two stand lines
-    slamSquash: 0.2,      // squash fraction on arriving at cover
-    slamSquashTime: 0.15, // s, squash duration
-    thudVolume: 0.75,     // 0 to 1
+    slamSquash: 0.32,     // squash fraction on arriving at cover
+    slamSquashTime: 0.2,  // s, squash duration
+    thudVolume: 1.0,      // 0 to 1
     autoSlam: 1,          // 1 on, 0 off: running straight into cover slams you in with no tap
     autoAngle: 40,        // deg, widest approach angle off straight at the face for a run-in
     autoDist: 0.25,       // m, a run-in grabs once the stand point is this close (you are bumping the wall)
@@ -97,7 +100,7 @@ export const TUNING = {
     regret: {
       mag: 50, reserveStart: 250, reserveMax: 400, infiniteReserve: 0, // rounds
       auto: 1, rate: 9, damage: 16, headMult: 2, range: 60,            // shots/s, damage per body hit, head multiplier, m
-      spreadAim: 0.8, spreadHip: 4, spreadBlind: 11.2,                 // deg, cone by stance
+      spreadAim: 0.8, spreadHip: 4, spreadBlind: 22.4,                 // deg, cone by stance
       bloomPerShot: 0.25, bloomMax: 2, bloomRecover: 1.5,              // deg per shot, deg cap, deg/s recovery
       kickPitch: 0.98, kickYaw: 0.25,                                   // deg of camera kick per shot (yaw is plus or minus)
       reloadTime: 2.2,                                                 // s, whole reload bar
@@ -109,7 +112,7 @@ export const TUNING = {
     pistol: {
       mag: 12, reserveStart: 0, reserveMax: 0, infiniteReserve: 1,
       auto: 0, rate: 4, damage: 30, headMult: 2.5, range: 50,
-      spreadAim: 0.25, spreadHip: 1.56, spreadBlind: 6.5,
+      spreadAim: 0.25, spreadHip: 1.56, spreadBlind: 13,
       bloomPerShot: 0.8, bloomMax: 2.5, bloomRecover: 6,
       kickPitch: 1.6, kickYaw: 0.4,
       reloadTime: 1.4,
@@ -152,7 +155,7 @@ export const TUNING = {
   // Melee and Cheat Day. Times in s, distances in m, angles in deg (full cones), speeds in m/s, damage in hp.
   melee: {
     holdTime: 0.2, bashTime: 0.45, bashHitAt: 0.15, bashRange: 1.8, bashAngle: 60, bashDamage: 30, bashLunge: 0.6,
-    bashCooldown: 0.6, revSpeed: 2.5, revPulse: 0.25, cutterReach: 1.1, cutterAngle: 50, cutTime: 1.1,
+    bashCooldown: 0.6, revSpeed: 2.5, revPulse: 0.25, cutterReach: 1.1, cutterAngle: 50, cutTime: 1.2,
     finishTime: 0.7, executeRange: 1.6, executeAngle: 70, promptRange: 4, cutterSpin: 40,
   },
   // Kettlebells. Speeds in m/s, gravity in m/s^2, distances in m, times in s, damage in hp, angles in deg.
@@ -231,8 +234,30 @@ export const TUNING = {
     bashVolume: 0.6, revVolume: 0.35, cutVolume: 0.5, throwVolume: 0.45, clankVolume: 0.35, boomVolume: 0.7,
     saunaVolume: 0.4, reviveVolume: 0.4, tobbleShotVolume: 0.25, blastSize: 2.5, blastTime: 0.35,
     executeShake: 0.05,   // m, the camera pulse each cutGelEvery during an execution
-    cutGelEvery: 0.1,     // s between gel sprays during an execution
+    cutGelEvery: 0.05,    // s between gel sprays during an execution
     arcDot: 0.06,         // m, dash and gap length of the kettlebell arc
+    // Piece 4b, the Gears feel pass. Times in s, sizes and shakes in m, angles in deg (rad where it says), volumes and strengths 0 to 1, flags 0 or 1.
+    // The cover glow: a mint strip along the top of the cover a tap (or a run-in) would take now. coverGlowFade is the fade in and out; coverGlowHz the pulse.
+    coverGlow: 1, coverGlowOpacity: 0.9, coverGlowFade: 0.15, coverGlowLength: 3, coverGlowHz: 2.5,
+    // The slam: slamHitstop is how long (real seconds) the simulation crawls at hitstopScale of normal speed; the dust puffs and the debris at the contact point; the pad rumble.
+    slamHitstop: 0.06, hitstopScale: 0.05, slamDust: 8, slamDebris: 6, rumble: 1, slamRumble: 0.8, slamRumbleTime: 0.18,
+    // Wild blind fire: the aim wanders blindDrift deg either side at blindDriftHz, easing in over blindDriftRamp s of held fire; each shot kicks the lens blindShake times
+    // as hard and a sustained blindShakeAmp m shake runs; the gun flails blindFlail rad at blindFlailHz in the view.
+    blindDrift: 6, blindDriftHz: 0.8, blindDriftRamp: 0.5, blindShake: 2, blindShakeAmp: 0.012, blindFlail: 0.35, blindFlailHz: 9,
+    // Cheat Day as a chainsaw: the motor sound (motorVolume, motorRevTime s to full pitch), the sustained shake and pad rumble while revved, the sparks at the blade
+    // (revSparkCount every revSparkEvery s), the disc drawn discScale times its size with a blur ring of discBlur opacity.
+    motorVolume: 0.35, motorRevTime: 0.8, revShake: 0.006, revRumble: 0.3, revSparkEvery: 0.07, revSparkCount: 2, discScale: 1.9, discBlur: 0.4,
+    // The grind: sustained shake, zoom (deg the lens narrows) and pull-in (m), the goo and sparks at the contact point, the struggle's jitter (m), the rumble.
+    grindShake: 0.03, grindZoom: 6, grindPull: 0.35, grindGelCount: 6, grindSparkCount: 3, executeJitter: 0.05, grindRumble: 0.7,
+    // Tutorial hints: a hint shows hintTime s (fading over hintFade) and the blind-fire hint waits hintCoverDelay s of cover; hint 0 turns them all off.
+    hint: 1, hintTime: 4, hintFade: 0.4, hintCoverDelay: 6,
+    // The reload callout: the bar scales by reloadBarScale and sits reloadBarGap px right of the reticle's arms, the bright zone and the alert pulse at
+    // reloadPulseHz, the alert and the result flash scale by reloadAlertScale and reloadFlashScale; the tick (reloadTickVolume) speeds from reloadTickSlow to
+    // reloadTickFast s apart over the last reloadTickLead of the bar before the bright zone.
+    reloadBarScale: 1.6, reloadBarGap: 28, reloadPulseHz: 3, reloadAlertScale: 1.5, reloadFlashScale: 1.8,
+    reloadTickVolume: 0.3, reloadTickLead: 0.3, reloadTickSlow: 0.25, reloadTickFast: 0.06,
+    // Tac/Com (LB held on a pad): the markers' pulse rate in Hz.
+    tacComHz: 1.5,
   },
   // The run (src/run.js): arena swaps. Times in s, distances in m. A cleared arena's exit gate opens; walking into it (within gateReach
   // of its door, in front of it) fades to black over fadeOut, holds black for blackHold while the next arena loads, then fades in over

@@ -42,6 +42,14 @@ import { createFight } from './director/fight.js';
 import { damageFaceModel, hitAngle } from './ui/damageFace.js';
 import { createFightView } from './fightView.js';
 import { createEnding, nearDesk, CARDS } from './ending.js';
+import { createCoverGlowView } from './render/coverGlow.js';
+import { createHitstop } from './core/hitstop.js';
+import { createRumble } from './core/rumble.js';
+import { createBlindFire, rotateYaw } from './combat/blindFire.js';
+import { createReloadCue } from './ui/reloadCue.js';
+import { createTutorial } from './ui/tutorial.js';
+import { objectiveTarget, lookAngles, screenMark, tacComModel } from './ui/tacCom.js';
+import { edgePoint } from './world/cover.js';
 
 // The grey-box play scene: the player, the camera, cover and a room to
 // run round in. Simulation runs at fixed steps, drawing interpolates.
@@ -149,6 +157,15 @@ export function startPlay({ canvas, gl, params }) {
   function applySettings() { sfx.setVolume(settings.volume); TUNING.look.invertY = settings.invertY; }
   applySettings();
   const trigger = createTrigger();
+  const glow = createCoverGlowView(scene);
+  const hitstop = createHitstop();
+  const rumble = createRumble({ getPads: () => { try { return (navigator.getGamepads && navigator.getGamepads()) || []; } catch (e) { return []; } } });
+  const blindFire = createBlindFire();
+  const reloadCue = createReloadCue();
+  const tutorial = createTutorial({ storage });
+  const tutorialFacts = { aimedKills: 0, coverTime: 0, blindFired: false, lastKettlebells: -1, thrown: false, finishing: false };
+  let hintShown = null, tacItems = null, glowTarget = null, rumbleT = 0;
+  const projV = new THREE.Vector3();
   const ending = createEnding();
   let anyPress = false;   // any key, click or button since the last step (the ending's last card waits for one)
   const arsenal = createArsenal();
@@ -159,7 +176,13 @@ export function startPlay({ canvas, gl, params }) {
   const health = createHealth();
   const bag = createKettlebellBag();
   let restartPending = false, marker = null, markerT = 0;
-  const fvHooks = { restart: () => { restartPending = true; }, marker: (k) => { marker = k; markerT = TUNING.feedback.killMarkerTime; }, tobbleView: null };
+  const fvHooks = {
+    restart: () => { restartPending = true; }, marker: (k) => { marker = k; markerT = TUNING.feedback.killMarkerTime; }, tobbleView: null,
+    // The pad's Y: the objective's world point (or null), and the camera turning to it.
+    objective: () => currentObjective(),
+    lookAt: (t) => { const a = lookAngles(camState.pos, t.pos); if (a && a.yaw !== null) cam.turnTo(a.yaw, a.pitch); },
+    rumble: (strength, seconds) => { if (input.device() === 'pad') rumble.pulse(strength, seconds); },
+  };
   // Tobble's view follows the fight's Tobble (a new one when the panel flag turns him on).
   function syncTobble() {
     if (!fight || tvFor === fight.tobble) return;
@@ -240,10 +263,10 @@ export function startPlay({ canvas, gl, params }) {
   let driveTap = false;
   let driveEnd = false;      // drive(null) arrived while a tap was still waiting
   let aimHeld = false;
-  const pending = { cover: false, fire: false, reload: false, weapon: null, interact: false, melee: false };
-  const drivePending = { reload: false, weapon: null, fire: false, interact: false, melee: false };
-  const press = { melee: false, interact: false };   // presses (latched, like reload) since the last step
-  const held = { melee: false, grenade: false, interact: false };
+  const pending = { cover: false, fire: false, reload: false, weapon: null, interact: false, melee: false, objective: false, equip: false, switched: false };
+  const drivePending = { reload: false, weapon: null, fire: false, interact: false, melee: false, objective: false, equip: false };
+  const press = { melee: false, interact: false, objective: false, equip: false, switched: false };   // presses (latched, like reload) since the last step
+  const held = { melee: false, grenade: false, interact: false, tac: false };
   const intent = { moveX: 0, moveY: 0, camYaw: 0, sprint: false, aim: false, tap: false, fire: false, grenade: false, interactHeld: false };
   const arsenalIn = { weapon: null, reload: false, fire: false, firePressed: false };
   const WEAPON_ACTIONS = [['weapon1', 1], ['weapon2', 2], ['weapon3', 3], ['weaponNext', 'next'], ['weaponPrev', 'prev']];
@@ -283,6 +306,8 @@ export function startPlay({ canvas, gl, params }) {
     placeAt(spawn.pos, spawn.yaw);
     stance = null; button.reset(); trigger.reset();
     cam.recenter(); effects.clear();
+    glow.reset(); hitstop.reset(); blindFire.reset(); reloadCue.reset();
+    tutorialFacts.coverTime = 0; tutorialFacts.blindFired = false; tutorialFacts.lastKettlebells = -1;
     fxQueue.length = 0; hits.length = 0;
     marker = null; reloadFlash = null; markerT = 0; flashT = 0;
     restartPending = false;
@@ -386,6 +411,13 @@ export function startPlay({ canvas, gl, params }) {
     }
   }
 
+  // The objective as a world point for Y and Tac/Com: the open exit gate, the Overlord, or the desk at the end. null while a room is still being cleared.
+  function currentObjective() {
+    if (!fight) return null;
+    const lvl = LEVEL.overlord;
+    return objectiveTarget({ bossArena: !!LEVEL.boss, boss: fight.boss, ending: ending.state, desk: lvl && lvl.desk, exit: LEVEL.exit, gateOpen: run.gateOpen && gateWasOpen });
+  }
+
   function objectiveText() {
     const title = ARENA_TITLES[run.arena];
     if (LEVEL.boss) {
@@ -422,6 +454,8 @@ export function startPlay({ canvas, gl, params }) {
   }
 
   const camState = { pos: [0, 0, 0], dir: [0, 0, 1], fov: 70 };
+  const NO_STATUS = { revving: false, grinding: false };
+  const glowDir = [0, 1];
   let camMode = 'normal', camSide = 1;
   let fps = 0, ms = 0, accFrames = 0, accSeconds = 0, calls = 0, tris = 0, panelClock = 0;
   const cr = window.__cr;
@@ -482,6 +516,12 @@ export function startPlay({ canvas, gl, params }) {
   cr.clearShots = () => { shotLog.length = 0; };
   cr.setGun = (id, o) => arsenal.set(id, o);
   cr.look = (yaw, pitch) => { cam.yaw = yaw; cam.pitch = pitch; };
+  cr.hint = () => (hintShown ? { id: hintShown.id, text: hintShown.text, opacity: hintShown.opacity } : null);
+  cr.glow = () => ({ visible: glow.mesh.visible, opacity: glow.mesh.material.opacity, edge: glowTarget ? glowTarget.edge.id : null, pos: glow.mesh.position.toArray(), scale: glow.mesh.scale.toArray() });
+  cr.tac = () => tacItems;
+  cr.fov = () => camera.fov;
+  cr.hitstop = () => hitstop.active();
+  cr.blindDrift = () => blindFire.drift();
   cr.camera = () => {
     const r = camState;
     return { pos: r.pos.slice(), fov: r.fov, inside: pointInBoxes(boxes, r.pos, 0.1), mode: camMode, side: camSide, yaw: cam.yaw, pitch: cam.pitch };
@@ -507,6 +547,8 @@ export function startPlay({ canvas, gl, params }) {
     }
     if (i.fire && !(drive && drive.fire)) drivePending.fire = true; // a new press, latched until a step sees it
     if (i.melee && !(drive && drive.melee)) drivePending.melee = true;
+    if (i.objective && !(drive && drive.objective)) drivePending.objective = true;
+    if (i.equip && !(drive && drive.equip)) drivePending.equip = true;
     drive = i; driveEnd = false;
     if (i.tap) driveTap = true;
     if (i.reload) drivePending.reload = true;
@@ -524,7 +566,7 @@ export function startPlay({ canvas, gl, params }) {
       intent.fire = t.fire; arsenalIn.fire = t.fire; arsenalIn.firePressed = t.firePressed;
       arsenalIn.reload = drivePending.reload; arsenalIn.weapon = drivePending.weapon;
       drivePending.reload = false; drivePending.weapon = null;
-      held.melee = !!drive.melee; held.grenade = !!drive.grenade; held.interact = !!drive.interactHeld;
+      held.melee = !!drive.melee; held.grenade = !!drive.grenade; held.interact = !!drive.interactHeld; held.tac = !!drive.tac;
       if (driveTap) { driveTap = false; if (driveEnd) { drive = null; driveEnd = false; } }
     } else {
       const h = snap.held;
@@ -535,12 +577,13 @@ export function startPlay({ canvas, gl, params }) {
       const t = trigger.update(h.fire, pending.fire, true);
       intent.fire = t.fire; arsenalIn.fire = t.fire; arsenalIn.firePressed = t.firePressed;
       arsenalIn.reload = pending.reload; arsenalIn.weapon = pending.weapon;
-      held.melee = h.melee; held.grenade = h.grenade; held.interact = h.interact;
+      held.melee = h.melee; held.grenade = h.grenade; held.interact = h.interact; held.tac = h.tacCom;
     }
     press.interact = pending.interact || drivePending.interact; press.melee = pending.melee || drivePending.melee;
+    press.objective = pending.objective || drivePending.objective; press.equip = pending.equip || drivePending.equip; press.switched = pending.switched;
     intent.grenade = held.grenade; intent.interactHeld = held.interact;
-    pending.cover = false; pending.fire = false; pending.reload = false; pending.weapon = null; pending.interact = false; pending.melee = false;
-    drivePending.interact = false; drivePending.melee = false;
+    pending.cover = false; pending.fire = false; pending.reload = false; pending.weapon = null; pending.interact = false; pending.melee = false; pending.objective = false; pending.equip = false; pending.switched = false;
+    drivePending.interact = false; drivePending.melee = false; drivePending.objective = false; drivePending.equip = false;
     intent.camYaw = cam.yaw;
     lastTap = intent.tap;
     return intent;
@@ -562,10 +605,10 @@ export function startPlay({ canvas, gl, params }) {
     const lines = [
       fight ? `GYMS OF WAR \u2014 ${ARENA_TITLES[run.arena].toUpperCase()}` : 'GUNPLAY TEST',
       'Mouse + keys: WASD move, mouse look, right mouse aim, left mouse fire, R reload (press again on the bright zone), 1 / 3 or wheel switch, Space tap: take cover or roll, hold: sprint',
-      'Gamepad: left stick move, right stick look, LT aim, RT fire, RB reload (again on the bright zone), D-pad switch, A tap: take cover or roll, hold: sprint',
+      'Gamepad (Gears layout): left stick move, right stick look, LT aim, RT fire, RB reload (again on the bright zone), A tap: take cover or roll, hold: sprint, D-pad Right Regret / Down Guest Pass / Up kettlebells, Y finish or look at the objective, LB Tac/Com, Start pause, View controls',
       'In cover: aim to pop out, fire without aim to blind fire, push in + tap to vault, push toward a gap + tap to swap, pull away to leave',
     ];
-    if (fight) lines.push('E / X: hold to renew your membership when downed, another set when clear', 'F / B: tap bash, hold rev Cheat Day (The Regret)   G / LB: hold to aim a kettlebell, release to throw   E / X: finish a downed Rep, hold to revive Tobble');
+    if (fight) lines.push('E / X: hold to renew your membership when downed, another set when clear', 'F / B: tap bash, hold rev Cheat Day (The Regret)   G: hold to aim a kettlebell, release to throw (pad: D-pad Up, LT aim, RT throw)   E / Y: finish a downed Rep   E / X: hold to revive Tobble');
     lines.push('Sound starts after a click or key', '', `${mover.state}   ${mover.speed().toFixed(2)} m/s`, coverLine(), gunLine());
     if (fight) {
       lines.push(`fight: ${fight.enemies.filter(e => e.alive).length}/${fight.enemies.filter(e => e.state !== 'unused').length}  tokens ${fight.tokens.held().join(',') || '-'}  hp ${health.hp.toFixed(0)}`);
@@ -589,6 +632,70 @@ export function startPlay({ canvas, gl, params }) {
     else if (e.type === 'dry') sfx.play('dry', sfxVol('reloadVolume'));
   }
 
+  // The active reload's rising tick while the marker closes on the bright zone.
+  function stepReloadCue(dt) {
+    const r = arsenal.reload;
+    if (!r) { reloadCue.reset(); return; }
+    const row = TUNING.weapons[r.id], T = Math.max(row.reloadTime, TUNING.combat.minReloadTime);
+    const t = reloadCue.step(dt, r.t / T, row, r.press !== null);
+    if (t) sfx.play('reloadTick', TUNING.feedback.reloadTickVolume, 0, t.pitch);
+  }
+
+  // Arriving in cover with weight: the lens bumps, shakes and kicks wider, the world crawls for a moment, dust and rubble fly from the wall, the pad rumbles.
+  const dustAt = [0, 0, 0];
+  function onSlam() {
+    const fb = TUNING.feedback;
+    cam.slam();
+    sfx.play('thud', TUNING.cover.thudVolume);
+    hitstop.trigger();
+    if (input.device() === 'pad') rumble.pulse(fb.slamRumble, fb.slamRumbleTime);
+    const c = mover.cover;
+    if (c && simulating) {
+      const e = c.edge, p = edgePoint(e, c.t), S = TUNING.move.radius + TUNING.cover.gap;
+      dustAt[0] = p[0] - e.normal[0] * S; dustAt[1] = 0; dustAt[2] = p[1] - e.normal[1] * S;
+      effects.dust(dustAt, e.normal, e.tangent);
+    }
+  }
+
+  // This frame's facts for the tutorial hints (src/ui/tutorial.js).
+  function tutorialCtx(dt) {
+    const c = mover.cover, f = tutorialFacts;
+    const blocked = onTitle || menus.open || !simulating || !fight || health.downed || run.fading || ending.state !== 'off' || fight.clear;
+    if (blocked && !fight) return { blocked: true };
+    if (simulating && !blocked) { if (c) f.coverTime += dt; else { f.coverTime = 0; f.blindFired = false; } }
+    const id = arsenal.current(), am = arsenal.ammo[id], row = TUNING.weapons[id];
+    const lowAmmo = am.mag <= Math.max(0, TUNING.feedback.lowAmmoFrac) * row.mag && (row.infiniteReserve > 0 || am.reserve > 0);
+    f.thrown = f.lastKettlebells >= 0 && bag.count < f.lastKettlebells; f.lastKettlebells = bag.count;
+    const ex = actions ? actions.execution() : null;
+    const live = fight.enemies.filter(e => e.alive && e.state !== 'unused');
+    return {
+      blocked, device: input.device(), arena: run.arena, fightStarted: fight.started,
+      inCover: !!c, popped: !!c && c.pop >= 0.5, coverTime: f.coverTime, aimedKills: f.aimedKills, blindFired: f.blindFired,
+      lowAmmo, reloading: arsenal.reload !== null, revving: mover.state === 'rev', finishing: !!ex && ex.kind === 'stomp', thrown: f.thrown,
+      trainerSeen: live.some(e => e.kind === 'trainer'),
+      downedRep: live.some(e => e.state === 'downed' && Math.hypot(e.pos[0] - mover.pos[0], e.pos[2] - mover.pos[2]) < 12),
+      saunaOpen: fight.pads.some(p => p.state === 'open'),
+    };
+  }
+
+  // Tac/Com while LB is held: the objective and Tobble (with his health) as screen marks (an arrow at the edge when off screen).
+  function tacMarkers() {
+    if (!fight || !simulating) return null;
+    const tb = fight.tobble;
+    const model = tacComModel({
+      held: held.tac, blocked: onTitle || menus.open, objective: currentObjective(),
+      tobble: tb ? { pos: tb.pos, frac: tb.hp / Math.max(TUNING.tobble.health, 1), downed: tb.downed } : null,
+    });
+    if (!model.show) return null;
+    camera.updateMatrixWorld();
+    const items = model.items.map(it => {
+      projV.set(it.pos[0], it.pos[1], it.pos[2]).project(camera);
+      const mk = screenMark(projV.x, projV.y, projV.z > 1);
+      return { id: it.id, kind: it.kind, label: it.label, x: mk.x, y: mk.y, off: mk.off, angle: mk.angle, frac: it.frac, down: it.down };
+    });
+    return { show: true, items };
+  }
+
   function stepDummy(d, dt) {
     updateDummy(d.dummy, dt);
     if (d.dummy.alive && !d.wasAlive) d.view.respawn();
@@ -600,8 +707,10 @@ export function startPlay({ canvas, gl, params }) {
     const row = TUNING.weapons[e.id];
     const edge = mover.cover ? mover.cover.edge : null;
     muzzleOf(mover, stance, cam.yaw, TUNING.combat, muzzle);
+    // Blind fire wanders: the aim is turned by the drift, which sweeps side to side while fire is held.
+    const view = stance === 'blind' ? rotateYaw(camState.dir, blindFire.drift()) : camState.dir;
     const r = resolveShot({
-      lens: camState.pos, view: camState.dir, muzzle, spreadDeg: e.spread, range: row.range, boxes, targets: targetList,
+      lens: camState.pos, view, muzzle, spreadDeg: e.spread, range: row.range, boxes, targets: targetList,
       ignoreBox: edge ? edge.boxIndex : -1, rand: shotRand, aimed: stance === 'aim',
     });
     const hit = r.hit;
@@ -612,7 +721,8 @@ export function startPlay({ canvas, gl, params }) {
     shotLog.push({ t: simTime, kind: hit.kind, target: tg ? tg.id : null, point: hit.point.slice(), stance });
     if (shotLog.length > SHOT_LOG_CAP) shotLog.shift();
     const dir = [r.dir[0], r.dir[1], r.dir[2]];
-    fxQueue.push({ id: e.id, from: muzzle.slice(), dir, hit, target: tg, result });
+    fxQueue.push({ id: e.id, from: muzzle.slice(), dir, hit, target: tg, result, stance });
+    if (stance === 'blind') tutorialFacts.blindFired = true;
     if (result === 'kill' && !fight) {
       const d = dummies.find(x => x.dummy === tg);
       d.wasAlive = false;
@@ -623,6 +733,8 @@ export function startPlay({ canvas, gl, params }) {
     const row = TUNING.weapons[f.id], fb = TUNING.feedback;
     const tip = view.gunTip(shotFrom);
     cam.kick(row.kickPitch * (0.85 + 0.3 * Math.random()), (Math.random() * 2 - 1) * row.kickYaw);
+    // Blind fire kicks the lens harder and wilder.
+    if (f.stance === 'blind') { const m = Math.max(fb.blindShake, 1); cam.kick(row.kickPitch * (m - 1) * (0.85 + 0.3 * Math.random()), (Math.random() * 2 - 1) * (row.kickYaw * m + 0.4)); }
     effects.flash(tip, f.dir);
     effects.tracer(tip, f.hit.point);
     sfx.play(f.id === 'regret' ? 'rifle' : 'pistol', fb.shotVolume);
@@ -635,6 +747,7 @@ export function startPlay({ canvas, gl, params }) {
         effects.gel(f.hit.point, back, fb.killGelCount);
         effects.receipts(f.target.pos.map((v, i) => (i === 1 ? v + 1.2 : v)), fb.receiptCount);
         marker = 'kill'; markerT = fb.killMarkerTime;
+        if (f.stance === 'aim') tutorialFacts.aimedKills++;
         sfx.play('kill', fb.killVolume);
       } else if (f.result === 'down') {
         // The Rep goes down instead of dying: the kill marker without the burst.
@@ -652,6 +765,7 @@ export function startPlay({ canvas, gl, params }) {
   }
 
   const loop = createLoop({
+    timeScale: (real) => (simulating ? hitstop.scale(real) : 1),
     before(realSeconds) {
       snap = input.poll();
       // The menus read the pad themselves (and swallow the keys); a menu that was open at the start of this frame owns the whole frame, so
@@ -660,6 +774,7 @@ export function startPlay({ canvas, gl, params }) {
       menus.pad(realSeconds);
       const blocked = menuWas || menus.open;
       if (!blocked && snap.pressed.pause && !onTitle && !drive) openPause();
+      else if (!blocked && snap.pressed.controls && !onTitle && !drive) openControls();
       if (inputGate) {
         // After a menu closes: buttons still held from picking the item stay dead until they are let go.
         const h = snap.held;
@@ -670,7 +785,7 @@ export function startPlay({ canvas, gl, params }) {
       const driving = !!drive || driveTap;
       simulating = !blocked && !menus.open && (driving || shouldSimulate({ locked: input.isLocked(), device: input.device(), panelOpen: hooks.panelOpen() }));
       pauseBox.hidden = simulating || blocked || menus.open;
-      if (!simulating) { button.reset(); trigger.reset(); pending.cover = false; pending.fire = false; pending.reload = false; pending.weapon = null; pending.interact = false; pending.melee = false; return; }
+      if (!simulating) { button.reset(); trigger.reset(); pending.cover = false; pending.fire = false; pending.reload = false; pending.weapon = null; pending.interact = false; pending.melee = false; pending.objective = false; pending.equip = false; pending.switched = false; return; }
       const dt = Math.min(realSeconds, MAX_DT);
       aimHeld = snap.held.aim || (drive && drive.aim);
       cam.look(snap.lookDX * settings.mouseSens, snap.lookDY * settings.mouseSens, snap.lookX, snap.lookY, dt, aimHeld, padScale * settings.padSens);
@@ -679,7 +794,10 @@ export function startPlay({ canvas, gl, params }) {
       if (snap.pressed.reload) pending.reload = true;
       if (snap.pressed.interact) pending.interact = true;
       if (snap.pressed.melee) pending.melee = true;
-      for (const [action, w] of WEAPON_ACTIONS) if (snap.pressed[action]) pending.weapon = w;
+      if (snap.pressed.objective) pending.objective = true;
+      if (snap.pressed.equipKb) pending.equip = true;
+      // A weapon button puts the kettlebells away, except the second primary slot, which is empty in v1 (a press does nothing).
+      for (const [action, w] of WEAPON_ACTIONS) if (snap.pressed[action]) { pending.weapon = w; if (w !== 2) pending.switched = true; }
     },
     step(dt) {
       if (!simulating) return;
@@ -692,13 +810,25 @@ export function startPlay({ canvas, gl, params }) {
       if (run.fading || ending.locked) { inp.moveX = 0; inp.moveY = 0; inp.tap = false; inp.sprint = false; inp.fire = false; inp.grenade = false; arsenalIn.fire = false; arsenalIn.firePressed = false; }
       if (actions) {
         const still = ending.locked;   // the ending's cards: Doc does nothing
-        actions.step(dt, { meleeHeld: held.melee && !still, meleePressed: press.melee && !still, grenadeHeld: held.grenade && !still, interactHeld: held.interact && !still, interactPressed: press.interact && !still, device: input.device(), camYaw: cam.yaw, camPitch: cam.pitch });
+        actions.step(dt, {
+          meleeHeld: held.melee && !still, meleePressed: press.melee && !still, grenadeHeld: held.grenade && !still, interactHeld: held.interact && !still, interactPressed: press.interact && !still,
+          objectivePressed: press.objective && !still, equipPressed: press.equip && !still, switched: press.switched, aimHeld: !!inp.aim && !still, firePressed: arsenalIn.firePressed && !still,
+          device: input.device(), camYaw: cam.yaw, camPitch: cam.pitch,
+        });
+        if (actions.equipped()) {
+          // Kettlebells equipped (pad): LT aims the arc, RT throws, so the gun stays quiet.
+          inp.grenade = actions.grenadeIntent() && !run.fading && !still;
+          arsenalIn.reload = false;
+          arsenalIn.fire = false; arsenalIn.firePressed = false; inp.fire = false;
+        }
         if (actions.busy()) { arsenalIn.fire = false; arsenalIn.firePressed = false; inp.fire = false; }   // a throw in progress: no fire
       }
       mover.update(inp, dt);
       stance = fireStance(mover);
+      blindFire.update(dt, stance === 'blind');
       const events = arsenal.update(arsenalIn, stance, dt);
       for (const e of events) handleEvent(e);
+      stepReloadCue(dt);
       if (fight) { fv.tick(dt); stepFight(dt); stepEnding(dt); }
       for (const d of dummies) stepDummy(d, dt);
       if (crateTouch(mover.pos, LEVEL.ammoCrates, TUNING.combat.crateRadius)) {
@@ -711,15 +841,16 @@ export function startPlay({ canvas, gl, params }) {
       // Walking into the open gate starts the fade to the next arena.
       if (fight && gateWasOpen && !run.fading && inGate(LEVEL.exit, mover.pos) && run.touchGate()) sfx.play('clear', TUNING.feedback.killVolume);
     },
-    render(alpha, realSeconds) {
-      const dt = simulating ? Math.min(realSeconds, MAX_DT) : 0;
+    render(alpha, realSeconds, scale = 1) {
+      // dt is the simulation's own time: the real frame time, slowed while a hitstop crawls (so the visuals freeze with the world).
+      const dt = simulating ? Math.min(realSeconds * scale, MAX_DT) : 0;
       // The fade between arenas runs on real time. At 'swap' the screen is black: the next arena is built and the old one freed.
       for (const ev of run.step(Math.min(realSeconds, MAX_DT))) if (ev.type === 'swap') { enterArena(ev.to); pop('Progress photo saved.', 'photo', 2.6, 2); }
       if (hoursT > 0 && simulating) hoursT = Math.max(0, hoursT - dt);
       if (popState && popState.t > 0) popState.t -= dt;
       setFade(run.fade);
       aimIn.shot = fxQueue.length > 0;
-      aimIn.dir = camState.dir; aimIn.stance = stance; aimIn.weapon = arsenal.current(); aimIn.kettlebell = !!actions && actions.armed();
+      aimIn.dir = camState.dir; aimIn.stance = stance; aimIn.weapon = arsenal.current(); aimIn.kettlebell = !!actions && actions.handKb(); aimIn.blindDrift = blindFire.drift();
       view.update(alpha, dt, aimIn);
       for (const d of dummies) d.view.update(dt);
       for (const v of views) v.update(alpha, dt);
@@ -730,7 +861,7 @@ export function startPlay({ canvas, gl, params }) {
       }
       const p = mover.pos, q = mover.prevPos;
       for (let i = 0; i < 3; i++) target[i] = q[i] + (p[i] - q[i]) * alpha;
-      if (mover.slams > seenSlams) { seenSlams = mover.slams; cam.bump(); sfx.play('thud', TUNING.cover.thudVolume); }
+      if (mover.slams > seenSlams) { seenSlams = mover.slams; onSlam(); }
       const nextMode = cameraModeOf(mover);
       // Blending into aim (popping out of cover, or aiming in the open): the point under the reticle stays under it.
       if (nextMode === 'aim' && camMode !== 'aim') {
@@ -738,6 +869,15 @@ export function startPlay({ canvas, gl, params }) {
         cam.hold(castRay(camState.pos, camState.dir, TUNING.camera.holdRange, boxes, targetList, { ignoreBox: ce ? ce.boxIndex : -1 }).point);
       }
       camMode = nextMode; camSide = cameraSideOf(mover);
+      // The chainsaw, the grind and wild blind fire shake the lens (and the grind zooms and pulls in) for as long as they run.
+      const ax = actions ? actions.status() : NO_STATUS, fbs = TUNING.feedback;
+      if (simulating) {
+        if (ax.grinding) cam.sustain({ shake: fbs.grindShake, fov: -fbs.grindZoom, pull: fbs.grindPull });
+        else if (ax.revving) cam.sustain({ shake: fbs.revShake });
+        if (stance === 'blind' && intent.fire) cam.sustain({ shake: fbs.blindShakeAmp });
+        rumbleT -= dt;
+        if (rumbleT <= 0 && ax.revving && input.device() === 'pad') { rumbleT = 0.1; rumble.pulse(fbs.revRumble, 0.12); }
+      }
       const r = cam.update(dt, { target, mode: camMode, side: camSide }, boxes);
       camState.pos[0] = r.pos[0]; camState.pos[1] = r.pos[1]; camState.pos[2] = r.pos[2]; camState.fov = r.fov;
       camState.dir[0] = r.dir[0]; camState.dir[1] = r.dir[1]; camState.dir[2] = r.dir[2];
@@ -755,6 +895,17 @@ export function startPlay({ canvas, gl, params }) {
       const edge = mover.cover ? mover.cover.edge : null;
       const aimHit = castRay(camState.pos, camState.dir, 100, boxes, targetList, { ignoreBox: edge ? edge.boxIndex : -1 });
       padScale = input.device() === 'pad' && aimHit.target ? TUNING.look.pad.assist : 1;
+      // The cover glow: the cover a tap (or a run-in) would take right now, lit along its top.
+      let gt = null;
+      if (simulating && fbs.coverGlow > 0 && !health.downed && !run.fading && (mover.state === 'move' || mover.state === 'sprint')) {
+        approachDir(mover, { moveX: intent.moveX, moveY: intent.moveY, camYaw: cam.yaw }, glowDir);
+        gt = findCoverTarget(mover.coverEdges, boxes, mover.pos, glowDir, cam.yaw, TUNING.cover, TUNING.move.radius);
+      }
+      glowTarget = gt;
+      glow.update(simulating ? dt : Math.min(realSeconds, MAX_DT), gt);
+      // Tutorial hints, and the Tac/Com markers while LB is held.
+      hintShown = tutorial.step(dt, tutorialCtx(dt));
+      tacItems = tacMarkers();
       const covered = !!mover.cover && mover.cover.pop < 0.5; // tucked or blind: the reticle shows dimmed
       const spreadStance = stance || (mover.cover && (mover.cover.pop > 0 || covered) ? 'aim' : 'hip');
       const fm = fight ? damageFaceModel({ hp: health.hp, max: TUNING.health.max, downed: health.downed, downT: health.downT, hits, now: simTime }) : null;
@@ -767,6 +918,7 @@ export function startPlay({ canvas, gl, params }) {
         banner: !fight ? null : health.downed ? { title: `You've hit a plateau ${fm.downed.seconds}`, hint: promptText(fight.tobble && !fight.tobble.downed ? 'giveUpTobble' : 'giveUp', input.device()), hold: actions.giveUpFrac() } : fight.clear && !fight.boss ? { title: 'SET COMPLETE', hint: `${run.gateOpen ? 'Head for the GO gate!  ' : 'Rest 60 seconds!  '}${input.device() === 'pad' ? 'X' : 'E'} for another set` } : null,
         grenades: fight ? bag.count : null, action: ending.state === 'desk' && nearDesk(mover.pos, LEVEL.overlord && LEVEL.overlord.desk, TUNING.ending.deskReach) ? { text: promptText('cancel', input.device()), hold: ending.hold } : actions ? actions.prompt() : null,
         hours: hoursT > 0 ? hoursLine(run.checkpoint) : '',
+        hint: hintShown, tac: tacItems,
       }));
       sky.update(performance.now() / 1000);
       room.update(dt);
@@ -795,7 +947,7 @@ export function startPlay({ canvas, gl, params }) {
   }
 
   // ---- the menus: the title, the pause, the opening card
-  const GATED = ['cover', 'fire', 'aim', 'melee', 'interact', 'grenade', 'reload', 'sprint'];
+  const GATED = ['cover', 'fire', 'aim', 'melee', 'interact', 'grenade', 'reload', 'sprint', 'objective', 'equipKb', 'tacCom', 'controls'];
   let inputGate = false;      // true after a menu closes, until the buttons held from picking an item are let go
   let onTitle = false;        // the title screen (and its Settings / Controls cards): the attract camera runs, the HUD is hidden
   let orbitT = 0;
@@ -807,6 +959,11 @@ export function startPlay({ canvas, gl, params }) {
     if (menus.open || onTitle) return;
     releaseLock();
     menus.showPause();
+  }
+  function openControls() {
+    if (menus.open || onTitle) return;
+    releaseLock();
+    menus.showControls();
   }
   function goTitle() {
     run.restart();   // a fade in progress (a pause during the swap) must not swap an arena in under the title
@@ -833,6 +990,7 @@ export function startPlay({ canvas, gl, params }) {
       resume() { inputGate = true; input.requestLock(); },
       restart() { restart(); inputGate = true; input.requestLock(); },
       quit() { goTitle(); },
+      resetTutorial() { tutorial.reset(); },
     },
   });
   hooks.toTitle = () => { run.newRun(); goTitle(); };

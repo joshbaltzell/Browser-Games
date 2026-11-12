@@ -31,12 +31,12 @@ import { actionPrompt, createPlayerActions } from '../src/playerActions.js';
 test('actionPrompt order: a kettlebell in hand beats everything; Tobble downed in range beats a downed Rep; revving beats bash; the device swaps the keys; null when nothing applies', () => {
   const all = { grenadeHeld: true, interact: { kind: 'reviveTobble' }, reviving: true, revving: true, bashTarget: true, cutterNear: true, regretInHand: true };
   assert.deepEqual(actionPrompt({ ...all }), { text: 'Release G  throw', hold: null });
-  assert.deepEqual(actionPrompt({ ...all, device: 'pad' }), { text: 'Release LB  throw', hold: null });
+  assert.deepEqual(actionPrompt({ ...all, device: 'pad' }), { text: 'RT  throw', hold: null });
   const { grenadeHeld, ...noG } = all;
   assert.deepEqual(actionPrompt({ ...noG, holdFrac: 0.4 }), { text: 'Hold E  revive Tobble', hold: 0.4 });
   assert.deepEqual(actionPrompt({ ...noG, device: 'pad', reviving: false }), { text: 'Hold X  revive Tobble', hold: 0 });
   assert.equal(actionPrompt({ interact: { kind: 'finish' }, revving: true, bashTarget: true }).text, 'E  finish');
-  assert.equal(actionPrompt({ interact: { kind: 'finish' }, device: 'pad' }).text, 'X  finish');
+  assert.equal(actionPrompt({ interact: { kind: 'finish' }, device: 'pad' }).text, 'Y  finish');
   assert.deepEqual(actionPrompt({ revving: true, bashTarget: true, cutterNear: true, regretInHand: true }), { text: 'Cheat Day: run into a Rep', hold: null });
   assert.equal(actionPrompt({ bashTarget: true, cutterNear: true, regretInHand: true }).text, 'F  bash');
   assert.equal(actionPrompt({ bashTarget: true, device: 'pad' }).text, 'B  bash');

@@ -119,7 +119,7 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
     headNode.visible = headShown;
     return headShown;
   }
-  let drawW = 0, drawNx = 0, drawNz = 0;
+  let drawW = 0, drawNx = 0, drawNz = 0, flailT = 0;
   let clip = '', loopT = 0, entries = -1, slams = mover.slams || 0, slamT = Infinity;
 
   function update(alpha, dt, aim) {
@@ -180,6 +180,15 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
     } else {
       _dir[0] = 0; _dir[1] = -Math.sin(GUN_DOWN); _dir[2] = Math.cos(GUN_DOWN);
     }
+    // Blind fire is wild: the gun swings with the aim's drift and shakes about in the view (the hand and the head stay where they are).
+    if (aim && aim.stance === 'blind' && clipName.startsWith('coverBlind')) {
+      const fb = TUNING.feedback, k = fb.blindFlail, w = 2 * Math.PI * fb.blindFlailHz;
+      flailT += dt;
+      const yaw = ((aim.blindDrift || 0) * Math.PI / 180) + Math.sin(w * flailT) * k * 0.5;
+      const lift = Math.sin(w * 1.3 * flailT + 1) * k * 0.5;
+      const cy = Math.cos(yaw), sy = Math.sin(yaw), x = _dir[0], z = _dir[2];
+      _dir[0] = x * cy + z * sy; _dir[2] = -x * sy + z * cy; _dir[1] += lift;
+    }
     if (aim && aim.weapon) gun.setWeapon(aim.weapon);
     gun.place([_v.x, _v.y, _v.z], _dir);
     if (aim && aim.shot) gun.shot();
@@ -195,6 +204,16 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
     return out;
   }
 
+  // The cutter's leading edge in world space, for the sparks and the grind's spray.
+  const _blade = [0, 0, 0];
+  function bladePos(out = [0, 0, 0]) {
+    group.updateMatrixWorld(true);
+    gun.blade(_blade);
+    _v.set(_blade[0], _blade[1], _blade[2]).applyMatrix4(group.matrixWorld);
+    out[0] = _v.x; out[1] = _v.y; out[2] = _v.z;
+    return out;
+  }
+
   function dispose() {
     rig.dispose();
     rig.shadow.geometry.dispose();
@@ -203,5 +222,5 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
 
   // Start the throw's follow-through (play on release).
   const throwNow = () => { throwLeft = Math.max(TUNING.grenade.throwTime, 1e-3); };
-  return { group, update, dispose, rig, anim, fadeHeadFor, gun, gunTip, throwNow, kettlebell: kb };
+  return { group, update, dispose, rig, anim, fadeHeadFor, gun, gunTip, bladePos, throwNow, kettlebell: kb };
 }

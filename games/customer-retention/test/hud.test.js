@@ -115,13 +115,13 @@ test('hudModel: in cover (tucked or blind) the reticle shows dimmed at coverReti
   m = base(a, { stance: null, covered: true, feedback: { ...TUNING.feedback, coverReticleOpacity: 0.2 } }); assert.equal(m.reticle.opacity, 0.2);
 });
 
-test('hudModel: the reload prompt says "R again on the bright zone" until the press, then hides; "RB" on a pad', () => {
+test('hudModel: the reload prompt says "PRESS R AGAIN IN THE BRIGHT ZONE" until the press, then hides; "RB" on a pad', () => {
   const a = createArsenal();
   a.set('regret', { mag: 10 });
   a.update({ ...idle, reload: true }, 'move', 0);
   a.update(idle, 'move', 0.5);
-  assert.equal(base(a).reload.prompt, 'R again on the bright zone');
-  assert.equal(base(a, { device: 'pad' }).reload.prompt, 'RB again on the bright zone');
+  assert.equal(base(a).reload.prompt, 'PRESS R AGAIN IN THE BRIGHT ZONE');
+  assert.equal(base(a, { device: 'pad' }).reload.prompt, 'PRESS RB AGAIN IN THE BRIGHT ZONE');
   a.update({ ...idle, reload: true }, 'move', 0);
   assert.notEqual(a.reload.press, null);
   assert.equal(base(a).reload.prompt, '');
@@ -135,7 +135,7 @@ test('hudModel: an empty magazine with no reload running says "R to reload" ("RB
   assert.equal(base(a).reload.prompt, 'R to reload');
   assert.equal(base(a, { device: 'pad' }).reload.prompt, 'RB to reload');
   a.update({ ...idle, reload: true }, 'move', 0);
-  assert.equal(base(a).reload.prompt, 'R again on the bright zone');
+  assert.equal(base(a).reload.prompt, 'PRESS R AGAIN IN THE BRIGHT ZONE');
 });
 
 test('hudModel alert: RELOAD at or below lowAmmoFrac, EMPTY at 0, NO AMMO only with magazine and reserve both empty (LOW AMMO with rounds left and no reserve), hidden while reloading, pad names RB', () => {
@@ -144,28 +144,28 @@ test('hudModel alert: RELOAD at or below lowAmmoFrac, EMPTY at 0, NO AMMO only w
   a.set('regret', { mag: 11 });
   assert.equal(base(a).alert.show, false, '11 of 50 is above 20 percent');
   a.set('regret', { mag: 10 });
-  let m = base(a); assert.deepEqual(m.alert, { show: true, text: 'RELOAD  R', kind: 'low' });
-  assert.equal(base(a, { device: 'pad' }).alert.text, 'RELOAD  RB');
+  let m = base(a); assert.deepEqual({ show: m.alert.show, text: m.alert.text, kind: m.alert.kind }, { show: true, text: 'RELOAD \u2014 R', kind: 'low' });
+  assert.equal(base(a, { device: 'pad' }).alert.text, 'RELOAD \u2014 RB');
   a.set('regret', { mag: 0 });
-  assert.equal(base(a).alert.text, 'EMPTY — RELOAD  R'); assert.equal(base(a).alert.kind, 'empty');
-  assert.equal(base(a, { device: 'pad' }).alert.text, 'EMPTY — RELOAD  RB');
+  assert.equal(base(a).alert.text, 'EMPTY \u2014 RELOAD \u2014 R'); assert.equal(base(a).alert.kind, 'empty');
+  assert.equal(base(a, { device: 'pad' }).alert.text, 'EMPTY \u2014 RELOAD \u2014 RB');
   // No alert with the banner up; reticle and prompt are untouched by the alert.
   assert.equal(base(a, { banner: { title: 'x', hint: 'y' } }).alert.show, false);
   assert.equal(base(a).reload.prompt, 'R to reload');
   // NO AMMO: nothing left to load.
   a.set('regret', { mag: 0, reserve: 0 });
-  assert.deepEqual(base(a).alert, { show: true, text: 'NO AMMO', kind: 'none' });
+  assert.deepEqual({ ...base(a).alert, scale: 0, pulseHz: 0 }, { show: true, text: 'NO AMMO', kind: 'none', scale: 0, pulseHz: 0 });
   // Rounds left in the magazine and no reserve: low ammo, but not NO AMMO and no RELOAD prompt (there is nothing to load).
   a.set('regret', { mag: 5, reserve: 0 });
-  assert.deepEqual(base(a).alert, { show: true, text: 'LOW AMMO', kind: 'low' });
+  assert.deepEqual({ ...base(a).alert, scale: 0, pulseHz: 0 }, { show: true, text: 'LOW AMMO', kind: 'low', scale: 0, pulseHz: 0 });
   a.set('regret', { mag: 5, reserve: 30 });
-  assert.equal(base(a).alert.text, 'RELOAD  R');
+  assert.equal(base(a).alert.text, 'RELOAD \u2014 R');
   a.set('regret', { mag: 0, reserve: 30 });
-  assert.equal(base(a).alert.text, 'EMPTY \u2014 RELOAD  R');
+  assert.equal(base(a).alert.text, 'EMPTY \u2014 RELOAD \u2014 R');
   // The pistol has infinite reserve: low means RELOAD, never NO AMMO.
   a.update({ ...idle, weapon: 3 }, 'move', 1);
   a.set('pistol', { mag: 2 });
-  assert.equal(base(a).alert.text, 'RELOAD  R');
+  assert.equal(base(a).alert.text, 'RELOAD \u2014 R');
   // Hidden while reloading.
   a.set('pistol', { mag: 0 });
   a.update({ ...idle, reload: true }, 'move', 0);

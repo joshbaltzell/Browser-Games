@@ -4,6 +4,7 @@
 export const ACTIONS = Object.freeze([
   'aim', 'fire', 'cover', 'sprint', 'reload', 'melee', 'interact', 'grenade',
   'weapon1', 'weapon2', 'weapon3', 'weaponNext', 'weaponPrev', 'objective', 'pause',
+  'tacCom', 'equipKb', 'controls',
 ]);
 
 const KEYS = {
@@ -12,11 +13,15 @@ const KEYS = {
   Tab: 'objective', Escape: 'pause',
 };
 const MOUSE = { 0: 'fire', 2: 'aim' };
-// Standard gamepad button index -> action. Triggers (6, 7) are analogue.
-const PAD_BUTTONS = {
-  0: 'cover', 1: 'melee', 2: 'interact', 3: 'objective', 4: 'grenade', 5: 'reload',
-  6: 'aim', 7: 'fire', 9: 'pause', 13: 'weapon3', 14: 'weapon1', 15: 'weapon2',
-};
+// Standard gamepad button index -> action: the Gears of War layout. Triggers (6, 7) are analogue. A: cover, roll, vault, swap (tap) / roadie run (hold).
+// B: bash (tap) / rev Cheat Day (hold). X: interact. Y: finish a downed alien, else look toward the objective. LB (held): the Tac/Com overlay. RB: reload.
+// LT aim, RT fire. D-pad up: equip kettlebells; right: The Regret; left: the second primary slot (empty in v1); down: Guest Pass.
+// Start: pause; View: the controls card. The stick clicks (10, 11) are unbound.
+export const PAD_MAP = Object.freeze({
+  0: 'cover', 1: 'melee', 2: 'interact', 3: 'objective', 4: 'tacCom', 5: 'reload',
+  6: 'aim', 7: 'fire', 8: 'controls', 9: 'pause', 12: 'equipKb', 13: 'weapon3', 14: 'weapon2', 15: 'weapon1',
+});
+const PAD_BUTTONS = PAD_MAP;
 const MOVE_KEYS = { KeyW: [0, -1], KeyS: [0, 1], KeyA: [-1, 0], KeyD: [1, 0] };
 
 // True when keyboard focus is in a field the player types into (text, number, search...), so game keys must not act.

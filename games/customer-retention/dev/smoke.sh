@@ -289,6 +289,7 @@ ev "__cr.drive({})" >/dev/null
 sleep 0.5
 fexpect "boots Check-in Turnstiles with 4 idle Associates and no fight yet" "(() => { const f = __cr.fight(); return __cr.level() === 'kioskRow' && f.enemies.length === 4 && f.enemies.every(e => e.state === 'idle') && f.started === false && __cr.dummies().length === 0 ? 'ok' : 'bad ' + JSON.stringify(f.enemies.map(e => e.state)); })()"
 fexpect "boots with Tobble beside the spawn, a dormant Spawn Sauna and 4 kettlebells" "(() => { const t = __cr.tobble(), p = __cr.pads(); return t && Math.hypot(t.pos[0] - 1.4, t.pos[2] + 13.8) < 0.5 && p.length === 1 && p[0].state === 'dormant' && __cr.grenades().count === 4 && __cr.fight().enemies.every(e => e.kind === 'associate') ? 'ok' : 'bad ' + JSON.stringify([t, p, __cr.grenades()]); })()"
+fexpect "Piece 4b: the run-to-cover hint shows at the start of the Turnstiles" "(() => { const h = __cr.hint(), el = document.querySelector('.cr-hint'); return h && h.id === 'run' && /RUN to cover/.test(h.text) && el && !el.hidden && /RUN to cover/.test(el.textContent) ? 'ok' : 'bad ' + JSON.stringify(h); })()"
 pw screenshot --filename "$SHOT_DIR/kiosk-start.png" >/dev/null
 
 # Crossing the lockdown line starts the fight; every Associate is in a cover state within 5 s.
@@ -308,6 +309,10 @@ ev "__cr.restart()" >/dev/null
 ev "(async () => { __cr.drive({}); __cr.place('kioskLeft'); __cr.clearFightLog(); await __w(100); await __step({ moveY: -1, tap: true }); await __until(() => __cr.player().state === 'cover', 3000); window.__bad = 0; window.__covered = 0; const t0 = performance.now(); while (performance.now() - t0 < 10000) { const p = __cr.player(); if (p.cover && p.cover.exposed === false) window.__covered++; await __w(50); } return 'ok'; })()" >/dev/null
 fexpect "tucked behind K1 for 10 s: no playerHit and full health" "(() => { const hits = __log('playerHit').length, shots = __log('enemyShot').length; return __covered > 100 && hits === 0 && __cr.health().hp === 100 && __cr.player().state === 'cover' ? 'ok' : 'bad hits ' + hits + ' shots ' + shots + ' covered ' + __covered; })()"
 pw screenshot --filename "$SHOT_DIR/tucked.png" >/dev/null
+fexpect "Piece 4b: the cover glow is hidden while tucked in cover" "(() => { const g = __cr.glow(); return !g.visible ? 'ok' : 'bad ' + JSON.stringify(g); })()"
+ev "(async () => { __cr.drive({}); __cr.place('kioskLeft'); await __w(700); return 'ok'; })()" >/dev/null
+fexpect "Piece 4b: out of cover and facing cover in reach, the glow strip is lit, mint, on top of the cover" "(() => { const g = __cr.glow(); return g.visible && g.opacity > 0.1 && g.edge && g.pos[1] > 0.9 ? 'ok' : 'bad ' + JSON.stringify(g) + ' ' + JSON.stringify(__cr.coverTarget()); })()"
+pw screenshot --filename "$SHOT_DIR/cover-glow.png" >/dev/null
 
 # Kill the four starters: god mode, in the open, aiming at the head of each Associate while it is popped (or at a downed one lying on the floor).
 # The sauna opens after two kills and sends more, so the arena does not clear here; the end-to-end check below closes it.

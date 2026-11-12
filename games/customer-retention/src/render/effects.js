@@ -160,8 +160,23 @@ export function createEffects(scene, fb = () => TUNING.feedback) {
     },
     enemyFlash(pos, dir) { spawnFlash(eFlashes, pos, dir); },
     enemyTracer(from, to) { spawnTracer(eTracers, from, to); },
-    spark(pos, normal) {
-      for (let n = 0; n < fb().sparkCount; n++) {
+    // The slam's dust: `count` cream puffs thrown out from the contact point (pos on the wall at the floor), mostly along the wall (tangent) and a
+    // little away from it (normal), plus `debris` bits of rubble that fall. Puffs and rubble share the steam, dust and spark pools.
+    dust(pos, normal, tangent, count = fb().slamDust, debris = fb().slamDebris) {
+      for (let n = 0; n < count; n++) {
+        const i = puffs.pool.spawn(), side = (n % 2 ? 1 : -1) * (0.4 + Math.random() * 1.8), out = 0.3 + Math.random() * 1.2;
+        put(puffs, i, pos[0] + normal[0] * 0.3, pos[1] + 0.15, pos[2] + normal[1] * 0.3);
+        vel(puffs, i, tangent[0] * side + normal[0] * out + rnd(0.2), 0.3 + Math.random() * 0.6, tangent[1] * side + normal[1] * out + rnd(0.2));
+        puffs.aux[i * 4 + 3] = 0.25 + Math.random() * 0.2;
+      }
+      for (let n = 0; n < debris; n++) {
+        const i = sparks.pool.spawn();
+        put(sparks, i, pos[0] + normal[0] * 0.2, pos[1] + 0.2, pos[2] + normal[1] * 0.2);
+        burst(sparks, i, [normal[0] + tangent[0] * rnd(1), 0.9, normal[1] + tangent[1] * rnd(1)], 0.6, 3.5);
+      }
+    },
+    spark(pos, normal, count = fb().sparkCount) {
+      for (let n = 0; n < count; n++) {
         const i = sparks.pool.spawn();
         put(sparks, i, pos[0], pos[1], pos[2]);
         burst(sparks, i, normal, 0.9, 3);
