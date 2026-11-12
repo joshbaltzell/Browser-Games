@@ -80,4 +80,39 @@ export const TUNING = {
     autoMinSpeed: 3,      // m/s, speed from before contact needed for a run-in (jog is 4.5)
     autoTime: 0.08,       // s of continuous qualifying push before a run-in grabs
   },
+  // Weapons. Times in s, angles in deg, zones and finishes are fractions of the reload bar or s as noted.
+  // The 0/1 fields are flags (auto, infiniteReserve, autoReload).
+  weapons: {
+    regret: {
+      mag: 50, reserveStart: 250, reserveMax: 400, infiniteReserve: 0, // rounds
+      auto: 1, rate: 9, damage: 16, headMult: 2, range: 60,            // shots/s, damage per body hit, head multiplier, m
+      spreadAim: 0.6, spreadHip: 2.5, spreadBlind: 7,                  // deg, cone by stance
+      bloomPerShot: 0.25, bloomMax: 2, bloomRecover: 5,                // deg per shot, deg cap, deg/s recovery
+      kickPitch: 0.7, kickYaw: 0.25,                                   // deg of camera kick per shot (yaw is plus or minus)
+      reloadTime: 2.2,                                                 // s, whole reload bar
+      perfectStart: 0.38, perfectEnd: 0.46, goodStart: 0.30, goodEnd: 0.62, // fractions of the bar
+      perfectFinish: 0.1, goodFinish: 0.35,                            // s from the press to the end of the reload
+      jamPenalty: 0.9,                                                 // s added to reloadTime when the press jams
+      perfectDamage: 1.1, switchTime: 0.35,                            // damage multiplier for the perfect magazine, s to ready
+    },
+    pistol: {
+      mag: 12, reserveStart: 0, reserveMax: 0, infiniteReserve: 1,
+      auto: 0, rate: 4, damage: 30, headMult: 2.5, range: 50,
+      spreadAim: 0.25, spreadHip: 1.2, spreadBlind: 5,
+      bloomPerShot: 0.8, bloomMax: 2.5, bloomRecover: 6,
+      kickPitch: 1.6, kickYaw: 0.4,
+      reloadTime: 1.4,
+      perfectStart: 0.38, perfectEnd: 0.46, goodStart: 0.30, goodEnd: 0.62,
+      perfectFinish: 0.1, goodFinish: 0.3,
+      jamPenalty: 0.8,
+      perfectDamage: 1.1, switchTime: 0.3,
+    },
+  },
+  // Combat rules shared by every weapon.
+  combat: {
+    fireBuffer: 0.12,     // s, a semi-auto press during the cooldown is kept this long
+    autoReload: 1,        // 1 on, 0 off: firing an empty magazine starts a reload
+    minRate: 0.1,         // shots/s, floor for a weapon's rate
+    minReloadTime: 0.05,  // s, floor for a weapon's reloadTime
+  },
 };

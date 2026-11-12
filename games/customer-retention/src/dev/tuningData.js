@@ -1,10 +1,26 @@
 import { TUNING } from '../tuning.js';
 
 // The tunable numbers: every number in TUNING.move (but radius and height),
-// TUNING.camera, TUNING.look and TUNING.cover, with a slider range, plus look.invertY.
+// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons and TUNING.combat, with a slider range, plus look.invertY.
 // Pure data and helpers; no DOM.
 
 const n = (path, min, max, step) => ({ path, min, max, step });
+
+// One weapon's slider rows, in the order of its TUNING row.
+function weaponRows(id) {
+  const r = (k, min, max, step) => n(`weapons.${id}.${k}`, min, max, step);
+  return [
+    r('mag', 1, 200, 1), r('reserveStart', 0, 1000, 10), r('reserveMax', 0, 1000, 10), r('infiniteReserve', 0, 1, 1),
+    r('auto', 0, 1, 1), r('rate', 0, 30, 0.5), r('damage', 0, 200, 1), r('headMult', 1, 5, 0.05), r('range', 5, 200, 1),
+    r('spreadAim', 0, 20, 0.05), r('spreadHip', 0, 20, 0.05), r('spreadBlind', 0, 20, 0.05),
+    r('bloomPerShot', 0, 20, 0.05), r('bloomMax', 0, 20, 0.05), r('bloomRecover', 0, 20, 0.05),
+    r('kickPitch', 0, 20, 0.05), r('kickYaw', 0, 20, 0.05),
+    r('reloadTime', 0, 5, 0.01),
+    r('perfectStart', 0, 1, 0.01), r('perfectEnd', 0, 1, 0.01), r('goodStart', 0, 1, 0.01), r('goodEnd', 0, 1, 0.01),
+    r('perfectFinish', 0, 5, 0.01), r('goodFinish', 0, 5, 0.01), r('jamPenalty', 0, 5, 0.01),
+    r('perfectDamage', 1, 5, 0.05), r('switchTime', 0, 5, 0.01),
+  ];
+}
 
 export const PANEL = Object.freeze([
   n('move.jog', 1, 10, 0.1), n('move.aimWalk', 0.5, 6, 0.1), n('move.sprint', 2, 14, 0.1),
@@ -49,6 +65,9 @@ export const PANEL = Object.freeze([
   n('cover.slamSquash', 0, 1, 0.01), n('cover.slamSquashTime', 0, 2, 0.01), n('cover.thudVolume', 0, 1, 0.05),
   n('cover.autoSlam', 0, 1, 1), n('cover.autoAngle', 0, 90, 1), n('cover.autoDist', 0, 1, 0.01),
   n('cover.autoMinTilt', 0, 1, 0.05), n('cover.autoMinSpeed', 0, 12, 0.1), n('cover.autoTime', 0, 1, 0.01),
+  ...weaponRows('regret'), ...weaponRows('pistol'),
+  n('combat.fireBuffer', 0, 0.5, 0.01), n('combat.autoReload', 0, 1, 1),
+  n('combat.minRate', 0.01, 1, 0.01), n('combat.minReloadTime', 0.01, 0.5, 0.01),
 ]);
 
 const PANEL_BY_PATH = new Map(PANEL.map(p => [p.path, p]));
@@ -109,7 +128,7 @@ function text(v, indent) {
   return `{\n${lines.join('\n')}\n${'  '.repeat(indent)}}`;
 }
 
-// The move, camera, look and cover blocks as object-literal text to paste into src/tuning.js.
+// The move, camera, look, cover, weapons and combat blocks as object-literal text to paste into src/tuning.js.
 export function formatForTuningFile(current = TUNING) {
-  return ['camera', 'cover', 'look', 'move'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
+  return ['camera', 'combat', 'cover', 'look', 'move', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
 }
