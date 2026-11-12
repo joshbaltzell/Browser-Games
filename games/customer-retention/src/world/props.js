@@ -12,6 +12,7 @@ const PRODUCTS = [PALETTE.hotPink, PALETTE.playerOrange, PALETTE.glorpPurple, PA
 
 // Which prop a box becomes, from its kind and size (the boxes carry no names).
 export function propKind(b) {
+  if (b.prop) return b.prop;   // a level can name the look it wants ('bar', 'bowl', 'booth', 'menu', 'seat', 'plant', 'velvet')
   const w = b.max[0] - b.min[0], d = b.max[2] - b.min[2], h = b.max[1] - b.min[1];
   const len = Math.max(w, d), dep = Math.min(w, d);
   if (b.kind === 'pillar') return 'pillar';
@@ -193,6 +194,89 @@ function addSquatRack(p, b, seed) {
   for (const u of [0.2, 0.27, len - 0.2, len - 0.27]) f.cyl(u, v, y, u === 0.2 || u === len - 0.2 ? 0.2 : 0.17, 0.06, u === 0.2 || u === len - 0.2 ? PALETTE.ink : PRODUCTS[seed % PRODUCTS.length], 'u');
 }
 
+// Smoothie Bar and Cancellation Desk props. The same rules: inside the box, never above it.
+// Blender bar: a long counter with a back panel and a row of blender jugs on each side, up to the box top.
+function addBlenderBar(p, b, seed) {
+  const f = frame(p, b), { len, dep } = f, top = b.max[1], cy = 1.1;
+  f.slab(0.06, len - 0.06, 0.04, dep - 0.04, 0, 0.08, PALETTE.shadowTint);                  // toe kick
+  f.slab(0.04, len - 0.04, 0.02, dep - 0.02, 0.08, cy - 0.06, PALETTE.hotPink);             // cabinet
+  f.slab(0.15, len - 0.15, 0, 0.05, 0.3, 0.7, PALETTE.cream);                               // stripe, front
+  f.slab(0.15, len - 0.15, dep - 0.05, dep, 0.3, 0.7, PALETTE.cream);                       // stripe, back
+  f.slab(-0.04, len + 0.04, -0.04, dep + 0.04, cy - 0.06, cy, PALETTE.cream);               // counter top
+  f.slab(0, len, dep / 2 - 0.04, dep / 2 + 0.04, cy, top, PALETTE.lilac);                   // back panel up to the top
+  f.slab(0, len, dep / 2 - 0.07, dep / 2 + 0.07, top - 0.1, top, PALETTE.shadowTint);       // header rail
+  const n = Math.max(2, Math.floor(len / 0.9));
+  for (let i = 0; i < n; i++) for (const v of [dep * 0.2, dep * 0.8]) {
+    const u = (i + 0.5) / n * len, c = PRODUCTS[(i + seed + (v > dep / 2 ? 2 : 0)) % PRODUCTS.length], jt = Math.min(top - 0.14, cy + 0.55);
+    f.cyl(u, v, cy + 0.04, 0.13, 0.08, PALETTE.ink);                                          // blender base
+    f.cyl(u, v, (cy + 0.08 + jt) / 2, 0.11, jt - cy - 0.08, c);                               // jug
+    f.cyl(u, v, jt + 0.03, 0.12, 0.06, PALETTE.cream);                                        // lid
+  }
+}
+
+// Build-Your-Bowl counter: a teal cabinet, a cream top and a row of bowls of fruit set into it.
+function addBowlCounter(p, b, seed) {
+  const f = frame(p, b), { len, dep } = f, top = b.max[1];
+  f.slab(0.06, len - 0.06, 0.05, dep - 0.05, 0, 0.1, PALETTE.shadowTint);
+  f.slab(0.03, len - 0.03, 0.03, dep - 0.03, 0.1, top - 0.1, PALETTE.teal);
+  f.slab(0.2, len - 0.2, 0, 0.06, 0.25, 0.65, PALETTE.hotPink);
+  f.slab(0.2, len - 0.2, dep - 0.06, dep, 0.25, 0.65, PALETTE.hotPink);
+  f.slab(-0.04, len + 0.04, -0.04, dep + 0.04, top - 0.1, top - 0.04, PALETTE.cream);
+  const n = Math.max(2, Math.floor(len / 0.6));
+  for (let i = 0; i < n; i++) {
+    const u = (i + 0.5) / n * len;
+    f.cyl(u, dep / 2, top - 0.035, 0.2, 0.07, PALETTE.ink);                                   // bowl
+    f.cyl(u, dep / 2, top - 0.02, 0.17, 0.04, PRODUCTS[(i + seed) % PRODUCTS.length]);        // the fill
+  }
+}
+
+// High-top booth table: a cream pedestal body with a stripe and a lilac top.
+function addBooth(p, b, seed) {
+  const f = frame(p, b), { len, dep } = f, top = b.max[1];
+  f.slab(0.05, len - 0.05, 0.05, dep - 0.05, 0, 0.1, PALETTE.shadowTint);
+  f.slab(0.08, len - 0.08, 0.08, dep - 0.08, 0.1, top - 0.08, PALETTE.cream);
+  f.slab(0.08, len - 0.08, 0.04, 0.09, 0.4, 0.55, PRODUCTS[seed % PRODUCTS.length]);
+  f.slab(0.08, len - 0.08, dep - 0.09, dep - 0.04, 0.4, 0.55, PRODUCTS[seed % PRODUCTS.length]);
+  f.slab(-0.04, len + 0.04, -0.04, dep + 0.04, top - 0.08, top, PALETTE.lilac);
+}
+
+// Menu-board pillar: a cream column with a chalkboard band and bars of "menu text" all round it.
+function addMenuBoard(p, b, seed) {
+  p.box(...grow(b, 0, b.min[1], b.max[1]), PALETTE.cream);
+  p.box(...grow(b, 0.05, b.min[1], b.min[1] + 0.25), PALETTE.shadowTint);
+  p.box(...grow(b, 0.04, b.min[1] + 1.1, b.min[1] + 2.9), PALETTE.ink);
+  [1.4, 1.75, 2.1, 2.45].forEach((y, i) => p.box(...grow(b, 0.055, b.min[1] + y, b.min[1] + y + 0.1), PRODUCTS[(i + seed) % PRODUCTS.length]));
+  p.box(...grow(b, 0.05, b.max[1] - 0.25, b.max[1]), PALETTE.shadowTint);
+}
+
+// Bench seat: a lilac frame with a teal slatted top.
+function addSeat(p, b) {
+  const f = frame(p, b), { len, dep } = f, top = b.max[1];
+  f.slab(0.05, 0.2, 0.05, dep - 0.05, 0, top - 0.12, PALETTE.lilac);
+  f.slab(len - 0.2, len - 0.05, 0.05, dep - 0.05, 0, top - 0.12, PALETTE.lilac);
+  f.slab(0, len, 0, dep, top - 0.12, top, PALETTE.teal);
+  for (let u = 0.3; u < len - 0.2; u += 0.3) f.slab(u, u + 0.03, 0, dep, top - 0.125, top - 0.1, PALETTE.shadowTint);
+}
+
+// Planter: an orange trough with a row of leafy green balls that stay under the box top.
+function addPlant(p, b, seed) {
+  const f = frame(p, b), { len, dep } = f, top = b.max[1];
+  f.slab(0.02, len - 0.02, 0.02, dep - 0.02, 0, top * 0.5, PALETTE.playerOrange);
+  f.slab(0, len, 0, dep, top * 0.5 - 0.06, top * 0.5, PALETTE.shadowTint);
+  const n = Math.max(2, Math.floor(len / 0.5)), r = Math.min(dep / 2 - 0.02, (top - top * 0.5) / 2 - 0.01);
+  for (let i = 0; i < n; i++) f.cyl((i + 0.5) / n * len, dep / 2, top * 0.5 + r + 0.005, r, r * 2, i % 2 ? PALETTE.gel : PALETTE.teal);
+}
+
+// Velvet-rope partition (Cancellation Desk): a dark base, a gold-pink rail on top and a stripe.
+function addVelvet(p, b) {
+  const f = frame(p, b), { len, dep } = f, top = b.max[1];
+  f.slab(0.04, len - 0.04, 0.04, dep - 0.04, 0, 0.12, PALETTE.shadowTint);
+  f.slab(0.02, len - 0.02, 0.02, dep - 0.02, 0.12, top - 0.1, PALETTE.hotPink);
+  f.slab(0.1, len - 0.1, 0, 0.05, 0.3, 0.5, PALETTE.cream);
+  f.slab(0.1, len - 0.1, dep - 0.05, dep, 0.3, 0.5, PALETTE.cream);
+  f.slab(0, len, 0, dep, top - 0.1, top, PALETTE.playerOrange);
+}
+
 function addPillar(p, b) {
   p.box(...grow(b, 0, b.min[1], b.max[1]), PALETTE.cream);
   p.box(...grow(b, 0.05, b.min[1], b.min[1] + 0.25), PALETTE.shadowTint);      // base
@@ -225,6 +309,13 @@ export function propGeometry(boxes, floor = null) {
     else if (k === 'desk') addDesk(p, b);
     else if (k === 'shelf') addSquatRack(p, b, i);
     else if (k === 'pillar') addPillar(p, b);
+    else if (k === 'bar') addBlenderBar(p, b, i);
+    else if (k === 'bowl') addBowlCounter(p, b, i);
+    else if (k === 'booth') addBooth(p, b, i);
+    else if (k === 'menu') addMenuBoard(p, b, i);
+    else if (k === 'seat') addSeat(p, b);
+    else if (k === 'plant') addPlant(p, b, i);
+    else if (k === 'velvet') addVelvet(p, b);
     else p.box(b.min, b.max, PALETTE.lilac);
   });
   return mergeGeometries(p.list, false);

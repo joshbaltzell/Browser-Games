@@ -70,6 +70,9 @@ export const KIOSK_ROW = deepFreeze({
   tobble: { pos: [1.4, 0, -13.8], yaw: 0 },
   waypoints,
   ammoCrates: [{ pos: [5.5, 0, -12.5] }],
+  // The exit gate in the north wall, west of the front desk: it opens when the set is complete. pos is on the wall's inside face;
+  // yaw faces into the arena (the signs' convention, yaw PI looks toward -z); w is the doorway width.
+  exit: { pos: [-4.5, 0, Z], yaw: Math.PI, w: 3 },
   landmark: { pos: [0, 3, 14.7], text: 'FRONT DESK', w: 6, h: 1.2 },
   // More wall signs (view only): pos, the way it faces (yaw 0 faces +z), size and optional colours.
   signs: [

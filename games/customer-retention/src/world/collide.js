@@ -1,8 +1,11 @@
 // Axis-aligned box collision for the player capsule and the camera sphere.
 // Pure maths: no WebGL, no DOM.
 
-export function makeBox(min, max, kind = 'wall') {
-  return Object.freeze({ min: Object.freeze([...min]), max: Object.freeze([...max]), kind });
+// `prop` (optional) names the look the box is drawn with (props.js); it never changes how the box collides or gives cover.
+export function makeBox(min, max, kind = 'wall', prop = undefined) {
+  const b = { min: Object.freeze([...min]), max: Object.freeze([...max]), kind };
+  if (prop) b.prop = prop;
+  return Object.freeze(b);
 }
 
 const EPS = 1e-9;

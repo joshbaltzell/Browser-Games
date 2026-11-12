@@ -419,4 +419,62 @@ ev "__cr.drive(null)" >/dev/null
 check_console
 
 
-echo "smoke ok: ready, look test driven, grey room and Check-in Turnstiles fight driven (Tobble, finishers, bash, Cheat Day, kettlebells, Spawn Sauna, revives), perf $CALLS_ON calls ($CALLS_OFF without outlines), $TRIS triangles, no console errors; screenshots at $SHOT_DIR"
+# ---- The run (piece 1): Smoothie Bar, the Cancellation Desk, the gates, the swaps, the checkpoint and disposal.
+pw goto "http://localhost:$PORT/index.html?arena=smoothie" >/dev/null || fail "could not open the Smoothie Bar"
+sleep 2
+READY=$(ev "window.__cr && window.__cr.ready && !!window.__cr.run")
+[ "$READY" = "true" ] || fail "run: not ready ($READY)"
+ev "(() => { window.__w = (ms) => new Promise(r => setTimeout(r, ms)); window.__until = async (f, ms = 4000) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (f()) return true; await __w(10); } return false; }; const st = document.createElement('style'); st.textContent = '#cr-pause { display: none !important; }'; document.head.appendChild(st); __cr.drive({}); __cr.god(true); return 'ok'; })()" >/dev/null
+rexpect() { # label, js expression returning 'ok' or a description
+  local r
+  r=$(ev "$2")
+  [ "$r" = "ok" ] || fail "run: $1: $(pw --raw eval "JSON.stringify([__cr.run(), __cr.gate(), __cr.gpu()])") ($r)"
+}
+rexpect "?arena=smoothie opens the Smoothie Bar with 5 idle Reps, the sauna dormant, the checkpoint set" "(() => { const f = __cr.fight(), r = __cr.run(); return __cr.level() === 'smoothieBar' && r.arena === 'smoothie' && r.checkpoint === 1 && f.enemies.filter(e => e.state !== 'unused').length === 5 && __cr.pads()[0].state === 'dormant' ? 'ok' : 'bad ' + JSON.stringify([r, f.enemies.length]); })()"
+rexpect "the hours line shows at the checkpoint" "__cr.run().hours === 'Cancellation hours: Tues 2:00–2:05' ? 'ok' : 'bad ' + __cr.run().hours"
+ev "(async () => { __cr.place('open'); await __w(5000); return 'ok'; })()" >/dev/null
+SM_CALLS=$(ev "__cr.stats().calls"); SM_TRIS=$(ev "__cr.stats().tris"); SM_FPS=$(ev "Math.round(__cr.stats().fps)")
+[ "$SM_CALLS" -lt 400 ] 2>/dev/null || fail "smoothie bar: draw calls '$SM_CALLS', expected under 400"
+[ "$SM_TRIS" -lt 300000 ] 2>/dev/null || fail "smoothie bar: triangles '$SM_TRIS', expected under 300000"
+echo "smoothie bar fight: $SM_FPS fps, $SM_CALLS calls, $SM_TRIS triangles"
+shotc smoothie-fight
+rexpect "the fight started and the Reps are shooting" "(() => __cr.fight().started && __cr.fightLog().some(x => x.type === 'enemyShot') ? 'ok' : 'bad')()"
+# Clear the arena in god mode: the gate opens, the banner shows.
+ev "(async () => { __cr.restart(); __cr.drive({}); __cr.clearArena(); await __until(() => __cr.run().gateOpen, 3000); await __w(1200); return 'ok'; })()" >/dev/null
+rexpect "clearing the Smoothie Bar opens the gate" "(() => { const r = __cr.run(), g = __cr.gate(); return r.cleared && r.gateOpen && g && g.open && g.openness > 0.99 ? 'ok' : 'bad'; })()"
+ev "(() => { const g = __cr.gate(); __cr.at(g.pos[0], g.pos[2] - 4.5, 0); __cr.look(0, 0.12); return 'ok'; })()" >/dev/null
+sleep 1.2
+shotc smoothie-gate
+GPU_SM=$(ev "(() => { const g = __cr.gpu(); return g.geometries + '/' + g.textures; })()")
+# Walk into the gate: fade, swap to the Desk, fade in.
+ev "(async () => { const g = __cr.gate(); __cr.at(g.pos[0], g.pos[2] - 4.5, 0); __cr.drive({ moveY: -1 }); window.__sawFade = false; const t0 = performance.now(); while (performance.now() - t0 < 6000 && __cr.run().arena === 'smoothie') { if (__cr.run().fade > 0.3) window.__sawFade = true; await __w(20); } __cr.drive({}); await __until(() => __cr.run().phase === 'play', 3000); return 'ok'; })()" >/dev/null
+rexpect "walking into the open gate fades and swaps to the Cancellation Desk; the checkpoint is the Desk" "(() => { const r = __cr.run(); return window.__sawFade && r.arena === 'desk' && r.checkpoint === 2 && r.phase === 'play' && r.fade === 0 && __cr.level() === 'cancellationDesk' ? 'ok' : 'bad ' + window.__sawFade; })()"
+rexpect "the Desk is a placeholder boss arena: no Reps, no fight, two saunas" "(() => { const f = __cr.fight(); return f.enemies.every(e => !e.alive) && !f.started && __cr.pads().length === 2 ? 'ok' : 'bad'; })()"
+rexpect "the hours line says By appointment" "__cr.run().hours === 'Cancellation hours: By appointment' ? 'ok' : 'bad ' + __cr.run().hours"
+ev "(() => { __cr.place('start'); __cr.look(0, 0.12); return 'ok'; })()" >/dev/null
+sleep 1.2
+shotc desk-start
+D_CALLS=$(ev "__cr.stats().calls"); D_TRIS=$(ev "__cr.stats().tris"); D_FPS=$(ev "Math.round(__cr.stats().fps)")
+[ "$D_CALLS" -lt 400 ] 2>/dev/null || fail "desk: draw calls '$D_CALLS', expected under 400"
+echo "cancellation desk: $D_FPS fps, $D_CALLS calls, $D_TRIS triangles"
+# The old arena is gone: the GPU resource counts match a fresh load of the Turnstiles, and a trip through all three arenas ends where it began.
+ev "(async () => { __cr.go('turnstiles'); __cr.drive({}); await __w(1500); window.__g0 = __cr.gpu(); for (const n of ['smoothie', 'desk', 'turnstiles', 'smoothie', 'desk', 'turnstiles']) { __cr.go(n); __cr.drive({}); await __w(400); } await __w(1200); window.__g1 = __cr.gpu(); return 'ok'; })()" >/dev/null
+rexpect "going round the arenas twice leaves the same geometries, textures, programs and draw calls (the old arena is disposed)" "(() => { const a = window.__g0, b = window.__g1; return a.geometries === b.geometries && a.textures === b.textures && a.programs === b.programs && Math.abs(a.calls - b.calls) <= 8 ? 'ok' : 'bad ' + JSON.stringify([a, b]); })()"
+rexpect "the Desk holds far fewer resources than the arenas around it (it really replaced them)" "(async () => { __cr.go('desk'); await __w(800); const d = __cr.gpu(); return d.geometries < window.__g1.geometries ? 'ok' : 'bad ' + JSON.stringify([d, window.__g1]); })()"
+# Both down restarts the current arena, not the run.
+ev "(async () => { __cr.go('smoothie'); __cr.god(false); __cr.drive({}); __cr.place('open'); await __w(500); __cr.hurtTobble(9999); __cr.hurt(9999); await __until(() => __cr.fightLog().some(x => x.type === 'checkpoint'), 4000); await __w(500); return 'ok'; })()" >/dev/null
+rexpect "both down restarts the Smoothie Bar (full health, idle Reps), not the run" "(() => { const r = __cr.run(), f = __cr.fight(), h = __cr.health(); return r.arena === 'smoothie' && r.checkpoint === 1 && !f.started && h.hp === h.max && !h.downed && f.enemies.filter(e => e.alive).every(e => e.state === 'idle') ? 'ok' : 'bad ' + JSON.stringify([r, h]); })()"
+ev "__cr.god(true)" >/dev/null
+# The checkpoint persists across a reload, which offers Continue.
+pw goto "http://localhost:$PORT/index.html" >/dev/null || fail "could not reload"
+sleep 2
+rexpect "a reload with a saved checkpoint opens the Turnstiles and offers Continue (Smoothie Bar) and New run" "(() => { const c = document.getElementById('cr-continue'); return c && __cr.run().saved === 1 && /Continue/.test(c.textContent) && /Smoothie Bar/.test(c.textContent) && /New run/.test(c.textContent) ? 'ok' : 'bad ' + (c && c.textContent) + ' ' + __cr.run().saved; })()"
+shotc continue
+ev "document.querySelector('.cr-continue-yes').click()" >/dev/null
+sleep 1
+rexpect "Continue loads the saved arena" "(() => { const r = __cr.run(); return r.arena === 'smoothie' && r.checkpoint === 1 && !document.getElementById('cr-continue') ? 'ok' : 'bad ' + JSON.stringify(r); })()"
+ev "(() => { localStorage.clear(); return 'ok'; })()" >/dev/null
+echo "run: smoothie bar $SM_FPS fps $SM_CALLS calls $SM_TRIS tris; desk $D_FPS fps $D_CALLS calls $D_TRIS tris"
+check_console
+
+echo "smoke ok: ready, look test driven, grey room and Check-in Turnstiles fight driven, Smoothie Bar and Cancellation Desk run (gates, swaps, disposal, checkpoint, Continue) (Tobble, finishers, bash, Cheat Day, kettlebells, Spawn Sauna, revives), perf $CALLS_ON calls ($CALLS_OFF without outlines), $TRIS triangles, no console errors; screenshots at $SHOT_DIR"

@@ -63,7 +63,7 @@ test('formatForTuningFile round-trips: evaluating it gives the same numbers', ()
   const t = structuredClone(DEFAULTS);
   t.move.jog = 5.5; t.camera.shake.amp = 0.031; t.look.invertY = true;
   const got = new Function(`return ({\n${formatForTuningFile(t)}\n});`)();
-  assert.deepEqual(got, { associate: t.associate, camera: t.camera, combat: t.combat, cover: t.cover, director: t.director, dummy: t.dummy, feedback: t.feedback, grenade: t.grenade, health: t.health, look: t.look, melee: t.melee, move: t.move, pad: t.pad, tobble: t.tobble, weapons: t.weapons });
+  assert.deepEqual(got, { associate: t.associate, camera: t.camera, combat: t.combat, cover: t.cover, director: t.director, dummy: t.dummy, feedback: t.feedback, grenade: t.grenade, health: t.health, look: t.look, melee: t.melee, move: t.move, pad: t.pad, run: t.run, tobble: t.tobble, weapons: t.weapons });
 });
 
 test('formatForTuningFile includes the cover block', () => {

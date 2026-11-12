@@ -7,7 +7,9 @@ import { createRenderer } from './render/renderer.js';
 import { createSky } from './render/sky.js';
 import { createCameraRig } from './render/cameraRig.js';
 import { buildGreyRoom, GREY_ROOM } from './world/greyRoom.js';
-import { KIOSK_ROW } from './world/kioskRow.js';
+import { ARENA_LEVELS } from './world/arenas.js';
+import { ARENAS, ARENA_TITLES, arenaIndex, createRun, hoursLine, inGate } from './run.js';
+import { disposeTree } from './render/dispose.js';
 import { pointInBoxes } from './world/collide.js';
 import { createTuningPanel } from './dev/tuningPanel.js';
 import { createMovement } from './actors/movement.js';
@@ -59,6 +61,15 @@ export function levelFor(params) {
   return params && params.has('room') ? 'greyRoom' : 'kioskRow';
 }
 
+// Which arena the page opens in: ?room is the grey room, ?arena=turnstiles|smoothie|desk jumps straight to that arena (`jumped`), and
+// anything else is the first arena of the run.
+export function arenaFor(params) {
+  if (params && params.has('room')) return { name: 'greyRoom', jumped: false };
+  const a = params && params.get('arena');
+  if (a && ARENAS.includes(a)) return { name: a, jumped: true };
+  return { name: ARENAS[0], jumped: false };
+}
+
 // The player's input after the rules that sit above the movement: a downed player cannot reload, switch or fire, and
 // fire held through a reload or a weapon switch must not keep the blind-fire pose (busy: the arsenal cannot fire).
 export function gatePlayerInput(intent, arsenalIn, { downed = false, busy = false } = {}) {
@@ -71,6 +82,11 @@ const TRANSITION_CAP = 2000;
 const SHOT_LOG_CAP = 500;
 const FIGHT_LOG_CAP = 500;
 const LOGGED = new Set(['enemyShot', 'playerHit', 'telegraph', 'death', 'clear', 'bark', 'down', 'explode', 'padOpen', 'padClosed', 'padSpawn', 'tobbleShot', 'tobbleHit', 'revived', 'checkpoint']);
+
+// localStorage, or null when the browser will not give it to us (file:// in a private window can throw).
+function safeStorage() {
+  try { return window.localStorage || null; } catch (e) { return null; }
+}
 
 export function startPlay({ canvas, gl, params }) {
   const gfx = createRenderer(canvas, gl);
@@ -88,21 +104,20 @@ export function startPlay({ canvas, gl, params }) {
   const camera = new THREE.PerspectiveCamera(TUNING.camera.fov, 1, 0.05, 100);
   const sky = createSky();
   scene.add(sky.mesh);
-  const levelName = levelFor(params);
-  const LEVEL = levelName === 'greyRoom' ? GREY_ROOM : KIOSK_ROW;
-  const room = buildGreyRoom(LEVEL);
-  scene.add(room.group);
-  const boxes = room.boxes;
-
-  const spawn = LEVEL.spawn;
+  // Everything that belongs to one arena hangs under arenaRoot and is rebuilt by loadArena (the run swaps arenas, see run.js);
+  // disposeArena frees its GPU side. The player, the camera, the effects pool and the HUD outlive the swap.
+  const first = arenaFor(params);
+  const run = createRun({ storage: first.name === 'greyRoom' ? null : safeStorage() });
+  let arenaRoot = null, levelName = '', LEVEL = null, room = null, boxes = [], spawn = { pos: [0, 0, 0], yaw: 0 };
+  let dummies = [], dummyList = [], fight = null, views = [], viewOf = new Map(), gv = null, pv = null, fv = null, tv = null, tvFor = null;
+  let actions = null, targetList = [];
   const deriveEdges = () => deriveCoverEdges(boxes, { ...edgeOptions(), exclude: LEVEL.coverExclude });
   let edgeKey = edgesKey(TUNING.cover);
   const transitions = [];
   let simTime = 0;
   let lastTap = false;
-  let actions = null;   // the fight's player actions (Kiosk Row only)
   const mover = createMovement({
-    boxes, spawn: spawn.pos, coverEdges: deriveEdges(),
+    boxes, spawn: [0, 0, 0], coverEdges: [],
     onAction(ev) { if (actions) actions.onAction(ev); },
     onState(state, from) {
       transitions.push({ state, from, t: simTime, tapped: lastTap, auto: state === 'coverSlide' && !lastTap && (from === 'move' || from === 'sprint') });
@@ -114,7 +129,6 @@ export function startPlay({ canvas, gl, params }) {
       sfx.play('step', TUNING.feedback.stepVolume * (e.sprint ? 1.25 : 1));
     },
   });
-  mover.place(spawn.pos, spawn.yaw);
   const view = createPlayerView(mover);
   scene.add(view.group);
   const cam = createCameraRig();
@@ -125,42 +139,64 @@ export function startPlay({ canvas, gl, params }) {
   const effects = createEffects(scene);
   const hud = createHud(document.body);
   const shotRand = rng(1);
-  const dummies = (LEVEL.dummies || []).map(d => {
-    const dummy = createDummy(d);
-    const dv = createDummyView(dummy);
-    scene.add(dv.group);
-    return { dummy, view: dv, wasAlive: true };
-  });
-  const dummyList = dummies.map(d => d.dummy);
-  // Kiosk Row: the player's health, the fight and one view per Associate. The shots and the aim assist target
-  // the Associates there and the dummies in the grey room.
+  // The player's health and the kettlebells outlive the arena; the fight, Tobble and the views do not.
   const health = createHealth();
-  const fight = levelName === 'kioskRow'
-    ? createFight({ level: LEVEL, boxes, edges: deriveEdges(), rand: rng(4242) })
-    : null;
-  const views = fight ? fight.enemies.map(e => { const v = createAssociateView(e); scene.add(v.group); return v; }) : [];
-  const viewOf = new Map(fight ? fight.enemies.map((e, i) => [e, views[i]]) : []);
-  // Milestone 5: Tobble, the kettlebells in flight and the Spawn Saunas on screen, and Doc's actions wired to the fight.
   const bag = createKettlebellBag();
-  const gv = fight ? createGrenadeView(scene) : null;
-  const pv = fight ? createPadView(scene, fight.pads, effects) : null;
-  let tv = null, tvFor = null;
   let restartPending = false, marker = null, markerT = 0;
   const fvHooks = { restart: () => { restartPending = true; }, marker: (k) => { marker = k; markerT = TUNING.feedback.killMarkerTime; }, tobbleView: null };
-  const fv = fight ? createFightView({ scene, effects, sfx, fight, views, cam, hooks: fvHooks }) : null;
   // Tobble's view follows the fight's Tobble (a new one when the panel flag turns him on).
   function syncTobble() {
     if (!fight || tvFor === fight.tobble) return;
-    if (tv) scene.remove(tv.group);
+    if (tv) { arenaRoot.remove(tv.group); disposeTree(tv.group); }
     tv = fight.tobble ? createTobbleView(fight.tobble) : null;
-    if (tv) scene.add(tv.group);
+    if (tv) arenaRoot.add(tv.group);
     tvFor = fight.tobble; fvHooks.tobbleView = tv;
   }
-  syncTobble();
-  actions = fight ? createPlayerActions({
-    mover, fight, arsenal, bag, cam, sfx, effects, views, health, playerView: view, grenadeView: gv, boxes, hooks: fvHooks,
-  }) : null;
-  const targetList = fight ? fight.targets() : dummyList;
+
+  function disposeArena() {
+    if (!arenaRoot) return;
+    disposeTree(arenaRoot);
+    arenaRoot = null; tv = null; tvFor = null; fvHooks.tobbleView = null;
+  }
+
+  // Builds an arena from its level data, replacing (and freeing) the last one, and points the mover at it. Does not place Doc.
+  function loadArena(name) {
+    disposeArena();
+    levelName = name;
+    LEVEL = name === 'greyRoom' ? GREY_ROOM : ARENA_LEVELS[name];
+    arenaRoot = new THREE.Group();
+    arenaRoot.name = `arena-${name}`;
+    scene.add(arenaRoot);
+    room = buildGreyRoom(LEVEL);
+    arenaRoot.add(room.group);
+    boxes = room.boxes;
+    spawn = LEVEL.spawn;
+    mover.boxes = boxes;
+    mover.coverEdges = deriveEdges();
+    dummies = (LEVEL.dummies || []).map(d => {
+      const dummy = createDummy(d);
+      const dv = createDummyView(dummy);
+      arenaRoot.add(dv.group);
+      return { dummy, view: dv, wasAlive: true };
+    });
+    dummyList = dummies.map(d => d.dummy);
+    // A fight in the run's arenas: the fight, one view per Associate, Tobble, the kettlebells and the saunas on screen, and Doc's
+    // actions wired to it. The shots and the aim assist target the Associates there and the dummies in the grey room.
+    fight = name === 'greyRoom' ? null : createFight({ level: LEVEL, boxes, edges: deriveEdges(), rand: rng(4242) });
+    views = fight ? fight.enemies.map(e => { const v = createAssociateView(e); arenaRoot.add(v.group); return v; }) : [];
+    viewOf = new Map(fight ? fight.enemies.map((e, i) => [e, views[i]]) : []);
+    gv = fight ? createGrenadeView(arenaRoot) : null;
+    pv = fight ? createPadView(arenaRoot, fight.pads, effects) : null;
+    fv = fight ? createFightView({ scene: arenaRoot, effects, sfx, fight, views, cam, hooks: fvHooks }) : null;
+    syncTobble();
+    actions = fight ? createPlayerActions({
+      mover, fight, arsenal, bag, cam, sfx, effects, views, health, playerView: view, grenadeView: gv, boxes, hooks: fvHooks,
+    }) : null;
+    targetList = fight ? fight.targets() : dummyList;
+    room.setGateOpen(false, true);
+    gateWasOpen = false;
+  }
+  let gateWasOpen = false;
   const hits = [];                 // damage face flashes: { t, angle }
   const fightLog = [];
   const listener = { pos: [0, 0, 0], yaw: 0 };
@@ -174,7 +210,6 @@ export function startPlay({ canvas, gl, params }) {
   const muzzle = [0, 0, 0];
   let seenSlams = 0;
   const target = [0, 0, 0];
-  cam.snap(spawn.pos, spawn.yaw, 'normal', 1);
 
   let snap = null;
   let simulating = false;
@@ -215,8 +250,8 @@ export function startPlay({ canvas, gl, params }) {
   });
 
   // Back to the arena's start: full health and ammo, the Associates idle at their starts, nothing left over.
-  function restart() {
-    if (fight) fight.reset();
+  // The player's side of a fresh start: full health and ammo, back at the arena's entry, nothing left over.
+  function resetPlayerSide() {
     health.reset();
     arsenal.reset(); bag.reset();
     placeAt(spawn.pos, spawn.yaw);
@@ -224,10 +259,33 @@ export function startPlay({ canvas, gl, params }) {
     cam.recenter(); effects.clear();
     fxQueue.length = 0; hits.length = 0;
     marker = null; reloadFlash = null; markerT = 0; flashT = 0;
+    restartPending = false;
+  }
+
+  function restart() {
+    if (fight) fight.reset();
+    resetPlayerSide();
     if (fv) fv.reset();
     for (const v of views) v.reset();
     if (fight) { actions.reset(); gv.reset(); pv.reset(); syncTobble(); if (tv) tv.reset(); }
-    restartPending = false;
+    // The current arena again: the gate shuts, the checkpoint is its own entry.
+    run.restart();
+    room.setGateOpen(false, true); gateWasOpen = false;
+  }
+
+  // Doc steps into an arena (a swap, the ?arena jump, Continue): it is built, Doc and Tobble stand at its entry with full health
+  // and ammo, and the cancellation hours line shows for a few seconds.
+  function enterArena(name) {
+    loadArena(name);
+    resetPlayerSide();
+    cam.snap(spawn.pos, spawn.yaw, 'normal', 1);
+    hoursT = name === 'greyRoom' ? 0 : TUNING.run.hoursTime;
+  }
+  let hoursT = 0;
+
+  // The arena is clear: the gate opens (when there is a next arena).
+  function onCleared() {
+    if (run.markClear() && !gateWasOpen) { gateWasOpen = true; room.setGateOpen(true); sfx.play('saunaOpen', TUNING.feedback.saunaVolume); }
   }
 
   // Health hit zero: the fight has already put the mover down (or this is the dev hook); the sound and the line.
@@ -259,7 +317,7 @@ export function startPlay({ canvas, gl, params }) {
         sfx.play('hurt', fb.hurtVolume, Math.sin(angle));
         actions.onPlayerHit();
         if (ev.result === 'downed') goDown();
-      } else if (ev.type === 'clear') sfx.play('clear', fb.killVolume);
+      } else if (ev.type === 'clear') { sfx.play('clear', fb.killVolume); onCleared(); }
     }
     while (hits.length && simTime - hits[0].t > fb.hitFlashTime) hits.shift();
     const h = health.update(dt, { standIn: !fight.tobble });
@@ -273,9 +331,11 @@ export function startPlay({ canvas, gl, params }) {
   }
 
   function objectiveText() {
-    if (fight.clear) return 'Check-in Turnstiles: set complete';
+    const title = ARENA_TITLES[run.arena];
+    if (LEVEL.boss) return title;
+    if (fight.clear) return run.gateOpen ? `${title}: clear \u2014 head for the GO gate` : `${title}: set complete`;
     if (fight.pads.some(p => p.state === 'open')) return promptText('sauna', input.device());
-    return fight.started ? 'Get past the front desk' : 'Walk in';
+    return fight.started ? (run.arena === 'turnstiles' ? 'Get past the front desk' : `${title}: clear the room`) : 'Walk in';
   }
 
   function placeAt(pos, yaw) {
@@ -307,7 +367,15 @@ export function startPlay({ canvas, gl, params }) {
     };
   };
   cr.dummies = () => dummyList.map(d => ({ id: d.id, health: d.health, alive: d.alive, pos: d.pos.slice() }));
-  cr.level = () => levelName;
+  cr.level = () => LEVEL.name || levelName;
+  // The run: which arena, the checkpoint, the fade; the exit gate; and a way to jump (the ?arena param does the same at load).
+  cr.run = () => ({ arena: run.arena, index: run.index, checkpoint: run.checkpoint, phase: run.phase, cleared: run.cleared, gateOpen: run.gateOpen, fade: run.fade, saved: run.saved, hours: hoursT > 0 ? hoursLine(run.checkpoint) : null });
+  cr.gate = () => (LEVEL.exit ? { pos: LEVEL.exit.pos.slice(), yaw: LEVEL.exit.yaw, w: LEVEL.exit.w, open: gateWasOpen, openness: room.gate ? room.gate.openness() : 0 } : null);
+  cr.go = (name) => { if (!ARENAS.includes(name)) return false; run.goTo(arenaIndex(name)); enterArena(name); return true; };
+  // God-mode clear for smoke tests: every Rep dies and every sauna closes; the fight reports 'clear' on its next step.
+  cr.clearArena = () => (fight ? fight.forceClear() : false);
+  // GPU resources as the renderer counts them, for the "old arena was disposed" check.
+  cr.gpu = () => { const i = renderer.info; return { geometries: i.memory.geometries, textures: i.memory.textures, programs: (i.programs || []).length, calls, tris }; };
   cr.fight = () => (fight ? {
     started: fight.started, clear: fight.clear, tokens: fight.tokens.held(), pickups: fv.count(), pickupPos: fv.pickups(),
     enemies: fight.enemies.filter(e => e.state !== 'unused').map(e => ({ id: e.id, slot: fight.enemies.indexOf(e), kind: 'associate', state: e.state, health: e.health, alive: e.alive, pos: e.pos.slice(), holds: fight.tokens.holds(e.id), role: e.role, point: e.point ? e.point.index : null, pop: e.pop })),
@@ -408,7 +476,7 @@ export function startPlay({ canvas, gl, params }) {
   function writePanel() {
     const pad = input.padStatus();
     const lines = [
-      fight ? 'GYMS OF WAR \u2014 CHECK-IN TURNSTILES' : 'GUNPLAY TEST',
+      fight ? `GYMS OF WAR \u2014 ${ARENA_TITLES[run.arena].toUpperCase()}` : 'GUNPLAY TEST',
       'Mouse + keys: WASD move, mouse look, right mouse aim, left mouse fire, R reload (press again on the bright zone), 1 / 3 or wheel switch, Space tap: take cover or roll, hold: sprint',
       'Gamepad: left stick move, right stick look, LT aim, RT fire, RB reload (again on the bright zone), D-pad switch, A tap: take cover or roll, hold: sprint',
       'In cover: aim to pop out, fire without aim to blind fire, push in + tap to vault, push toward a gap + tap to swap, pull away to leave',
@@ -522,6 +590,8 @@ export function startPlay({ canvas, gl, params }) {
       simTime += dt;
       const inp = buildIntent(dt);
       gatePlayerInput(inp, arsenalIn, { downed: !!fight && health.downed, busy: arsenal.reload !== null || arsenal.switching > 0 });
+      // Between arenas (the fade out, the black hold, the fade in) Doc stands still and holds fire.
+      if (run.fading) { inp.moveX = 0; inp.moveY = 0; inp.tap = false; inp.sprint = false; inp.fire = false; inp.grenade = false; arsenalIn.fire = false; arsenalIn.firePressed = false; }
       if (actions) {
         actions.step(dt, { meleeHeld: held.melee, meleePressed: press.melee, grenadeHeld: held.grenade, interactHeld: held.interact, interactPressed: press.interact, device: input.device(), camYaw: cam.yaw, camPitch: cam.pitch });
         if (actions.busy()) { arsenalIn.fire = false; arsenalIn.firePressed = false; inp.fire = false; }   // a throw in progress: no fire
@@ -534,9 +604,15 @@ export function startPlay({ canvas, gl, params }) {
       for (const d of dummies) stepDummy(d, dt);
       if (crateTouch(mover.pos, LEVEL.ammoCrates, TUNING.combat.crateRadius)) { arsenal.refill(); bag.refill(); }
       if (restartPending) restart();
+      // Walking into the open gate starts the fade to the next arena.
+      if (fight && gateWasOpen && !run.fading && inGate(LEVEL.exit, mover.pos) && run.touchGate()) sfx.play('clear', TUNING.feedback.killVolume);
     },
     render(alpha, realSeconds) {
       const dt = simulating ? Math.min(realSeconds, MAX_DT) : 0;
+      // The fade between arenas runs on real time. At 'swap' the screen is black: the next arena is built and the old one freed.
+      for (const ev of run.step(Math.min(realSeconds, MAX_DT))) if (ev.type === 'swap') enterArena(ev.to);
+      if (hoursT > 0 && simulating) hoursT = Math.max(0, hoursT - dt);
+      setFade(run.fade);
       aimIn.shot = fxQueue.length > 0;
       aimIn.dir = camState.dir; aimIn.stance = stance; aimIn.weapon = arsenal.current(); aimIn.kettlebell = !!actions && actions.armed();
       view.update(alpha, dt, aimIn);
@@ -581,8 +657,9 @@ export function startPlay({ canvas, gl, params }) {
         viewportH: canvas.clientHeight || window.innerHeight, marker, reloadFlash,
         face: fm, bark: fv ? fv.bark() : null,
         objective: fight ? objectiveText() : '',
-        banner: !fight ? null : health.downed ? { title: `You've hit a plateau ${fm.downed.seconds}`, hint: promptText(fight.tobble && !fight.tobble.downed ? 'giveUpTobble' : 'giveUp', input.device()), hold: actions.giveUpFrac() } : fight.clear ? { title: 'SET COMPLETE', hint: input.device() === 'pad' ? 'Rest 60 seconds! X for another set' : 'Rest 60 seconds! E for another set' } : null,
+        banner: !fight ? null : health.downed ? { title: `You've hit a plateau ${fm.downed.seconds}`, hint: promptText(fight.tobble && !fight.tobble.downed ? 'giveUpTobble' : 'giveUp', input.device()), hold: actions.giveUpFrac() } : fight.clear ? { title: 'SET COMPLETE', hint: `${run.gateOpen ? 'Head for the GO gate!  ' : 'Rest 60 seconds!  '}${input.device() === 'pad' ? 'X' : 'E'} for another set` } : null,
         grenades: fight ? bag.count : null, action: actions ? actions.prompt() : null,
+        hours: hoursT > 0 ? hoursLine(run.checkpoint) : '',
       }));
       sky.update(performance.now() / 1000);
       room.update(dt);
@@ -598,6 +675,38 @@ export function startPlay({ canvas, gl, params }) {
   });
 
   if (params && params.has('tune')) panel.toggle();
+  // The fade between arenas: a black layer over the canvas (and under the HUD's text).
+  const fadeEl = document.createElement('div');
+  fadeEl.id = 'cr-fade';
+  document.body.appendChild(fadeEl);
+  let fadeShown = -1;
+  function setFade(v) {
+    const q = Math.round(v * 100);
+    if (q === fadeShown) return;
+    fadeShown = q;
+    fadeEl.style.opacity = (q / 100).toFixed(2);
+  }
+
+  // Open in the arena the URL asks for, or the first one; a saved checkpoint past the first arena offers Continue.
+  if (first.name !== 'greyRoom' && first.jumped) { run.goTo(arenaIndex(first.name)); enterArena(first.name); }
+  else enterArena(first.name === 'greyRoom' ? 'greyRoom' : ARENAS[0]);
+  if (first.name !== 'greyRoom' && !first.jumped && run.saved > 0) showContinue();
+
+  // "Continue" (the saved checkpoint's arena) or "New run" (from the Turnstiles, and the saved checkpoint resets).
+  function showContinue() {
+    const box = document.createElement('div');
+    box.id = 'cr-continue';
+    hoursT = 0;
+    const add = (text, fn, cls) => {
+      const b = document.createElement('button');
+      b.textContent = text; b.className = cls;
+      b.addEventListener('click', (e) => { e.stopPropagation(); box.remove(); fn(); });
+      box.appendChild(b);
+    };
+    add(`Continue \u2014 ${ARENA_TITLES[ARENAS[run.saved]]}`, () => { run.goTo(run.saved); enterArena(run.arena); }, 'cr-continue-yes');
+    add('New run', () => { run.newRun(); hoursT = TUNING.run.hoursTime; }, 'cr-continue-no');
+    document.body.appendChild(box);
+  }
   snap = input.poll();
   cam.update(0, { target: spawn.pos, mode: 'normal', side: 1 }, boxes);
   writePanel();

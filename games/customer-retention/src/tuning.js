@@ -178,7 +178,7 @@ export const TUNING = {
     staggerTime: 0.9, diveWarn: 1.0, diveRadius: 4.5, diveChance: 0.75, diveReaction: 0.25, diveDistance: 3, diveTime: 0.6,
   },
   // Spawn Saunas (the spec's Hiring Pads). Radius in m, times in s. A kettlebell closes one within radius + grenade.padReach.
-  pad: { radius: 1.1, openAfterKills: 2, openAfter: 25, interval: 5, maxAlive: 2, total: 6, riseTime: 0.8 },
+  pad: { radius: 1.1, openAfterKills: 2, openAfterKillsSmoothie: 3, openAfter: 25, interval: 5, maxAlive: 2, total: 6, riseTime: 0.8 },
   // Tobble, the squadmate (the story's intern). enabled is a flag read at fight creation and restart; scale is Tobble's size against an Associate.
   // Times in s, distances in m, speeds in m/s, angles in deg, health as a fraction where it says. His rate * damage is 0.25 of the Regret's.
   tobble: {
@@ -224,4 +224,8 @@ export const TUNING = {
     cutGelEvery: 0.1,     // s between gel sprays during an execution
     arcDot: 0.06,         // m, dash and gap length of the kettlebell arc
   },
+  // The run (src/run.js): arena swaps. Times in s, distances in m. A cleared arena's exit gate opens; walking into it (within gateReach
+  // of its door, in front of it) fades to black over fadeOut, holds black for blackHold while the next arena loads, then fades in over
+  // fadeIn. hoursTime is how long the cancellation-hours line shows after a checkpoint.
+  run: { fadeOut: 0.6, blackHold: 0.25, fadeIn: 0.6, gateReach: 1.6, hoursTime: 6, gateOpenTime: 0.8 },
 };

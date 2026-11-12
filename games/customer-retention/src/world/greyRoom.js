@@ -6,6 +6,7 @@ import { addOutline, computeOutlineNormals } from '../render/outline.js';
 import { makeFloor, makeSign } from './kit.js';
 import { makeBox } from './collide.js';
 import { propGeometry } from './props.js';
+import { buildGate } from './gate.js';
 
 const deepFreeze = (o) => {
   if (o && typeof o === 'object' && !Object.isFrozen(o)) {
@@ -158,5 +159,15 @@ export function buildGreyRoom(room = GREY_ROOM) {
     sign.rotation.y = S.yaw;
     group.add(sign);
   }
-  return { group, boxes: room.boxes, update(dt) {} };
+  // The exit gate (arenas that lead on): closed until setGateOpen(true).
+  const gate = room.exit ? buildGate(room.exit) : null;
+  if (gate) group.add(gate.group);
+  return {
+    group, boxes: room.boxes, gate,
+    setGateOpen(on, instant = false) { if (gate) gate.setOpen(on, instant); },
+    update(dt) { if (gate) gate.update(dt); },
+  };
 }
+
+// The arena builder, by the name the run uses: any level's data in, its room out.
+export const buildArena = buildGreyRoom;

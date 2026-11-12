@@ -68,3 +68,12 @@ html, body { margin: 0; height: 100%; background: #1b1f3b; overflow: hidden; fon
 .cr-ring[hidden] { display: none; }
 .cr-banner .cr-ring { display: block; margin: 10px auto 0; width: 34px; height: 34px; }
 .cr-banner .cr-ring[hidden] { display: none; }
+
+/* The run (piece 1): the hours line, the fade between arenas, and the Continue / New run choice. */
+.cr-hours { position: absolute; left: 0; right: 0; top: 46px; text-align: center; font-size: 15px; font-weight: 700; letter-spacing: .05em; color: #fff3d6; text-shadow: 0 1px 3px rgba(27,31,59,.95); }
+.cr-hours[hidden] { display: none; }
+#cr-fade { position: fixed; inset: 0; background: #1b1f3b; opacity: 0; pointer-events: none; z-index: 20; }
+#cr-continue { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(27,31,59,.8); }
+#cr-continue button { font: 800 22px/1 system-ui, sans-serif; letter-spacing: .05em; padding: 14px 28px; min-width: 320px; border: 3px solid #1b1f3b; border-radius: 6px; cursor: pointer; background: #fff3d6; color: #1b1f3b; }
+#cr-continue .cr-continue-yes { background: #b6ff3c; }
+#cr-continue button:hover, #cr-continue button:focus-visible { outline: 3px solid #ff4f9a; }

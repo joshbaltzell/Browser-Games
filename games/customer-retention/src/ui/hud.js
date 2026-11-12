@@ -20,7 +20,7 @@ const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 // covered: the player is tucked or blind in cover (not popped); the reticle then shows dimmed, at the same screen point the
 // aimed shot's camera ray goes through. device is 'kbm' or 'pad': it picks the key name in the reload prompt.
 export function hudModel({ arsenal, stance, firing, covered = false, device = 'kbm', spreadDeg, fov, viewportH, marker = null, reloadFlash = null,
-  face = null, objective = '', bark = null, banner = null, grenades = null, action = null, weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
+  face = null, objective = '', hours = '', bark = null, banner = null, grenades = null, action = null, weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
   const id = arsenal.current();
   const row = weapons[id], am = arsenal.ammo[id];
   const r = arsenal.reload;
@@ -57,7 +57,7 @@ export function hudModel({ arsenal, stance, firing, covered = false, device = 'k
     hit: { show: !!marker, kind: marker || null },
     // The face hides while a banner owns the screen (downed, cleared); the edge glow still follows the face model.
     faceShow: !!face && !banner && !face.downed.show,
-    face, objective, bark, banner,
+    face, objective, hours: hours || '', bark, banner,
     grenades: Number.isFinite(grenades) ? grenades : null,
     action: action && action.text ? { text: action.text, hold: Number.isFinite(action.hold) ? clamp01(action.hold) : null } : null,
   };
@@ -101,6 +101,7 @@ export function createHud(root = document.body) {
   const actionText = el('span', 'cr-action-text', actionEl);
   const actionRing = el('i', 'cr-ring', actionEl);
   const objectiveEl = el('div', 'cr-objective', hud);
+  const hoursEl = el('div', 'cr-hours', hud);
   const barkEl = el('div', 'cr-bark', hud);
   const barkWho = el('span', 'cr-bark-who', barkEl);
   const barkText = el('span', 'cr-bark-text', barkEl);
@@ -154,6 +155,7 @@ export function createHud(root = document.body) {
       set('banner.hold', bh, v => { bannerRing.hidden = v < 0; bannerRing.style.setProperty('--hold', `${Math.max(v, 0) * 3.6}deg`); });
       set('banner', m.banner ? `${m.banner.title}|${m.banner.hint}` : '', v => { bannerEl.hidden = !m.banner; if (m.banner) { bannerTitle.textContent = m.banner.title; bannerHint.textContent = m.banner.hint; } });
       set('objective', m.objective || '', v => { objectiveEl.textContent = v; objectiveEl.hidden = !v; });
+      set('hours', m.hours || '', v => { hoursEl.textContent = v; hoursEl.hidden = !v; });
       set('bark', m.bark ? `${m.bark.speaker}|${m.bark.text}` : '', () => { barkEl.hidden = !m.bark; if (m.bark) { barkWho.textContent = m.bark.speaker; barkWho.style.color = m.bark.color || ''; barkText.textContent = m.bark.text; } });
       set('hit', m.hit.show ? m.hit.kind : '', v => { hit.hidden = !v; hit.dataset.kind = v; });
     },

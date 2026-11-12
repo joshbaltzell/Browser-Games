@@ -433,6 +433,13 @@ export function createFight({ level, boxes, edges, rand, tuning = TUNING }) {
     return true;
   };
 
+  // Dev (smoke tests, god mode): every live Rep dies and every sauna closes, so the fight reports 'clear' on its next step.
+  f.forceClear = () => {
+    for (const e of enemies) if (e.alive) damage(e, 1e6, 'blast', late);
+    for (const p of pads.list) if (p.state === 'dormant' || p.state === 'open') p.state = 'closed';
+    return true;
+  };
+
   // Dev: fill one free slot with a Rep rising at the first sauna; and put a Rep down.
   f.spawnRep = () => {
     const e = freeSlot();

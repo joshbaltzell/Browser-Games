@@ -128,7 +128,7 @@ export function createMovement({
     speed() { return Math.hypot(m.vel[0], m.vel[2]); },
     // Moves by delta through the colliders. slideVel true: remove velocity into what was hit. False: set velocity from the actual travel.
     moveBy(delta, dt, slideVel = true) {
-      const p = m.pos, r = moveCapsule(boxes, p, delta, tuning.radius, tuning.height);
+      const p = m.pos, r = moveCapsule(m.boxes, p, delta, tuning.radius, tuning.height);
       m.hit = !!r.hit;
       if (!slideVel) {
         if (dt > 0) { m.vel[0] = (r.pos[0] - p[0]) / dt; m.vel[2] = (r.pos[2] - p[2]) / dt; }
