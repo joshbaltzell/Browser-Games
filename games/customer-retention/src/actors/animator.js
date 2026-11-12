@@ -48,10 +48,11 @@ export function createAnimator(rig) {
     return fromEase + (CLIPS[name].ease - fromEase) * k;
   }
 
-  function update(dt) {
+  // dt advances the clip; fadeDt (default dt) advances the cross-fade, so a clip held at rate 0 still fades in.
+  function update(dt, fadeDt = dt) {
     const clip = CLIPS[name];
     time += dt;
-    fadeTime += dt;
+    fadeTime += fadeDt;
     if (clip.loop) {
       if (time >= clip.duration) time -= clip.duration * Math.floor(time / clip.duration);
     } else if (time >= clip.duration) {

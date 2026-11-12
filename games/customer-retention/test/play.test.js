@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldSimulate, edgesKey } from '../src/play.js';
+import { shouldSimulate, edgesKey, levelFor } from '../src/play.js';
 
 test('shouldSimulate: paused only when unlocked, on keyboard and mouse, with the panel closed', () => {
   assert.equal(shouldSimulate({ locked: false, device: 'kbm', panelOpen: false }), false);
@@ -16,4 +16,12 @@ test('edgesKey changes when gap, endInset or minLength change, and only then', (
   assert.notEqual(edgesKey({ ...base, gap: 0.04 }), k);
   assert.notEqual(edgesKey({ ...base, endInset: 0.3 }), k);
   assert.notEqual(edgesKey({ ...base, minLength: 0.4 }), k);
+});
+
+test('levelFor: ?room -> greyRoom, default and ?tune -> kioskRow', () => {
+  assert.equal(levelFor(new URLSearchParams('?room')), 'greyRoom');
+  assert.equal(levelFor(new URLSearchParams('?room&tune')), 'greyRoom');
+  assert.equal(levelFor(new URLSearchParams('')), 'kioskRow');
+  assert.equal(levelFor(new URLSearchParams('?tune')), 'kioskRow');
+  assert.equal(levelFor(null), 'kioskRow');
 });

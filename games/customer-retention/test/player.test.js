@@ -230,3 +230,13 @@ test('pickClip: downed -> crawl at speed / crawlSpeed, held at speed 0', () => {
   assert.deepEqual(pickClip(fake({ state: 'downed', v: TUNING.move.crawlSpeed })), { name: 'crawl', rate: 1 });
   assert.equal(pickClip(fake({ state: 'downed', v: 0.5 * TUNING.move.crawlSpeed })).rate, 0.5);
 });
+
+test('createPlayerView: a downed player who is not moving still fades into the crawl pose (the clip holds, the fade does not)', () => {
+  const m = fake({ state: 'downed', entries: 1, coverTuning: TUNING.cover, slams: 0, v: 0 });
+  const v = createPlayerView(m);
+  v.update(1, 1 / 60);
+  const standing = v.rig.root.getObjectByName('hips').position.y;
+  for (let i = 0; i < 60; i++) v.update(1, 1 / 60);
+  assert.equal(v.anim.current(), 'crawl');
+  assert.ok(v.rig.root.getObjectByName('hips').position.y < 0.4 && v.rig.root.getObjectByName('hips').position.y < standing, 'hips are low after a second');
+});

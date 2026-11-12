@@ -120,7 +120,7 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
       anim.play(c.name, c.name === 'roll' ? { fade: 0.05 } : undefined);
       clip = c.name; entries = mover.entries;
     }
-    anim.update(dt * c.rate);
+    anim.update(dt * c.rate, c.name === 'crawl' ? dt : undefined); // a held crawl (rate 0) still fades in
     rig.update(dt);
     // A shot jolts the body back for gunSquashTime.
     const fb = TUNING.feedback, joltTime = Math.max(fb.gunSquashTime, 1e-6);

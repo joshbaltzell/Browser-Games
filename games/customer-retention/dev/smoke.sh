@@ -98,8 +98,8 @@ THREW=$(ev "(() => { try { __cr.anim('nonsense'); __cr.expression('nonsense'); r
 
 check_console
 
-# ---- play scene -------------------------------------------------------------
-pw goto "http://localhost:$PORT/index.html" >/dev/null || fail "could not open the play scene"
+# ---- play scene (the milestone 3 grey room, ?room) --------------------------
+pw goto "http://localhost:$PORT/index.html?room" >/dev/null || fail "could not open the play scene"
 sleep 2
 READY=$(ev "window.__cr && window.__cr.ready && !!window.__cr.drive")
 [ "$READY" = "true" ] || fail "play scene: not ready ($READY)"
@@ -270,4 +270,76 @@ PFPS=$(ev "Math.round(__cr.stats().fps)")
 echo "play: $PFPS fps, $PCALLS calls, $PTRIS triangles"
 check_console
 
-echo "smoke ok: ready, look test driven, perf $CALLS_ON calls ($CALLS_OFF without outlines), $TRIS triangles, no console errors; screenshots at $SHOT_DIR"
+# ---- Kiosk Row: the first fight (milestone 4, the default page) --------------
+pw goto "http://localhost:$PORT/index.html" >/dev/null || fail "could not open Kiosk Row"
+sleep 2
+READY=$(ev "window.__cr && window.__cr.ready && !!window.__cr.fight")
+[ "$READY" = "true" ] || fail "kiosk row: not ready ($READY)"
+check_console
+ev "(() => { window.__w = (ms) => new Promise(r => setTimeout(r, ms)); window.__until = async (f, ms = 4000) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (f()) return true; await __w(10); } return false; }; window.__step = async (i) => { __cr.drive(i); await __w(60); __cr.drive({}); }; window.__alive = () => __cr.fight().enemies.filter(e => e.alive); window.__log = (t) => __cr.fightLog().filter(x => x.type === t); const st = document.createElement('style'); st.textContent = '#cr-pause { display: none !important; }'; document.head.appendChild(st); window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyH' })); return 'ok'; })()" >/dev/null
+# Aim the camera at an Associate's head (a point 1.5 m up) and wait for the camera to settle.
+ev "(() => { window.__aimAtE = async (id, h = 1.5) => { for (let k = 0; k < 3; k++) { const d = __cr.fight().enemies.find(x => x.id === id), l = __cr.camera().pos; const dx = d.pos[0] - l[0], dy = d.pos[1] + h - l[1], dz = d.pos[2] - l[2]; __cr.look(Math.atan2(dx, dz), Math.asin(dy / Math.hypot(dx, dy, dz))); await __w(100); } }; return 'ok'; })()" >/dev/null
+fexpect() { # label, js expression returning 'ok' or a description
+  local r
+  r=$(ev "$2")
+  [ "$r" = "ok" ] || fail "fight: $1: $(pw --raw eval "JSON.stringify([__cr.fight(), __cr.health(), __cr.player()])") ($r)"
+}
+
+ev "__cr.drive({})" >/dev/null
+sleep 0.5
+fexpect "boots Kiosk Row with 4 idle Associates and no fight yet" "(() => { const f = __cr.fight(); return __cr.level() === 'kioskRow' && f.enemies.length === 4 && f.enemies.every(e => e.state === 'idle') && f.started === false && __cr.dummies().length === 0 ? 'ok' : 'bad ' + JSON.stringify(f.enemies.map(e => e.state)); })()"
+pw screenshot --filename "$SHOT_DIR/kiosk-start.png" >/dev/null
+
+# Crossing the lockdown line starts the fight; every Associate is in a cover state within 5 s.
+ev "(async () => { __cr.clearFightLog(); __cr.place('kioskLeft'); window.__lockT = performance.now(); await __until(() => __cr.fight().started, 2000); window.__startMs = performance.now() - __lockT; await __until(() => __cr.fight().enemies.every(e => ['cover', 'telegraph', 'burst', 'suppress', 'reload', 'flinch'].includes(e.state)), 5000); return 'ok'; })()" >/dev/null
+fexpect "past the trigger the fight starts within 0.5 s, with a lockdown bark, and every Associate takes cover within 5 s" "(() => { const f = __cr.fight(); return f.started && __startMs <= 500 && __log('bark').some(b => b.key === 'lockdown') && f.enemies.every(e => ['cover', 'telegraph', 'burst', 'suppress', 'reload', 'flinch'].includes(e.state)) ? 'ok' : 'bad ' + __startMs + ' ' + JSON.stringify(f.enemies.map(e => e.state)); })()"
+
+# Standing in the open for 10 s (god mode): never more than 2 Associates telegraphing or bursting, and the player is hit.
+ev "__cr.restart()" >/dev/null
+ev "(async () => { __cr.god(true); __cr.drive({}); __cr.place('open'); __cr.clearFightLog(); window.__peak = 0; window.__minHp = 100; window.__shotAt = false; const t0 = performance.now(); while (performance.now() - t0 < 10000) { const f = __cr.fight(); window.__peak = Math.max(__peak, f.enemies.filter(e => e.state === 'telegraph' || e.state === 'burst').length); window.__minHp = Math.min(__minHp, __cr.health().hp); window.__tg = window.__tg || f.enemies.some(e => e.state === 'telegraph' && e.pop > 0.8); await __w(50); } return 'ok'; })()" >/dev/null
+fexpect "10 s in the open: at most 2 Associates telegraphing or bursting at once, a playerHit logged, health dropped" "(() => { const hits = __log('playerHit').length; return __peak <= 2 && __peak >= 1 && hits >= 1 && __minHp < 100 ? 'ok' : 'bad peak ' + __peak + ' hits ' + hits + ' hp ' + __minHp; })()"
+ev "(async () => { await __until(() => __cr.fight().enemies.some(e => e.state === 'telegraph' && e.pop > 0.8), 6000); return 'ok'; })()" >/dev/null
+pw screenshot --filename "$SHOT_DIR/telegraph.png" >/dev/null
+
+# Tucked behind K1 for 10 s: nothing hits the player while the cover is closed.
+ev "__cr.god(false)" >/dev/null
+ev "__cr.restart()" >/dev/null
+ev "(async () => { __cr.drive({}); __cr.place('kioskLeft'); __cr.clearFightLog(); await __w(100); await __step({ moveY: -1, tap: true }); await __until(() => __cr.player().state === 'cover', 3000); window.__bad = 0; window.__covered = 0; const t0 = performance.now(); while (performance.now() - t0 < 10000) { const p = __cr.player(); if (p.cover && p.cover.exposed === false) window.__covered++; await __w(50); } return 'ok'; })()" >/dev/null
+fexpect "tucked behind K1 for 10 s: no playerHit and full health" "(() => { const hits = __log('playerHit').length, shots = __log('enemyShot').length; return __covered > 100 && hits === 0 && __cr.health().hp === 100 && __cr.player().state === 'cover' ? 'ok' : 'bad hits ' + hits + ' shots ' + shots + ' covered ' + __covered; })()"
+pw screenshot --filename "$SHOT_DIR/tucked.png" >/dev/null
+
+# Kill them all: god mode, in the open, aiming at the head of each Associate while it is popped.
+ev "__cr.restart()" >/dev/null
+ev "(async () => { __cr.god(true); __cr.drive({}); __cr.place('open'); __cr.setGun('regret', { mag: 50, reserve: 250 }); const t0 = performance.now(); while (performance.now() - t0 < 60000 && !__cr.fight().clear) { const open = __alive().filter(e => e.pop > 0.7 || e.state === 'run' || e.state === 'suppress'); if (open.length) { const e = open[0]; await __aimAtE(e.id, e.state === 'run' ? 1.0 : 1.5); __cr.drive({ aim: true, fire: true }); await __w(250); } else { __cr.drive({ aim: true }); await __w(50); } } __cr.drive({}); window.__clearMs = performance.now() - t0; await __w(300); return 'ok'; })()" >/dev/null
+fexpect "all four Associates die within 60 s: clear, 4 pickups, the clear banner" "(() => { const f = __cr.fight(), b = document.querySelector('.cr-banner'); return f.clear && f.pickups === 4 && b && !b.hidden && /CLEAR/.test(b.textContent) && __log('clear').length === 1 ? 'ok' : 'bad clear ' + f.clear + ' pickups ' + f.pickups + ' banner ' + (b && b.textContent) + ' ' + __clearMs; })()"
+pw screenshot --filename "$SHOT_DIR/clear.png" >/dev/null
+# Walking onto a pickup adds ammo.
+ev "(async () => { __cr.setGun('regret', { mag: 50, reserve: 100 }); const p = __cr.fight().pickupPos[0]; window.__before = __cr.gun().reserve; __cr.at(p[0], p[2] - 0.6, 0); await __step({ moveY: -1 }); await __until(() => __cr.gun().reserve > 100, 2000); return 'ok'; })()" >/dev/null
+fexpect "walking onto a pickup raises the reserve and removes it" "(() => { const g = __cr.gun(); return g.reserve > 100 && __cr.fight().pickups === 3 ? 'ok' : 'bad ' + g.reserve + ' ' + __cr.fight().pickups; })()"
+
+# Health: 60 damage shows the face; 60 more downs the player, who crawls, cannot shoot, and gives up with interact.
+ev "__cr.god(false)" >/dev/null
+ev "__cr.restart()" >/dev/null
+ev "(async () => { __cr.drive({}); __cr.hurt(60); await __w(200); return 'ok'; })()" >/dev/null
+pw screenshot --filename "$SHOT_DIR/face-60.png" >/dev/null
+fexpect "60 damage leaves 40 health and the face shows" "(() => { const f = document.querySelector('.cr-face'); return __cr.health().hp >= 40 && __cr.health().hp < 100 && !f.hidden && +f.style.opacity > 0.3 && !__cr.health().downed ? 'ok' : 'bad ' + JSON.stringify(__cr.health()) + ' ' + f.style.opacity; })()"
+ev "(async () => { __cr.hurt(60); await __w(300); __cr.clearShots(); window.__crawl0 = __cr.player().pos; __cr.drive({ moveY: -1, fire: true }); await __w(1000); __cr.drive({}); return 'ok'; })()" >/dev/null
+fexpect "downed: crawls with the stick, cannot shoot, the timer shows" "(() => { const p = __cr.player(), h = __cr.health(), d = Math.hypot(p.pos[0] - __crawl0[0], p.pos[2] - __crawl0[2]), b = document.querySelector('.cr-banner'); return h.downed && p.state === 'downed' && d > 0.5 && d < 1.3 && __cr.shots().length === 0 && /DOWNED/.test(b.textContent) ? 'ok' : 'bad d=' + d + ' shots ' + __cr.shots().length + ' ' + JSON.stringify(h); })()"
+pw screenshot --filename "$SHOT_DIR/downed.png" >/dev/null
+ev "(async () => { __cr.drive({ interact: true }); await __w(300); return 'ok'; })()" >/dev/null
+fexpect "interact while downed restarts: full health, 4 alive, fight not started, standing" "(() => { const f = __cr.fight(), h = __cr.health(); return h.hp === 100 && !h.downed && f.enemies.length === 4 && f.enemies.every(e => e.alive && e.state === 'idle') && !f.started && __cr.player().state !== 'downed' ? 'ok' : 'bad ' + JSON.stringify(h); })()"
+
+# Performance in the middle of a fight.
+ev "(async () => { __cr.god(true); __cr.drive({}); __cr.place('open'); await __w(4000); return 'ok'; })()" >/dev/null
+KCALLS=$(ev "__cr.stats().calls")
+KTRIS=$(ev "__cr.stats().tris")
+KFPS=$(ev "Math.round(__cr.stats().fps)")
+[ "$KCALLS" -lt 400 ] 2>/dev/null || fail "kiosk row: draw calls '$KCALLS', expected under 400"
+[ "$KTRIS" -lt 300000 ] 2>/dev/null || fail "kiosk row: triangles '$KTRIS', expected under 300000"
+echo "kiosk row fight: $KFPS fps, $KCALLS calls, $KTRIS triangles"
+ev "__cr.god(false)" >/dev/null
+ev "__cr.drive(null)" >/dev/null
+check_console
+
+
+echo "smoke ok: ready, look test driven, grey room and Kiosk Row fight driven, perf $CALLS_ON calls ($CALLS_OFF without outlines), $TRIS triangles, no console errors; screenshots at $SHOT_DIR"
