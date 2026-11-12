@@ -284,3 +284,39 @@ test('recenter levels the pitch and drops the kick; yaw stays', () => {
   assert.equal(c.pitch, 0); assert.equal(c.yaw, 1.2);
   near(Math.asin(r.dir[1]), 0, 1e-9);
 });
+
+// Gate C round 2: the reticle's world point stays put through a blend into aim.
+const angleTo = (r, p) => {
+  const d = [p[0] - r.pos[0], p[1] - r.pos[1], p[2] - r.pos[2]], l = Math.hypot(...d);
+  return Math.acos(Math.max(-1, Math.min(1, (d[0] * r.dir[0] + d[1] * r.dir[1] + d[2] * r.dir[2]) / l))) * 180 / Math.PI;
+};
+test('hold: popping out of cover (coverLow/coverTall into aim) keeps the reticle on its world point; without it the point slides off', () => {
+  for (const [from, p] of [['coverLow', [0.4, 1.0, 12]], ['coverTall', [-1.5, 1.2, 8]], ['normal', [0.2, 0.9, 25]], ['coverLow', [0, 1, 4]]]) {
+    for (const [yaw, pitch] of [[0, 0], [0.7, -0.1], [-2.0, 0.15]]) {
+      const base = (hold) => {
+        const c = rig(); c.snap(T0, yaw, from); c.pitch = pitch; run(c, 90, { mode: from });
+        const r0 = c.update(DT, { target: T0, mode: from, side: 1 }, OPEN);
+        // The point under the reticle: 12 m along the centre ray, shifted by p to give a spread of cases.
+        const P = [r0.pos[0] + r0.dir[0] * (6 + p[2]), r0.pos[1] + r0.dir[1] * (6 + p[2]), r0.pos[2] + r0.dir[2] * (6 + p[2])];
+        if (hold) c.hold(P);
+        let worst = 0, r;
+        for (let i = 0; i < 40; i++) { r = c.update(DT, { target: T0, mode: 'aim', side: 1 }, OPEN); worst = Math.max(worst, angleTo(r, P)); }
+        return { worst, c };
+      };
+      const free = base(false), held = base(true);
+      assert.ok(held.worst < 0.5, `${from} yaw ${yaw}: held worst ${held.worst}`);
+      // (Normal to aim keeps the same shoulder and height, so only cover modes move the reticle without the hold.)
+      if (from !== 'normal') assert.ok(free.worst > 0.5, `${from}: the unheld blend moved the reticle ${free.worst} deg`);
+    }
+  }
+});
+test('hold: looking, leaving aim, or holdTime running out releases it; holdTime 0 is off; a held yaw change stays small', () => {
+  const P = [0.3, 1, 15];
+  const go = (mode, opts = {}) => { const c = rig(); c.snap(T0, 0, 'coverLow'); run(c, 60, { mode: 'coverLow' }); c.hold(P); run(c, 3, { mode: opts.mode || 'aim' }); return c; };
+  let c = go('aim'); assert.equal(c.holding(), true);
+  assert.ok(Math.abs(c.yaw) < 0.1, `yaw moved ${c.yaw}`);
+  c.look(5, 0, 0, 0, DT, true); assert.equal(c.holding(), false);
+  c = go('coverLow', { mode: 'coverLow' }); run(c, 1, { mode: 'coverLow' }); assert.equal(c.holding(), false);
+  c = go('aim'); run(c, 60, { mode: 'aim' }); assert.equal(c.holding(), false);
+  const t = clone(); t.holdTime = 0; const z = createCameraRig({ tuning: t, look: TUNING.look }); z.snap(T0, 0, 'coverLow'); z.hold(P); assert.equal(z.holding(), false);
+});

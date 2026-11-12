@@ -26,6 +26,17 @@ export function hudModel({ arsenal, stance, firing, covered = false, device = 'k
     const T = Math.max(row.reloadTime, combat.minReloadTime);
     reload = { ...reload, show: true, marker: clamp01(r.t / T), prompt: r.press === null ? `${key} again on the bright zone` : '' };
   } else if (am.mag <= 0) reload.prompt = `${key} to reload`;
+  // The alert under the reticle: low magazine and idle. Hidden while reloading (the bar's prompt takes over). With no reserve
+  // left to load it says so instead; the pistol's reserve is infinite, so it never does.
+  const lowMag = am.mag <= Math.max(0, feedback.lowAmmoFrac) * row.mag;
+  const noReserve = row.infiniteReserve <= 0 && am.reserve <= 0;
+  const alert = { show: false, text: '', kind: '' };
+  if (!r && lowMag && !banner) {
+    alert.show = true;
+    if (noReserve) { alert.text = 'NO AMMO'; alert.kind = 'none'; }
+    else if (am.mag <= 0) { alert.text = `EMPTY \u2014 RELOAD  ${key}`; alert.kind = 'empty'; }
+    else { alert.text = `RELOAD  ${key}`; alert.kind = 'low'; }
+  }
   const popped = stance === 'aim';
   return {
     weapon: WEAPONS[id].name,
@@ -36,7 +47,7 @@ export function hudModel({ arsenal, stance, firing, covered = false, device = 'k
       gap: feedback.reticleMinGap + reticleGap(spreadDeg, fov, viewportH),
       opacity: covered && !popped ? feedback.coverReticleOpacity : 1,
     },
-    reload,
+    reload, alert,
     hit: { show: !!marker, kind: marker || null },
     // The face hides while a banner owns the screen (downed, cleared); the edge glow still follows the face model.
     faceShow: !!face && !banner && !face.downed.show,
@@ -90,6 +101,7 @@ export function createHud(root = document.body) {
   const bright = el('div', 'cr-zone cr-zone-perfect', bar);
   const mark = el('div', 'cr-marker', bar);
   const result = el('div', 'cr-result', panel);
+  const alertEl = el('div', 'cr-alert', hud);
   const reticle = el('div', 'cr-reticle', hud);
   const arms = ['up', 'down', 'left', 'right'].map(d => el('div', `cr-arm cr-arm-${d}`, reticle));
   const hit = el('div', 'cr-hit', hud);
@@ -110,6 +122,7 @@ export function createHud(root = document.body) {
       set('perfect', `${m.reload.perfect}`, () => zone(bright, m.reload.perfect));
       set('marker', Math.round(m.reload.marker * 500), () => { mark.style.left = pct(m.reload.marker); });
       set('flash', m.reload.flash, v => { result.textContent = v ? v.toUpperCase().replace('JAM', 'JAMMED') : ''; result.dataset.kind = v || ''; });
+      set('alert', m.alert.show ? `${m.alert.kind}|${m.alert.text}` : '', () => { alertEl.hidden = !m.alert.show; alertEl.textContent = m.alert.text; alertEl.dataset.kind = m.alert.kind; });
       set('ret.show', m.reticle.show, v => { reticle.hidden = !v; });
       set('ret.op', Math.round(m.reticle.opacity * 100), () => { reticle.style.opacity = m.reticle.opacity.toFixed(2); });
       set('ret.gap', Math.round(m.reticle.gap), g => { arms.forEach(a => a.style.setProperty('--gap', `${g}px`)); });

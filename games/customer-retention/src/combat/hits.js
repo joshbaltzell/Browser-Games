@@ -101,9 +101,21 @@ export function spreadDir(dir, deg, rand, out = [0, 0, 0]) {
   return out;
 }
 
-// One shot. The camera ray (lens, view) finds the aim point, ignoring the player's own cover box; the shot then
-// goes from the muzzle toward that point, turned by the spread cone, and the first thing it meets is what it hits.
-export function resolveShot({ lens, view, muzzle, spreadDeg, range, boxes, targets, ignoreBox = -1, rand = Math.random }) {
+// One shot. The camera ray (lens, view) finds where the player is looking, ignoring the player's own cover box.
+// aimed: the shot IS that ray, turned by the spread cone about the view, so it hits what the reticle shows (the muzzle sits off
+//   the lens and can be shadowed by a corner the camera cleared). The muzzle only places the flash and the start of the tracer:
+//   dir runs from the muzzle to where the camera ray ended.
+// not aimed (hip, blind): the shot goes from the muzzle toward the camera aim point, turned by the cone, and the first thing it
+//   meets is what it hits.
+export function resolveShot({ lens, view, muzzle, spreadDeg, range, boxes, targets, ignoreBox = -1, rand = Math.random, aimed = false }) {
+  if (aimed) {
+    const cd = spreadDir(view, spreadDeg, rand);
+    const hit = castRay(lens, cd, range, boxes, targets, { ignoreBox });
+    const d = [hit.point[0] - muzzle[0], hit.point[1] - muzzle[1], hit.point[2] - muzzle[2]];
+    const l = Math.hypot(d[0], d[1], d[2]);
+    const dir = l > 1e-9 ? [d[0] / l, d[1] / l, d[2] / l] : [cd[0], cd[1], cd[2]];
+    return { from: muzzle, dir, hit };
+  }
   const toMuzzle = Math.hypot(muzzle[0] - lens[0], muzzle[1] - lens[1], muzzle[2] - lens[2]);
   const cam = castRay(lens, view, range + toMuzzle, boxes, targets, { ignoreBox });
   const aim = cam.kind === 'none' ? [lens[0] + view[0] * range, lens[1] + view[1] * range, lens[2] + view[2] * range] : cam.point;

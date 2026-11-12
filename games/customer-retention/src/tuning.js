@@ -15,6 +15,8 @@ export const TUNING = {
     slamShake: { amount: 0.06, time: 0.18, hz: 24 }, // slam shake: peak lens offset in m, how long it rings in s, and its rate
     recoil: { halfLife: 0.09, max: 6 },     // gun kick spring: s to halve, and the cap in deg
     blendHalfLife: 0.07,       // mode changes: offsets and fov
+    holdTime: 0.6,             // s, the reticle's world point is held through a blend into aim (0 = off)
+    holdRange: 100,            // m, the held point when the aim ray hits nothing
     followHalfLife: 0.04,      // pivot trailing the player (0 = rigid)
     sideHalfLife: 0.12,        // shoulder swap
     shake: { amp: 0.025, hz: 9 }, // sprint only
@@ -95,7 +97,7 @@ export const TUNING = {
     regret: {
       mag: 50, reserveStart: 250, reserveMax: 400, infiniteReserve: 0, // rounds
       auto: 1, rate: 9, damage: 16, headMult: 2, range: 60,            // shots/s, damage per body hit, head multiplier, m
-      spreadAim: 0.96, spreadHip: 4, spreadBlind: 11.2,                 // deg, cone by stance
+      spreadAim: 0.8, spreadHip: 4, spreadBlind: 11.2,                 // deg, cone by stance
       bloomPerShot: 0.25, bloomMax: 2, bloomRecover: 1.5,              // deg per shot, deg cap, deg/s recovery
       kickPitch: 0.98, kickYaw: 0.25,                                   // deg of camera kick per shot (yaw is plus or minus)
       reloadTime: 2.2,                                                 // s, whole reload bar
@@ -107,7 +109,7 @@ export const TUNING = {
     pistol: {
       mag: 12, reserveStart: 0, reserveMax: 0, infiniteReserve: 1,
       auto: 0, rate: 4, damage: 30, headMult: 2.5, range: 50,
-      spreadAim: 0.325, spreadHip: 1.56, spreadBlind: 6.5,
+      spreadAim: 0.25, spreadHip: 1.56, spreadBlind: 6.5,
       bloomPerShot: 0.8, bloomMax: 2.5, bloomRecover: 6,
       kickPitch: 1.6, kickYaw: 0.4,
       reloadTime: 1.4,
@@ -128,6 +130,7 @@ export const TUNING = {
     muzzleForward: 0.55,  // m, muzzle offset along the camera heading
     blindLift: 0.15,      // m, blind muzzle height above low cover's top
     blindReach: 0.15,     // m, blind muzzle reach past the wall face or a tall corner
+    hitPad: 0.05,         // m, added to every Associate and dummy hit volume radius (the drawn hair, sleeves and arms stand past the capsule)
     crateRadius: 1.0,     // m, walk within this of an ammo crate to refill
     crouchHead: 0.70,     // m, head centre of a crouched character tucked behind low cover
     crouchBodyTop: 0.45,  // m, top of a crouched character's body capsule
@@ -169,6 +172,7 @@ export const TUNING = {
     sparkTime: 0.25, sparkCount: 4, gelTime: 0.5, gelCount: 6, gelSpeed: 3,
     killGelCount: 18, receiptCount: 8, receiptTime: 1.2, gravity: 9.8,
     hitMarkerTime: 0.12, killMarkerTime: 0.3, reloadResultTime: 0.6,
+    lowAmmoFrac: 0.2,   // the reload alert shows when the magazine is at or below this fraction of full
     coverReticleOpacity: 0.5, // the reticle's opacity while tucked in cover (0 to 1)
     stepDip: 0.015,     // m, the lens dips this far on each foot plant
     stepVolume: 0.3,    // 0 to 1, a footstep (the 'step' sound recipe)

@@ -40,7 +40,7 @@ test('castRay: the nearest of box, head and body wins; dead targets are skipped;
   let h = castRay([0, 1.0, 0], [0, 0, 1], 50, boxes, [d]);
   assert.equal(h.kind, 'world'); assert.equal(h.boxIndex, 1); near(h.t, 4); near(h.point[2], 4);
   h = castRay([0, 1.0, 0], [0, 0, 1], 50, boxes, [d], { ignoreBox: 1 });
-  assert.equal(h.kind, 'body'); assert.equal(h.target, d); near(h.t, 8 - 0.262);
+  assert.equal(h.kind, 'body'); assert.equal(h.target, d); near(h.t, 8 - 0.262 - 0.05);   // the shirt radius plus combat.hitPad
   d.alive = false;
   h = castRay([0, 1.0, 0], [0, 0, 1], 50, boxes, [d], { ignoreBox: 1 });
   assert.equal(h.kind, 'none'); assert.equal(h.t, Infinity); assert.equal(h.target, null);

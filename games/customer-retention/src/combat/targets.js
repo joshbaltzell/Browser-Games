@@ -10,9 +10,10 @@ export const HIT_SHAPES = Object.freeze({
   body: Object.freeze({ ay: ASSOCIATE.ankleHeight, by: ASSOCIATE.neckY, r: Math.max(...ASSOCIATE.torso.shirt.map(p => p[0])) }),
 });
 
-function refreshShapes(d) {
+function refreshShapes(d, hitPad = TUNING.combat.hitPad) {
   const [x, y, z] = d.pos, s = d.shapes;
   s.head.c[0] = x; s.head.c[1] = y + HIT_SHAPES.head.cy; s.head.c[2] = z;
+  s.head.r = HIT_SHAPES.head.r + hitPad; s.body.r = HIT_SHAPES.body.r + hitPad;
   s.body.a[0] = x; s.body.a[1] = y + HIT_SHAPES.body.ay; s.body.a[2] = z;
   s.body.b[0] = x; s.body.b[1] = y + HIT_SHAPES.body.by; s.body.b[2] = z;
 }

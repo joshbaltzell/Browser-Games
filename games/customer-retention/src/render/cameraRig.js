@@ -42,6 +42,7 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
   const pos = [0, 0, 0], dir = [0, 0, 1];
   // update() returns this one object every frame; copy pos/dir if you keep them.
   const result = { pos, dir, fov: 70 };
+  const held = { on: false, t: 0, p: [0, 0, 0] }; // the world point the reticle is held on while a mode blend runs
   let ratio = 1;       // fraction of `back` the walls currently allow
   let clock = 0;
   let ready = false;
@@ -49,6 +50,7 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
   const cam = {
     yaw: 0, pitch: 0,
     look(dxPx, dyPx, padX, padY, dt, aiming, padScale = 1) {
+      if (dxPx || dyPx || padX || padY) held.on = false; // the player took the view back
       const s = aiming ? look.aimScale : 1;
       const inv = look.invertY ? -1 : 1;
       this.yaw -= dxPx * look.mouse * s;
@@ -79,6 +81,14 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       recoil.p.x = Math.max(0, cap(recoil.p.x, pitchDeg));
       recoil.y.x = cap(recoil.y.x, yawDeg);
     },
+    // Keep the world point p under the reticle while the camera blends: the view turns each frame so the lens-to-centre ray
+    // passes through p, for tuning.holdTime s, until the player looks, or until the mode leaves aim. cam.yaw and cam.pitch
+    // take the turn (a small change), so movement and the next look carry on from where the reticle is.
+    hold(p) {
+      if (!(tuning.holdTime > 0)) { held.on = false; return; }
+      held.on = true; held.t = tuning.holdTime; held.p[0] = p[0]; held.p[1] = p[1]; held.p[2] = p[2];
+    },
+    holding() { return held.on; },
     // Level the view and drop the gun kick (a restart): yaw stays.
     recenter() {
       this.pitch = 0;
@@ -93,7 +103,7 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       for (let i = 0; i < 3; i++) { piv[i].x = target[i]; piv[i].v = 0; }
       kick.x = 0; kick.v = 0; dip.x = 0; dip.v = 0; slam.t = 0;
       recoil.p.x = 0; recoil.p.v = 0; recoil.y.x = 0; recoil.y.v = 0;
-      ratio = 1; ready = true;
+      ratio = 1; ready = true; held.on = false;
     },
     update(dt, { target, mode = 'normal', side: sideTarget = 1 }, boxes) {
       if (!ready) this.snap(target, this.yaw, mode, sideTarget);
@@ -110,38 +120,58 @@ export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } =
       const rh = tuning.recoil ? tuning.recoil.halfLife : 0;
       springStep(recoil.p, 0, rh, dt); springStep(recoil.y, 0, rh, dt);
       const DEG = Math.PI / 180;
-      const yaw = this.yaw + recoil.y.x * DEG;
-      const pitch = Math.max(tuning.pitchMin, Math.min(tuning.pitchMax, this.pitch + recoil.p.x * DEG));
-      const sy = Math.sin(yaw), cy = Math.cos(yaw), sinP = Math.sin(pitch), cp = Math.cos(pitch);
       const r = tuning.probeRadius;
       const back = sp.back.x;
-      // 1. head, then out to the shoulder as far as the walls allow
-      head[0] = piv[0].x; head[1] = piv[1].x + sp.up.x; head[2] = piv[2].x;
-      // the trailing pivot can cut a corner the player has already turned; stop
-      // it at the first wall between it and the real head. At rest the two
-      // coincide, so this is a no-op and cannot jitter.
-      free[0] = target[0]; free[1] = target[1] + sp.up.x; free[2] = target[2];
-      const th = sweepSphere(boxes, free, head, r);
-      if (th < 1) for (let i = 0; i < 3; i++) head[i] = free[i] + (head[i] - free[i]) * th;
-      const off = sp.right.x * side.x;
-      shoulder[0] = head[0] - cy * off; shoulder[1] = head[1]; shoulder[2] = head[2] + sy * off;
-      const ts = sweepSphere(boxes, head, shoulder, r);
-      for (let i = 0; i < 3; i++) shoulder[i] = head[i] + (shoulder[i] - head[i]) * ts;
-      // 2. back along the view direction
-      dir[0] = sy * cp; dir[1] = sinP; dir[2] = cy * cp;
-      for (let i = 0; i < 3; i++) want[i] = shoulder[i] - dir[i] * back;
-      const tb = sweepSphere(boxes, shoulder, want, r);
-      // 3. pull in at once, ease back out
-      let allowed = back > 1e-6 ? Math.max(tuning.minBack / back, tb) : 1;
-      if (allowed > 1) allowed = 1;
-      if (allowed < ratio) ratio = allowed;
-      else ratio += (allowed - ratio) * (tuning.wallReturnHalfLife > 0 ? 1 - Math.pow(2, -dt / tuning.wallReturnHalfLife) : 1);
-      const pull = back * ratio - kick.x;
-      for (let i = 0; i < 3; i++) pos[i] = shoulder[i] - dir[i] * pull;
-      // the minBack floor must never win against a wall: keep the lens a full
-      // probe radius from every face by sweeping the head out to it
-      const tl = sweepSphere(boxes, head, pos, r);
-      if (tl < 1) for (let i = 0; i < 3; i++) pos[i] = head[i] + (pos[i] - head[i]) * tl;
+      let cy = 1, sy = 0;
+      // Head, shoulder, lens and view for the current yaw and pitch. The wall pull-in eases only on the first pass.
+      const place = (first) => {
+        const yaw = this.yaw + recoil.y.x * DEG;
+        const pitch = Math.max(tuning.pitchMin, Math.min(tuning.pitchMax, this.pitch + recoil.p.x * DEG));
+        sy = Math.sin(yaw); cy = Math.cos(yaw);
+        const sinP = Math.sin(pitch), cp = Math.cos(pitch);
+        // 1. head, then out to the shoulder as far as the walls allow
+        head[0] = piv[0].x; head[1] = piv[1].x + sp.up.x; head[2] = piv[2].x;
+        // the trailing pivot can cut a corner the player has already turned; stop
+        // it at the first wall between it and the real head. At rest the two
+        // coincide, so this is a no-op and cannot jitter.
+        free[0] = target[0]; free[1] = target[1] + sp.up.x; free[2] = target[2];
+        const th = sweepSphere(boxes, free, head, r);
+        if (th < 1) for (let i = 0; i < 3; i++) head[i] = free[i] + (head[i] - free[i]) * th;
+        const off = sp.right.x * side.x;
+        shoulder[0] = head[0] - cy * off; shoulder[1] = head[1]; shoulder[2] = head[2] + sy * off;
+        const ts = sweepSphere(boxes, head, shoulder, r);
+        for (let i = 0; i < 3; i++) shoulder[i] = head[i] + (shoulder[i] - head[i]) * ts;
+        // 2. back along the view direction
+        dir[0] = sy * cp; dir[1] = sinP; dir[2] = cy * cp;
+        for (let i = 0; i < 3; i++) want[i] = shoulder[i] - dir[i] * back;
+        const tb = sweepSphere(boxes, shoulder, want, r);
+        // 3. pull in at once, ease back out
+        let allowed = back > 1e-6 ? Math.max(tuning.minBack / back, tb) : 1;
+        if (allowed > 1) allowed = 1;
+        if (allowed < ratio) ratio = allowed;
+        else if (first) ratio += (allowed - ratio) * (tuning.wallReturnHalfLife > 0 ? 1 - Math.pow(2, -dt / tuning.wallReturnHalfLife) : 1);
+        const pull = back * ratio - kick.x;
+        for (let i = 0; i < 3; i++) pos[i] = shoulder[i] - dir[i] * pull;
+        // the minBack floor must never win against a wall: keep the lens a full
+        // probe radius from every face by sweeping the head out to it
+        const tl = sweepSphere(boxes, head, pos, r);
+        if (tl < 1) for (let i = 0; i < 3; i++) pos[i] = head[i] + (pos[i] - head[i]) * tl;
+      };
+      place(true);
+      // Held reticle: turn the view so the centre ray passes through the held point. The lens depends on the view, so a few
+      // passes settle it (the lens moves a little per degree).
+      if (held.on) {
+        held.t -= dt;
+        if (held.t <= 0 || (mode !== 'aim')) held.on = false;
+        else for (let k = 0; k < 3; k++) {
+          const dx = held.p[0] - pos[0], dy = held.p[1] - pos[1], dz = held.p[2] - pos[2];
+          const l = Math.hypot(dx, dy, dz);
+          if (l < 0.5) break;
+          this.yaw = Math.atan2(dx, dz) - recoil.y.x * DEG;
+          this.pitch = Math.max(tuning.pitchMin, Math.min(tuning.pitchMax, Math.asin(dy / l) - recoil.p.x * DEG));
+          place(false);
+        }
+      }
       // 4. sprint shake
       const sh = tuning.shake;
       if (sh && sh.amp && shakeW.x > 0) {

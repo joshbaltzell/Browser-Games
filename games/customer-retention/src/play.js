@@ -398,7 +398,7 @@ export function startPlay({ canvas, gl, params }) {
     muzzleOf(mover, stance, cam.yaw, TUNING.combat, muzzle);
     const r = resolveShot({
       lens: camState.pos, view: camState.dir, muzzle, spreadDeg: e.spread, range: row.range, boxes, targets: targetList,
-      ignoreBox: edge ? edge.boxIndex : -1, rand: shotRand,
+      ignoreBox: edge ? edge.boxIndex : -1, rand: shotRand, aimed: stance === 'aim',
     });
     const hit = r.hit;
     const tg = hit.target;
@@ -483,7 +483,13 @@ export function startPlay({ canvas, gl, params }) {
       const p = mover.pos, q = mover.prevPos;
       for (let i = 0; i < 3; i++) target[i] = q[i] + (p[i] - q[i]) * alpha;
       if (mover.slams > seenSlams) { seenSlams = mover.slams; cam.bump(); sfx.play('thud', TUNING.cover.thudVolume); }
-      camMode = cameraModeOf(mover); camSide = cameraSideOf(mover);
+      const nextMode = cameraModeOf(mover);
+      // Blending into aim (popping out of cover, or aiming in the open): the point under the reticle stays under it.
+      if (nextMode === 'aim' && camMode !== 'aim') {
+        const ce = mover.cover ? mover.cover.edge : null;
+        cam.hold(castRay(camState.pos, camState.dir, TUNING.camera.holdRange, boxes, targetList, { ignoreBox: ce ? ce.boxIndex : -1 }).point);
+      }
+      camMode = nextMode; camSide = cameraSideOf(mover);
       const r = cam.update(dt, { target, mode: camMode, side: camSide }, boxes);
       camState.pos[0] = r.pos[0]; camState.pos[1] = r.pos[1]; camState.pos[2] = r.pos[2]; camState.fov = r.fov;
       camState.dir[0] = r.dir[0]; camState.dir[1] = r.dir[1]; camState.dir[2] = r.dir[2];
