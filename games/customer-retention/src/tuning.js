@@ -148,6 +148,17 @@ export const TUNING = {
   associate: {
     radius: 0.35, height: 1.8, pointSpacing: 0.8, reserveRadius: 1.0, popShift: 0.55,
     linkMax: 7,           // m, longest waypoint link
+    health: 100, runSpeed: 4.2, turnRate: 10, arriveDist: 0.15, stuckTime: 1.0, // hp, m/s, rad/s, m, s
+    popTime: 0.15, telegraphTime: 0.45, burstTime: 1.6, rate: 5, damage: 7, range: 30, // s, s, s, shots/s, hp, m
+    spread: 2.5, moveSpread: 4, aimLag: 0.2,                                    // deg, deg at full sprint, s half-life
+    suppressChance: 0.5, suppressTime: 1.2, suppressRate: 4, suppressMiss: 1.5, suppressSpread: 8, // fraction, s, shots/s, m, deg
+    coverWaitMin: 0.8, coverWaitMax: 2.0, magBursts: 3, reloadTime: 2.0, flinchTime: 0.25, // s, s, bursts, s, s
+    minRange: 5, preferRange: 12, maxRange: 24, relocateCheck: 0.5, relocateAfter: 12, ammoDrop: 25, muzzleUp: 1.35, // m, m, m, s, s, rounds, m
+  },
+  // The encounter director. Times in s, distances in m, angles in deg. casual is a flag (dev switch).
+  director: {
+    tokens: 2, casualTokens: 1, casual: 0, tokenCooldown: 1.0, tokenMaxHold: 3.0, requestWindow: 0.25,
+    pushAfter: 6, flankAfter: 10, stayRadius: 2.5, flankAngle: 60,
   },
   // Shot feedback. Times in s, sizes in m, speeds in m/s, volumes 0 to 1, squash and kicks as fractions or m.
   feedback: {
