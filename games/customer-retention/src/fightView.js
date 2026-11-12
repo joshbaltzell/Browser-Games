@@ -5,10 +5,13 @@ import { PALETTE } from './render/palette.js';
 import { createToonMaterial } from './render/toon.js';
 import { createBarkLine } from './director/barks.js';
 import { hitAngle } from './ui/damageFace.js';
+import { SPEAKER_COLORS } from './director/barks.js';
 
 // The fight on screen and in the speakers: the Associates' flashes, tracers, charge whines and blaster sounds, the
-// bark line, and the ammo pickups they drop. The fight (director/fight.js) is the truth; this reacts to its events.
-// `views` is one Associate view per enemy, in the same order as fight.enemies.
+// bark line, the ammo pickups they drop, and (milestone 5) the saunas' sounds and steam, the kettlebell blast, Tobble's shots,
+// the revive sounds and the deaths that do not come from Doc's gun. The fight (director/fight.js) is the truth; this reacts to its events.
+// `views` is one Associate view per enemy, in the same order as fight.enemies. `hooks` is play.js's side of it:
+//   { marker(kind) shows the hit marker, restart() goes back to the checkpoint }. `cam` (optional) gets the blast's kick.
 
 const MAX_PICKUPS = 4;
 const SPIN = 1.2;
@@ -35,7 +38,7 @@ export function shotOrigin(ev, gunTip, out) {
   return out;
 }
 
-export function createFightView({ scene, effects, sfx, fight, views }) {
+export function createFightView({ scene, effects, sfx, fight, views, cam = null, hooks = {} }) {
   const byId = new Map(fight.enemies.map((e, i) => [e.id, views[i]]));
   const enemyById = new Map(fight.enemies.map(e => [e.id, e]));
   const glints = new Map();           // id -> seconds of glint left
@@ -50,6 +53,26 @@ export function createFightView({ scene, effects, sfx, fight, views }) {
   const barkLine = createBarkLine();
 
   const pan = (listener, from) => Math.sin(hitAngle(listener.yaw, listener.pos, from));
+  // A sound at a point in the world: louder when it is near, panned to where it is.
+  const near = (listener, at) => Math.min(1, 6 / Math.max(Math.hypot(at[0] - listener.pos[0], at[2] - listener.pos[2]), 1e-3));
+  const where = [0, 0, 0], dirv = [0, 1, 0];
+  const mid = (pos, up = 1.0) => { where[0] = pos[0]; where[1] = pos[1] + up; where[2] = pos[2]; return where; };
+
+  // A Rep died by anything but Doc's gun (the gun's kills are drawn in play.js, with the shot).
+  function deathFx(ev, listener) {
+    const fb = TUNING.feedback, kind = ev.kind;
+    if (kind === 'body' || kind === 'head') return;
+    const at = mid(ev.pos), n = kind === 'execute' ? fb.killGelCount * 2 : kind === 'bleed' ? fb.gelCount : fb.killGelCount;
+    effects.gel(at, dirv, n);
+    if (kind === 'bleed') return;
+    effects.receipts(mid(ev.pos, 1.2), fb.receiptCount);
+    addPickup(ev.pos);
+    if (kind === 'tobble') { sfx.play('kill', fb.killVolume * 0.5, pan(listener, ev.pos)); return; }
+    if (hooks.marker) hooks.marker('kill');
+    sfx.play(kind === 'execute' ? 'finish' : 'kill', kind === 'execute' ? fb.bashVolume : fb.killVolume, pan(listener, ev.pos));
+  }
+
+  const padPos = (id) => { const p = fight.pads.find(x => x.id === id); return p ? p.pos : [0, 0, 0]; };
 
   function nearestEnemy(from) {
     let best = null, bd = Infinity;
@@ -65,6 +88,30 @@ export function createFightView({ scene, effects, sfx, fight, views }) {
     const fb = TUNING.feedback, A = TUNING.associate;
     for (const ev of events) {
       if (ev.type === 'bark') barkLine.say(ev.key, !!ev.force);
+      else if (ev.type === 'padOpen') sfx.play('saunaOpen', fb.saunaVolume, pan(listener, padPos(ev.id)));
+      else if (ev.type === 'padClosed') sfx.play('saunaClose', fb.saunaVolume, pan(listener, padPos(ev.id)));
+      else if (ev.type === 'padSpawn') { const pp = padPos(ev.id); for (let k = 0; k < 4; k++) effects.steam([pp[0] + (k - 1.5) * 0.25, 0.1, pp[2]]); }
+      else if (ev.type === 'explode') {
+        effects.blast(ev.pos);
+        const d = Math.hypot(ev.pos[0] - listener.pos[0], ev.pos[2] - listener.pos[2]), k = Math.min(1, 8 / Math.max(d, 1e-3));
+        sfx.play('boom', fb.boomVolume * Math.max(0.4, k), pan(listener, ev.pos));
+        if (cam) { cam.kick(4 * k, (Math.random() * 2 - 1) * 2 * k); cam.bump(k); }
+      } else if (ev.type === 'clank') sfx.play('clank', fb.clankVolume * near(listener, ev.pos), pan(listener, ev.pos));
+      else if (ev.type === 'tobbleShot') {
+        const tb = fight.tobble, tv = hooks.tobbleView;
+        if (tv && tb && tb.pop >= 0.5) tv.tip(tip); else { tip[0] = ev.from[0]; tip[1] = ev.from[1]; tip[2] = ev.from[2]; }
+        const dx = ev.to[0] - tip[0], dy = ev.to[1] - tip[1], dz = ev.to[2] - tip[2], l = Math.hypot(dx, dy, dz) || 1;
+        effects.flash(tip, [dx / l, dy / l, dz / l]);
+        effects.friendlyTracer(tip, ev.to);
+        sfx.play('tobbleShot', fb.tobbleShotVolume * near(listener, ev.from), pan(listener, ev.from));
+      } else if (ev.type === 'tobbleHit') {
+        const tb = fight.tobble;
+        if (tb) effects.gel(tb.chest, [ev.from[0] - tb.chest[0], 0.3, ev.from[2] - tb.chest[2]], 4);
+      } else if (ev.type === 'revived') sfx.play('revive', fb.reviveVolume);
+      else if (ev.type === 'cloneRevive') { const h = enemyById.get(ev.id); if (h) sfx.play('revive', fb.reviveVolume * 0.6 * near(listener, h.pos), pan(listener, h.pos)); }
+      else if (ev.type === 'down') { if (hooks.marker) hooks.marker('kill'); effects.gel(mid(ev.pos), dirv, 6); sfx.play('hit', fb.hitVolume, pan(listener, ev.pos)); }
+      else if (ev.type === 'death') deathFx(ev, listener);
+      else if (ev.type === 'checkpoint') { if (hooks.restart) hooks.restart(); }
       else if (ev.type === 'telegraph') {
         glints.set(ev.id, A.popTime + A.telegraphTime);
         const v = byId.get(ev.id), e = enemyById.get(ev.id);
@@ -80,6 +127,12 @@ export function createFightView({ scene, effects, sfx, fight, views }) {
         sfx.play('blaster', fb.blasterVolume * Math.min(1, 8 / Math.max(dist, 1e-3)), pan(listener, ev.from));
       }
     }
+  }
+
+  function addPickup(pos) {
+    if (pickups.length >= MAX_PICKUPS) pickups.shift();
+    pickups.push({ pos: [pos[0], pos[1], pos[2]] });
+    drawPickups();
   }
 
   function drawPickups() {
@@ -98,6 +151,7 @@ export function createFightView({ scene, effects, sfx, fight, views }) {
     // A bark that always shows (downed), and the line on screen now as { speaker, text } or null.
     forceBark: (key) => barkLine.say(key, true),
     bark: () => barkLine.current(),
+    pan, near,
     // The bark clock runs on simulation time (once per fixed step), so a line never outlives its time.
     tick: (dt) => barkLine.tick(dt),
     update(dt) {
@@ -108,11 +162,7 @@ export function createFightView({ scene, effects, sfx, fight, views }) {
       }
       if (pickups.length) drawPickups();
     },
-    addPickup(pos) {
-      if (pickups.length >= MAX_PICKUPS) pickups.shift();
-      pickups.push({ pos: [pos[0], pos[1], pos[2]] });
-      drawPickups();
-    },
+    addPickup,
     // Removes every pickup within `radius` of pos (x, z) and returns how many.
     collect(pos, radius) {
       let n = 0;

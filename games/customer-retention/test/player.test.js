@@ -240,3 +240,15 @@ test('createPlayerView: a downed player who is not moving still fades into the c
   assert.equal(v.anim.current(), 'crawl');
   assert.ok(v.rig.root.getObjectByName('hips').position.y < 0.4 && v.rig.root.getObjectByName('hips').position.y < standing, 'hips are low after a second');
 });
+
+test('pickClip: bash -> bash, rev -> aim, execute -> bash looped, reviveTobble -> revive, grenadeAim in move -> throw held at the wind-up (rate 0), a moving aim-walk keeps running', () => {
+  const b = pickClip(fake({ state: 'bash' }));
+  assert.equal(b.name, 'bash'); near(b.rate, CLIPS.bash.duration / TUNING.melee.bashTime, 1e-9);
+  assert.equal(pickClip(fake({ state: 'rev' })).name, 'aim');
+  const e = pickClip(fake({ state: 'execute' }));
+  assert.equal(e.name, 'bash'); assert.equal(e.loop, true);
+  assert.equal(pickClip(fake({ state: 'reviveTobble' })).name, 'revive');
+  const t = pickClip(fake({ grenadeAim: true }));
+  assert.equal(t.name, 'throw'); assert.equal(t.rate, 0); near(t.at, 0.3 * CLIPS.throw.duration, 1e-9);
+  assert.equal(pickClip(fake({ grenadeAim: true, v: 2.2 })).name, 'run');
+});

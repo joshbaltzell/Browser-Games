@@ -15,11 +15,12 @@ const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 // marker is the hit marker kind ('body' | 'head' | 'kill') or null; reloadFlash is 'perfect' | 'good' | 'jam' or null.
 // face is the damageFaceModel result (or null); objective is a line of text; bark is { speaker, text } or null;
-// banner is { title, hint } or null. The last four pass through unchanged.
+// banner is { title, hint, hold? } or null (hold 0..1 draws the ring on the hint); bark.color is the speaker's colour. The last four pass through unchanged.
+// grenades is the kettlebell count (null hides the line); action is { text, hold: 0..1 | null } or null (the prompt line under the reload alert).
 // covered: the player is tucked or blind in cover (not popped); the reticle then shows dimmed, at the same screen point the
 // aimed shot's camera ray goes through. device is 'kbm' or 'pad': it picks the key name in the reload prompt.
 export function hudModel({ arsenal, stance, firing, covered = false, device = 'kbm', spreadDeg, fov, viewportH, marker = null, reloadFlash = null,
-  face = null, objective = '', bark = null, banner = null, weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
+  face = null, objective = '', bark = null, banner = null, grenades = null, action = null, weapons = TUNING.weapons, combat = TUNING.combat, feedback = TUNING.feedback }) {
   const id = arsenal.current();
   const row = weapons[id], am = arsenal.ammo[id];
   const r = arsenal.reload;
@@ -57,6 +58,8 @@ export function hudModel({ arsenal, stance, firing, covered = false, device = 'k
     // The face hides while a banner owns the screen (downed, cleared); the edge glow still follows the face model.
     faceShow: !!face && !banner && !face.downed.show,
     face, objective, bark, banner,
+    grenades: Number.isFinite(grenades) ? grenades : null,
+    action: action && action.text ? { text: action.text, hold: Number.isFinite(action.hold) ? clamp01(action.hold) : null } : null,
   };
 }
 
@@ -93,6 +96,10 @@ export function createHud(root = document.body) {
   const bannerEl = el('div', 'cr-banner', hud);
   const bannerTitle = el('div', 'cr-banner-title', bannerEl);
   const bannerHint = el('div', 'cr-banner-hint', bannerEl);
+  const bannerRing = el('i', 'cr-ring', bannerEl);
+  const actionEl = el('div', 'cr-action', hud);
+  const actionText = el('span', 'cr-action-text', actionEl);
+  const actionRing = el('i', 'cr-ring', actionEl);
   const objectiveEl = el('div', 'cr-objective', hud);
   const barkEl = el('div', 'cr-bark', hud);
   const barkWho = el('span', 'cr-bark-who', barkEl);
@@ -100,6 +107,7 @@ export function createHud(root = document.body) {
   const panel = el('div', 'cr-weapon', hud);
   const name = el('div', 'cr-weapon-name', panel);
   const ammo = el('div', 'cr-ammo', panel);
+  const kbEl = el('div', 'cr-kb', panel);
   const prompt = el('div', 'cr-prompt', panel);
   const bar = el('div', 'cr-reload', panel);
   const grey = el('div', 'cr-zone cr-zone-good', bar);
@@ -139,9 +147,14 @@ export function createHud(root = document.body) {
         set('face.fill', Math.round(fc.face.fill * 50), () => { const h = 92 * fc.face.fill; fill.setAttribute('y', (96 - h).toFixed(1)); fill.setAttribute('height', h.toFixed(1)); });
         for (const k of Object.keys(edges)) set(`edge.${k}`, Math.round(fc.edges[k] * 50), () => { edges[k].style.opacity = fc.edges[k].toFixed(2); });
       }
+      set('kb', m.grenades === null ? '' : String(m.grenades), v => { kbEl.hidden = v === ''; kbEl.textContent = `KETTLEBELLS ${v}`; });
+      set('action', m.action ? m.action.text : '', v => { actionEl.hidden = !m.action; actionText.textContent = v; });
+      set('action.hold', m.action && m.action.hold !== null ? Math.round(m.action.hold * 100) : -1, v => { actionRing.hidden = v < 0; actionRing.style.setProperty('--hold', `${Math.max(v, 0) * 3.6}deg`); });
+      const bh = m.banner && m.banner.hold !== undefined && m.banner.hold !== null ? Math.round(clamp01(m.banner.hold) * 100) : -1;
+      set('banner.hold', bh, v => { bannerRing.hidden = v < 0; bannerRing.style.setProperty('--hold', `${Math.max(v, 0) * 3.6}deg`); });
       set('banner', m.banner ? `${m.banner.title}|${m.banner.hint}` : '', v => { bannerEl.hidden = !m.banner; if (m.banner) { bannerTitle.textContent = m.banner.title; bannerHint.textContent = m.banner.hint; } });
       set('objective', m.objective || '', v => { objectiveEl.textContent = v; objectiveEl.hidden = !v; });
-      set('bark', m.bark ? `${m.bark.speaker}|${m.bark.text}` : '', () => { barkEl.hidden = !m.bark; if (m.bark) { barkWho.textContent = m.bark.speaker; barkText.textContent = m.bark.text; } });
+      set('bark', m.bark ? `${m.bark.speaker}|${m.bark.text}` : '', () => { barkEl.hidden = !m.bark; if (m.bark) { barkWho.textContent = m.bark.speaker; barkWho.style.color = m.bark.color || ''; barkText.textContent = m.bark.text; } });
       set('hit', m.hit.show ? m.hit.kind : '', v => { hit.hidden = !v; hit.dataset.kind = v; });
     },
   };

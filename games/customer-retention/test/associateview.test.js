@@ -69,3 +69,26 @@ test('createAssociateView: draws a tucked Associate back from low cover, pops it
   v.reset();
   assert.equal(v.group.visible, true); assert.equal(v.group.scale.x, 1);
 });
+
+test('pickAssociateClip: downed crawl, kneeling helper revive, dive roll, stagger flinch, executed flinch, spawn idle', () => {
+  const want = { downed: 'crawl', kneel: 'revive', dive: 'roll', stagger: 'flinch', executed: 'flinch', spawn: 'idle' };
+  for (const [s, c] of Object.entries(want)) assert.equal(pickAssociateClip(E({ state: s, point: null })), c, s);
+  assert.equal(pickAssociateClip(E({ state: 'kneel', role: 'revive', point: null })), 'revive');
+});
+
+test('createAssociateView: an unused slot is hidden, a spawn rises from -0.6 to 0 over riseTime, a dead slot that comes alive is a fresh Rep', () => {
+  const e = createAssociate({ id: 'q', pos: [0, 0, 5] });
+  const v = createAssociateView(e);
+  e.state = 'unused'; e.alive = false;
+  v.update(1, 1 / 60); assert.equal(v.group.visible, false);
+  e.state = 'spawn'; e.alive = true; e.stateT = 0; e.pos = [0, 0, 5]; e.prevPos = [0, 0, 5];
+  v.update(1, 1 / 60); assert.equal(v.group.visible, true);
+  assert.ok(Math.abs(v.group.position.y + 0.6) < 1e-9, `y ${v.group.position.y}`);
+  e.stateT = TUNING.pad.riseTime / 2; v.update(1, 1 / 60);
+  assert.ok(Math.abs(v.group.position.y + 0.3) < 1e-9);
+  e.stateT = TUNING.pad.riseTime; v.update(1, 1 / 60); assert.equal(v.group.position.y, 0);
+  e.state = 'dead'; e.alive = false;
+  v.update(1, 1 / 60); v.update(1, 1); assert.equal(v.group.visible, false, 'burst, then gone');
+  e.state = 'spawn'; e.alive = true; e.stateT = 0;
+  v.update(1, 1 / 60); assert.equal(v.group.visible, true); assert.equal(v.group.scale.x, 1);
+});

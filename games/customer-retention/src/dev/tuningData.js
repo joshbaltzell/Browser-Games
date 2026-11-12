@@ -112,7 +112,11 @@ export const PANEL = Object.freeze([
   n('feedback.hitKick', 0, 3, 0.05), n('feedback.hurtVolume', 0, 1, 0.05),
   n('feedback.enemyFlashSize', 0.05, 1.5, 0.05), n('feedback.enemyTracerTime', 0.01, 0.3, 0.01), n('feedback.enemyTracerWidth', 0.005, 0.2, 0.005), n('feedback.glintSize', 0.02, 0.4, 0.01),
   n('feedback.blasterVolume', 0, 1, 0.05), n('feedback.chargeVolume', 0, 1, 0.05), n('feedback.pickupVolume', 0, 1, 0.05),
-  n('feedback.barkTime', 0.2, 6, 0.1), n('feedback.barkGap', 0, 12, 0.5),
+  n('feedback.barkTime', 0.2, 6, 0.1), n('feedback.barkGap', 0, 12, 0.5), n('feedback.barkMinShow', 0, 4, 0.1),
+  n('feedback.bashVolume', 0, 1, 0.05), n('feedback.revVolume', 0, 1, 0.05), n('feedback.cutVolume', 0, 1, 0.05), n('feedback.throwVolume', 0, 1, 0.05),
+  n('feedback.clankVolume', 0, 1, 0.05), n('feedback.boomVolume', 0, 1, 0.05), n('feedback.saunaVolume', 0, 1, 0.05), n('feedback.reviveVolume', 0, 1, 0.05),
+  n('feedback.tobbleShotVolume', 0, 1, 0.05), n('feedback.blastSize', 0.2, 8, 0.1), n('feedback.blastTime', 0.05, 2, 0.01),
+  n('feedback.executeShake', 0, 0.3, 0.005), n('feedback.cutGelEvery', 0.02, 1, 0.01), n('feedback.arcDot', 0.01, 0.5, 0.01),
 
   n('melee.holdTime', 0, 5, 0.01), n('melee.bashTime', 0, 5, 0.01), n('melee.bashHitAt', 0, 5, 0.01), n('melee.bashRange', 0, 10, 0.05),
   n('melee.bashAngle', 0, 180, 1), n('melee.bashDamage', 0, 500, 1), n('melee.bashLunge', 0, 10, 0.05), n('melee.bashCooldown', 0, 5, 0.01),

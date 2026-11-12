@@ -8,7 +8,7 @@ import { CLIPS, makePose, samplePose, blendPose } from './poses.js';
 //
 // play('flinch') runs the one-shot and then returns to the clip it interrupted.
 // play('talk') turns the face's talking on; any other clip turns it off.
-// Unknown names are ignored, and playing the looping clip already playing does
+// play(name, { at }) starts the clip `at` seconds in. Unknown names are ignored, and playing the looping clip already playing does
 // nothing.
 
 const DEFAULT_FADE = 0.15;
@@ -30,7 +30,7 @@ export function createAnimator(rig) {
   const out = samplePose(name, 0, spec);
   blendPose(out, out, 1, from);
 
-  function play(next, { fade: f } = {}) {
+  function play(next, { fade: f, at } = {}) {
     if (!Object.prototype.hasOwnProperty.call(CLIPS, next)) return;
     if (next === name && CLIPS[next].loop) return;
     if (next === 'flinch' && name !== 'flinch') resume = name;
@@ -39,7 +39,7 @@ export function createAnimator(rig) {
     fade = f === undefined ? (next === 'flinch' ? HIT_FADE : DEFAULT_FADE) : Math.max(f, 0);
     fadeTime = 0;
     name = next;
-    time = 0;
+    time = Number.isFinite(at) && at > 0 ? at : 0;
     rig.face.setTalking(next === 'talk');
   }
 

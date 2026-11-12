@@ -174,13 +174,14 @@ test('samplePose with `out` reuses it and matches a fresh sample', () => {
 
 test('clips are frozen, with the brief\'s durations and their spring half-lives', () => {
   assert.ok(Object.isFrozen(CLIPS));
-  assert.deepEqual(Object.keys(CLIPS), ['idle', 'run', 'aim', 'flinch', 'talk', 'roll', 'sprint', 'coverLow', 'coverLowMove', 'coverTall', 'coverTallMove', 'coverPop', 'vault', 'coverBlindLow', 'coverBlindTallL', 'coverBlindTallR', 'crawl']);
+  assert.deepEqual(Object.keys(CLIPS), ['idle', 'run', 'aim', 'flinch', 'talk', 'roll', 'sprint', 'coverLow', 'coverLowMove', 'coverTall', 'coverTallMove', 'coverPop', 'vault', 'coverBlindLow', 'coverBlindTallL', 'coverBlindTallR', 'crawl', 'revive', 'bash', 'throw']);
   const d = Object.fromEntries(Object.entries(CLIPS).map(([k, c]) => [k, [c.duration, c.loop, c.ease]]));
   // The run is too fast for the default 0.05 s springs, which lag it ~45 degrees.
   assert.deepEqual(d, {
     idle: [2.4, true, 0.05], run: [0.56, true, 0.008], aim: [1.6, true, 0.05], flinch: [0.35, false, 0.05], talk: [2.4, true, 0.05], roll: [0.55, false, 0.02], sprint: [0.56, true, 0.008],
     coverLow: [2.4, true, 0.05], coverLowMove: [0.5, true, 0.05], coverTall: [2.4, true, 0.05], coverTallMove: [0.5, true, 0.05], coverPop: [1.6, true, 0.05], vault: [0.5, false, 0.02],
     coverBlindLow: [1.6, true, 0.05], coverBlindTallL: [1.6, true, 0.05], coverBlindTallR: [1.6, true, 0.05], crawl: [1.0, true, 0.05],
+    revive: [0.5, true, 0.05], bash: [0.45, false, 0.02], throw: [0.5, false, 0.02],
   });
 });
 
@@ -393,4 +394,56 @@ test('Associate in coverLow with lowDrawBack: head top <= 0.95 and the head behi
     assert.ok(Math.max(...pts.map(q => q[1])) * p.squash <= 0.95);
     assert.ok(Math.max(...pts.map(q => q[2])) / Math.sqrt(p.squash) - back <= standoff);
   }
+});
+
+// Milestone 5: revive, bash, throw.
+test('revive: finite; a 0.5 s loop; hips <= 0.6; both hands within 0.3-0.45 m of the floor and in front of the hips, alternating; arms never across the body', () => {
+  assert.equal(CLIPS.revive.loop, true); assert.equal(CLIPS.revive.duration, 0.5);
+  let lo = [9, 9], hi = [-9, -9];
+  for (let i = 0; i <= 50; i++) {
+    const p = samplePose('revive', (i / 50) * 0.5, S);
+    assert.ok(flat(p).every(Number.isFinite));
+    assert.ok(p.hipsY <= 0.6, `hips ${p.hipsY}`);
+    const hips = bodyPoint(S, p, [0, S.hipHeight, 0]);
+    for (const [k, h] of [p.handL, p.handR].entries()) {
+      assert.ok(h[1] >= 0.3 - 1e-9 && h[1] <= 0.45 + 1e-9, `hand ${k} height ${h[1]}`);
+      assert.ok(h[2] > hips[2] + 0.3, `hand ${k} forward ${h[2]}`);
+      lo[k] = Math.min(lo[k], h[1]); hi[k] = Math.max(hi[k], h[1]);
+    }
+    assert.ok(p.handL[0] > 0.05 && p.handR[0] < -0.05, 'arms cross the body');
+    assert.ok(p.footL[1] >= 0 && p.footR[1] >= 0);
+  }
+  assert.ok(hi[0] - lo[0] > 0.08 && hi[1] - lo[1] > 0.08, 'both hands press');
+  const a = samplePose('revive', 0.125, S), b = samplePose('revive', 0.375, S);
+  assert.ok((a.handL[1] - a.handR[1]) * (b.handL[1] - b.handR[1]) < 0, 'the hands alternate');
+});
+test('bash: a 0.45 s one-shot; the right hand reaches >= 0.45 m in front of the chest at its peak, at chest height; elbows out, the left arm stays on the left', () => {
+  assert.equal(CLIPS.bash.loop, false); assert.equal(CLIPS.bash.duration, 0.45);
+  let best = -1;
+  for (let i = 0; i <= 90; i++) {
+    const p = samplePose('bash', (i / 90) * 0.45, S);
+    assert.ok(flat(p).every(Number.isFinite));
+    assert.ok(p.elbows >= 0.5, 'elbows out');
+    assert.ok(p.handL[0] > 0.15, 'the guard hand stays on the left');
+    const chest = bodyPoint(S, p, [0, S.shoulderL[1], 0]);
+    best = Math.max(best, p.handR[2] - chest[2]);
+  }
+  assert.ok(best >= 0.45, `reach ${best}`);
+  const peak = samplePose('bash', 0.33 * 0.45, S), chest = bodyPoint(S, peak, [0, S.shoulderL[1], 0]);
+  assert.ok(Math.abs(peak.handR[1] - chest[1]) <= 0.15, 'chest height');
+});
+test('throw: a 0.5 s one-shot; the wind-up at u 0.3 is behind and above the shoulder; at u 0.4 the right hand is above the head (the eyes: the arm cannot reach the hair), at u 0.9 in front; the left hand never crosses x = 0', () => {
+  assert.equal(CLIPS.throw.loop, false); assert.equal(CLIPS.throw.duration, 0.5);
+  for (let i = 0; i <= 100; i++) {
+    const p = samplePose('throw', (i / 100) * 0.5, S);
+    assert.ok(flat(p).every(Number.isFinite));
+    assert.ok(p.handL[0] > 0.05, `left hand ${p.handL[0]} at ${i}`);
+    assert.ok(p.handR[0] < 0.05, `right hand ${p.handR[0]} at ${i}`);
+  }
+  const wind = samplePose('throw', 0.3 * 0.5, S), shoulder = bodyPoint(S, wind, S.shoulderR);
+  assert.ok(wind.handR[1] > shoulder[1] && wind.handR[2] < shoulder[2], 'wound back and up');
+  const over = samplePose('throw', 0.4 * 0.5, S), eyes = bodyPoint(S, over, [0, S.neckY + S.head.centerY, 0]);
+  assert.ok(over.handR[1] > eyes[1] + 0.05, `over the head: ${over.handR[1]} vs eyes ${eyes[1]}`);
+  const fin = samplePose('throw', 0.9 * 0.5, S), chest = bodyPoint(S, fin, [0, S.shoulderL[1], 0]);
+  assert.ok(fin.handR[2] > chest[2] + 0.3, 'follows through forward');
 });

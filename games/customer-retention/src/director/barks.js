@@ -43,19 +43,30 @@ export const BARKS = Object.freeze({
 export function createBarkLine(fb = () => TUNING.feedback) {
   let since = Infinity, left = 0, line = null;
   const turn = {};   // the next line to read, by key
+  const queue = [];  // forced barks that arrived in the same step as another, waiting their turn
+  const speakerOf = (key) => { const pool = BARKS[key], l = pool[(turn[key] || 0) % pool.length]; return typeof l === 'string' ? 'Rep' : l.speaker; };
+  function show(key) {
+    const pool = BARKS[key], i = (turn[key] || 0) % pool.length;
+    turn[key] = i + 1;
+    line = typeof pool[i] === 'string' ? { speaker: 'Rep', text: pool[i] } : pool[i];
+    left = fb().barkTime; since = 0;
+  }
   return {
     say(key, force = false) {
       if (!BARKS[key]) return false;
       if (!force && since < fb().barkGap) return false;
-      const pool = BARKS[key], i = (turn[key] || 0) % pool.length;
-      turn[key] = i + 1;
-      line = typeof pool[i] === 'string' ? { speaker: 'Rep', text: pool[i] } : pool[i];
-      left = fb().barkTime; since = 0;
+      // Two forced barks from different speakers in one step (the PA's sauna line and Tobble's): the second waits until the first has shown for barkMinShow.
+      if (force && line && left > 0 && since < 1e-9 && speakerOf(key) !== line.speaker) { queue.push(key); return true; }
+      show(key);
       return true;
     },
-    tick(dt) { if (dt > 0) { since += dt; left -= dt; } },
-    // { speaker, text } while a line is showing, else null.
-    current: () => (left > 0 && line ? { speaker: line.speaker, text: line.text } : null),
-    reset() { since = Infinity; left = 0; line = null; for (const k of Object.keys(turn)) turn[k] = 0; },
+    tick(dt) {
+      if (!(dt > 0)) return;
+      since += dt; left -= dt;
+      if (queue.length && since >= fb().barkMinShow) show(queue.shift());
+    },
+    // { speaker, text, color } while a line is showing, else null.
+    current: () => (left > 0 && line ? { speaker: line.speaker, text: line.text, color: SPEAKER_COLORS[line.speaker] || null } : null),
+    reset() { since = Infinity; left = 0; line = null; queue.length = 0; for (const k of Object.keys(turn)) turn[k] = 0; },
   };
 }

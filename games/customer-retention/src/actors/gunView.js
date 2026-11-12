@@ -19,13 +19,30 @@ function part(group, geometry, color) {
   return mesh;
 }
 
-// The Regret: a chunky orange rifle, about 0.7 m. The disc under the barrel stands in for milestone 5's cutter.
+// Cheat Day: the pizza-cutter disc under the barrel, 0.09 m in radius: an orange rim, a cream face and six ink teeth so the spin reads.
+export const DISC_RADIUS = 0.09;
+function buildDisc() {
+  const g = new THREE.Group();
+  g.name = 'disc';
+  g.position.set(0, -0.05, 0.22);
+  part(g, new THREE.CylinderGeometry(DISC_RADIUS, DISC_RADIUS, 0.022, 20), PALETTE.playerOrange);
+  part(g, new THREE.CylinderGeometry(DISC_RADIUS - 0.018, DISC_RADIUS - 0.018, 0.034, 20), PALETTE.cream);
+  const teeth = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    teeth.push(new THREE.BoxGeometry(0.02, 0.026, 0.05).rotateY(a).translate(Math.sin(a) * (DISC_RADIUS - 0.03), 0, Math.cos(a) * (DISC_RADIUS - 0.03)));
+  }
+  part(g, mergeGeometries(teeth, false), PALETTE.ink);
+  return g;
+}
+
+// The Regret: a chunky orange rifle, about 0.7 m, with the Cheat Day disc under the barrel.
 function buildRifle() {
   const g = new THREE.Group();
   g.name = 'rifle';
   part(g, boxes([[0.06, 0.1, 0.15, 0, 0.04, -0.175], [0.09, 0.12, 0.4, 0, 0.05, 0.1], [0.05, 0.05, 0.15, 0, 0.06, 0.375]]), PALETTE.playerOrange);
   part(g, boxes([[0.05, 0.12, 0.06, 0, -0.07, 0.0]]), PALETTE.ink);
-  part(g, new THREE.CylinderGeometry(0.055, 0.055, 0.03, 12).translate(0, -0.035, 0.28), PALETTE.cream);
+  g.add(buildDisc());
   return g;
 }
 function buildPistol() {
@@ -49,6 +66,7 @@ export function createGunView() {
   let weapon = 'regret';
   models.pistol.visible = false;
   const base = new THREE.Vector3(), dir = new THREE.Vector3(0, 0, 1);
+  const disc = models.regret.getObjectByName('disc');
   let s = Infinity; // seconds since the last shot
 
   function setWeapon(id) {
@@ -78,7 +96,9 @@ export function createGunView() {
     group, setWeapon,
     place,
     shot() { s = 0; apply(); },
-    update(dt) { s += dt > 0 ? dt : 0; apply(); },
+    // spin: the disc's turn rate in rad/s (0 when the cutter is off).
+    update(dt, spin = 0) { s += dt > 0 ? dt : 0; if (dt > 0 && spin) disc.rotation.y += spin * dt; apply(); },
+    disc,
     // The barrel end in the parent's space, written into out.
     tip(out = [0, 0, 0]) {
       const t = TIPS[weapon];

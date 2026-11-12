@@ -175,3 +175,18 @@ test('hudModel alert: RELOAD at or below lowAmmoFrac, EMPTY at 0, NO AMMO only w
 test('FLASH_TEXT: the reload results read as form checks', () => {
   assert.deepEqual({ ...FLASH_TEXT }, { perfect: 'FORM CHECK: PERFECT', good: 'Good form.', jam: 'Bad form.' });
 });
+
+test('hudModel passes grenades, action (text and hold) and bark color through; a null action hides the line; banner hold shows the ring', () => {
+  const a = createArsenal();
+  let m = base(a);
+  assert.equal(m.grenades, null); assert.equal(m.action, null);
+  m = base(a, { grenades: 3, action: { text: 'Hold E  revive Tobble', hold: 0.4 }, bark: { speaker: 'Tobble', text: 'hi', color: '#7ee8b0' }, banner: { title: 'x', hint: 'y', hold: 0.5 } });
+  assert.equal(m.grenades, 3);
+  assert.deepEqual(m.action, { text: 'Hold E  revive Tobble', hold: 0.4 });
+  assert.equal(m.bark.color, '#7ee8b0');
+  assert.equal(m.banner.hold, 0.5);
+  assert.equal(base(a, { action: { text: 'F  bash', hold: null } }).action.hold, null);
+  assert.equal(base(a, { action: { text: 'x', hold: 7 } }).action.hold, 1);
+  assert.equal(base(a, { action: null, grenades: 0 }).action, null);
+  assert.equal(base(a, { grenades: 0 }).grenades, 0);
+});

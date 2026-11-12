@@ -125,3 +125,17 @@ test('Tobble keys exist with speaker Tobble; SPEAKER_COLORS gives Rep glorpPurpl
   assert.ok(BARKS.tobbleRevive.some(l => l.text === 'I got you! PUSH!'));
   assert.ok(BARKS.tobbleRevive.some(l => l.text === 'I got you! Push! PUSH! Two more!'));
 });
+
+test('two forced barks from different speakers in one step both show: the PA line first, Tobble\'s after barkMinShow', () => {
+  const line = createBarkLine();
+  line.say('padOpen', true); line.say('tobblePad', true);
+  assert.equal(line.current().speaker, 'PA');
+  assert.equal(line.current().color, SPEAKER_COLORS.PA);
+  run(line, fb.barkMinShow - 0.1);
+  assert.equal(line.current().speaker, 'PA');
+  run(line, 0.2);
+  assert.equal(line.current().speaker, 'Tobble');
+  assert.equal(line.current().color, PALETTE.tobbleMint);
+  run(line, fb.barkTime + 0.1);
+  assert.equal(line.current(), null);
+});

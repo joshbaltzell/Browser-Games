@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSfx } from '../src/audio/sfx.js';
 
-const NAMES = ['rifle', 'pistol', 'dry', 'hit', 'head', 'kill', 'magOut', 'magIn', 'perfect', 'good', 'jam', 'thud', 'blaster', 'charge', 'hurt', 'downed', 'clear', 'pickup', 'step'];
+const NAMES = ['rifle', 'pistol', 'dry', 'hit', 'head', 'kill', 'magOut', 'magIn', 'perfect', 'good', 'jam', 'thud', 'blaster', 'charge', 'hurt', 'downed', 'clear', 'pickup', 'step', 'bash', 'rev', 'cut', 'finish', 'throw', 'clank', 'boom', 'saunaOpen', 'saunaClose', 'revive', 'tobbleShot'];
 
 function fakeCtor(log, { state = 'running', panner = false } = {}) {
   const param = () => ({ value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {} });
@@ -70,4 +70,14 @@ test('the heavier recipes layer a crack, a body, a sub and a tail; a footstep is
   assert.ok(count('pistol') >= 10, 'pistol layers');
   assert.ok(count('thud') >= 8, 'thud layers');
   assert.ok(count('step') >= 4, 'step is a thump and a noise');
+});
+
+test('the eleven milestone-5 recipes play on a fake context and stop within 0.6 s', () => {
+  for (const n of ['bash', 'rev', 'cut', 'finish', 'throw', 'clank', 'boom', 'saunaOpen', 'saunaClose', 'revive', 'tobbleShot']) {
+    const log = newLog();
+    const s = createSfx({ AudioContextCtor: fakeCtor(log) });
+    s.play(n, 0.5);
+    assert.ok(log.nodes > 0 && log.stops.length > 0, n);
+    for (const t of log.stops) assert.ok(t - 1 <= 0.6 + 1e-9, `${n} stops at ${t - 1}`);
+  }
 });

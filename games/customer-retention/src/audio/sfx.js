@@ -48,6 +48,15 @@ export function createSfx({ AudioContextCtor = globalThis.AudioContext } = {}) {
     f.type = filter; f.frequency.setValueAtTime(freq, t);
     src.connect(f); f.connect(gain); src.start(t); src.stop(t + len);
   }
+  // Noise through a filter whose frequency glides f0 -> f1 over len (a rising or falling hiss).
+  function sweep(gain, filter, f0, f1, t, len) {
+    const src = ctx.createBufferSource();
+    src.buffer = noise;
+    const f = ctx.createBiquadFilter();
+    f.type = filter; f.frequency.setValueAtTime(f0, t);
+    if (f.frequency.exponentialRampToValueAtTime) f.frequency.exponentialRampToValueAtTime(f1, t + len);
+    src.connect(f); f.connect(gain); src.start(t); src.stop(t + len);
+  }
   const click = (t, freq, vol) => { const g = voice(t, 0.03, vol); hiss(g, 'bandpass', freq, t, 0.03); };
 
   const RECIPES = {
@@ -93,6 +102,18 @@ export function createSfx({ AudioContextCtor = globalThis.AudioContext } = {}) {
       hiss(voice(t, 0.28, v * 0.6), 'lowpass', 260, t, 0.28);
       hiss(voice(t, 0.07, v * 0.3), 'bandpass', 900, t, 0.07);
     },
+    // the milestone-5 sounds, each under 0.6 s
+    bash: (t, v) => { tone(voice(t, 0.2, v), 'sine', 120, 40, t, 0.2); hiss(voice(t, 0.06, v * 0.6), 'bandpass', 1800, t, 0.06); },
+    rev: (t, v) => { tone(voice(t, 0.25, v * 0.5), 'sawtooth', 180, 260, t, 0.25); hiss(voice(t, 0.25, v * 0.25), 'bandpass', 2600, t, 0.25); },
+    cut: (t, v) => { tone(voice(t, 0.3, v * 0.5), 'sawtooth', 150, 105, t, 0.3); hiss(voice(t, 0.3, v * 0.5), 'bandpass', 900, t, 0.3); hiss(voice(t, 0.2, v * 0.3), 'lowpass', 400, t, 0.2); },
+    finish: (t, v) => { tone(voice(t, 0.4, v), 'sine', 70, 26, t, 0.4); hiss(voice(t, 0.3, v * 0.5), 'lowpass', 220, t, 0.3); },
+    throw: (t, v) => { sweep(voice(t, 0.3, v * 0.6), 'bandpass', 400, 1600, t, 0.3); tone(voice(t, 0.18, v * 0.5), 'sawtooth', 140, 85, t + 0.02, 0.18); },
+    clank: (t, v) => { const g = voice(t, 0.14, v * 0.6); tone(g, 'square', 1450, 1450, t, 0.14); tone(g, 'square', 2230, 2230, t, 0.14); hiss(voice(t, 0.04, v * 0.5), 'bandpass', 3500, t, 0.04); },
+    boom: (t, v) => { tone(voice(t, 0.5, v), 'sine', 50, 50, t, 0.5); tone(voice(t, 0.3, v * 0.7), 'sine', 110, 40, t, 0.3); hiss(voice(t, 0.45, v * 0.6), 'lowpass', 500, t, 0.45); },
+    saunaOpen: (t, v) => { sweep(voice(t, 0.5, v * 0.7), 'bandpass', 700, 3200, t, 0.5); },
+    saunaClose: (t, v) => { sweep(voice(t, 0.3, v * 0.6), 'bandpass', 2600, 600, t, 0.3); tone(voice(t + 0.28, 0.2, v), 'sine', 95, 45, t + 0.28, 0.2); },
+    revive: (t, v) => { tone(voice(t, 0.2, v * 0.8), 'triangle', 440, 440, t, 0.2); tone(voice(t + 0.17, 0.3, v), 'triangle', 660, 660, t + 0.17, 0.3); },
+    tobbleShot: (t, v) => { tone(voice(t, 0.07, v), 'sine', 700, 280, t, 0.07); hiss(voice(t, 0.04, v * 0.5), 'bandpass', 2800, t, 0.04); },
     // a footstep: a soft heavy thump
     step: (t, v) => { tone(voice(t, 0.1, v), 'sine', 95, 50, t, 0.1); hiss(voice(t, 0.07, v * 0.5), 'lowpass', 280, t, 0.07); },
   };

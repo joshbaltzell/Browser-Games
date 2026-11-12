@@ -216,5 +216,12 @@ export const TUNING = {
     enemyFlashSize: 0.3, enemyTracerTime: 0.08, enemyTracerWidth: 0.04, glintSize: 0.12, // m, s, m, m (acid-green enemy fire; the glint pulses at the blaster tip)
     blasterVolume: 0.3, chargeVolume: 0.25, pickupVolume: 0.35, // 0 to 1
     barkTime: 2.5, barkGap: 4, // s, a bark line stays this long and a new one waits this long after the last one began
+    barkMinShow: 1.2,   // s, a forced bark that arrives in the same step as another waits until that one has shown this long
+    // Milestone 5: melee, kettlebells, saunas and the squad. Volumes 0 to 1, sizes in m, times in s.
+    bashVolume: 0.6, revVolume: 0.35, cutVolume: 0.5, throwVolume: 0.45, clankVolume: 0.35, boomVolume: 0.7,
+    saunaVolume: 0.4, reviveVolume: 0.4, tobbleShotVolume: 0.25, blastSize: 2.5, blastTime: 0.35,
+    executeShake: 0.05,   // m, the camera pulse each cutGelEvery during an execution
+    cutGelEvery: 0.1,     // s between gel sprays during an execution
+    arcDot: 0.06,         // m, dash and gap length of the kettlebell arc
   },
 };

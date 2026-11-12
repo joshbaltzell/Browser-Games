@@ -484,6 +484,95 @@ function crawl(t, spec, p) {
   return p;
 }
 
+// Smooth keyframes: ks is [[u, a, b, c], ...] in rising u; the value eases (smoothstep) between neighbouring keys and holds at the ends.
+// Writes the three components after u into out. Allocates nothing.
+function keyed3(u, ks, out) {
+  const n = ks.length;
+  if (u <= ks[0][0]) return set3(out, ks[0][1], ks[0][2], ks[0][3]);
+  for (let i = 0; i < n - 1; i++) {
+    const a = ks[i], b = ks[i + 1];
+    if (u < b[0]) {
+      const k = smooth(a[0], b[0], u);
+      return set3(out, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k, a[3] + (b[3] - a[3]) * k);
+    }
+  }
+  const z = ks[n - 1];
+  return set3(out, z[1], z[2], z[3]);
+}
+
+// Doc (or Tobble) kneeling to revive someone lying in front: hips low, the body pitched forward over them, both hands
+// pressing down and forward at the floor, each on its own side, one pressing while the other lifts (a chest compression
+// every half cycle). The knees are down behind the hips. Nothing crosses the body.
+const REVIVE_HIPS = 0.4, REVIVE_LEAN = 0.9;
+function revive(t, spec, p) {
+  const f = frame(spec);
+  const u = t / CLIPS.revive.duration;
+  const ph = TAU * u;
+  p.hipsY = REVIVE_HIPS + 0.012 * Math.sin(2 * ph);
+  p.lean = REVIVE_LEAN + 0.05 * Math.sin(2 * ph);
+  p.twist = 0.04 * Math.sin(ph);
+  p.headYaw = 0.04 * Math.sin(ph);
+  p.headPitch = -0.55;
+  p.squash = 1;
+  p.elbows = 1;
+  // Hands press down and forward: the left hand low on the beat, the right a half cycle later.
+  set3(p.handL, f.sx - 0.06, 0.37 - 0.06 * Math.sin(ph), 0.64);
+  set3(p.handR, -f.sx + 0.06, 0.37 + 0.06 * Math.sin(ph), 0.64);
+  set3(p.footL, f.fx + 0.06, 0, -0.32);
+  set3(p.footR, -f.fx - 0.06, 0, -0.32);
+  return p;
+}
+
+// The bash: the gun arm (the right) is pulled back, then thrusts straight forward at chest height with the shoulder behind
+// it, holds a beat and comes back. The left arm stays up as a guard on its own side. Elbows out. The strike is at u 0.33
+// (bashHitAt 0.15 s of 0.45 s).
+const BASH_HAND = [[0, -0.3, 1.0, 0.3], [0.17, -0.29, 1.08, 0.08], [0.33, -0.23, 1.17, 0.5], [0.55, -0.23, 1.17, 0.5], [1, -0.3, 1.0, 0.3]];
+const BASH_LEAN = [[0, 0.1, 0, 0], [0.17, -0.05, 0, 0], [0.33, 0.15, 0, 0], [0.55, 0.15, 0, 0], [1, 0.1, 0, 0]];
+const BASH_TWIST = [[0, 0, 0, 0], [0.17, -0.3, 0, 0], [0.33, 0.3, 0, 0], [0.55, 0.25, 0, 0], [1, 0, 0, 0]];
+const _k = [0, 0, 0];
+function bash(t, spec, p) {
+  const f = frame(spec);
+  const u = t / CLIPS.bash.duration;
+  keyed3(u, BASH_LEAN, _k); p.lean = _k[0];
+  keyed3(u, BASH_TWIST, _k); p.twist = _k[0];
+  p.hipsY = spec.hipHeight - 0.09 - 0.03 * pulse(u, 0.2, 0.33, 0.55, 0.9);
+  p.headYaw = -0.5 * p.twist;
+  p.headPitch = -0.1;
+  p.squash = 1;
+  p.elbows = 1;
+  keyed3(u, BASH_HAND, _k);
+  onBody(spec, p, _k[0], _k[1], _k[2], p.handR);
+  onBody(spec, p, f.sx + 0.14, f.sy - 0.1, 0.32, p.handL);
+  set3(p.footL, f.fx + 0.04, 0, -0.14);
+  set3(p.footR, -f.fx - 0.04, 0, 0.2);
+  return p;
+}
+
+// The kettlebell throw. u 0.3 is the wind-up the view holds while G is down: the right hand cocked back by the ear, the body
+// leaning away, the left arm out ahead for balance. Released, the hand goes over the head (u 0.4: as high as the arm reaches,
+// above the eyes), follows through forward and down, and the body drives into it. The left arm stays on the left.
+const THROW_HAND = [[0, -0.3, 1.0, 0.3], [0.3, -0.31, 1.38, -0.12], [0.4, -0.22, 1.6, 0.04], [0.6, -0.2, 1.22, 0.5], [0.9, -0.15, 0.98, 0.46], [1, -0.3, 1.0, 0.3]];
+const THROW_LEAN = [[0, 0.1, 0, 0], [0.3, -0.2, 0, 0], [0.4, -0.28, 0, 0], [0.6, 0.35, 0, 0], [0.9, 0.3, 0, 0], [1, 0.1, 0, 0]];
+const THROW_TWIST = [[0, -0.1, 0, 0], [0.3, -0.45, 0, 0], [0.4, -0.45, 0, 0], [0.6, 0.35, 0, 0], [0.9, 0.3, 0, 0], [1, -0.1, 0, 0]];
+function throwClip(t, spec, p) {
+  const f = frame(spec);
+  const u = t / CLIPS.throw.duration;
+  keyed3(u, THROW_LEAN, _k); p.lean = _k[0];
+  keyed3(u, THROW_TWIST, _k); p.twist = _k[0];
+  p.hipsY = spec.hipHeight - 0.07 - 0.03 * pulse(u, 0.4, 0.6, 0.9, 1);
+  p.headYaw = -0.4 * p.twist;
+  p.headPitch = -0.05;
+  p.squash = 1;
+  p.elbows = 1;
+  keyed3(u, THROW_HAND, _k);
+  onBody(spec, p, _k[0], _k[1], _k[2], p.handR);
+  // The left hand points ahead on the left, easing back and down through the follow-through.
+  onBody(spec, p, f.sx + 0.2, f.sy - 0.12 - 0.08 * smooth(0.5, 0.9, u), 0.34 - 0.12 * smooth(0.5, 0.9, u), p.handL);
+  set3(p.footL, f.fx + 0.04, 0, 0.1 + 0.06 * smooth(0.4, 0.7, u));
+  set3(p.footR, -f.fx - 0.04, 0, -0.16);
+  return p;
+}
+
 // ease is the half-life (seconds) of the rig's springs while the clip plays:
 // they smooth the cross-fades and the hits. The run is a fast cycle that the
 // default 0.05 s would lag (about 45 degrees) and flatten, so its springs are
@@ -511,6 +600,9 @@ export const CLIPS = Object.freeze({
   coverBlindTallL: clip(1.6, true, (t, spec, p) => coverBlindTall(t, spec, p, 1)),
   coverBlindTallR: clip(1.6, true, (t, spec, p) => coverBlindTall(t, spec, p, -1)),
   crawl: clip(1.0, true, crawl),
+  revive: clip(0.5, true, revive),
+  bash: clip(0.45, false, bash, 0.02),
+  throw: clip(0.5, false, throwClip, 0.02),
 });
 
 // The run clip's planted-foot speed in m/s, so a footfall matches the ground at this speed.

@@ -7,7 +7,8 @@ import { addOutline, computeOutlineNormals } from '../render/outline.js';
 import { ASSOCIATE } from './associate.js';
 import { buildRig } from './rig.js';
 import { createAnimator } from './animator.js';
-import { RUN_SPEED } from './poses.js';
+import { RUN_SPEED, CLIPS } from './poses.js';
+import { rollSpin } from './player.js';
 import { yawOf, turnToward } from './moveMath.js';
 
 // An Associate on screen. The brain (associateBrain.js) is the truth; this picks a clip, a face and a facing from
@@ -16,6 +17,8 @@ import { yawOf, turnToward } from './moveMath.js';
 const SHOOTING = new Set(['telegraph', 'burst']);
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const wrapAngle = (a) => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+const TUMBLE_Y = 0.5;
+const RISE_FROM = -0.6;   // m below the floor a Rep starts its rise from the sauna
 const kindOf = (e) => (e.point && e.point.kind === 'tall' ? 'tall' : 'low');
 
 // Which clip an Associate plays. Tucked states crouch (low cover) or stand flat (tall); telegraph and burst pop over
@@ -24,7 +27,11 @@ export function pickAssociateClip(e) {
   const tall = kindOf(e) === 'tall';
   switch (e.state) {
     case 'run': return 'run';
-    case 'flinch': return 'flinch';
+    case 'flinch': case 'stagger': case 'executed': return 'flinch';   // an executed Rep loops it
+    case 'downed': return 'crawl';
+    case 'kneel': return 'revive';                                        // the helper, pressing on the downed Rep
+    case 'dive': return 'roll';
+    case 'spawn': return 'idle';                                          // rising from the sauna
     case 'telegraph': case 'burst': return tall ? 'aim' : 'coverPop';
     case 'suppress': {
       if (!tall) return 'coverBlindLow';
@@ -55,7 +62,7 @@ export function associateFacing(e) {
 export function faceOf(e) {
   if (e.state === 'dead' || !e.alive) return 'dead';
   if (SHOOTING.has(e.state)) return 'angry';
-  if (e.state === 'flinch') return 'scared';
+  if (e.state === 'flinch' || e.state === 'stagger' || e.state === 'downed' || e.state === 'executed' || e.state === 'dive') return 'scared';
   return 'smug';
 }
 
@@ -89,24 +96,34 @@ export function createAssociateView(e) {
   const anim = createAnimator(rig);
   const group = new THREE.Group();
   group.name = `associate-${e.id}`;
-  group.add(rig.root);
+  // The dive's roll spins the body about its middle, as for the player.
+  const tumble = new THREE.Group();
+  tumble.position.y = TUMBLE_Y;
+  rig.root.position.y = -TUMBLE_Y;
+  tumble.add(rig.root);
+  group.add(tumble);
   group.add(rig.shadow);
   const handR = rig.root.getObjectByName('body').children[2]; // buildRig adds hips, then handL, handR
   const blaster = buildBlaster();
   group.add(blaster.group);
 
-  let clip = '', expression = '', drawW = 0, yaw = e.yaw, mode = 'live', deathT = 0, glintOn = false, glintT = 0;
+  let clip = '', flinchT = 0, expression = '', drawW = 0, yaw = e.yaw, mode = 'live', deathT = 0, glintOn = false, glintT = 0;
   let nx = 0, nz = 0;
 
   function reset() {
     mode = 'live'; deathT = 0; drawW = 0; yaw = e.yaw; glintOn = false; glintT = 0;
-    group.visible = true; group.scale.setScalar(1);
-    clip = ''; expression = '';
+    group.visible = true; group.scale.setScalar(1); tumble.rotation.x = 0;
+    clip = ''; expression = ''; flinchT = 0;
     blaster.emitter.scale.setScalar(1);
   }
 
   function update(alpha, dt) {
     const fb = TUNING.feedback, ct = TUNING.cover, T = TUNING.associate;
+    // An empty slot is never drawn. A slot that dies is a burst; one that comes alive again (a sauna spawn) is a fresh Rep.
+    if (e.state === 'unused') { group.visible = false; return; }
+    if (e.state === 'spawn' && (mode === 'burst' || mode === 'gone')) reset();
+    if (!e.alive && e.state === 'dead' && mode === 'live') { mode = 'burst'; deathT = 0; }
+    if (mode === 'live') group.visible = true;
     if (mode === 'burst') {
       deathT += dt;
       const k = fb.dummyBurstTime > 0 ? Math.min(deathT / fb.dummyBurstTime, 1) : 1;
@@ -123,16 +140,25 @@ export function createAssociateView(e) {
     const blindW = low ? clamp(e.blind, 0, 1) : 0;
     if (low) { nx = e.point.normal[0]; nz = e.point.normal[1]; }
     const back = drawW * ct.lowDrawBack + blindW * ct.blindDrawBack;
-    group.position.set(q[0] + (p[0] - q[0]) * alpha + nx * back, q[1] + (p[1] - q[1]) * alpha, q[2] + (p[2] - q[2]) * alpha + nz * back);
+    const rise = e.state === 'spawn' ? RISE_FROM * (1 - clamp(e.stateT / Math.max(TUNING.pad.riseTime, 1e-3), 0, 1)) : 0;
+    group.position.set(q[0] + (p[0] - q[0]) * alpha + nx * back, q[1] + (p[1] - q[1]) * alpha + rise, q[2] + (p[2] - q[2]) * alpha + nz * back);
     // Facing: the brain's yaw, interpolated, except that a tucked or blind-firing Associate sits square to its wall.
     const want = e.state === 'run' || SHOOTING.has(e.state) ? e.prevYaw + wrapAngle(e.yaw - e.prevYaw) * alpha : associateFacing(e);
     yaw = turnToward(yaw, want, T.turnRate * 1.5 * dt);
     group.rotation.y = yaw;
     if (dead) return;
     const name = pickAssociateClip(e);
-    if (name !== clip) { anim.play(name, name === 'flinch' ? undefined : { fade: 0.1 }); clip = name; }
-    const rate = name === 'run' ? clamp(T.runSpeed / RUN_SPEED, 0.5, 3) : 1;
-    anim.update(dt * rate);
+    if (name !== clip) { anim.play(name, name === 'flinch' ? undefined : { fade: 0.1 }); clip = name; flinchT = 0; }
+    else if (e.state === 'executed') {
+      // Held under the cutter it keeps flinching: replay the one-shot as it ends.
+      flinchT += dt;
+      if (flinchT >= CLIPS.flinch.duration) { flinchT = 0; anim.play('flinch'); }
+    }
+    let rate = name === 'run' ? clamp(T.runSpeed / RUN_SPEED, 0.5, 3) : 1;
+    if (name === 'crawl') rate = Math.hypot(p[0] - q[0], p[2] - q[2]) > 1e-5 ? 1 : 0;   // it only crawls while it moves
+    if (name === 'roll') rate = CLIPS.roll.duration / Math.max(T.diveReaction + T.diveTime, 1e-3);   // the roll fills the whole dive
+    tumble.rotation.x = name === 'roll' ? rollSpin(clamp(e.stateT / Math.max(T.diveReaction + T.diveTime, 1e-3), 0, 1)) : 0;
+    anim.update(dt * rate, rate === 0 ? dt : undefined);
     rig.update(dt);
     const ex = faceOf(e);
     if (ex !== expression) { rig.face.setExpression(ex); expression = ex; }
@@ -142,6 +168,7 @@ export function createAssociateView(e) {
   // The blaster sits at the right hand and points at the aim point while shooting, up over a low wall while blind
   // firing, and forward and down otherwise (in the group's space).
   function updateBlaster(name, dt) {
+    blaster.group.visible = e.state !== 'downed' && e.state !== 'dive';
     group.updateMatrixWorld(true);
     handR.getWorldPosition(_v);
     const wx = _v.x, wy = _v.y, wz = _v.z;

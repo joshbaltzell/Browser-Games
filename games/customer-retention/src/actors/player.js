@@ -7,6 +7,8 @@ import { DOC_PLACEHOLDER } from './docPlaceholder.js';
 import { headVisibleFor } from '../render/cameraRig.js';
 import { coverEdgeOf, cameraSideOf } from './coverStates.js';
 import { createGunView } from './gunView.js';
+import { createToonMaterial } from '../render/toon.js';
+import { kettlebellGeometry } from '../render/grenadeView.js';
 
 // The player on screen: a rig that follows a Mover. The mover is the truth;
 // this only draws it, interpolated between fixed steps.
@@ -18,15 +20,24 @@ const wrap = a => a - TAU * Math.round(a / TAU);
 const MIN_VAULT_TIME = 1e-3;
 const TUMBLE_Y = 0.5; // the roll spins about this height
 
-// Which clip a mover state plays and how fast.
+// The throw clip's wind-up, held while G is down (the fraction of its duration), and how far into it a release picks up.
+export const THROW_HOLD_U = 0.3;
+
+// Which clip a mover state plays and how fast. `at` is where in the clip (s) a held clip waits; `loop` asks the view to replay a one-shot.
 export function pickClip(mover, tuning = mover.tuning || TUNING.move) {
   const s = mover.state, v = mover.speed();
+  // Doc's locked actions: the bash, Cheat Day (the aim stance with the cutter spinning), the execution (the bash, again and again) and the revive.
+  if (s === 'bash') return { name: 'bash', rate: CLIPS.bash.duration / Math.max(TUNING.melee.bashTime, 1e-3) };
+  if (s === 'rev') return { name: 'aim', rate: 1 };
+  if (s === 'execute') return { name: 'bash', rate: 1, loop: true };
+  if (s === 'reviveTobble') return { name: 'revive', rate: 1 };
   // Crawling: the clip runs at crawl pace and holds when the player is still.
   if (s === 'downed') return { name: 'crawl', rate: clamp(v / Math.max(tuning.crawlSpeed, 1e-6), 0, 2) };
   if (s === 'roll') return { name: 'roll', rate: CLIPS.roll.duration / tuning.rollTime };
   if (s === 'sprint') return { name: 'sprint', rate: clamp(v / RUN_SPEED, tuning.sprintRateMin, tuning.sprintRateMax) };
   if (s === 'move') {
     if (v > tuning.runClipMinSpeed) return { name: 'run', rate: clamp(v / RUN_SPEED, tuning.runRateMin, tuning.runRateMax) };
+    if (mover.grenadeAim) return { name: 'throw', rate: 0, at: THROW_HOLD_U * CLIPS.throw.duration };   // the wind-up, held
     if (mover.aiming || mover.firing) return { name: 'aim', rate: 1 };
   }
   if (s === 'coverSlide') return { name: coverEdgeOf(mover).kind === 'low' ? 'coverLow' : 'coverTall', rate: 1 };
@@ -87,6 +98,13 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
   const hands = { L: bodyNode.children[1], R: bodyNode.children[2] }; // buildRig adds hips, then handL, handR
   const gun = createGunView();
   group.add(gun.group);
+  // A kettlebell in the right fist while one is being aimed.
+  const kb = new THREE.Mesh(kettlebellGeometry(), createToonMaterial({ vertexColors: true, rim: 0.15 }));
+  kb.name = 'kettlebellInHand';
+  kb.position.set(0, 0.1, 0);
+  kb.visible = false;
+  hands.R.add(kb);
+  let throwLeft = 0;
   let jolt = Infinity;
   const headNode = rig.root.getObjectByName('head');
   const headCentre = new THREE.Vector3();
@@ -101,7 +119,7 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
     return headShown;
   }
   let drawW = 0, drawNx = 0, drawNz = 0;
-  let clip = '', entries = -1, slams = mover.slams || 0, slamT = Infinity;
+  let clip = '', loopT = 0, entries = -1, slams = mover.slams || 0, slamT = Infinity;
 
   function update(alpha, dt, aim) {
     const p = mover.pos, q = mover.prevPos;
@@ -115,12 +133,19 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
     const back = drawW * ct.lowDrawBack + blindW * ct.blindDrawBack;
     group.position.set(q[0] + (p[0] - q[0]) * alpha + drawNx * back, q[1] + (p[1] - q[1]) * alpha, q[2] + (p[2] - q[2]) * alpha + drawNz * back);
     group.rotation.y = mover.prevFacing + wrap(mover.facing - mover.prevFacing) * alpha;
-    const c = pickClip(mover);
-    if (c.name !== clip || mover.entries !== entries) {
-      anim.play(c.name, c.name === 'roll' ? { fade: 0.05 } : undefined);
-      clip = c.name; entries = mover.entries;
+    let c = pickClip(mover);
+    // A thrown kettlebell: the wind-up's follow-through plays out over throwTime, whatever the mover is doing.
+    const throwing = throwLeft > 0;
+    if (throwing) { c = { name: 'throw', rate: CLIPS.throw.duration * (1 - THROW_HOLD_U) / Math.max(TUNING.grenade.throwTime, 1e-3), at: THROW_HOLD_U * CLIPS.throw.duration }; throwLeft -= dt; }
+    const key = throwing ? 'throw!' : c.name;
+    if (key !== clip || mover.entries !== entries) {
+      anim.play(c.name, c.name === 'roll' ? { fade: 0.05 } : c.at !== undefined ? { fade: 0.06, at: c.at } : undefined);
+      clip = key; entries = mover.entries; loopT = 0;
+    } else if (c.loop) {
+      loopT += dt * c.rate;
+      if (loopT >= CLIPS[c.name].duration) { loopT -= CLIPS[c.name].duration; anim.play(c.name, { fade: 0 }); }
     }
-    anim.update(dt * c.rate, c.name === 'crawl' ? dt : undefined); // a held crawl (rate 0) still fades in
+    anim.update(dt * c.rate, c.rate === 0 ? dt : undefined); // a held clip (rate 0) still fades in
     rig.update(dt);
     // A shot jolts the body back for gunSquashTime.
     const fb = TUNING.feedback, joltTime = Math.max(fb.gunSquashTime, 1e-6);
@@ -132,6 +157,8 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
     const k = slamSquash(slamT, ct.slamSquash, ct.slamSquashTime);
     tumble.scale.set(1 + k / 2, 1 - k, 1 + k / 2);
     tumble.position.y = TUMBLE_Y * (1 - k) + hop; // the soles stay on the floor while squashed
+    kb.visible = !!(aim && aim.kettlebell) && !throwing;
+    kb.scale.setScalar(TUNING.grenade.ballRadius / 0.12);
     updateGun(c.name, dt, aim);
   }
 
@@ -144,6 +171,8 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
     group.worldToLocal(_v);
     if (aim && aim.stance && clipName === 'coverBlindLow') {
       _dir[0] = 0; _dir[1] = Math.sin(BLIND_LOW_GUN_PITCH); _dir[2] = Math.cos(BLIND_LOW_GUN_PITCH);
+    } else if (mover.state === 'bash' || mover.state === 'rev' || mover.state === 'execute') {
+      _dir[0] = 0; _dir[1] = -0.05; _dir[2] = 1;
     } else if (aim && aim.stance && aim.dir) {
       const cy = Math.cos(group.rotation.y), sy = Math.sin(group.rotation.y);
       _dir[0] = aim.dir[0] * cy - aim.dir[2] * sy; _dir[1] = aim.dir[1]; _dir[2] = aim.dir[0] * sy + aim.dir[2] * cy;
@@ -153,8 +182,8 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
     if (aim && aim.weapon) gun.setWeapon(aim.weapon);
     gun.place([_v.x, _v.y, _v.z], _dir);
     if (aim && aim.shot) gun.shot();
-    gun.update(dt);
-    gun.group.visible = mover.state !== 'roll' && mover.state !== 'downed';
+    gun.update(dt, mover.state === 'rev' || mover.state === 'execute' ? TUNING.melee.cutterSpin : 0);
+    gun.group.visible = mover.state !== 'roll' && mover.state !== 'downed' && mover.state !== 'reviveTobble' && !kb.visible && throwLeft <= 0;
   }
   // The barrel end in world space, for the muzzle flash and the tracer.
   function gunTip(out = [0, 0, 0]) {
@@ -171,5 +200,7 @@ export function createPlayerView(mover, spec = DOC_PLACEHOLDER) {
     group.removeFromParent();
   }
 
-  return { group, update, dispose, rig, anim, fadeHeadFor, gun, gunTip };
+  // Start the throw's follow-through (play on release).
+  const throwNow = () => { throwLeft = Math.max(TUNING.grenade.throwTime, 1e-3); };
+  return { group, update, dispose, rig, anim, fadeHeadFor, gun, gunTip, throwNow, kettlebell: kb };
 }

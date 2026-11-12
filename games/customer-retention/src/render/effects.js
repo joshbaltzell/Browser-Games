@@ -1,5 +1,6 @@
 // Shot effects: muzzle flash, tracer, sparks, gel and receipts. Each kind is one pooled
-// InstancedMesh in toon material, so the whole kit costs seven draw calls (the player's flash and tracer, the Associates' acid-green pair, sparks, gel, receipts).
+// InstancedMesh in toon material, so the whole kit costs ten draw calls (the player's flash and tracer, the Associates' acid-green pair, sparks, gel,
+// receipts, and milestone 5's blast puffs, steam and dust puffs, and Tobble's orange tracer).
 import * as THREE from 'three';
 import { TUNING } from '../tuning.js';
 import { PALETTE } from './palette.js';
@@ -28,6 +29,9 @@ export function createEffects(scene, fb = () => TUNING.feedback) {
   const sparks = kind(new THREE.BoxGeometry(0.05, 0.05, 0.05), PALETTE.cream, 48);
   const gels = kind(new THREE.IcosahedronGeometry(0.5, 0), PALETTE.gel, 96);
   const papers = kind(new THREE.BoxGeometry(0.16, 0.2, 0.012), PALETTE.cream, 48);
+  const puffs = kind(new THREE.IcosahedronGeometry(0.5, 0), PALETTE.cream, 40);          // steam and dust
+  const blasts = kind(new THREE.IcosahedronGeometry(0.5, 1), PALETTE.planet, 4);         // the kettlebell's cream-orange fireball
+  const fTracers = kind(new THREE.BoxGeometry(1, 1, 1), PALETTE.playerOrange, 16);       // Tobble's tracer
   const axis = new THREE.Vector3();
 
   function place(k, i) {
@@ -76,16 +80,40 @@ export function createEffects(scene, fb = () => TUNING.feedback) {
       place(k, i);
     } });
   }
-  function tracerKind(k, timeKey, widthKey) {
+  function tracerKind(k, timeKey, widthKey, widthScale = 1) {
     kinds.push({ k, shown: new Uint8Array(k.pool.ages.length), life: () => fb()[timeKey], step() {}, draw(i) {
       const f = Math.max(0, 1 - k.pool.ages[i] / fb()[timeKey]);
-      const w = fb()[widthKey] * f, len = k.aux[i * 4];
+      const w = fb()[widthKey] * widthScale * f, len = k.aux[i * 4];
       dummy.position.set(k.pos[i * 3], k.pos[i * 3 + 1], k.pos[i * 3 + 2]);
       dummy.quaternion.setFromUnitVectors(UP, axis.set(k.vel[i * 3], k.vel[i * 3 + 1], k.vel[i * 3 + 2]));
       dummy.scale.set(w, w, len);
       place(k, i);
     } });
   }
+  // Puffs drift up (no gravity) and swell, then shrink away over PUFF_LIFE; aux[3] is the size at birth.
+  const PUFF_LIFE = 0.9;
+  kinds.push({ k: puffs, shown: new Uint8Array(puffs.pool.ages.length), life: () => PUFF_LIFE, step(dt) {
+    for (let i = 0; i < puffs.pool.ages.length; i++) {
+      if (!puffs.pool.alive(i)) continue;
+      for (let a = 0; a < 3; a++) puffs.pos[i * 3 + a] += puffs.vel[i * 3 + a] * dt;
+    }
+  }, draw(i) {
+    const f = puffs.pool.ages[i] / PUFF_LIFE;
+    dummy.position.set(puffs.pos[i * 3], puffs.pos[i * 3 + 1], puffs.pos[i * 3 + 2]);
+    dummy.scale.setScalar(puffs.aux[i * 4 + 3] * (0.5 + f) * (1 - f * f * f));
+    dummy.quaternion.identity();
+    place(puffs, i);
+  } });
+  // The blast swells to blastSize over blastTime (fast at first), holds and shrinks away over the last 40 percent.
+  kinds.push({ k: blasts, shown: new Uint8Array(blasts.pool.ages.length), life: () => fb().blastTime, step() {}, draw(i) {
+    const k = Math.min(blasts.pool.ages[i] / Math.max(fb().blastTime, 1e-3), 1);
+    const grow = 1 - (1 - Math.min(k / 0.6, 1)) ** 2, fade = k > 0.6 ? 1 - (k - 0.6) / 0.4 : 1;
+    dummy.position.set(blasts.pos[i * 3], blasts.pos[i * 3 + 1], blasts.pos[i * 3 + 2]);
+    dummy.scale.setScalar(Math.max(fb().blastSize * grow * fade, 1e-3));
+    dummy.rotation.set(0, blasts.aux[i * 4], 0);
+    place(blasts, i);
+  } });
+  tracerKind(fTracers, 'tracerTime', 'tracerWidth', 0.6);
   flashKind(flashes, 'flashSize');
   flashKind(eFlashes, 'enemyFlashSize');
   tracerKind(tracers, 'tracerTime', 'tracerWidth');
@@ -109,6 +137,27 @@ export function createEffects(scene, fb = () => TUNING.feedback) {
   return {
     flash(pos, dir) { spawnFlash(flashes, pos, dir); },
     tracer(from, to) { spawnTracer(tracers, from, to); },
+    friendlyTracer(from, to) { spawnTracer(fTracers, from, to); },
+    // One cream puff rising from pos (the Spawn Sauna's steam).
+    steam(pos) {
+      const i = puffs.pool.spawn();
+      put(puffs, i, pos[0], pos[1], pos[2]);
+      vel(puffs, i, rnd(0.15), 0.7 + Math.random() * 0.4, rnd(0.15));
+      puffs.aux[i * 4 + 3] = 0.16 + Math.random() * 0.1;
+    },
+    // The kettlebell blast: the cream-orange fireball, 12 gel and 6 dust puffs thrown out.
+    blast(pos) {
+      const i = blasts.pool.spawn();
+      put(blasts, i, pos[0], pos[1] + 0.3, pos[2]);
+      blasts.aux[i * 4] = Math.random() * 6;
+      for (let n = 0; n < 6; n++) {
+        const j = puffs.pool.spawn(), a = (n / 6) * Math.PI * 2 + Math.random();
+        put(puffs, j, pos[0], pos[1] + 0.2, pos[2]);
+        vel(puffs, j, Math.cos(a) * 2.2, 0.8 + Math.random() * 0.6, Math.sin(a) * 2.2);
+        puffs.aux[j * 4 + 3] = 0.35 + Math.random() * 0.2;
+      }
+      this.gel([pos[0], pos[1] + 0.3, pos[2]], [0, 1, 0], 12);
+    },
     enemyFlash(pos, dir) { spawnFlash(eFlashes, pos, dir); },
     enemyTracer(from, to) { spawnTracer(eTracers, from, to); },
     spark(pos, normal) {
