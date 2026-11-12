@@ -77,3 +77,24 @@ test('hudModel faceShow: on with a face and no banner; off while a banner (downe
   assert.equal(base(a, { face: mk(true), banner: { title: 'DOWNED 3', hint: '' } }).faceShow, false);
   assert.equal(base(a).faceShow, false);
 });
+
+test('real wiring (health -> damageFaceModel -> hudModel, as play.js composes it): the face is shown at 20 hp at once, hidden from the step health goes to 0, and at full health after a reset the face has zero opacity', async () => {
+  const { createHealth } = await import('../src/combat/health.js');
+  const { damageFaceModel } = await import('../src/ui/damageFace.js');
+  const a = createArsenal(), h = createHealth(), max = TUNING.health.max;
+  // play.js: banner is set while downed (or cleared), face is the damageFaceModel result.
+  const view = (now) => {
+    const fm = damageFaceModel({ hp: h.hp, max, downed: h.downed, downT: h.downT, hits: [], now });
+    return { fm, m: base(a, { face: fm, banner: h.downed ? { title: `DOWNED ${fm.downed.seconds}`, hint: '' } : null }) };
+  };
+  h.damage(80);
+  let v = view(0.15);
+  assert.equal(h.hp, 20);
+  assert.equal(v.m.faceShow, true);
+  assert.ok(v.fm.face.opacity >= TUNING.feedback.faceMaxOpacity * 0.79, `opacity ${v.fm.face.opacity}: no fade-in, it is a pure function of hp`);
+  assert.equal(h.damage(50), 'downed');
+  v = view(0.2);
+  assert.equal(v.m.faceShow, false);
+  h.reset();
+  assert.equal(view(0.3).fm.face.opacity, 0, 'full health: nothing to show');
+});
