@@ -9,6 +9,8 @@ import { shotDamage } from '../src/combat/targets.js';
 import { rng } from '../src/core/random.js';
 import { TUNING } from '../src/tuning.js';
 import { solveThrowPitch, throwVelocity, throwOrigin } from '../src/combat/grenades.js';
+import { lineOfSight, popPos } from '../src/world/coverPoints.js';
+import { BARKS } from '../src/director/barks.js';
 
 const COVERISH = new Set(['cover', 'telegraph', 'burst', 'suppress', 'reload', 'flinch']);
 const solid = BOXES.filter(b => b.kind !== 'floor');
@@ -218,7 +220,7 @@ test('no two characters overlap (distance >= 2 * radius - 0.05) after any step; 
 test('a downed player: every token released within one step, no accurate shots until revive or reset', () => {
   let downAt = -1, heldAfter = null, afterShots = 0, revived = -1, laterShots = 0;
   const r = sim(24, {
-    at: 'open', seed: 2, god: false,
+    at: 'open', seed: 2, god: false, tune: t => { t.tobble.enabled = 0; },   // the m4 behaviour; with Tobble the Reps may shoot him instead
     intent: (i, m, f) => {
       return I();
     },
@@ -325,7 +327,7 @@ test('popped at K1 with perfect aim at the chest, firing only while a clone is i
     const firstHit = new Map(), seen = new Set();
     sim(40, {
       at: 'kioskLeft', seed, god: true, intent: (i) => I({ moveY: i === 0 ? -1 : 0, tap: i === 0, aim: i > 0 }),
-      tune: t => { t.associate.downChance = 0; },   // this test counts kills, not downs
+      tune: t => { t.associate.downChance = 0; t.tobble.enabled = 0; },   // this test counts Doc's kills, not downs or Tobble's kills
       each: (i, m, f) => {
         const stance = fireStance(m);
         if (!mark || !mark.alive) mark = f.enemies.find(e => e.alive && (e.state === 'telegraph' || e.state === 'burst')) || null;
@@ -628,7 +630,7 @@ test('bash: f.bash on a standing Rep deals 30 and staggers; on a downed Rep kill
 test('tokens with the sauna open: over 120 s (godMode, player popped at kioskLeft) at most 2 Reps in telegraph or burst at any step', () => {
   let peak = 0, peakAlive = 0;
   const r = sim(120, {
-    at: 'kioskLeft', seed: 3, god: true, intent: tuck(true),
+    at: 'kioskLeft', seed: 3, god: true, intent: tuck(true), tune: t => { t.tobble.enabled = 0; },   // Tobble's kills would thin the Reps this test wants alive
     each: (i, m, f) => {
       const n = f.enemies.filter(e => LOUD.has(e.state)).length;
       peak = Math.max(peak, n);
@@ -747,4 +749,240 @@ test('determinism: the same seed gives the same log with kettlebells and the sau
     r.f.step(dt, { m: r.m, health: r.health });
     for (const e of r.f.enemies) assert.ok(e.pos.every(Number.isFinite) && Number.isFinite(e.health), `dt ${dt}`);
   }
+});
+
+// ---- Milestone 5: Tobble ----
+const downDoc = (health, m) => { health.damage(10000); m.down(); };
+const headOf = (e) => { const pp = e.point ? popPos(e.point, TUNING.associate.popShift) : [e.pos[0], e.pos[2]]; return [pp[0], 1.49, pp[1]]; };
+const repsSeeing = (f, at) => f.enemies.filter(e => e.alive && !['unused', 'downed', 'spawn'].includes(e.state) && lineOfSight(BOXES, headOf(e), at)).length;
+
+test('Reps target Tobble only when the player cannot be seen from the popped head; across both targets at most 2 in telegraph or burst', () => {
+  let toTobble = 0, toPlayer = 0, peak = 0;
+  for (const seed of [1, 2, 3]) {
+    const prev = new Map();
+    sim(60, {
+      at: 'kioskLeft', seed, god: true, intent: tuck(),
+      each: (i, m, f) => {
+        peak = Math.max(peak, f.enemies.filter(e => LOUD.has(e.state)).length);
+        for (const e of f.enemies) {
+          if (e.state === 'telegraph' && prev.get(e.id) !== 'telegraph' && prev.get(e.id) !== 'burst') {
+            const sees = lineOfSight(BOXES, headOf(e), f.tobble.chest !== undefined ? [m.pos[0], m.pos[1] + (m.state === 'cover' ? 0.6 : 1.2), m.pos[2]] : null);
+            if (e.target === 'tobble') { toTobble++; assert.equal(sees, false, `${e.id} chose Tobble while it could see Doc`); } else toPlayer++;
+          }
+          prev.set(e.id, e.state);
+        }
+      },
+    });
+  }
+  console.log(`telegraphs at Doc ${toPlayer}, at Tobble ${toTobble}`);
+  assert.ok(toTobble > 0, 'some telegraphs are aimed at Tobble');
+  assert.ok(peak <= 2, `peak ${peak}`);
+});
+
+test('player downed: no accurate shot ever targets the player; Tobble arrives and revives after 3 s kneeling -> revived, hp 50, mover state move, revive bark', () => {
+  const kneel = [], revived = [];
+  let downAt = -1, shotsAtDoc = 0, revHp = null, revState = null;
+  const r = sim(14, {
+    at: 'kioskLeft', seed: 1, intent: tuck(),
+    each: (i, m, f, health, ev) => {
+      if (i === 480) { downDoc(health, m); downAt = f.now; }
+      if (downAt < 0) { return; }
+      for (const e of ev) {
+        if (e.type === 'enemyShot' && e.accurate && e.target !== 'tobble' && !revived.length) shotsAtDoc++;
+        if (e.type === 'tobbleKneel') kneel.push(f.now);
+        if (e.type === 'revived') { revived.push(f.now); revHp = health.hp; revState = m.state; }
+      }
+    },
+  });
+  assert.ok(downAt > 0);
+  assert.equal(revHp, TUNING.health.max * TUNING.health.reviveHealth, 'stood up at 50 hp');
+  assert.equal(revState, 'move', 'the mover is out of downed');
+  assert.equal(shotsAtDoc, 0, 'nothing is shot at the downed player');
+  assert.equal(r.log.filter(e => e.type === 'playerHit' && e.t > downAt && e.t < revived[0]).length, 0);
+  assert.equal(revived.length, 1, 'revived once');
+  assert.equal(kneel.length, 1, 'one kneel');
+  assert.ok(Math.abs(revived[0] - kneel[0] - TUNING.tobble.reviveTime) < 0.05, `kneeled ${(revived[0] - kneel[0]).toFixed(2)} s`);
+  const bark = r.log.find(e => e.type === 'bark' && e.key === 'tobbleRevive');
+  assert.ok(bark && bark.force && bark.id === 'tobble' && bark.t >= revived[0] - 1e-9);
+  assert.ok(BARKS.tobbleRevive.some(l => l.text === 'I got you! PUSH!'));
+  console.log(`Doc down at ${downAt.toFixed(2)} s, Tobble kneels at ${(kneel[0] - downAt).toFixed(2)} s, up at ${(revived[0] - downAt).toFixed(2)} s after`);
+});
+
+test('threats: with 3 Reps sighting the downed player, Tobble starts moving no later than 4 s after the downing', () => {
+  let downAt = -1, goAt = -1, startThreats = 0;
+  sim(10, {
+    at: 'flank', seed: 2, tune: t => { t.director.tokens = 0; t.associate.suppressChance = 0; },   // four Reps see Doc here; none shoots
+    each: (i, m, f, health) => {
+      if (i === 240) {
+        downDoc(health, m); downAt = f.now;
+        startThreats = repsSeeing(f, [m.pos[0], 0.4, m.pos[2]]);
+      }
+      if (downAt < 0) return;
+      if (goAt < 0 && f.tobble.revGo) goAt = f.now;
+    },
+  });
+  console.log(`threats at the downing: ${startThreats}, Tobble goes after ${(goAt - downAt).toFixed(2)} s`);
+  assert.ok(startThreats >= 3, `only ${startThreats} Reps see Doc`);
+  assert.ok(goAt > 0 && goAt - downAt <= TUNING.tobble.reviveWaitMax + 0.05, `went after ${goAt - downAt}`);
+  assert.ok(goAt - downAt >= TUNING.tobble.reviveWaitMax - 0.05, 'he waited while it was not safe enough');
+});
+
+test('Tobble downed: no timer, complain barks every 6 s, Reps never fire at him; f.reviveTobble -> up at 75 hp; the clear stands him up', () => {
+  let downAt = -1, shotsAtHim = 0, hitsOnHim = 0;
+  const r = sim(40, {
+    at: 'kioskLeft', seed: 1, god: true, intent: tuck(),
+    each: (i, m, f, health, ev) => {
+      if (i === 300) { assert.equal(f.hurtTobble(1000), 'downed'); downAt = f.now; }
+      if (downAt < 0 || i === 300) return;
+      for (const e of ev) {
+        if (e.type === 'enemyShot' && e.target === 'tobble') shotsAtHim++;
+        if (e.type === 'tobbleHit') hitsOnHim++;
+      }
+      assert.equal(f.tobble.downed, true, 'he stays down with no timer');
+    },
+  });
+  assert.equal(shotsAtHim, 0);
+  assert.equal(hitsOnHim, 0);
+  const complaints = r.log.filter(e => e.type === 'bark' && e.key === 'tobbleComplain').map(e => e.t - downAt);
+  assert.ok(complaints.length >= 5, `${complaints.length} complaints in 35 s`);
+  complaints.forEach((c, k) => assert.ok(Math.abs(c - 6 * (k + 1)) < 0.05, `complaint ${k} at ${c.toFixed(2)}`));
+  assert.ok(r.log.some(e => e.type === 'bark' && e.key === 'tobbleDown' && e.force));
+  assert.ok(r.f.tobble.hp === 0);
+  // Doc revives him: 75 hp, up, following.
+  assert.equal(r.f.reviveTobble(), true);
+  assert.equal(r.f.tobble.hp, TUNING.tobble.health * TUNING.tobble.reviveHealth);
+  assert.equal(r.f.tobble.hp, 75);
+  assert.equal(r.f.tobble.downed, false);
+  assert.equal(r.f.reviveTobble(), false, 'already up');
+  // The clear stands a downed Tobble up by himself.
+  const q = sim(3, { at: 'open', seed: 1, tune: t => { t.director.tokens = 0; } });
+  q.f.hurtTobble(1000);
+  for (const e of q.f.enemies.slice(0, 4)) q.f.hurt(e, 1000, 'head');
+  q.f.throwGrenade([4.6, 0.5, 13.4], [0, 0, 0]);
+  const evs = go(q, 3);
+  assert.ok(evs.some(e => e.type === 'clear'));
+  assert.equal(q.f.tobble.downed, false);
+  assert.equal(q.f.tobble.hp, 75);
+  assert.ok(evs.some(e => e.type === 'bark' && e.key === 'tobbleClear'));
+});
+
+test('both down: player downed then Tobble downed -> one checkpoint event that step; both in the same step -> one checkpoint', () => {
+  for (const order of ['doc first', 'tobble first', 'same step']) {
+    const cps = [];
+    sim(12, {
+      at: 'kioskLeft', seed: 1, intent: tuck(),
+      each: (i, m, f, health, ev) => {
+        if (i === 300 && order !== 'tobble first') downDoc(health, m);
+        if (i === 300 && order === 'tobble first') f.hurtTobble(1000);
+        if (i === 330 && order === 'doc first') f.hurtTobble(1000);
+        if (i === 330 && order === 'tobble first') downDoc(health, m);
+        if (i === 300 && order === 'same step') f.hurtTobble(1000);
+        for (const e of ev) if (e.type === 'checkpoint') cps.push({ i, ev: e });
+      },
+    });
+    assert.equal(cps.length, 1, `${order}: ${cps.length} checkpoints`);
+    assert.equal(cps[0].i, order === 'same step' ? 301 : 331, `${order}: at step ${cps[0].i}`);
+  }
+});
+
+test('revive races: Tobble downed mid-kneel cancels the revive (no revived event); the player bleeding out mid-kneel is the caller restart, and a reset leaves Tobble at his start, full health, no reservation', () => {
+  let kneelAt = -1, revived = 0, cps = 0, killed = false;
+  const r = sim(20, {
+    at: 'kioskLeft', seed: 1, intent: tuck(), god: false,
+    each: (i, m, f, health, ev) => {
+      if (i === 300) downDoc(health, m);
+      for (const e of ev) {
+        if (e.type === 'tobbleKneel' && kneelAt < 0) kneelAt = f.now;
+        if (e.type === 'revived') revived++;
+        if (e.type === 'checkpoint') cps++;
+      }
+      if (kneelAt > 0 && !killed && f.now - kneelAt > 1.0) { killed = true; assert.equal(f.hurtTobble(1000), 'downed'); }
+    },
+  });
+  assert.ok(kneelAt > 0 && killed, 'he knelt, then went down');
+  assert.equal(revived, 0, 'no revive from a downed Tobble');
+  assert.equal(cps, 1, 'both down is a checkpoint');
+  assert.equal(r.health.downed, true);
+  // Bleeding out mid-kneel (a short timer, a long kneel): the caller restarts and a reset puts everything back.
+  let bled = false, knelt = false;
+  const q = sim(10, {
+    at: 'kioskLeft', seed: 1, intent: tuck(), god: false, tune: t => { t.health.downedTime = 3; t.tobble.reviveTime = 10; },
+    each: (i, m, f, health, ev) => {
+      if (i === 300) downDoc(health, m);
+      if (ev.some(e => e.type === 'tobbleKneel')) knelt = true;
+      if (health.downed && health.downT <= 0) bled = true;
+    },
+  });
+  assert.ok(knelt && bled, 'he knelt and Doc bled out');
+  q.f.reset(); q.health.reset(); q.m.revive();
+  const t = q.f.tobble;
+  assert.deepEqual(t.pos, R.tobble.pos);
+  assert.equal(t.hp, TUNING.tobble.health);
+  assert.equal(t.state, 'idle');
+  assert.equal(t.downed, false);
+  assert.equal(t.point, null);
+  assert.ok(![...q.f.reserved.values()].includes('tobble'), 'no reservation');
+  // A reset of a Tobble who was downed and had a reservation.
+  q.f.hurtTobble(1000); q.f.reset();
+  assert.equal(q.f.tobble.downed, false); assert.equal(q.f.tobble.hp, TUNING.tobble.health);
+  assert.ok(![...q.f.reserved.values()].includes('tobble'));
+});
+
+test('callouts: a flanker assignment emits tobbleFlank; the sauna opening emits tobblePad; deterministic', () => {
+  const run = () => sim(40, { at: 'kioskLeft', seed: 1, god: true, intent: tuck() }).log;
+  const log = run();
+  const flanks = log.filter(e => e.type === 'bark' && e.key === 'flank'), calls = log.filter(e => e.type === 'bark' && e.key === 'tobbleFlank');
+  assert.ok(flanks.length >= 1 && calls.length === flanks.length, `${flanks.length} flankers, ${calls.length} callouts`);
+  for (const c of calls) { assert.equal(c.id, 'tobble'); assert.ok(flanks.some(fl => fl.t === c.t), 'on the assignment step'); }
+  const open = log.find(e => e.type === 'padOpen'), pad = log.find(e => e.type === 'bark' && e.key === 'tobblePad');
+  assert.ok(open && pad && pad.force && pad.t === open.t && pad.id === 'tobble');
+  assert.deepEqual(BARKS.tobblePad.map(l => l.speaker), ['Tobble']);
+  const key = l => JSON.stringify(l.filter(e => e.type === 'bark' || e.type.startsWith('tobble')).map(e => [e.t, e.type, e.key, e.hit, e.result]));
+  assert.equal(key(log), key(run()));
+});
+
+test('tobble.enabled 0: f.tobble null, m4 downed behaviour (no checkpoint event, standIn honoured by the caller)', () => {
+  let revivedAt = -1, downAt = -1;
+  const r = sim(8, {
+    at: 'kioskLeft', seed: 1, god: false, intent: tuck(), tune: t => { t.tobble.enabled = 0; t.health.standInRevive = 1; },
+    each: (i, m, f, health) => {
+      if (i === 120) { downDoc(health, m); downAt = f.now; }
+      if (downAt > 0 && revivedAt < 0 && !health.downed) revivedAt = f.now;
+    },
+  });
+  assert.equal(r.f.tobble, null);
+  assert.ok(revivedAt > 0 && Math.abs(revivedAt - downAt - TUNING.health.reviveTime) < 0.1, `stood in ${(revivedAt - downAt).toFixed(2)} s after`);
+  assert.equal(r.log.filter(e => e.type === 'checkpoint' || e.type === 'tobbleShot' || e.type === 'tobbleKneel').length, 0);
+  assert.equal(r.log.filter(e => e.type === 'bark' && /^tobble/.test(e.key)).length, 0);
+  assert.equal(r.f.reviveTobble(), false);
+  // A reset honours a flag flipped on the panel.
+  r.f.reset();
+  assert.equal(r.f.tobble, null);
+});
+
+test('separation: Tobble never overlaps a Rep or the player, and the player position is never changed by it', () => {
+  const rt = TUNING.tobble.radius, rr = TUNING.associate.radius, rp = TUNING.move.radius;
+  let worstRep = Infinity, worstDoc = Infinity, before = null, changed = 0;
+  sim(60, {
+    at: 'kioskLeft', seed: 4, god: true,
+    intent: (i, m) => { if (before && (m.pos[0] !== before[0] || m.pos[2] !== before[1])) changed++; return tuck(true)(i); },
+    each: (i, m, f) => {
+      if (i === 20) { f.tobble.pos[0] = m.pos[0] + 0.2; f.tobble.pos[2] = m.pos[2] + 0.1; }   // on top of Doc
+      if (i === 21) { const e = f.enemies[0]; f.tobble.pos[0] = e.pos[0] + 0.1; f.tobble.pos[2] = e.pos[2]; }   // on top of a Rep
+      before = [m.pos[0], m.pos[2]];
+      if (i < 24) return;
+      for (const e of f.enemies) if (e.alive) worstRep = Math.min(worstRep, Math.hypot(e.pos[0] - f.tobble.pos[0], e.pos[2] - f.tobble.pos[2]) - rt - rr);
+      worstDoc = Math.min(worstDoc, Math.hypot(m.pos[0] - f.tobble.pos[0], m.pos[2] - f.tobble.pos[2]) - rt - rp);
+    },
+  });
+  assert.ok(worstRep >= -0.05, `closest Rep ${worstRep.toFixed(3)} inside contact`);
+  assert.ok(worstDoc >= -0.05, `closest Doc ${worstDoc.toFixed(3)} inside contact`);
+  assert.equal(changed, 0, 'the fight never moves Doc');
+  // Forced overlap: one step pushes him clear of both.
+  const r = sim(0.5, { at: 'open', seed: 1, god: true });
+  r.f.tobble.pos[0] = r.m.pos[0] + 0.1; r.f.tobble.pos[2] = r.m.pos[2];
+  const doc = [r.m.pos[0], r.m.pos[2]];
+  r.f.step(DT, { m: r.m, health: r.health });
+  assert.deepEqual([r.m.pos[0], r.m.pos[2]], doc);
+  assert.ok(Math.hypot(r.f.tobble.pos[0] - doc[0], r.f.tobble.pos[2] - doc[1]) >= rt + rp - 0.01);
 });

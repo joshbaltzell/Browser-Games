@@ -4,7 +4,7 @@
 import { TUNING } from '../tuning.js';
 import { moveCapsule } from '../world/collide.js';
 import { findPath } from '../world/waypoints.js';
-import { coverValue } from '../world/coverPoints.js';
+import { coverValue, lineOfSight, popPos } from '../world/coverPoints.js';
 import { HIT_SHAPES } from '../combat/targets.js';
 import { turnToward } from './moveMath.js';
 
@@ -28,7 +28,7 @@ export function resetAssociate(e, tuning = TUNING.associate) {
   e.aim[0] = e.aim[1] = e.aim[2] = 0;
   e.wait = 0; e.wantSuppress = null; e.shots = 0; e.relocT = 0; e.pointT = 0; e.mustMove = false;
   e.stuckT = 0; e.stuckRef[0] = e.start[0]; e.stuckRef[1] = e.start[2]; e.stuckCount = 0;
-  e.helper = null; e.helping = null; e.diveDir[0] = e.diveDir[1] = 0; e.divePoint = null; e.claimed = false; e.diedAt = -Infinity; e.wasDowned = false;
+  e.helper = null; e.helping = null; e.target = 'player'; e.diveDir[0] = e.diveDir[1] = 0; e.divePoint = null; e.claimed = false; e.diedAt = -Infinity; e.wasDowned = false;
   associateShapes(e);
   return e;
 }
@@ -52,7 +52,7 @@ export function spawnAssociate(e, pos, ctx) {
   e.state = 'spawn'; e.stateT = 0; e.health = T.health; e.alive = true; e.claimed = false;
   e.point = null; e.path = []; e.pathI = 0; e.pop = 0; e.blind = 0; e.role = 'hold'; e.bursts = 0;
   e.wait = 0; e.wantSuppress = null; e.shots = 0; e.relocT = 0; e.pointT = 0; e.mustMove = false;
-  e.stuckT = 0; e.stuckCount = 0; e.helper = null; e.helping = null; e.wasDowned = false; e.diedAt = -Infinity; e.divePoint = null;
+  e.stuckT = 0; e.stuckCount = 0; e.helper = null; e.helping = null; e.target = 'player'; e.wasDowned = false; e.diedAt = -Infinity; e.divePoint = null;
   associateShapes(e);
   return e;
 }
@@ -68,7 +68,7 @@ export function createAssociate({ id, pos }, tuning = TUNING.associate) {
     stuckT: 0, stuckRef: [0, 0], stuckCount: 0, chest: [0, 0, 0], muzzle: [0, 0, 0],
     // Reactions: who is reviving this downed Rep (helper) or whom this Rep is reviving (helping), the dive heading,
     // whether a slot is claimed for a spawn, when it died and whether an execution interrupted a downed state.
-    helper: null, helping: null, diveDir: [0, 0], divePoint: null, claimed: false, diedAt: -Infinity, wasDowned: false,
+    helper: null, helping: null, target: 'player', diveDir: [0, 0], divePoint: null, claimed: false, diedAt: -Infinity, wasDowned: false,
   };
   return resetAssociate(e, tuning);
 }
@@ -275,7 +275,7 @@ function run(e, ctx, T, dt) {
 }
 
 function springAim(e, ctx, T, dt, snap) {
-  const pl = ctx.player, tgt = pl.exposed ? pl.head : pl.chest;
+  const pl = ctx.player, tgt = e.target === 'tobble' && ctx.tobble ? ctx.tobble.chest : pl.exposed ? pl.head : pl.chest;
   const k = snap || !(T.aimLag > 0) ? 1 : 1 - Math.pow(0.5, dt / T.aimLag);
   for (let i = 0; i < 3; i++) e.aim[i] += (tgt[i] - e.aim[i]) * k;
 }
@@ -283,30 +283,59 @@ function springAim(e, ctx, T, dt, snap) {
 // Shots due `t` seconds into a stream of `total` seconds at `rate` per second: the first at t = 0.
 const shotsDue = (t, rate, total) => Math.min(Math.ceil(total * rate - 1e-9), Math.floor(t * rate + 1e-9) + 1);
 
+// Tobble, when he is up: the record the fight keeps in ctx.tobble, else null.
+const tobbleUp = ctx => (ctx.tobble && !ctx.tobble.downed ? ctx.tobble : null);
+
+// The Rep's popped head, written into out.
+function poppedHead(e, ctx, out) {
+  if (e.point) { const pp = popPos(e.point, (ctx.tuning || TUNING).associate.popShift); out[0] = pp[0]; out[2] = pp[1]; } else { out[0] = e.pos[0]; out[2] = e.pos[2]; }
+  out[1] = 1.49;
+  return out;
+}
+const seeFrom = [0, 0, 0];
+
+// Whom a Rep shoots at when it starts a telegraph: Doc when its popped head sees Doc's chest and Doc is up; else Tobble when he is up and
+// in sight; else Doc (the burst finds the cover, as before Tobble). A downed Doc is never a target: null when Tobble is not in sight.
+function pickTarget(e, ctx) {
+  const tb = tobbleUp(ctx), pl = ctx.player;
+  if (!tb) return pl.downed ? null : 'player';
+  poppedHead(e, ctx, seeFrom);
+  if (!pl.downed && lineOfSight(ctx.boxes, seeFrom, pl.chest)) return 'player';
+  if (lineOfSight(ctx.boxes, seeFrom, tb.chest)) return 'tobble';
+  return pl.downed ? null : 'player';
+}
+// The burst or telegraph is over when its target can no longer be shot: Doc down, or Tobble down.
+const targetGone = (e, ctx) => (e.target === 'tobble' ? !tobbleUp(ctx) : ctx.player.downed);
+const targetPos = (e, ctx) => (e.target === 'tobble' && ctx.tobble ? ctx.tobble.pos : ctx.player.pos);
+
 function cover(e, ctx, T, D, dt) {
   setPop(e, e.pop - step(dt, T.popTime), T);
   faceWall(e, T, dt);
   const pl = ctx.player;
-  if (pl.downed) return;
-  e.pointT += dt;
-  if (e.role !== 'hold') { seek(e, ctx, T); return; }
-  e.relocT += dt;
-  if (e.relocT >= T.relocateCheck) {
-    e.relocT = 0;
-    const cv = coverValue(e.point, evalChest(e, ctx), ctx.boxes, ctx.tuning || TUNING);
-    if (!cv.protected || !cv.canShoot || dist2(e.point.pos, [pl.pos[0], pl.pos[2]]) < T.reserveRadius) { e.mustMove = true; seek(e, ctx, T); return; }
+  if (pl.downed && !tobbleUp(ctx)) return;
+  if (!pl.downed) {
+    e.pointT += dt;
+    if (e.role !== 'hold') { seek(e, ctx, T); return; }
+    e.relocT += dt;
+    if (e.relocT >= T.relocateCheck) {
+      e.relocT = 0;
+      const cv = coverValue(e.point, evalChest(e, ctx), ctx.boxes, ctx.tuning || TUNING);
+      if (!cv.protected || !cv.canShoot || dist2(e.point.pos, [pl.pos[0], pl.pos[2]]) < T.reserveRadius) { e.mustMove = true; seek(e, ctx, T); return; }
+    }
+    if (e.pointT >= T.relocateAfter) { e.mustMove = true; e.pointT = 0; seek(e, ctx, T); return; }
   }
-  if (e.pointT >= T.relocateAfter) { e.mustMove = true; e.pointT = 0; seek(e, ctx, T); return; }
   if (e.stateT < e.wait) return;
   if (e.wantSuppress === null) e.wantSuppress = ctx.rand() < T.suppressChance;
   if (e.bursts >= T.magBursts) { go(e, 'reload'); ctx.events.push({ type: 'bark', id: e.id, key: 'reload' }); return; }
-  if (ctx.tokens.request(e.id, ctx.now, ctx.tokenCount, D)) {
+  const target = pickTarget(e, ctx);
+  if (target && ctx.tokens.request(e.id, ctx.now, ctx.tokenCount, D)) {
+    e.target = target;
     go(e, 'telegraph'); e.shots = 0;
     springAim(e, ctx, T, dt, true);
     ctx.events.push({ type: 'telegraph', id: e.id });
     return;
   }
-  if (e.wantSuppress) { go(e, 'suppress'); e.shots = 0; }
+  if (e.wantSuppress && !pl.downed) { go(e, 'suppress'); e.shots = 0; }
 }
 
 function stopShooting(e, ctx, T, burstDone) {
@@ -316,28 +345,29 @@ function stopShooting(e, ctx, T, burstDone) {
 }
 
 function telegraph(e, ctx, T, dt) {
-  const pl = ctx.player;
   setPop(e, e.pop + step(dt, T.popTime), T);
-  face(e, pl.pos[0], pl.pos[2], T, dt);
+  const tp = targetPos(e, ctx);
+  face(e, tp[0], tp[2], T, dt);
   springAim(e, ctx, T, dt, false);
-  if (pl.downed || !ctx.tokens.holds(e.id)) { stopShooting(e, ctx, T, false); return; }
+  if (targetGone(e, ctx) || !ctx.tokens.holds(e.id)) { stopShooting(e, ctx, T, false); return; }
   if (e.stateT >= T.popTime + T.telegraphTime - 1e-9) { go(e, 'burst'); e.shots = 0; }
 }
 
 function burst(e, ctx, T, dt) {
   const pl = ctx.player;
   setPop(e, e.pop + step(dt, T.popTime), T);
-  face(e, pl.pos[0], pl.pos[2], T, dt);
+  const tp = targetPos(e, ctx);
+  face(e, tp[0], tp[2], T, dt);
   springAim(e, ctx, T, dt, false);
-  if (pl.downed || !ctx.tokens.holds(e.id)) { stopShooting(e, ctx, T, true); return; }
+  if (targetGone(e, ctx) || !ctx.tokens.holds(e.id)) { stopShooting(e, ctx, T, true); return; }
   const m = e.muzzle;
   m[0] = e.pos[0]; m[1] = e.pos[1] + T.muzzleUp; m[2] = e.pos[2];
   const due = shotsDue(e.stateT, T.rate, T.burstTime);
-  const speed = Math.min(1, pl.speed / (ctx.tuning || TUNING).move.sprint);
+  const speed = e.target === 'tobble' ? 0 : Math.min(1, pl.speed / (ctx.tuning || TUNING).move.sprint);
   while (e.shots < due) {
     e.shots++;
     const dx = e.aim[0] - m[0], dy = e.aim[1] - m[1], dz = e.aim[2] - m[2], l = Math.hypot(dx, dy, dz) || 1;
-    ctx.events.push({ type: 'enemyShot', id: e.id, from: [m[0], m[1], m[2]], dir: [dx / l, dy / l, dz / l], accurate: true, spread: T.spread + T.moveSpread * speed });
+    ctx.events.push({ type: 'enemyShot', id: e.id, from: [m[0], m[1], m[2]], dir: [dx / l, dy / l, dz / l], accurate: true, target: e.target, spread: T.spread + T.moveSpread * speed });
   }
   if (e.stateT >= T.burstTime - 1e-9) stopShooting(e, ctx, T, true);
 }

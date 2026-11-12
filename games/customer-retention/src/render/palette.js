@@ -12,6 +12,7 @@ export const PALETTE = Object.freeze({
   playerOrange: '#ff8a1f', // player weapon and fire
   daleSkin: '#f4b6a6',     // clone skin
   daleHair: '#4a2f5a',     // clone hair
+  tobbleMint: '#7ee8b0',   // Tobble's skin and speaker colour
   eyeWhite: '#fffdf5',     // eyes
   nebulaDeep: '#3a0ca3',   // sky
   nebulaHot: '#c2185b',    // sky

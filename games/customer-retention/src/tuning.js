@@ -179,6 +179,16 @@ export const TUNING = {
   },
   // Spawn Saunas (the spec's Hiring Pads). Radius in m, times in s. A kettlebell closes one within radius + grenade.padReach.
   pad: { radius: 1.1, openAfterKills: 2, openAfter: 25, interval: 5, maxAlive: 2, total: 6, riseTime: 0.8 },
+  // Tobble, the squadmate (the story's intern). enabled is a flag read at fight creation and restart; scale is Tobble's size against an Associate.
+  // Times in s, distances in m, speeds in m/s, angles in deg, health as a fraction where it says. His rate * damage is 0.25 of the Regret's.
+  tobble: {
+    enabled: 1, scale: 0.7, radius: 0.25, height: 1.26, health: 150, regenDelay: 3, regenTime: 3,
+    runSpeed: 5.0, turnRate: 10, followMin: 2, followMax: 6, personalSpace: 1.2, lofClear: 0.8, lofRange: 20,
+    sidestepReact: 0.4, sidestepDist: 1.2, popTime: 0.15, popLift: 0.15, muzzleUp: 1.1,
+    coverWaitMin: 0.6, coverWaitMax: 1.6, burstTime: 1.2, rate: 4, damage: 9, spread: 3, range: 30,
+    reviveMaxThreats: 2, reviveWaitMax: 4, reviveRange: 1.0, reviveTime: 3, reviveHealth: 0.5,
+    playerReviveTime: 1.5, playerReviveRange: 1.5, crawlSpeed: 0.5, complainEvery: 6,
+  },
   // The encounter director. Times in s, distances in m, angles in deg. casual is a flag (dev switch).
   director: {
     tokens: 2, casualTokens: 1, casual: 0, tokenCooldown: 1.0, tokenMaxHold: 3.0, requestWindow: 0.25,

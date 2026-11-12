@@ -1,4 +1,9 @@
 import { TUNING } from '../tuning.js';
+import { PALETTE } from '../render/palette.js';
+
+// The speaker's colour for the bark line (the HUD reads it by speaker name).
+export const SPEAKER_COLORS = Object.freeze({ Rep: PALETTE.glorpPurple, PA: PALETTE.cream, Tobble: PALETTE.tobbleMint });
+const T = (...lines) => Object.freeze(lines.map(text => Object.freeze({ speaker: 'Tobble', text })));
 
 // What the Reps shout (the Glorp aliens that run GlorpFit). Text only; voices come in milestone 10. Each key holds a short pool
 // that is read in turn, so a repeat never comes twice in a row. `speaker` is 'Rep' unless the line is the station PA.
@@ -21,6 +26,15 @@ export const BARKS = Object.freeze({
   cloneRevive: Object.freeze(['On your feet! Membership quotas!']),
   padOpen: Object.freeze([{ speaker: 'PA', text: 'The sauna is now a spawning pool. Please enjoy responsibly.' }]),
   padClosed: Object.freeze([{ speaker: 'PA', text: 'The sauna is closed for cleaning. Forever.' }]),
+  // Tobble, the squadmate.
+  tobbleRevive: T('I got you! PUSH!', 'I got you! Push! PUSH! Two more!'),
+  tobbleDown: T('I\'m down! This was not in the internship packet!', 'Doc! I need a spot!'),
+  tobbleComplain: T('Still down! Logging this as cardio!', 'My tracker says I\'m resting. I am NOT resting!'),
+  tobbleUp: T('Two more reps! I\'m good!'),
+  tobbleFlank: T('Doc! One\'s going round the side!', 'Flanker! That\'s the word, right? FLANKER!'),
+  tobblePad: T('The sauna\'s spawning! Kettlebell it, Doc!'),
+  tobbleClear: T('Ooh, you closed your rings!'),
+  tobbleHeadshot: T('That\'s a PR!'),
   clear: Object.freeze(['Your satisfaction is our\u2026 priority\u2026', 'Auto-renew\u2026 is\u2026 forever\u2026', 'Have a\u2026 glorp\u2026 day\u2026']),
 });
 

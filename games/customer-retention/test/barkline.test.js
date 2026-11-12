@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBarkLine, BARKS } from '../src/director/barks.js';
+import { createBarkLine, BARKS, SPEAKER_COLORS } from '../src/director/barks.js';
+import { PALETTE } from '../src/render/palette.js';
 import { shotOrigin } from '../src/fightView.js';
 import { gatePlayerInput } from '../src/play.js';
 import { TUNING } from '../src/tuning.js';
@@ -73,7 +74,8 @@ test('gatePlayerInput: downed blocks reload, weapon switch and fire; reloading o
 
 test('the bark pools: about two dozen lines in all, read in turn (no immediate repeat), and no line sounds like a person being hurt', () => {
   const all = Object.values(BARKS).flat().map(l => (typeof l === 'string' ? l : l.text));
-  assert.ok(all.length >= 10 && all.length <= 24, `${all.length} lines`);
+  const reps = Object.values(BARKS).flat().filter(l => typeof l === 'string' || l.speaker !== 'Tobble');   // Tobble's pools are counted in his own test
+  assert.ok(all.length >= 10 && reps.length <= 24, `${reps.length} lines`);
   const line = createBarkLine();
   const seen = [];
   for (let i = 0; i < 3; i++) { line.say('push', true); seen.push(line.current().text); }
@@ -101,4 +103,25 @@ test('new Rep and PA keys: dive, cloneDown, cloneRevive, padOpen (PA), padClosed
   assert.equal(BARKS.padOpen[0].text, 'The sauna is now a spawning pool. Please enjoy responsibly.');
   assert.equal(BARKS.padClosed[0].text, 'The sauna is closed for cleaning. Forever.');
   assert.deepEqual(BARKS.dive, ['Incoming weight!', 'Drop set! DROP SET!']);
+});
+
+test('Tobble keys exist with speaker Tobble; SPEAKER_COLORS gives Rep glorpPurple, PA cream, Tobble tobbleMint; "I got you! PUSH!" is a tobbleRevive line', () => {
+  const keys = ['tobbleRevive', 'tobbleDown', 'tobbleComplain', 'tobbleUp', 'tobbleFlank', 'tobblePad', 'tobbleClear', 'tobbleHeadshot'];
+  for (const key of keys) {
+    const pool = BARKS[key];
+    assert.ok(pool && pool.length >= 1 && pool.length <= 2, key);
+    for (const l of pool) {
+      assert.equal(l.speaker, 'Tobble', key);
+      assert.ok(l.text.length > 0 && l.text.length < 80, key);
+      assert.ok(!/\b(office|work|worker|job|boss|manager|employee|colleague|meeting|salary|career|HR|payroll|staff|desk)\b/i.test(l.text), `${key}: ${l.text}`);
+    }
+    const line = createBarkLine();
+    assert.equal(line.say(key, true), true);
+    assert.equal(line.current().speaker, 'Tobble');
+  }
+  assert.deepEqual({ ...SPEAKER_COLORS }, { Rep: PALETTE.glorpPurple, PA: PALETTE.cream, Tobble: PALETTE.tobbleMint });
+  assert.equal(PALETTE.tobbleMint, '#7ee8b0');
+  assert.ok(Object.isFrozen(SPEAKER_COLORS));
+  assert.ok(BARKS.tobbleRevive.some(l => l.text === 'I got you! PUSH!'));
+  assert.ok(BARKS.tobbleRevive.some(l => l.text === 'I got you! Push! PUSH! Two more!'));
 });

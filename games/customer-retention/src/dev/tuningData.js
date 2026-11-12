@@ -1,7 +1,7 @@
 import { TUNING } from '../tuning.js';
 
 // The tunable numbers: every number in TUNING.move (but radius and height),
-// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.health, TUNING.melee, TUNING.grenade, TUNING.pad, TUNING.associate, TUNING.director, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
+// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.health, TUNING.melee, TUNING.grenade, TUNING.pad, TUNING.tobble, TUNING.associate, TUNING.director, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
 // Pure data and helpers; no DOM.
 
 const n = (path, min, max, step) => ({ path, min, max, step });
@@ -90,6 +90,13 @@ export const PANEL = Object.freeze([
   n('associate.downChance', 0, 1, 0.05), n('associate.downedCrawl', 0, 3, 0.05), n('associate.bleedTime', 1, 60, 0.5), n('associate.reviveTime', 0, 10, 0.1), n('associate.reviveHealth', 0.05, 1, 0.05), n('associate.reviveRange', 0, 40, 0.5),
   n('associate.staggerTime', 0, 3, 0.05), n('associate.diveWarn', 0, 1.6, 0.05), n('associate.diveRadius', 0, 12, 0.1), n('associate.diveChance', 0, 1, 0.05), n('associate.diveReaction', 0, 2, 0.05), n('associate.diveDistance', 0, 10, 0.1), n('associate.diveTime', 0.05, 3, 0.05),
   n('pad.radius', 0.1, 4, 0.05), n('pad.openAfterKills', 0, 8, 1), n('pad.openAfter', 0, 120, 1), n('pad.interval', 0.5, 30, 0.5), n('pad.maxAlive', 1, 8, 1), n('pad.total', 1, 30, 1), n('pad.riseTime', 0, 3, 0.05),
+  n('tobble.enabled', 0, 1, 1), n('tobble.scale', 0.3, 1.2, 0.01), n('tobble.radius', 0.1, 0.6, 0.01), n('tobble.height', 0.5, 2, 0.01), n('tobble.health', 1, 1000, 1),
+  n('tobble.regenDelay', 0, 20, 0.5), n('tobble.regenTime', 0, 20, 0.5), n('tobble.runSpeed', 0, 12, 0.1), n('tobble.turnRate', 1, 30, 0.5),
+  n('tobble.followMin', 0, 20, 0.5), n('tobble.followMax', 1, 30, 0.5), n('tobble.personalSpace', 0, 5, 0.05), n('tobble.lofClear', 0, 4, 0.05), n('tobble.lofRange', 1, 60, 1),
+  n('tobble.sidestepReact', 0, 3, 0.05), n('tobble.sidestepDist', 0, 5, 0.1), n('tobble.popTime', 0.01, 1, 0.01), n('tobble.popLift', 0, 0.6, 0.01), n('tobble.muzzleUp', 0.3, 2, 0.01),
+  n('tobble.coverWaitMin', 0, 5, 0.1), n('tobble.coverWaitMax', 0, 8, 0.1), n('tobble.burstTime', 0, 6, 0.1), n('tobble.rate', 0.5, 20, 0.5), n('tobble.damage', 0, 100, 1), n('tobble.spread', 0, 20, 0.5), n('tobble.range', 1, 100, 1),
+  n('tobble.reviveMaxThreats', 0, 8, 1), n('tobble.reviveWaitMax', 0, 20, 0.5), n('tobble.reviveRange', 0.3, 4, 0.05), n('tobble.reviveTime', 0, 15, 0.1), n('tobble.reviveHealth', 0.05, 1, 0.05),
+  n('tobble.playerReviveTime', 0, 10, 0.1), n('tobble.playerReviveRange', 0.3, 5, 0.05), n('tobble.crawlSpeed', 0, 3, 0.05), n('tobble.complainEvery', 1, 30, 0.5),
   n('dummy.health', 1, 1000, 1), n('dummy.respawnTime', 0, 30, 0.5), n('dummy.railSpeed', 0, 10, 0.1),
   n('camera.recoil.halfLife', 0.01, 0.5, 0.01), n('camera.recoil.max', 0, 20, 0.5), n('look.pad.assist', 0.1, 1, 0.05),
   n('feedback.flashTime', 0.01, 0.3, 0.01), n('feedback.flashSize', 0.05, 1.5, 0.05), n('feedback.tracerTime', 0.01, 0.3, 0.01), n('feedback.tracerWidth', 0.005, 0.2, 0.005),
@@ -180,5 +187,5 @@ function text(v, indent) {
 
 // The move, camera, look, cover, weapons, combat, health, associate, director, dummy and feedback blocks as object-literal text to paste into src/tuning.js.
 export function formatForTuningFile(current = TUNING) {
-  return ['associate', 'camera', 'combat', 'cover', 'director', 'dummy', 'feedback', 'grenade', 'health', 'look', 'melee', 'move', 'pad', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
+  return ['associate', 'camera', 'combat', 'cover', 'director', 'dummy', 'feedback', 'grenade', 'health', 'look', 'melee', 'move', 'pad', 'tobble', 'weapons'].map(k => `  ${k}: ${text(current[k], 1)},`).join('\n');
 }
