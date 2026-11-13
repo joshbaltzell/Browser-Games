@@ -1,4 +1,4 @@
-// The ending: what happens after the Membership Overlord falls. Pure logic: no DOM, no WebGL, no clock of its own (step(dt) advances it).
+// The ending: what happens after the Cancellation Manager falls. Pure logic: no DOM, no WebGL, no clock of its own (step(dt) advances it).
 // off -> (start: the boss is dead and the arena is clear) slump -> desk (the desk lights up: hold interact within reach for holdTime) ->
 // cards (four text cards over a dimmed scene) -> done (any key or button; the caller goes back to the title).
 // start() is the only way in, so the cards can only follow the defeat and the hold. Times come from tuning.ending at every use.

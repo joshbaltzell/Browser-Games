@@ -229,3 +229,17 @@ test('an alien view feeds its drops: on while it lives, off when its slot is unu
   assert.equal(shown(), 0);
   assert.doesNotThrow(() => createAssociateView(createAssociate({ id: 'h', pos: [0, 0, 0] })).update(1, 1 / 60), 'a view with no goo pool still works');
 });
+
+test('the Cancellation Manager is a blob at 1.2 girth in the costume merged into the Rep\'s meshes: 24 meshes, its hit volumes from its own spec', async () => {
+  const { OVERLORD } = await import('../src/actors/associate.js');
+  const { bossShapes } = await import('../src/actors/bossBrain.js');
+  assert.equal(OVERLORD.body, 'blob'); assert.equal(OVERLORD.blob.costume, 'polo');
+  assert.ok(visibleMeshes(buildRig(OVERLORD).root) <= 24, `${visibleMeshes(buildRig(OVERLORD).root)} meshes`);
+  finite(buildRig(OVERLORD));
+  const V = ENEMY_SHAPES.boss;
+  assert.ok(V.body.r > ENEMY_SHAPES.associate.body.r, 'the boss is wider than a Rep');
+  const e = { pos: [0, 0, 0], pop: 1, shapes: { head: { c: [0, 0, 0], r: 0 }, body: { a: [0, 0, 0], b: [0, 0, 0], r: 0 } } };
+  bossShapes(e, TUNING.combat, TUNING);
+  assert.ok(Math.abs(e.shapes.head.r - (V.head.r * TUNING.boss.scale + TUNING.combat.hitPad)) < 1e-9, 'head volume = the spec head at boss.scale');
+  assert.ok(Math.abs(e.shapes.head.c[1] - V.head.cy * TUNING.boss.scale) < 1e-9);
+});

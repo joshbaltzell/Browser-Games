@@ -95,21 +95,35 @@ export const ENEMY_COLORS = deepFreeze({
     cuff: mix(PALETTE.lilac, SHIRT, 0.55),
     band: PALETTE.hotPink,                                  // the sweatband
   },
-  // The Membership Overlord: purple and gold.
+  // The Cancellation Manager (the boss): the blob in the reference's purple polo, cream trim, gold buckle and green goo tank.
   boss: {
-    shirt: mix(SHIRT, PALETTE.ink, 0.15),
-    collar: GOLD,
-    logo: GOLD,
-    pants: mix(SHIRT, PALETTE.ink, 0.55),
-    skin: mix(PALETTE.lilac, SHIRT, 0.4),                  // a purple queen
-    hair: GOLD,
-    rim: 0.5, rimColor: '#ffe9a8',
-    shoe: GOLD,
-    sole: PALETTE.ink,
-    lanyard: GOLD,
+    logo: PALETTE.gel,
+    skin: ALIEN_SKIN,
+    spot: ALIEN_SPOT,
+    hair: ALIEN_HAIR,
+    ...ALIEN_RIM,
     badge: PALETTE.cream,
     badgeStripe: PALETTE.hotPink,
-    headset: GOLD,
+    button: PALETTE.cream,
+    band: PALETTE.cream,
+    shirt: POLO,
+    collar: mix(POLO, PALETTE.ink, 0.2),
+    pants: mix(SHIRT, PALETTE.ink, 0.62),
+    shoe: mix(SHIRT, PALETTE.ink, 0.1),
+    sole: PALETTE.cream,
+    toe: PALETTE.cream,
+    cuff: mix(POLO, PALETTE.ink, 0.3),
+    pad: mix(SHIRT, PALETTE.hotPink, 0.2),                 // the shoulder pads
+    trim: PALETTE.cream,                                    // the piping and the pad trim
+    belt: PALETTE.ink,
+    buckle: GOLD,
+    tank: ALIEN_SKIN,                                       // the goo tank on the back and the cannon's canister
+    pack: mix(SHIRT, PALETTE.ink, 0.45),
+    gun: mix(PALETTE.ink, SHIRT, 0.35),
+    clip: GOLD,
+    paper: PALETTE.cream,
+    lanyard: PALETTE.hotPink,
+    headset: mix(PALETTE.ink, PALETTE.lilac, 0.25),
     mic: PALETTE.hotPink,
   },
 });
@@ -227,10 +241,9 @@ export function blobSpec({ name, colors, width = 1, scale = 1, costume = 'polo',
 export const GLORP_REP = blobSpec({ name: 'associate', colors: ENEMY_COLORS.blobRep, seed: 6 });
 export const TRAINER = blobSpec({ name: 'trainer', colors: ENEMY_COLORS.trainer, width: 1.04, costume: 'tank', seed: 11 });
 
-// The Membership Overlord: the Rep's rig in purple and gold (the view scales it by TUNING.boss.scale and adds the crown and the keycard lanyard).
-export const OVERLORD = deepFreeze({
-  ...ASSOCIATE,
-  name: 'overlord',
-  colors: ENEMY_COLORS.boss,
-  face: { ...ASSOCIATE.face, seed: 21, eyeColor: GOLD },
-});
+// The Cancellation Manager (the boss; the view scales it by TUNING.boss.scale): the blob body at 1.2 girth, in the reference's costume. The
+// outfit flags are merged into the torso, head and hand meshes, so the boss draws as many meshes as a Rep (plus its cannon and the page).
+export const OVERLORD = deepFreeze(blobSpec({
+  name: 'overlord', colors: ENEMY_COLORS.boss, width: 1.2, costume: 'polo', seed: 21,
+  outfit: { headset: true, pads: true, belt: true, piping: true, lanyard: true, backpack: true, clipboard: true },
+}));

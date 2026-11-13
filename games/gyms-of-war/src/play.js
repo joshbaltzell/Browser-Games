@@ -52,6 +52,7 @@ import { createBlindFire, rotateYaw } from './combat/blindFire.js';
 import { createReloadCue } from './ui/reloadCue.js';
 import { createTutorial } from './ui/tutorial.js';
 import { objectiveTarget, lookAngles, screenMark, tacComModel } from './ui/tacCom.js';
+import { BOSS_NAME } from './actors/bossBrain.js';
 import { edgePoint } from './world/cover.js';
 
 // The grey-box play scene: the player, the camera, cover and a room to
@@ -460,20 +461,19 @@ export function startPlay({ canvas, gl, params }) {
     const title = ARENA_TITLES[run.arena];
     if (LEVEL.boss) {
       const b = fight.boss;
-      if (ending.state === 'slump') return 'The Membership Overlord has fallen';
+      if (ending.state === 'slump') return 'The Cancellation Manager has fallen';
       if (ending.state === 'desk') return 'Cancel your membership at the desk';
       if (ending.locked) return '';
       if (!b || !fight.started) return title;
       if (b.invuln) return `Invulnerable! ${promptText('sauna', input.device())}`;
-      return `${title}: shoot the Overlord. Head shots count double`;
+      return `${title}: shoot the Cancellation Manager. Head shots count double`;
     }
     if (fight.clear) return run.gateOpen ? `${title}: clear \u2014 head for the GO gate` : `${title}: set complete`;
     if (fight.pads.some(p => p.state === 'open')) return promptText('sauna', input.device());
     return fight.started ? (run.arena === 'turnstiles' ? 'Get past the front desk' : `${title}: clear the room`) : 'Walk in';
   }
 
-  const BOSS_NAME = 'THE MEMBERSHIP OVERLORD';
-  // The boss bar: from the lockdown until it falls. Phase 2 greys the bar and says what to do.
+    // The boss bar: from the lockdown until it falls. Phase 2 greys the bar and says what to do.
   function bossModel() {
     const b = fight && fight.boss;
     if (!b || !fight.started || !b.alive) return null;

@@ -2,10 +2,10 @@ import { TUNING } from '../tuning.js';
 import { PALETTE } from '../render/palette.js';
 
 // The speaker's colour for the bark line (the HUD reads it by speaker name).
-export const SPEAKER_COLORS = Object.freeze({ Rep: PALETTE.glorpPurple, PA: PALETTE.cream, Tobble: PALETTE.tobbleMint, Trainer: PALETTE.planet, Overlord: '#ffcf3a', Doc: PALETTE.cream });
+export const SPEAKER_COLORS = Object.freeze({ Rep: PALETTE.glorpPurple, PA: PALETTE.cream, Tobble: PALETTE.tobbleMint, Trainer: PALETTE.planet, 'Cancellation Manager': '#ffcf3a', Doc: PALETTE.cream });
 const T = (...lines) => Object.freeze(lines.map(text => Object.freeze({ speaker: 'Tobble', text })));
 const P = (...lines) => Object.freeze(lines.map(text => Object.freeze({ speaker: 'Trainer', text })));
-const O = (...lines) => Object.freeze(lines.map(text => Object.freeze({ speaker: 'Overlord', text })));
+const O = (...lines) => Object.freeze(lines.map(text => Object.freeze({ speaker: 'Cancellation Manager', text })));
 
 // What the Reps shout (the Glorp aliens that run GlorpFit). Text only; voices come in milestone 10. Each key holds a short pool
 // that is read in turn, so a repeat never comes twice in a row. `speaker` is 'Rep' unless the line is the station PA.
@@ -36,7 +36,7 @@ export const BARKS = Object.freeze({
   trainerCharge: P('ONE MORE REP!', "You're not quitting, you're just TIRED!", 'PAIN IS WEAKNESS LEAVING YOUR WALLET!', 'NO EXCUSES!'),
   trainerWindup: P('HUP!'),
   trainerDeath: P('\u2026tell my\u2026 macros\u2026'),
-  // The Membership Overlord (the boss): its welcome, the call for its team in phase 2, the return, the bargaining in phase 3 (in order, then Tobble and
+  // The Cancellation Manager (the boss): its welcome, the call for its team in phase 2, the return, the bargaining in phase 3 (in order, then Tobble and
   // Doc answer) and the last words.
   bossIntro: O('Doc Vex! Do come in. Your commitment is so valuable to us.'),
   bossTeam: O('Have you met our team?'),

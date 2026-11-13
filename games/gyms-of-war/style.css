@@ -93,7 +93,7 @@ html, body { margin: 0; height: 100%; background: #1b1f3b; overflow: hidden; fon
 .cr-hours[hidden] { display: none; }
 #cr-fade { position: fixed; inset: 0; background: #1b1f3b; opacity: 0; pointer-events: none; z-index: 20; }
 
-/* The Membership Overlord's health bar (top centre, under the objective) and the ending cards. */
+/* The Cancellation Manager's health bar (top centre, under the objective) and the ending cards. */
 .cr-boss { position: absolute; left: 50%; top: 84px; transform: translateX(-50%); width: min(560px, 70vw); text-align: center; }
 .cr-boss-name { font-size: 16px; font-weight: 800; letter-spacing: .16em; color: #ffcf3a; text-shadow: 0 1px 3px rgba(27,31,59,.95); }
 .cr-boss-bar { position: relative; height: 16px; margin-top: 4px; border: 2px solid #1b1f3b; border-radius: 3px; background: rgba(27,31,59,.78); box-sizing: border-box; overflow: hidden; }

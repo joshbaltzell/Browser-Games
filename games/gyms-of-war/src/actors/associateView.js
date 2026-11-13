@@ -4,7 +4,7 @@ import { TUNING } from '../tuning.js';
 import { PALETTE } from '../render/palette.js';
 import { createToonMaterial } from '../render/toon.js';
 import { addOutline, computeOutlineNormals } from '../render/outline.js';
-import { GLORP_REP, TRAINER, OVERLORD, GOLD } from './associate.js';
+import { GLORP_REP, TRAINER, OVERLORD } from './associate.js';
 import { kettlebellGeometry } from '../render/grenadeView.js';
 import { buildRig } from './rig.js';
 import { createAnimator } from './animator.js';
@@ -119,6 +119,29 @@ const THROW_RAISED = 0.4;   // the throw clip's u at the top of the raise (the h
 // How far the gun points up while blind firing over low cover, as for the player.
 const BLIND_LOW_GUN_PITCH = 0.95;
 
+// The Cancellation Manager's goo cannon: a fat dark barrel with a green goo tank on top and a grip, one merged mesh with the outline and the
+// glowing emitter at its muzzle. Grip at the origin, barrel along +z (the same frame as the Rep's blaster, so updateBlaster aims both).
+const CANNON_TIP = [0, 0.02, 0.36];
+function buildCannon(colors) {
+  const parts = [
+    paintGeo(new THREE.BoxGeometry(0.1, 0.12, 0.3).translate(0, 0, 0.12), colors.gun),          // the barrel
+    paintGeo(new THREE.CylinderGeometry(0.05, 0.05, 0.1, 12).rotateX(Math.PI / 2).translate(0, 0.005, 0.33), colors.gun),   // the muzzle ring
+    paintGeo(new THREE.CylinderGeometry(0.065, 0.065, 0.2, 14).translate(0, 0.14, 0.02), colors.tank),                       // the goo tank
+    paintGeo(new THREE.BoxGeometry(0.05, 0.13, 0.06).translate(0, -0.12, -0.03), colors.gun),                                 // the grip
+  ];
+  const geo = mergeGeometries(parts, false);
+  const g = new THREE.Group();
+  g.name = 'cannon';
+  const body = new THREE.Mesh(computeOutlineNormals(geo), createToonMaterial({ vertexColors: true, rim: 0.1 }));
+  addOutline(body);
+  g.add(body);
+  const emitter = new THREE.Mesh(new THREE.SphereGeometry(EMITTER_R * 1.4, 10, 8), new THREE.MeshBasicMaterial({ color: PALETTE.gel }));
+  emitter.name = 'emitter';
+  emitter.position.set(CANNON_TIP[0], CANNON_TIP[1], CANNON_TIP[2]);
+  g.add(emitter);
+  return { group: g, emitter };
+}
+
 // The Trainer's kettlebell: the player's kettlebell geometry, gripped by the handle in the right hand with the bell beyond the fist along the
 // forearm. A red-orange glint sphere on the bell shows while it winds up.
 const KB_SCALE = 1.3;
@@ -139,7 +162,7 @@ function buildKettlebell() {
 
 // One drawn character: a rig with its animator, its dive tumble and its weapon. A view owns the Rep's, and builds a Trainer's the first
 // time its slot holds a Trainer (a hidden one costs no draw calls).
-// The Overlord's crown (a gold band with five points) and its lanyard of keycards, each one vertex-coloured mesh.
+// A geometry painted one colour per vertex (for a merged, vertex-coloured mesh).
 function paintGeo(g, color) {
   g = g.toNonIndexed();
   g.deleteAttribute('uv');
@@ -148,24 +171,7 @@ function paintGeo(g, color) {
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return g;
 }
-function crownMesh() {
-  const parts = [paintGeo(new THREE.CylinderGeometry(0.2, 0.22, 0.09, 16, 1, true).translate(0, 0.045, 0), GOLD)];
-  for (let i = 0; i < 5; i++) {
-    const a = i / 5 * Math.PI * 2;
-    parts.push(paintGeo(new THREE.ConeGeometry(0.045, 0.14, 4).translate(Math.sin(a) * 0.2, 0.16, Math.cos(a) * 0.2), i % 2 ? GOLD : PALETTE.hotPink));
-  }
-  const m = new THREE.Mesh(mergeGeometries(parts, false), createToonMaterial({ vertexColors: true, rim: 0.1 }));
-  m.name = 'crown';
-  return m;
-}
-function keycardsMesh() {
-  const colors = [PALETTE.hotPink, PALETTE.teal, PALETTE.cream, PALETTE.gel, PALETTE.lilac];
-  const parts = colors.map((c, i) => paintGeo(new THREE.BoxGeometry(0.075, 0.105, 0.012).translate(-0.12 + i * 0.06, 0.3 - Math.abs(i - 2) * 0.03 - (i % 2) * 0.03, 0.215), c));
-  const m = new THREE.Mesh(mergeGeometries(parts, false), createToonMaterial({ vertexColors: true, rim: 0.1 }));
-  m.name = 'keycards';
-  return m;
-}
-// The terms-of-service page in its right hand: green fine print, with a glint while it winds up.
+// The terms-of-service page: green fine print, with a glint while it winds up. It hangs over the cannon's muzzle, where the lob is thrown from.
 function termsPage() {
   const parts = [paintGeo(new THREE.BoxGeometry(0.3, 0.4, 0.014), '#9be15d')];
   for (let i = 0; i < 5; i++) parts.push(paintGeo(new THREE.BoxGeometry(0.22, 0.014, 0.018).translate(0, 0.14 - i * 0.07, 0), PALETTE.ink));
@@ -197,17 +203,13 @@ function buildChar(kind) {
   root.add(tumble);
   root.add(rig.shadow);
   const handR = rig.root.getObjectByName('body').children[2]; // buildRig adds hips, then handL, handR
-  const weapon = trainer ? buildKettlebell() : buildBlaster();
+  const weapon = trainer ? buildKettlebell() : boss ? buildCannon(OVERLORD.colors) : buildBlaster();
   let terms = null;
   if (trainer) handR.add(weapon.group);
   else root.add(weapon.group);
   if (boss) {
-    const crown = crownMesh();
-    crown.position.set(0, OVERLORD.head.centerY + OVERLORD.head.ry - 0.04, 0);
-    rig.root.getObjectByName('head').add(crown);
-    rig.root.getObjectByName('hips').add(keycardsMesh());
     terms = termsPage();
-    handR.add(terms.group);
+    weapon.group.add(terms.group);
   }
   return { kind, rig, anim, root, tumble, handR, weapon, terms };
 }
@@ -324,7 +326,7 @@ export function createAssociateView(e, goo = null, slot = -1) {
     const ex = faceOf(e);
     if (ex !== expression) { rig.face.setExpression(ex); expression = ex; }
     if (tr) updateKettlebell(dt);
-    else if (bo) { cur.weapon.group.scale.setScalar(BB.scale); updateTerms(dt); updateBlaster(name, dt, handR, cur.weapon, e.state === 'lobWindup' || e.state === 'lobRecover'); } else updateBlaster(name, dt, handR);
+    else if (bo) { cur.weapon.group.scale.setScalar(BB.scale); updateBlaster(name, dt, handR, cur.weapon); updateTerms(dt); publishMuzzle(); } else updateBlaster(name, dt, handR);
   }
 
   // The Trainer's glint pulses while it winds up.
@@ -334,7 +336,15 @@ export function createAssociateView(e, goo = null, slot = -1) {
     if (g.visible) { glintT += dt; g.scale.setScalar(1 + 0.6 * (0.5 + 0.5 * Math.sin(glintT * 2 * Math.PI * 8))); }
   }
 
-  // The Overlord's page shows while it winds up (with a glint) and is gone the moment it is thrown.
+  // The brain's bursts and pages start where the cannon's emitter is drawn (e.gunTip, world space; read on the next fixed step).
+  function publishMuzzle() {
+    cur.weapon.group.updateMatrixWorld(true);
+    cur.weapon.emitter.getWorldPosition(_v);
+    const t = e.gunTip || (e.gunTip = [0, 0, 0]);
+    t[0] = _v.x; t[1] = _v.y; t[2] = _v.z;
+  }
+
+  // The Cancellation Manager's page shows while it winds up (with a glint) and is gone the moment it is thrown.
   function updateTerms(dt) {
     const t = chars.boss.terms;
     t.group.visible = e.state === 'lobWindup';

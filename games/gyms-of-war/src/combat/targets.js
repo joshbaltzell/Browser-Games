@@ -1,7 +1,7 @@
 // Target dummies: the hit volumes of an Associate, a dummy's life and rail, and the numbers around a hit.
 // Pure data and maths: no WebGL, no DOM.
 import { TUNING } from '../tuning.js';
-import { ASSOCIATE, GLORP_REP, TRAINER } from '../actors/associate.js';
+import { ASSOCIATE, GLORP_REP, TRAINER, OVERLORD } from '../actors/associate.js';
 
 // The hit volumes of a character spec, local to its feet: the head a sphere round the head mass, the body a capsule from the shoe tops to the
 // neck as wide as the shirt or the sleeves, whichever is wider.
@@ -26,8 +26,9 @@ export const HIT_SHAPES = Object.freeze({
   body: Object.freeze({ ay: ASSOCIATE.ankleHeight, by: ASSOCIATE.neckY, r: Math.max(...ASSOCIATE.torso.shirt.map(p => p[0])) }),
 });
 
-// The Rep's and the Personal Trainer's volumes (the view scales the Trainer's by trainer.scaleW and scaleH; see trainerShapes).
-export const ENEMY_SHAPES = Object.freeze({ associate: shapesOf(GLORP_REP), trainer: shapesOf(TRAINER) });
+// The Rep's, the Personal Trainer's and the Cancellation Manager's volumes at their own scale 1 (the views and brains scale them: the Trainer by
+// trainer.scaleW and scaleH, see trainerShapes; the boss by boss.scale and its crouch, see bossShapes).
+export const ENEMY_SHAPES = Object.freeze({ associate: shapesOf(GLORP_REP), trainer: shapesOf(TRAINER), boss: shapesOf(OVERLORD) });
 
 function refreshShapes(d, hitPad = TUNING.combat.hitPad) {
   const [x, y, z] = d.pos, s = d.shapes;

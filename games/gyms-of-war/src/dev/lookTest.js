@@ -8,7 +8,7 @@ import { setOutlinesVisible } from '../render/outline.js';
 import { buildLookCorner } from '../world/lookCorner.js';
 import { buildRig } from '../actors/rig.js';
 import { createAnimator } from '../actors/animator.js';
-import { ASSOCIATE, GLORP_REP, TRAINER } from '../actors/associate.js';
+import { ASSOCIATE, GLORP_REP, TRAINER, OVERLORD } from '../actors/associate.js';
 import { CLIPS } from '../actors/poses.js';
 import { EXPRESSIONS } from '../actors/face.js';
 
@@ -115,13 +115,14 @@ export function startLookTest({ canvas, gl }) {
   }
   // For screenshots: swap the hero for another character ('rep', 'trainer' or 'human').
   function setKind(name) {
-    const base = name === 'trainer' ? TRAINER : name === 'human' ? ASSOCIATE : GLORP_REP;
+    const base = name === 'trainer' ? TRAINER : name === 'human' ? ASSOCIATE : name === 'boss' ? OVERLORD : GLORP_REP;
     const old = hero;
     hero = addActor(corner.spawn[0], corner.spawn[2], undefined, base);
     hero.rig.root.rotation.y = old.rig.root.rotation.y;
     actors.splice(actors.indexOf(old), 1);
     old.rig.dispose();
     if (name === 'trainer') hero.rig.root.scale.set(TUNING.trainer.scaleW, TUNING.trainer.scaleH, TUNING.trainer.scaleW);
+    if (name === 'boss') hero.rig.root.scale.setScalar(TUNING.boss.scale);
     setOutlinesVisible(scene, outlinesOn);
   }
   function setPerf(on) {

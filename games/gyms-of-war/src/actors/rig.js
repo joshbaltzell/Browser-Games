@@ -128,6 +128,14 @@ function headSurface(h, nx, ny, nz, out) {
 
 // The shirt's lathe, and where its surface is: top is the height of the neckline, shirtR(y) the radius at height y above the hips bone, and
 // front(x, y) the z of the front at sideways offset x.
+// The radius of a [radius, height] profile at height y (bottom to top, linear between the points).
+function radiusAt(p, y) {
+  for (let i = 1; i < p.length; i++) {
+    if (y <= p[i][1]) { const k = (y - p[i - 1][1]) / (p[i][1] - p[i - 1][1] || 1); return p[i - 1][0] + (p[i][0] - p[i - 1][0]) * k; }
+  }
+  return 0;
+}
+
 function shirtShape(t) {
   const lathe = (profile, color) => {
     const g = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), 22);
@@ -135,13 +143,7 @@ function shirtShape(t) {
     return paint(g, color);
   };
   const top = t.shirt[t.shirt.length - 2][1];
-  const shirtR = (y) => {
-    const p = t.shirt;
-    for (let i = 1; i < p.length; i++) {
-      if (y <= p[i][1]) { const k = (y - p[i - 1][1]) / (p[i][1] - p[i - 1][1] || 1); return p[i - 1][0] + (p[i][0] - p[i - 1][0]) * k; }
-    }
-    return 0;
-  };
+  const shirtR = (y) => radiusAt(t.shirt, y);
   const front = (x, y) => { const r = shirtR(y); return t.depth * r * Math.sqrt(Math.max(1 - (x * x) / (r * r), 0)); };
   return { lathe, top, shirtR, front };
 }
@@ -196,7 +198,87 @@ function blobTorsoMesh(spec) {
       parts.push(paint(line, c.badgeStripe));
     }
   }
+  blobCostumeParts(spec, parts, front, top);
   return finishMesh(parts, 'torso', c);
+}
+
+// The Cancellation Manager's costume, merged into the blob's torso mesh (so it adds no draw calls): big shoulder pads with a cream trim
+// ring, a belt with a gold dumbbell buckle, cream piping round the hem and down the front, a lanyard to an ID card, and a backpack with a
+// green goo tank and a hose round to the right hip. Parts are added to `parts`; `front(x, y)` is the shirt's front and `top` its neckline.
+function blobCostumeParts(spec, parts, front, top) {
+  const t = spec.torso, c = spec.colors, o = spec.outfit, w = spec.blob.width * spec.blob.scale, hs = spec.blob.scale;
+  const sx = Math.abs(spec.shoulderL[0]), sy = spec.shoulderL[1] - spec.hipHeight, r = t.sleeve;
+  if (o.pads) {
+    for (const s of [-1, 1]) {
+      const x = s * sx * 0.95, y = sy + 0.02 * hs;
+      const pad = ball(14, 10);
+      place(pad, x, y, 0, 0, 0, s * 0.35, r * 1.75, r * 1.05, r * 1.7);
+      pad.computeVertexNormals();
+      parts.push(paint(pad, c.pad));
+      const trim = new THREE.TorusGeometry(r * 1.6, r * 0.14, 8, 24);
+      place(trim, x, y, 0, Math.PI / 2, 0, s * 0.35, 1.05, 1, 1);
+      parts.push(paint(trim, c.trim));
+    }
+  }
+  if (o.belt) {
+    // The belt sits below the polo's hem, round the trousers; the buckle is a gold dumbbell on the front.
+    const y = -0.21 * hs, rb = radiusAt(t.pants, y), bz = t.depth * rb * 0.97;
+    const belt = new THREE.TorusGeometry(rb * 0.99, 0.024 * w, 8, 28);
+    place(belt, 0, y, 0, Math.PI / 2, 0, 0, 1, 1, t.depth);
+    parts.push(paint(belt, c.belt));
+    const bar = new THREE.BoxGeometry(0.12 * w, 0.03 * hs, 0.02);
+    place(bar, 0, y, bz + 0.01, 0, 0, 0);
+    parts.push(paint(bar, c.buckle));
+    for (const s of [-1, 1]) {
+      const cap = new THREE.BoxGeometry(0.03 * w, 0.06 * hs, 0.03);
+      place(cap, s * 0.065 * w, y, bz + 0.012, 0, 0, 0);
+      parts.push(paint(cap, c.buckle));
+    }
+  }
+  if (o.piping) {
+    // A cream ring round the hem and a stripe either side of the placket.
+    const yh = t.shirt[0][1] + 0.01 * hs;
+    const hem = new THREE.TorusGeometry(radiusAt(t.shirt, yh) * 0.98, 0.014 * w, 8, 28);
+    place(hem, 0, yh, 0, Math.PI / 2, 0, 0, 1, 1, t.depth);
+    parts.push(paint(hem, c.trim));
+    for (const s of [-1, 1]) {
+      const x = s * 0.1 * w, strip = new THREE.BoxGeometry(0.018 * w, 0.42 * hs, 0.014);
+      place(strip, x, 0.04 * hs, front(x, 0.04 * hs) + 0.004, 0, 0, 0);
+      parts.push(paint(strip, c.trim));
+    }
+  }
+  if (o.lanyard) {
+    // Two pink straps from the collar to an ID card on the belly, with a dumbbell stripe.
+    const cy = top - 0.3 * hs, cz = front(0, cy) + 0.012;
+    for (const s of [-1, 1]) {
+      const a = [s * 0.07 * w, top - 0.03 * hs, front(s * 0.07 * w, top - 0.03 * hs) + 0.02];
+      const m = [s * 0.05 * w, cy + 0.14 * hs, front(s * 0.05 * w, cy + 0.14 * hs) + 0.02];
+      const b = [s * 0.014 * w, cy + 0.05 * hs, cz];
+      parts.push(paint(rod(a, m, 0.008 * w), c.lanyard), paint(rod(m, b, 0.008 * w), c.lanyard));
+    }
+    const card = new THREE.BoxGeometry(0.1 * w, 0.13 * hs, 0.014);
+    const stripe = new THREE.BoxGeometry(0.102 * w, 0.034 * hs, 0.016);
+    place(card, 0, cy, cz, -0.05, 0, 0.04);
+    place(stripe, 0, cy + 0.04 * hs, cz + 0.002, -0.05, 0, 0.04);
+    parts.push(paint(card, c.badge), paint(stripe, c.badgeStripe));
+  }
+  if (o.backpack) {
+    // A pack on the back with a green goo tank in its face, two straps over the shoulders, a waist strap, and a hose from the tank round to
+    // the right hip (the cannon's hand).
+    const back = -t.depth * radiusAt(t.shirt, 0.22 * hs) - 0.01, pz = back - 0.07 * w, py = 0.2 * hs;
+    const pack = new THREE.BoxGeometry(0.4 * w, 0.44 * hs, 0.14 * w);
+    place(pack, 0, py, pz, 0, 0, 0);
+    parts.push(paint(pack, c.pack));
+    const tank = new THREE.BoxGeometry(0.28 * w, 0.22 * hs, 0.03);
+    place(tank, 0, py + 0.02 * hs, pz - 0.085 * w, 0, 0, 0);
+    parts.push(paint(tank, c.tank));
+    for (const s of [-1, 1]) {
+      parts.push(paint(rod([s * 0.16 * w, top - 0.02 * hs, back], [s * 0.15 * w, py + 0.22 * hs, pz], 0.018 * w), c.belt));
+    }
+    parts.push(paint(rod([-0.36 * w, 0.02 * hs, back + 0.02], [0.36 * w, 0.02 * hs, back + 0.02], 0.016 * w), c.belt));
+    const hose = [[0, py - 0.2 * hs, pz - 0.1 * w], [-0.2 * w, -0.06 * hs, back - 0.1 * w], [-0.42 * w, -0.14 * hs, back + 0.02], [-0.46 * w, -0.14 * hs, -0.04]];
+    for (let i = 0; i < hose.length - 1; i++) parts.push(paint(rod(hose[i], hose[i + 1], 0.02 * w), c.belt));
+  }
 }
 
 function torsoMesh(spec) {
@@ -293,6 +375,7 @@ function blobHeadMesh(spec) {
   paint(skull, c.skin);
   lightenSpots(skull, [h.rx, h.ry, h.rz], BLOB_SPOTS, c.skin, c.spot);
   const parts = [skull];
+  if (o.headset) headsetParts(spec, parts);
   if (o.sweatband) {
     const y = 0.17 * spec.blob.scale, r = h.rx * 0.855;
     const band = new THREE.TorusGeometry(r, 0.024 * spec.blob.width * spec.blob.scale, 8, 28);
@@ -300,6 +383,34 @@ function blobHeadMesh(spec) {
     parts.push(paint(band, c.band));
   }
   return finishMesh(parts, 'headMesh', c);
+}
+
+// The headset: a band over the crown, a cup on each side and a mic on a boom from the left cup round to beside the mouth. Shared by the
+// human head and the blob head (the blob has no hair, so its band sits on the bare crown).
+function headsetParts(spec, parts) {
+  const h = spec.head, hair = spec.hair, c = spec.colors;
+  const top = h.ry + hair.thickness + 0.03;
+  // The band: a tube over the top of the head, along a half ellipse.
+  const arc = new THREE.Curve();
+  arc.getPoint = (u, out = new THREE.Vector3()) => out.set(Math.cos(Math.PI * u) * (h.rx + hair.thickness + 0.012), Math.sin(Math.PI * u) * top, 0);
+  const band = new THREE.TubeGeometry(arc, 24, 0.014, 6, false);
+  place(band, 0, 0, -0.03, -0.12, 0, 0);
+  parts.push(paint(band, c.headset));
+  for (const s of [-1, 1]) {
+    const cup = new THREE.CylinderGeometry(0.055, 0.06, 0.05, 14);
+    place(cup, s * (h.rx + 0.02), -0.01, -0.02, 0, 0, Math.PI / 2);
+    parts.push(paint(cup, c.headset));
+  }
+  // Microphone boom from the left cup round the cheek to beside the mouth.
+  const f = spec.face;
+  const a = [h.rx + 0.035, -0.04, 0.0];
+  const m = [h.rx + 0.005, f.mouthY + 0.01, 0.13];
+  const tip = [f.mouthWidth / 2 + 0.06, f.mouthY - 0.02, f.mouthZ + 0.025];
+  parts.push(paint(rod(a, m, 0.009), c.headset), paint(rod(m, tip, 0.009), c.headset));
+  const mic = ball(10, 8);
+  place(mic, tip[0], tip[1], tip[2], 0, 0, 0, 0.022, 0.02, 0.022);
+  mic.computeVertexNormals();
+  parts.push(paint(mic, c.mic));
 }
 
 function headMesh(spec) {
@@ -325,30 +436,7 @@ function headMesh(spec) {
     g.computeVertexNormals();
     parts.push(paint(g, c.skin));
   }
-  if (o.headset) {
-    const top = h.ry + hair.thickness + 0.03;
-    // The band: a tube over the top of the head, along a half ellipse.
-    const arc = new THREE.Curve();
-    arc.getPoint = (u, out = new THREE.Vector3()) => out.set(Math.cos(Math.PI * u) * (h.rx + hair.thickness + 0.012), Math.sin(Math.PI * u) * top, 0);
-    const band = new THREE.TubeGeometry(arc, 24, 0.014, 6, false);
-    place(band, 0, 0, -0.03, -0.12, 0, 0);
-    parts.push(paint(band, c.headset));
-    for (const s of [-1, 1]) {
-      const cup = new THREE.CylinderGeometry(0.055, 0.06, 0.05, 14);
-      place(cup, s * (h.rx + 0.02), -0.01, -0.02, 0, 0, Math.PI / 2);
-      parts.push(paint(cup, c.headset));
-    }
-    // Microphone boom from the left cup round the cheek to beside the mouth.
-    const f = spec.face;
-    const a = [h.rx + 0.035, -0.04, 0.0];
-    const m = [h.rx + 0.005, f.mouthY + 0.01, 0.13];
-    const tip = [f.mouthWidth / 2 + 0.06, f.mouthY - 0.02, f.mouthZ + 0.025];
-    parts.push(paint(rod(a, m, 0.009), c.headset), paint(rod(m, tip, 0.009), c.headset));
-    const mic = ball(10, 8);
-    place(mic, tip[0], tip[1], tip[2], 0, 0, 0, 0.022, 0.02, 0.022);
-    mic.computeVertexNormals();
-    parts.push(paint(mic, c.mic));
-  }
+  if (o.headset) headsetParts(spec, parts);
   return finishMesh(parts, 'headMesh', c);
 }
 
@@ -442,7 +530,31 @@ function blobHandMesh(spec, side) {
   place(thumb, r * 0.55, r * 0.95, side * r * 0.95, side * -0.5, 0, 0.5, r * 0.34, r * 0.62, r * 0.36);
   thumb.computeVertexNormals();
   parts.push(paint(thumb, c.skin));
+  if (spec.outfit.clipboard && side > 0) clipboardParts(spec, parts, r);
   return finishMesh(parts, side > 0 ? 'handL' : 'handR', c);
+}
+
+// The Cancellation Manager's clipboard, in the left hand's space: a dark board lying flat in front of the palm, its top past the fingers, with
+// a cream sheet, three ticked boxes and a gold clip. Merged into the hand mesh.
+function clipboardParts(spec, parts, r) {
+  const c = spec.colors;
+  const board = new THREE.BoxGeometry(0.22, 0.3, 0.02);
+  place(board, 0, 0.2, r * 1.25, 0, 0, 0);
+  parts.push(paint(board, c.gun));
+  const sheet = new THREE.BoxGeometry(0.19, 0.25, 0.01);
+  place(sheet, 0, 0.2, r * 1.25 + 0.015, 0, 0, 0);
+  parts.push(paint(sheet, c.paper));
+  for (let i = 0; i < 3; i++) {
+    const box = new THREE.BoxGeometry(0.035, 0.035, 0.006);
+    place(box, -0.05, 0.3 - i * 0.07, r * 1.25 + 0.024, 0, 0, 0);
+    parts.push(paint(box, c.gun));
+    const line = new THREE.BoxGeometry(0.075, 0.012, 0.006);
+    place(line, 0.03, 0.3 - i * 0.07, r * 1.25 + 0.024, 0, 0, 0);
+    parts.push(paint(line, c.gun));
+  }
+  const clip = new THREE.BoxGeometry(0.1, 0.035, 0.03);
+  place(clip, 0, 0.36, r * 1.25 + 0.02, 0, 0, 0);
+  parts.push(paint(clip, c.clip));
 }
 
 function handMesh(spec, side) {

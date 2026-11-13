@@ -266,13 +266,13 @@ export const TUNING = {
   // fadeIn. hoursTime is how long the cancellation-hours line shows after a checkpoint. attractSpeed (rad/s), attractMargin (m past the floor) and
   // attractHeight (m) are the title screen's orbiting camera.
   run: { fadeOut: 0.6, blackHold: 0.25, fadeIn: 0.6, gateReach: 1.6, hoursTime: 6, gateOpenTime: 0.8, attractSpeed: 0.12, attractMargin: 6, attractHeight: 10, cardTime: 3.5, defeatCardTime: 2.4, cardSkipDelay: 0.7 },
-  // The Membership Overlord (the boss; an enemy slot of kind 'boss', no cover points, no attack token). scale sizes the Rep rig and its hit volumes;
+  // The Cancellation Manager (the boss; an enemy slot of kind 'boss', no cover points, no attack token). scale sizes the blob rig and its hit volumes;
   // crouchY is how tall it stands (a fraction) while it is tucked behind the desk. headMult is on top of the weapon's own head multiplier.
   // Phase 1 down to phase2At of its health, phase 2 (hiding, invulnerable, both saunas open) until they are closed or spent, phase 3 below phase3At.
   // Every attack is telegraphed: a burst by popTime + telegraphTime (fastTelegraph in phase 3), a terms-of-service lob by popTime + lobWindup and then
   // lobFlight more seconds of its marker on the floor. Times in s, distances in m, speeds in m/s, damage in hp, chances 0 to 1.
   boss: {
-    health: 4500, scale: 2, crouchY: 0.5, headMult: 2, phase2At: 0.66, phase3At: 0.33,
+    health: 4500, scale: 1.8, crouchY: 0.5, headMult: 2, phase2At: 0.66, phase3At: 0.33,
     popTime: 0.5, telegraphTime: 1.0, burstTime: 2.4, rate: 5, damage: 6, spread: 2.5, aimLag: 0.25, muzzleUp: 1.35,
     coverWaitMin: 1.2, coverWaitMax: 2.2, shiftTime: 0.8,
     lobEvery: 2, lobWindup: 1.2, lobFlight: 1.5, lobRecover: 0.7, lobRadius: 2.5, lobDamage: 32, lobTobbleDamage: 32, lobFalloff: 0.5,

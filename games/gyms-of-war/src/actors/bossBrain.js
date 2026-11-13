@@ -8,13 +8,16 @@
 // 'telegraph' first and the shots or 'bossLob' after, and the fight lands the damage. Pure logic: no WebGL, no DOM. Randomness only from ctx.rand.
 import { TUNING } from '../tuning.js';
 import { lineOfSight } from '../world/coverPoints.js';
-import { HIT_SHAPES } from '../combat/targets.js';
+import { ENEMY_SHAPES } from '../combat/targets.js';
 import { turnToward } from './moveMath.js';
 
 const EPS = 1e-9;
 const TURN = 8;   // rad/s
 const clamp01 = v => Math.max(0, Math.min(1, v));
 const dist2 = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
+
+// The name on the boss bar, on Tac/Com and in the barks' speaker line (the player sees it; the code calls the boss 'boss' and 'overlord').
+export const BOSS_NAME = 'CANCELLATION MANAGER';
 
 export const bossRadius = (tun = TUNING) => tun.associate.radius * tun.boss.scale;
 export const bossHeight = (tun = TUNING) => tun.associate.height * tun.boss.scale;
@@ -29,18 +32,18 @@ export function initBoss(e, tun = TUNING) {
   e.health = tun.boss.health;
   e.phase = 1; e.invuln = false; e.spot = 0; e.nextSpot = 0; e.shiftPending = false; e.shiftT = 1; e.shiftFrom = [e.start[0], e.start[2]];
   e.sinceLob = 0; e.offers = 0; e.saunasOpen = false; e.lobTo = [0, 0, 0]; e.lobSent = false; e.wait = 0;
-  e.pop = 0; e.blind = 0; e.role = 'hold'; e.point = null; e.path = []; e.pathI = 0; e.target = 'player'; e.shots = 0; e.bursts = 0;
+  e.pop = 0; e.blind = 0; e.role = 'hold'; e.point = null; e.path = []; e.pathI = 0; e.target = 'player'; e.shots = 0; e.bursts = 0; e.gunTip = null;
   e.pos[0] = e.start[0]; e.pos[1] = e.start[1]; e.pos[2] = e.start[2];
   return e;
 }
 
-// Shapes: the Rep's, scaled by boss.scale wide and by scale * (crouchY..1 with how far it stands) tall.
+// Shapes: the Cancellation Manager's (its blob spec's, at scale 1), scaled by boss.scale wide and by scale * (crouchY..1 with how far it stands) tall.
 export function bossShapes(e, combat = TUNING.combat, tun = TUNING) {
-  const [x, y, z] = e.pos, s = e.shapes, B = tun.boss, W = B.scale, H = B.scale * (B.crouchY + (1 - B.crouchY) * clamp01(e.pop));
-  s.head.r = HIT_SHAPES.head.r * W + combat.hitPad; s.body.r = HIT_SHAPES.body.r * W + combat.hitPad;
-  s.head.c[0] = x; s.head.c[1] = y + HIT_SHAPES.head.cy * H; s.head.c[2] = z;
-  s.body.a[0] = x; s.body.a[1] = y + HIT_SHAPES.body.ay * H; s.body.a[2] = z;
-  s.body.b[0] = x; s.body.b[1] = y + HIT_SHAPES.body.by * H; s.body.b[2] = z;
+  const [x, y, z] = e.pos, s = e.shapes, B = tun.boss, W = B.scale, H = B.scale * (B.crouchY + (1 - B.crouchY) * clamp01(e.pop)), V = ENEMY_SHAPES.boss;
+  s.head.r = V.head.r * W + combat.hitPad; s.body.r = V.body.r * W + combat.hitPad;
+  s.head.c[0] = x; s.head.c[1] = y + V.head.cy * H; s.head.c[2] = z;
+  s.body.a[0] = x; s.body.a[1] = y + V.body.ay * H; s.body.a[2] = z;
+  s.body.b[0] = x; s.body.b[1] = y + V.body.by * H; s.body.b[2] = z;
   return s;
 }
 
@@ -49,6 +52,14 @@ function place(e, ctx, p) {
   const s = ctx.bossLevel.spots[e.spot];
   e.pos[0] = s.hide[0] + (s.pop[0] - s.hide[0]) * p;
   e.pos[2] = s.hide[1] + (s.pop[1] - s.hide[1]) * p;
+}
+
+// Where its bursts and pages start: the goo cannon's muzzle as the view last drew it (e.gunTip, world space, written by the view each frame),
+// or a point above its feet before any view has drawn it (a test or a headless run).
+function muzzleAt(e, B, out) {
+  if (e.gunTip) { out[0] = e.gunTip[0]; out[1] = e.gunTip[1]; out[2] = e.gunTip[2]; return out; }
+  out[0] = e.pos[0]; out[1] = e.pos[1] + B.muzzleUp * B.scale; out[2] = e.pos[2];
+  return out;
 }
 
 function faceXZ(e, x, z, dt) {
@@ -155,7 +166,7 @@ function burst(e, ctx, B, dt, tun) {
   springAim(e, ctx, B, dt, false);
   if (targetGone(e, ctx)) { stopShooting(e, ctx, B, true); return; }
   const m = e.muzzle, pl = ctx.player;
-  m[0] = e.pos[0]; m[1] = e.pos[1] + B.muzzleUp * B.scale; m[2] = e.pos[2];
+  muzzleAt(e, B, m);
   const due = shotsDue(e.stateT, burstRate(e, B), burstLen(e, B));
   const speed = e.target === 'tobble' ? 0 : Math.min(1, pl.speed / tun.move.sprint);
   while (e.shots < due) {
@@ -172,7 +183,7 @@ function lobWindup(e, ctx, B, dt) {
   faceXZ(e, e.lobTo[0], e.lobTo[2], dt);
   if (e.stateT < B.popTime + B.lobWindup - EPS) return;
   const m = e.muzzle;
-  m[0] = e.pos[0]; m[1] = e.pos[1] + B.muzzleUp * B.scale; m[2] = e.pos[2];
+  muzzleAt(e, B, m);
   e.lobSent = true;
   ctx.events.push({ type: 'bossLob', id: e.id, from: [m[0], m[1], m[2]], to: [e.lobTo[0], 0, e.lobTo[2]], flight: B.lobFlight, target: e.target });
   e.sinceLob = 0;

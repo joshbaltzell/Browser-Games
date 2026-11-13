@@ -63,13 +63,13 @@ function toPhase3(r, max = 30) {
   assert.equal(r.boss.phase, 3);
 }
 
-test('the Overlord is a slot kind: the level starts it as slot 0, it is 2x a Rep with a crouching shape, holds no cover point or token, and is never pushed or flanked', () => {
+test('the Overlord is a slot kind: the level starts it as slot 0, it is boss.scale x a Rep with a crouching shape, holds no cover point or token, and is never pushed or flanked', () => {
   const r = rig({ god: true });
   const b = r.boss;
   assert.equal(r.f.enemies[0], b);
   assert.equal(b.kind, 'boss'); assert.equal(b.health, B.health); assert.equal(b.state, 'idle'); assert.equal(b.phase, 1);
   assert.equal(r.f.reserved.size, 0, 'no cover point claimed');
-  assert.ok(Math.abs(bossRadius() - TUNING.associate.radius * 2) < 1e-9);
+  assert.ok(Math.abs(bossRadius() - TUNING.associate.radius * TUNING.boss.scale) < 1e-9);
   // Standing it is twice a Rep's height; tucked it is crouchY of that, under the desk top.
   b.pop = 1; r.step();
   const standing = b.shapes.head.c[1] + b.shapes.head.r;
@@ -450,7 +450,7 @@ test('every boss.* and ending.* tuning number has a panel row and the fight surv
   }
 });
 
-test('the Overlord view: a purple-gold Rep at boss.scale with a crown and keycards, crouched while tucked, a clip per state, angry while it attacks, a page in the hand while it winds up', () => {
+test('the Overlord view: a blob at boss.scale with a goo cannon, crouched while tucked, a clip per state, angry while it attacks, a page at the muzzle while it winds up', () => {
   const r = rig();
   const v = createAssociateView(r.boss);
   r.boss.state = 'tucked'; r.boss.pop = 0;
@@ -462,12 +462,13 @@ test('the Overlord view: a purple-gold Rep at boss.scale with a crown and keycar
   assert.ok(Math.abs(char.scale.y - B.scale * B.crouchY) < 1e-9);
   r.boss.pop = 1; v.update(1, DT);
   assert.ok(Math.abs(char.scale.y - B.scale) < 1e-9);
-  assert.ok(char.getObjectByName('crown') && char.getObjectByName('keycards'));
+  assert.ok(v.group.getObjectByName('cannon') && v.group.getObjectByName('emitter'), 'the goo cannon is drawn in the view');
+  assert.equal(char.getObjectByName('crown'), undefined, 'no crown: the Cancellation Manager wears a headset');
   for (const [s, c] of [['burst', 'aim'], ['telegraph', 'aim'], ['lobWindup', 'throw'], ['lobRecover', 'throw'], ['retreat', 'run'], ['return', 'run'], ['tucked', 'idle'], ['hiding', 'idle']]) assert.equal(pickBossClip({ state: s }), c, s);
   assert.equal(faceOf({ kind: 'boss', alive: true, state: 'burst' }), 'angry');
   assert.equal(faceOf({ kind: 'boss', alive: true, state: 'lobWindup' }), 'angry');
   assert.equal(faceOf({ kind: 'boss', alive: true, state: 'tucked' }), 'smug');
-  const page = char.getObjectByName('termsPage');
+  const page = v.group.getObjectByName('termsPage');
   r.boss.state = 'lobWindup'; r.boss.stateT = 0; v.glint(true);
   for (let i = 0; i < 20; i++) { r.boss.stateT += DT; v.update(1, DT); }
   assert.equal(page.visible, true); assert.equal(page.getObjectByName('glint').visible, true);
@@ -571,4 +572,18 @@ test('boss.phase3At is wired: phase 3 starts when health falls to that line afte
   r.step();
   assert.equal(r.boss.phase, 3);
   assert.ok(Math.abs(r.boss.health - 0.5 * at) < 1e-6);
+});
+
+test('the boss is the Cancellation Manager on the boss bar, Tac/Com and the bark line; its view writes the cannon muzzle for the brain', async () => {
+  const { BOSS_NAME } = await import('../src/actors/bossBrain.js');
+  const { objectiveTarget } = await import('../src/ui/tacCom.js');
+  const { BARKS } = await import('../src/director/barks.js');
+  assert.equal(BOSS_NAME, 'CANCELLATION MANAGER');
+  assert.equal(objectiveTarget({ bossArena: true, boss: { pos: [0, 0, 0], alive: true }, ending: 'off' }).label, BOSS_NAME);
+  assert.ok(BARKS.bossIntro.every(l => l.speaker === 'Cancellation Manager'));
+  const r = rig();
+  const v = createAssociateView(r.boss);
+  r.boss.state = 'tucked'; r.boss.pop = 0;
+  v.update(1, DT);
+  assert.deepEqual(Array.from(r.boss.gunTip), Array.from(v.tip()), 'the view publishes where the cannon muzzle is drawn');
 });

@@ -3,10 +3,12 @@
 
 // The objective's world point and label, or null when there is nothing to point at (a room still being cleared).
 // { boss: { pos, alive } | null, bossArena, ending: 'slump' | 'desk' | ..., desk: { x0, x1, z } | null, exit: { pos } | null, gateOpen }
+import { BOSS_NAME } from '../actors/bossBrain.js';
+
 export function objectiveTarget({ bossArena = false, boss = null, ending = 'off', desk = null, exit = null, gateOpen = false } = {}) {
   if (bossArena) {
     if (ending === 'desk' && desk) return { kind: 'desk', pos: [(desk.x0 + desk.x1) / 2, 1.2, desk.z], label: 'CANCELLATION DESK' };
-    if (boss && boss.alive) return { kind: 'boss', pos: [boss.pos[0], boss.pos[1] + 1.6, boss.pos[2]], label: 'OVERLORD' };
+    if (boss && boss.alive) return { kind: 'boss', pos: [boss.pos[0], boss.pos[1] + 1.6, boss.pos[2]], label: BOSS_NAME };
     return null;
   }
   if (gateOpen && exit) return { kind: 'gate', pos: [exit.pos[0], 1.6, exit.pos[2]], label: 'GO' };

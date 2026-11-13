@@ -29,7 +29,8 @@ It is Tuesday. It is 1:30. Doc docks his shuttle, loads The Regret, and goes in.
   - When a fight ends: "Ooh, you closed your rings!"
   - On a headshot: "That's a PR!"
 - **The Glorp:** jelly aliens badly disguised as gym staff, in polos and tracksuits with name tags like "Hi! I'm GLRRK." Their speech is relentless sales positivity with something very wrong underneath.
-- **The Membership Overlord (boss):** a Glorp queen in a **massage-chair mech** with a cup holder, a "shiatsu" stomp, and terms-of-service missiles.
+- **The Cancellation Manager (boss):** a huge Glorp blob in a headset, shoulder pads and lanyard, clutching a CANCELLATIONS clipboard, with a goo cannon fed by a backpack tank, firing goo bursts and terms-of-service pages.
+  - The massage-chair mech idea is a sequel idea, not in v1.
 
 ## Enemies (were Associate, Closer, Upseller, Supervisor, Hiring Pad)
 
@@ -79,13 +80,13 @@ It is Tuesday. It is 1:30. Doc docks his shuttle, loads The Regret, and goes in.
    - The Bulk arrives with Reps, and two Spawn Saunas open from the locker room steam.
 5. **The Cancellation Desk**, the boss.
    - The top floor, in a velvet-roped room behind a "Please Take a Number" dispenser (Doc takes number 4,912,006; now serving: 3).
-   - **Phase 1, Shiatsu Mode:** the Overlord's massage-chair mech stomps, kneads and fires terms-of-service missiles that unfurl as fine print.
+   - **Phase 1, Shiatsu Mode:** the Cancellation Manager's massage-chair mech stomps, kneads and fires terms-of-service missiles that unfurl as fine print.
    - **Phase 2, Retention Surge:** it retreats behind the desk and opens two Spawn Saunas ("Have you met our team?").
    - **Phase 3, The Final Offer:** desperate, it bargains between attacks: "One month free." "THREE months!" "SIX MONTHS AND A TOWEL!" Tobble: "Doc, that's actually a good—" Doc: "No."
 
 ## Ending
 
-The Overlord falls. Doc reaches the desk, signs the form, and stamps it. The station's billing core sputters and every trapped member is freed.
+The Cancellation Manager falls. Doc reaches the desk, signs the form, and stamps it. The station's billing core sputters and every trapped member is freed.
 
 A beat later, Doc's tablet chimes:
 

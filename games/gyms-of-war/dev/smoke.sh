@@ -458,7 +458,7 @@ GPU_SM=$(ev "(() => { const g = __cr.gpu(); return g.geometries + '/' + g.textur
 # Walk into the gate: fade, swap to the Desk, fade in.
 ev "(async () => { const g = __cr.gate(); __cr.at(g.pos[0], g.pos[2] - 4.5, 0); __cr.drive({ moveY: -1 }); window.__sawFade = false; const t0 = performance.now(); while (performance.now() - t0 < 6000 && __cr.run().arena === 'smoothie') { if (__cr.run().fade > 0.3) window.__sawFade = true; await __w(20); } __cr.drive({}); await __until(() => __cr.run().phase === 'play', 3000); return 'ok'; })()" >/dev/null
 rexpect "walking into the open gate fades and swaps to the Cancellation Desk; the checkpoint is the Desk" "(() => { const r = __cr.run(); return window.__sawFade && r.arena === 'desk' && r.checkpoint === 2 && r.phase === 'play' && r.fade === 0 && __cr.level() === 'desk' ? 'ok' : 'bad ' + window.__sawFade; })()"
-rexpect "the Desk opens with the Overlord (one boss, not started) and two dormant saunas" "(() => { const f = __cr.fight(), b = __cr.boss(); return f.enemies.filter(e => e.alive).length === 1 && f.enemies[0].kind === 'boss' && !f.started && __cr.pads().length === 2 && __cr.pads().every(p => p.state === 'dormant') && b && b.phase === 1 && !b.invuln ? 'ok' : 'bad'; })()"
+rexpect "the Desk opens with the Cancellation Manager (one boss, not started) and two dormant saunas" "(() => { const f = __cr.fight(), b = __cr.boss(); return f.enemies.filter(e => e.alive).length === 1 && f.enemies[0].kind === 'boss' && !f.started && __cr.pads().length === 2 && __cr.pads().every(p => p.state === 'dormant') && b && b.phase === 1 && !b.invuln ? 'ok' : 'bad'; })()"
 rexpect "the hours line says By appointment" "__cr.run().hours === 'Cancellation hours: By appointment' ? 'ok' : 'bad ' + __cr.run().hours"
 ev "(() => { __cr.place('start'); __cr.look(0, 0.12); return 'ok'; })()" >/dev/null
 sleep 1.2
@@ -472,7 +472,7 @@ rexpect "going round the arenas twice leaves the same geometries, textures, prog
 rexpect "the Desk holds far fewer resources than the arenas around it (it really replaced them)" "(async () => { __cr.go('desk'); await __w(800); const d = __cr.gpu(); return d.geometries < window.__g1.geometries ? 'ok' : 'bad ' + JSON.stringify([d, window.__g1]); })()"
 rexpect "?arena= runs never overwrote the saved Continue checkpoint" "localStorage.getItem('gyms-of-war.checkpoint') === '2' ? 'ok' : 'bad ' + localStorage.getItem('gyms-of-war.checkpoint')"
 ev "(() => { localStorage.removeItem('gyms-of-war.checkpoint'); return 'ok'; })()" >/dev/null
-# ---- The Membership Overlord and the ending (piece 3) ----
+# ---- The Cancellation Manager and the ending (piece 3) ----
 bexpect() { # label, js expression returning 'ok' or a description
   local r
   r=$(ev "$2")
@@ -480,7 +480,7 @@ bexpect() { # label, js expression returning 'ok' or a description
 }
 ev "(async () => { __cr.go('desk'); __cr.god(true); __cr.drive({}); await __w(800); __cr.clearFightLog(); __cr.place('mid'); __cr.look(0, 0.1); await __until(() => __cr.fight().started, 2000); await __until(() => __cr.boss().state === 'telegraph', 15000); return 'ok'; })()" >/dev/null
 shotc boss-telegraph
-bexpect "past the trigger the fight starts and the Overlord telegraphs" "(() => { const b = __cr.boss(); return b.state === 'telegraph' && b.phase === 1 && !b.invuln && !!document.querySelector('.cr-boss') && !document.querySelector('.cr-boss').hidden && /OVERLORD/.test(document.querySelector('.cr-boss-name').textContent) ? 'ok' : 'bad'; })()"
+bexpect "past the trigger the fight starts and the Overlord telegraphs" "(() => { const b = __cr.boss(); return b.state === 'telegraph' && b.phase === 1 && !b.invuln && !!document.querySelector('.cr-boss') && !document.querySelector('.cr-boss').hidden && /CANCELLATION MANAGER/.test(document.querySelector('.cr-boss-name').textContent) ? 'ok' : 'bad'; })()"
 ev "(async () => { await __until(() => __cr.fightLog().some(x => x.type === 'enemyShot' && x.id === 'overlord'), 8000); return 'ok'; })()" >/dev/null
 bexpect "its telegraph came before its first shot" "(() => { const l = __cr.fightLog(), t = l.findIndex(x => x.type === 'telegraph' && x.id === 'overlord'), s = l.findIndex(x => x.type === 'enemyShot' && x.id === 'overlord'); return t >= 0 && s > t ? 'ok' : 'bad ' + t + ' ' + s; })()"
 ev "(async () => { await __until(() => __cr.boss().markers.length > 0, 40000); return 'ok'; })()" >/dev/null
@@ -508,7 +508,7 @@ echo "boss fight (phase 3, god mode): $FPS_B fps, $CALLS_B calls, $TRIS_B triang
 ev "(async () => { __cr.bossReady(); __cr.hurtBoss(50, 'head'); await __until(() => __cr.ending().state === 'slump', 3000); return 'ok'; })()" >/dev/null
 sleep 0.5
 shotc boss-slump
-bexpect "the Overlord falls: the fight clears and the ending slumps, nothing else alive, saunas closed" "(() => { const f = __cr.fight(), e = __cr.ending(); return f.clear && f.enemies.every(x => !x.alive) && e.state === 'slump' && !e.lit && __cr.pads().every(p => p.state === 'closed' || p.state === 'spent') ? 'ok' : 'bad'; })()"
+bexpect "the Cancellation Manager falls: the fight clears and the ending slumps, nothing else alive, saunas closed" "(() => { const f = __cr.fight(), e = __cr.ending(); return f.clear && f.enemies.every(x => !x.alive) && e.state === 'slump' && !e.lit && __cr.pads().every(p => p.state === 'closed' || p.state === 'spent') ? 'ok' : 'bad'; })()"
 ev "(async () => { await __until(() => __cr.ending().state === 'desk', 6000); __cr.place('desk'); await __w(500); return 'ok'; })()" >/dev/null
 shotc ending-desk
 bexpect "the desk lights up with its sign and the cancel prompt, and no 'another set' banner" "(() => { const a = document.querySelector('.cr-action'); return __cr.ending().state === 'desk' && __cr.ending().lit && a && !a.hidden && /CANCEL/.test(a.textContent) && document.querySelector('.cr-banner').hidden ? 'ok' : 'bad ' + (a && a.textContent); })()"
