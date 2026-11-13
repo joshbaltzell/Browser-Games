@@ -338,8 +338,11 @@ function lockPiece() {
 function finishClear() {
   const n = clearRows.length;
 
-  // Remove the cleared rows top-down, then prepend empty rows.
-  clearRows.sort((a, b) => a - b);
+  // Remove the cleared rows bottom-up (highest index first) so each splice
+  // doesn't shift the indices of the rows still to be removed, then prepend
+  // empty rows. (Top-down removal skipped every row after the first and left
+  // a full row on the board, uncounted until the next lock re-detected it.)
+  clearRows.sort((a, b) => b - a);
   for (const y of clearRows) grid.splice(y, 1);
   for (let i = 0; i < n; i++) grid.unshift(new Array(COLS).fill(null));
 
