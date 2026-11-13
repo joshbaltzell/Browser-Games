@@ -5,12 +5,15 @@ import { TUNING } from '../tuning.js';
 import { moveCapsule } from '../world/collide.js';
 import { findPath } from '../world/waypoints.js';
 import { coverValue, lineOfSight, popPos } from '../world/coverPoints.js';
-import { HIT_SHAPES } from '../combat/targets.js';
+import { HIT_SHAPES, ENEMY_SHAPES } from '../combat/targets.js';
 import { turnToward } from './moveMath.js';
 import {
   initTrainer, trainerShapes, updateTrainer, staggerTrainer, diveTrainer, executeTrainer, releaseTrainer, finishTrainer, hurtTrainer,
 } from './trainerBrain.js';
 import { initBoss, bossShapes, updateBoss, hurtBoss } from './bossBrain.js';
+
+// The Rep's hit volumes (the blob body's), local to its feet.
+const REP = ENEMY_SHAPES.associate;
 
 const MAX_DT = 0.25;
 // States where a Rep cannot be hit, staggered or sent diving: held still (executed), an empty slot or a corpse.
@@ -70,7 +73,7 @@ export function createAssociate({ id, pos, kind = 'associate' }, tuning = TUNING
     id, kind, startKind: kind, strikeAt: -1, windupLen: 0, struckAt: -Infinity, retargetT: 0, repathT: 0, forcePathT: 0, start: [pos[0], pos[1], pos[2]], pos: [0, 0, 0], prevPos: [0, 0, 0], yaw: 0, prevYaw: 0,
     state: 'idle', stateT: 0, health: 0, alive: true, point: null, path: [], pathI: 0, pop: 0, blind: 0,
     role: 'hold', bursts: 0, aim: [0, 0, 0],
-    shapes: { head: { c: [0, 0, 0], r: HIT_SHAPES.head.r }, body: { a: [0, 0, 0], b: [0, 0, 0], r: HIT_SHAPES.body.r } },
+    shapes: { head: { c: [0, 0, 0], r: REP.head.r }, body: { a: [0, 0, 0], b: [0, 0, 0], r: REP.body.r } },
     // Working data.
     wait: 0, wantSuppress: null, shots: 0, relocT: 0, pointT: 0, mustMove: false,
     stuckT: 0, stuckRef: [0, 0], stuckCount: 0, chest: [0, 0, 0], muzzle: [0, 0, 0],
@@ -89,20 +92,20 @@ export function associateShapes(e, combat = TUNING.combat, all = TUNING) {
   if (e.state === 'downed') {
     // Lying down: a capsule along the facing from 0.2 m behind to 0.6 m in front (r 0.25, y 0.25) and the head at the front end.
     const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
-    s.body.r = DOWNED.r; s.head.r = HIT_SHAPES.head.r;
+    s.body.r = DOWNED.r; s.head.r = REP.head.r;
     s.body.a[0] = x - fx * DOWNED.back; s.body.a[1] = y + DOWNED.y; s.body.a[2] = z - fz * DOWNED.back;
     s.body.b[0] = x + fx * DOWNED.front; s.body.b[1] = y + DOWNED.y; s.body.b[2] = z + fz * DOWNED.front;
     s.head.c[0] = s.body.b[0]; s.head.c[1] = y + DOWNED.y; s.head.c[2] = s.body.b[2];
     return s;
   }
   const crouch = TUCKED.has(e.state) && e.point && e.point.kind === 'low' && e.pop < 0.5;
-  s.head.r = HIT_SHAPES.head.r + combat.hitPad; s.body.r = HIT_SHAPES.body.r + combat.hitPad;
+  s.head.r = REP.head.r + combat.hitPad; s.body.r = REP.body.r + combat.hitPad;
   s.head.c[0] = x; s.head.c[2] = z; s.body.a[0] = x; s.body.a[2] = z; s.body.b[0] = x; s.body.b[2] = z;
   if (crouch) {
-    // The pad lowers the head centre so the padded sphere's top stays at the crouch height, under the wall top.
-    s.head.c[1] = y + combat.crouchHead - combat.hitPad; s.body.a[1] = y + 0.1; s.body.b[1] = y + combat.crouchBodyTop;
+    // The pad lowers the head centre so the padded sphere's top stays at the crouch height, under the wall top (and the blob's bigger head sinks by the difference).
+    s.head.c[1] = y + combat.crouchHead - combat.hitPad + (HIT_SHAPES.head.r - REP.head.r); s.body.a[1] = y + 0.1; s.body.b[1] = y + combat.crouchBodyTop;
   } else {
-    s.head.c[1] = y + HIT_SHAPES.head.cy; s.body.a[1] = y + HIT_SHAPES.body.ay; s.body.b[1] = y + HIT_SHAPES.body.by;
+    s.head.c[1] = y + REP.head.cy; s.body.a[1] = y + REP.body.ay; s.body.b[1] = y + REP.body.by;
   }
   return s;
 }

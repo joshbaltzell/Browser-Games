@@ -24,6 +24,16 @@ export const EXPRESSIONS = Object.freeze({
   dead: Object.freeze({ browAngle: -0.3, browY: 0.1, lid: 0, pupilScale: 0, mouthCurve: -0.15, mouthOpen: 0 }),
 });
 
+// The blob aliens' faces: heavy-lidded and droopy. `smug` is bored (the idle look, a slack open mouth), `angry` a shout, `scared` hurt. Used
+// when a spec's face says expressions: 'blob'; the names are the same ones the views already pick.
+export const BLOB_EXPRESSIONS = Object.freeze({
+  neutral: Object.freeze({ browAngle: -0.1, browY: -0.1, lid: 0.4, pupilScale: 1, mouthCurve: -0.2, mouthOpen: 0.6 }),
+  angry: Object.freeze({ browAngle: 0.45, browY: -0.25, lid: 0.35, pupilScale: 0.85, mouthCurve: -0.55, mouthOpen: 1.15 }),
+  scared: Object.freeze({ browAngle: -0.5, browY: 0.5, lid: 0.55, pupilScale: 0.6, mouthCurve: -0.5, mouthOpen: 0.8 }),
+  smug: Object.freeze({ browAngle: -0.12, browY: -0.15, lid: 0.5, pupilScale: 1, mouthCurve: -0.3, mouthOpen: 0.85 }),
+  dead: EXPRESSIONS.dead,
+});
+
 // How much of a fixedSmile each expression keeps: the floor on mouthCurve is
 // fixedSmile x this. 0 drops it, so the expression's own mouth shows. Angry,
 // scared and dead are genuine (a smile held in scared read as delight).
@@ -62,7 +72,9 @@ const smooth01 = (t) => { const c = t < 0 ? 0 : t > 1 ? 1 : t; return c * c * (3
 export function createFace({
   eyeRadius = 0.1, eyeSpacing = 0.26, eyeY = 0.05, eyeZ = 0.3, mouthY = -0.12, mouthWidth = 0.22,
   mouthZ = eyeZ, brow = 'pair', seed = 1, lidColor = PALETTE.ink, fixedSmile = 0, eyeColor = PALETTE.eyeWhite, eyeGlow = false,
+  teeth = false, expressions = 'human',
 } = {}) {
+  const TABLE = expressions === 'blob' ? BLOB_EXPRESSIONS : EXPRESSIONS;
   const R = eyeRadius;
   const half = eyeSpacing / 2;
   const eyeX = [-half, half];
@@ -78,7 +90,9 @@ export function createFace({
   const O_LINE = O_LID + 2 * LID_COLS * LID_ROWS;
   const O_BROW = O_LINE + 2 * LID_COLS * 2;
   const O_MOUTH = O_BROW + (uni ? 6 : 8);
-  const FEATURE_VERTS = O_MOUTH + MOUTH_COLS * 2;
+  const O_TONGUE = O_MOUTH + MOUTH_COLS * 2;       // teeth: a pink tongue and two blocky cream teeth (blob faces)
+  const O_TEETH = O_TONGUE + (teeth ? MOUTH_COLS * 2 : 0);
+  const FEATURE_VERTS = O_TEETH + (teeth ? 8 : 0);
 
   const idx = [];
   const quadIdx = (a) => idx.push(a, a + 1, a + 2, a, a + 2, a + 3);
@@ -106,6 +120,7 @@ export function createFace({
   if (uni) idx.push(O_BROW, O_BROW + 1, O_BROW + 2, O_BROW + 1, O_BROW + 3, O_BROW + 2, O_BROW + 2, O_BROW + 3, O_BROW + 4, O_BROW + 3, O_BROW + 5, O_BROW + 4);
   else { quadIdx(O_BROW); quadIdx(O_BROW + 4); }
   strip(O_MOUTH, MOUTH_COLS);
+  if (teeth) { strip(O_TONGUE, MOUTH_COLS); quadIdx(O_TEETH); quadIdx(O_TEETH + 4); }
 
   // Eye whites: two flattened spheres merged into one outlined mesh.
   const parts = [];
@@ -129,9 +144,10 @@ export function createFace({
   const colors = new Float32Array(FEATURE_VERTS * 3);
   const ink = new THREE.Color(PALETTE.ink);
   const lidTint = new THREE.Color(lidColor);
+  const TONGUE = new THREE.Color('#ff7aa8'), TOOTH = new THREE.Color('#fff6d8');
   for (let i = 0; i < FEATURE_VERTS; i++) {
     normals[i * 3 + 2] = 1;
-    const c = i >= O_LID && i < O_LINE ? lidTint : ink;
+    const c = i >= O_LID && i < O_LINE ? lidTint : i >= O_TONGUE && i < O_TEETH ? TONGUE : i >= O_TEETH ? TOOTH : ink;
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
   }
   const geo = new THREE.BufferGeometry();
@@ -163,7 +179,7 @@ export function createFace({
   // talking blend. fixedSmile > 0 is the least mouthCurve in neutral and smug
   // (and talking in them): a customer-service smile that stays whatever the
   // brows and eyes do. It gives way in angry, scared and dead (SMILE_KEPT).
-  let target = EXPRESSIONS.neutral;
+  let target = TABLE.neutral;
   const floorFor = (name) => {
     const k = fixedSmile > 0 ? SMILE_KEPT[name] : 0;
     return k > 0 ? fixedSmile * k : -Infinity;
@@ -199,6 +215,7 @@ export function createFace({
     vert(bx - nx, by - ny, z); vert(ax - nx, ay - ny, z);
   }
 
+  const tongue = new Float32Array(MOUTH_COLS * 2), tongueX = new Float32Array(MOUTH_COLS);
   const lidR = R * 1.03;
   function write() {
     const ex = springs;
@@ -325,8 +342,30 @@ export function createFace({
       const arc = 1 - u * u;
       const x = u * mw * (1 - 0.25 * smirk) + smirk * mw * 0.2;
       const yu = mouthY - sag * arc + smirk * mw * 0.45 * u + cross.x * BAR * 0.6 * Math.sin(u * Math.PI * 3);
+      const yl = yu - BAR - openH * Math.pow(arc, openPow) + sag * arc * shout;
       vert(x, yu, mouthZ);
-      vert(x, yu - BAR - openH * Math.pow(arc, openPow) + sag * arc * shout, mouthZ);
+      vert(x, yl, mouthZ);
+      if (teeth) {
+        // The tongue lies along the bottom of the opening, narrower than the mouth.
+        const inner = yu - BAR * 0.9 - yl, lump = Math.max(1 - (u / 0.7) * (u / 0.7), 0);
+        tongue[k * 2] = yl + (inner > 0 ? inner * 0.6 * lump : 0);
+        tongue[k * 2 + 1] = yl;
+        tongueX[k] = x;
+      }
+    }
+    if (teeth) {
+      w = O_TONGUE;
+      for (let k = 0; k < MOUTH_COLS; k++) { vert(tongueX[k], tongue[k * 2], mouthZ + LIFT); vert(tongueX[k], tongue[k * 2 + 1], mouthZ + LIFT); }
+      // Two teeth hanging from the top lip, as tall as the opening allows.
+      w = O_TEETH;
+      for (let t = 0; t < 2; t++) {
+        const u = t === 0 ? -0.28 : 0.24, a = 1 - u * u;
+        const x = u * mw * (1 - 0.25 * smirk) + smirk * mw * 0.2;
+        const top = mouthY - sag * a + smirk * mw * 0.45 * u - BAR * 0.5;
+        const hole = openH * Math.pow(a, openPow) - sag * a * shout;
+        const th = Math.max(0, Math.min(hole * 0.62, mw * 0.34));
+        quad(x, top, x, top - th, mw * 0.21, mouthZ + LIFT * 2);
+      }
     }
     posAttr.needsUpdate = true;
   }
@@ -344,9 +383,10 @@ export function createFace({
   return {
     group,
     setExpression(name) {
-      target = Object.prototype.hasOwnProperty.call(EXPRESSIONS, name) ? EXPRESSIONS[name] : EXPRESSIONS.neutral;
+      const known = Object.prototype.hasOwnProperty.call(TABLE, name);
+      target = known ? TABLE[name] : TABLE.neutral;
       crossTarget = name === 'dead' ? 1 : 0;
-      curveFloor = floorFor(Object.prototype.hasOwnProperty.call(EXPRESSIONS, name) ? name : 'neutral');
+      curveFloor = floorFor(known ? name : 'neutral');
     },
     setTalking(on) { talking = !!on; },
     update,

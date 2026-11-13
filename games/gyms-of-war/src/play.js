@@ -29,6 +29,7 @@ import { fireStance, muzzleOf } from './combat/stance.js';
 import { castRay, resolveShot } from './combat/hits.js';
 import { createDummy, updateDummy, damageDummy, shotDamage, crateTouch } from './combat/targets.js';
 import { createEffects } from './render/effects.js';
+import { createGooDrops } from './render/gooDrops.js';
 import { createHud, hudModel } from './ui/hud.js';
 import { createDummyView } from './actors/dummyView.js';
 import { createPlayerView } from './actors/player.js';
@@ -186,6 +187,7 @@ export function startPlay({ canvas, gl, params }) {
   let anyPress = false;   // any key, click or button since the last step (the ending's last card waits for one)
   const arsenal = createArsenal();
   const effects = createEffects(scene);
+  const goo = createGooDrops(scene);
   const hud = createHud(document.body);
   const storyCard = createStoryCard();
   let cardPress = false, pendingCard = null, lastDefeat = -1;   // any fresh key / click / button since the card began; what to draw when the card phase starts
@@ -241,7 +243,8 @@ export function startPlay({ canvas, gl, params }) {
     // A fight in the run's arenas: the fight, one view per Associate, Tobble, the kettlebells and the saunas on screen, and Doc's
     // actions wired to it. The shots and the aim assist target the Associates there and the dummies in the grey room.
     fight = name === 'greyRoom' ? null : createFight({ level: LEVEL, boxes, edges: deriveEdges(), rand: rng(4242) });
-    views = fight ? fight.enemies.map(e => { const v = createAssociateView(e); arenaRoot.add(v.group); return v; }) : [];
+    goo.clear();
+    views = fight ? fight.enemies.map((e, i) => { const v = createAssociateView(e, goo, i); arenaRoot.add(v.group); return v; }) : [];
     viewOf = new Map(fight ? fight.enemies.map((e, i) => [e, views[i]]) : []);
     gv = fight ? createGrenadeView(arenaRoot) : null;
     pv = fight ? createPadView(arenaRoot, fight.pads, effects) : null;
@@ -950,6 +953,7 @@ export function startPlay({ canvas, gl, params }) {
       for (const f of fxQueue) playFeedback(f);
       fxQueue.length = 0;
       effects.update(dt);
+      goo.update(dt);
       markerT -= dt; if (markerT <= 0) marker = null;
       if (reloadFlash) { flashT += dt; if (flashT >= TUNING.feedback.reloadResultTime) reloadFlash = null; }
       // Pad aim assist: slow the look while the aim ray is on a live dummy.

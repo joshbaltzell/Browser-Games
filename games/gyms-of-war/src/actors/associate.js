@@ -28,15 +28,19 @@ function deepFreeze(o) {
 }
 
 const SHIRT = PALETTE.glorpPurple;
+const POLO = mix(mix(SHIRT, PALETTE.hotPink, 0.3), PALETTE.ink, 0.12);   // the blob aliens' polo: the reference's magenta-leaning purple
 export const GOLD = '#ffcf3a';
 // The Glorp: acid-green jelly skin with a pale lime glow on the lit edge (the toon rim, tinted), and two glowing yellow-green eyes.
 export const ALIEN_SKIN = '#8fe04a';
 const ALIEN_HAIR = mix(ALIEN_SKIN, PALETTE.ink, 0.6);
 const ALIEN_RIM = { rim: 0.55, rimColor: '#e4ff8a' };
 export const ALIEN_EYES = Object.freeze({ eyeColor: '#e8ff3a', eyeGlow: true });
+// The blob aliens' lighter green bubbles and their droopy yellow-white eyes (a flat, unlit colour).
+export const ALIEN_SPOT = '#d4ff6a';
+export const BLOB_EYES = Object.freeze({ eyeColor: '#f2eea0', eyeGlow: true });
 
-// Every enemy kind's colourway, in one table (the alien recolour changes it here). The Rep is a purple polo and khakis; the Personal
-// Trainer a tank top and teal shorts, the same skin and hair.
+// Every enemy kind's colourway, in one table. `associate` is the human rig's (the target dummy, Tobble and Doc derive from it); the blob
+// aliens (the Rep and the Trainer) have their own below.
 export const ENEMY_COLORS = deepFreeze({
   associate: {
     shirt: SHIRT,
@@ -54,21 +58,42 @@ export const ENEMY_COLORS = deepFreeze({
     headset: mix(PALETTE.ink, PALETTE.lilac, 0.25),
     mic: PALETTE.hotPink,
   },
-  trainer: {
-    shirt: PALETTE.planet,                                 // the tank top
-    collar: PALETTE.planet,
+  // The blob aliens (GlorpFit Employees and Personal Trainers): purple polo and dark purple trousers, purple-and-cream sneakers.
+  blobRep: {
+    shirt: POLO,
+    collar: mix(POLO, PALETTE.ink, 0.2),
     logo: PALETTE.gel,
-    pants: mix(PALETTE.teal, PALETTE.ink, 0.45),           // shorts
+    pants: mix(SHIRT, PALETTE.ink, 0.62),
     skin: ALIEN_SKIN,
+    spot: ALIEN_SPOT,
     hair: ALIEN_HAIR,
     ...ALIEN_RIM,
-    shoe: PALETTE.cream,
-    sole: PALETTE.ink,
-    lanyard: PALETTE.hotPink,
+    shoe: mix(SHIRT, PALETTE.ink, 0.1),
+    sole: PALETTE.cream,
+    toe: PALETTE.cream,
     badge: PALETTE.cream,
-    badgeStripe: PALETTE.teal,
-    headset: PALETTE.ink,
-    mic: PALETTE.hotPink,
+    badgeStripe: PALETTE.ink,
+    button: PALETTE.cream,
+    cuff: mix(POLO, PALETTE.ink, 0.3),
+    band: PALETTE.cream,
+  },
+  trainer: {
+    shirt: mix(PALETTE.lilac, SHIRT, 0.55),                // the tank top: a bluer, lighter violet than the polo
+    collar: mix(PALETTE.lilac, SHIRT, 0.55),
+    logo: PALETTE.gel,
+    pants: mix(SHIRT, PALETTE.ink, 0.62),
+    skin: ALIEN_SKIN,
+    spot: ALIEN_SPOT,
+    hair: ALIEN_HAIR,
+    ...ALIEN_RIM,
+    shoe: mix(SHIRT, PALETTE.ink, 0.1),
+    sole: PALETTE.cream,
+    toe: PALETTE.cream,
+    badge: PALETTE.cream,
+    badgeStripe: PALETTE.ink,
+    button: PALETTE.cream,
+    cuff: mix(PALETTE.lilac, SHIRT, 0.55),
+    band: PALETTE.hotPink,                                  // the sweatband
   },
   // The Membership Overlord: purple and gold.
   boss: {
@@ -136,16 +161,71 @@ export const ASSOCIATE = deepFreeze({
   },
 });
 
-// The Personal Trainer: the Rep's rig in the trainer colourway, no polo, collar, lanyard or headset, and bare shoulders (the sleeve caps shrunk
-// away). The view scales it by TUNING.trainer.scaleW and scaleH.
-export const TRAINER = deepFreeze({
-  ...ASSOCIATE,
-  name: 'trainer',
-  colors: ENEMY_COLORS.trainer,
-  torso: { ...ASSOCIATE.torso, sleeve: 0.02 },
-  outfit: { collar: false, lanyard: false, logo: false, headset: false, badge: true },
-  face: { ...ASSOCIATE.face, seed: 11 },
-});
+// ------------------------------------------------------------ the blob aliens
+
+// The blob body: one bean-shaped green mass (head and torso with no neck), a polo or tank top over its lower two thirds, thick arms with
+// mitten hands. blobSpec(opts) builds a whole character spec from a few knobs, so the Rep, the Trainer and the boss (which is just a bigger
+// blob in other clothes) share one body:
+//   width    multiplies the girth of the mass, the trousers, the arms and the shoulders (1 = a Rep)
+//   scale    multiplies every length (1 = a 1.8 m Rep); a boss would pass about 1.5 here or scale the view's root instead
+//   costume  'polo' (collar, two buttons, a name tag, short sleeves) or 'tank' (a sleeveless top and a sweatband)
+// The clips read hipHeight, the shoulder and hip points and the limb lengths, which are scaled the same way, so they play unchanged.
+const scaleProfile = (profile, w, h) => profile.map(([r, y]) => [r * w, y * h]);
+export function blobSpec({ name, colors, width = 1, scale = 1, costume = 'polo', seed = 6, outfit = {}, eyeColor }) {
+  const w = width * scale, h = scale;
+  const tank = costume === 'tank';
+  const shirt = tank
+    ? [[0, -0.16], [0.3, -0.16], [0.345, -0.12], [0.375, -0.03], [0.375, 0.08], [0.355, 0.2], [0.3, 0.3], [0.26, 0.37], [0.2, 0.42], [0.1, 0.45], [0, 0.46]]
+    : [[0, -0.16], [0.3, -0.16], [0.345, -0.12], [0.375, -0.03], [0.38, 0.08], [0.365, 0.2], [0.33, 0.3], [0.28, 0.38], [0.2, 0.43], [0.1, 0.46], [0, 0.47]];
+  const spec = {
+    name,
+    body: 'blob',
+    blob: { width, scale, costume },
+    height: 1.8 * h,
+    hipHeight: 0.72 * h,
+    armLength: 0.52 * h,
+    legLength: 0.6 * h,
+    shoulderL: [0.37 * w, 1.0 * h, 0],
+    shoulderR: [-0.37 * w, 1.0 * h, 0],
+    hipL: [0.145 * w, 0.665 * h, 0],
+    hipR: [-0.145 * w, 0.665 * h, 0],
+    ankleHeight: 0.135 * h,
+    neckY: 1.14 * h,
+    armRadius: 0.078 * w,
+    legRadius: 0.13 * w,
+    torso: {
+      depth: 0.8,
+      pants: scaleProfile([[0, -0.3], [0.2, -0.28], [0.3, -0.2], [0.345, -0.1], [0.36, 0], [0, 0.04]], w, h),
+      shirt: scaleProfile(shirt, w, h),
+      sleeve: (tank ? 0.1 : 0.11) * w,
+    },
+    head: {
+      // A pear: wider at the jaw than the crown, flattened in front for the face, rounded on top.
+      rx: 0.3 * w, ry: 0.34 * h, rz: 0.29 * w, power: 2.6,
+      centerY: 0.34 * h,
+      flatZ: 0.18 * w, flatK: 0.25,
+      pear: 0.17,                 // how much wider the jaw is than the crown (the x scale at the chin)
+      nose: 0, ear: 0,
+    },
+    hair: { thickness: 0, lift: 0, back: 0, quiff: false },
+    hand: { radius: 0.108 * w },
+    shoe: { length: 0.44 * w, width: 0.25 * w, height: 0.17 * h },
+    colors,
+    outfit: { collar: !tank, buttons: !tank, nameTag: !tank, tank, sweatband: tank, ...outfit },
+    face: {
+      eyeRadius: 0.098 * w, eyeSpacing: 0.225 * w, eyeY: 0.07 * h, eyeZ: 0.226 * w,
+      mouthY: -0.12 * h, mouthWidth: 0.27 * w, mouthZ: 0.214 * w,
+      brow: 'pair', seed, fixedSmile: 0, teeth: true, expressions: 'blob',
+      ...(eyeColor ? { eyeColor, eyeGlow: true } : BLOB_EYES),
+    },
+  };
+  return deepFreeze(spec);
+}
+
+// The GlorpFit Employee ("Rep") and the Personal Trainer: the blob body in the polo and in the tank top. The view scales the Trainer by
+// TUNING.trainer.scaleW and scaleH on top of its width here, so it reads about 1.25 times a Rep's girth.
+export const GLORP_REP = blobSpec({ name: 'associate', colors: ENEMY_COLORS.blobRep, seed: 6 });
+export const TRAINER = blobSpec({ name: 'trainer', colors: ENEMY_COLORS.trainer, width: 1.04, costume: 'tank', seed: 11 });
 
 // The Membership Overlord: the Rep's rig in purple and gold (the view scales it by TUNING.boss.scale and adds the crown and the keycard lanyard).
 export const OVERLORD = deepFreeze({

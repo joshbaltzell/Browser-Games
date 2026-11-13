@@ -1,14 +1,33 @@
 // Target dummies: the hit volumes of an Associate, a dummy's life and rail, and the numbers around a hit.
 // Pure data and maths: no WebGL, no DOM.
 import { TUNING } from '../tuning.js';
-import { ASSOCIATE } from '../actors/associate.js';
+import { ASSOCIATE, GLORP_REP, TRAINER } from '../actors/associate.js';
 
-// Local to the dummy's feet. The head is a sphere above the neck, the body a capsule from the shoe tops to the neck
-// with the shirt's widest radius.
+// The hit volumes of a character spec, local to its feet: the head a sphere round the head mass, the body a capsule from the shoe tops to the
+// neck as wide as the shirt or the sleeves, whichever is wider.
+const BLOB_DOME = 0.09;   // m above the neckline that a blob's body capsule tops out
+export function shapesOf(spec) {
+  const blob = spec.body === 'blob';
+  const r = Math.max(...spec.torso.shirt.map(p => p[0]), blob ? Math.abs(spec.shoulderL[0]) + spec.torso.sleeve * 0.9 : 0);
+  // A blob has no neck: its body capsule ends so that its dome tops out just above the shoulders and the head sphere, not the body, takes the
+  // shots at the head. Its bottom end is raised to keep the capsule's middle where the human's is (0.645 m), which is what Tobble's aim and the
+  // kettlebell blast target, so a shorter capsule does not drop them behind the low cover.
+  const by = blob ? spec.neckY + BLOB_DOME - r : spec.neckY;
+  const ay = blob ? Math.max(spec.ankleHeight, (ASSOCIATE.ankleHeight + ASSOCIATE.neckY) - by) : spec.ankleHeight;
+  return Object.freeze({
+    head: Object.freeze({ cy: spec.neckY + spec.head.centerY, r: blob ? Math.max(spec.head.rx * (1 + spec.head.pear * 0.6), spec.head.ry) : spec.head.rx }),
+    body: Object.freeze({ ay, by, r }),
+  });
+}
+
+// The human rig's volumes: the player and the target dummy. The blob aliens have their own (below), since they are a different shape.
 export const HIT_SHAPES = Object.freeze({
   head: Object.freeze({ cy: ASSOCIATE.neckY + ASSOCIATE.head.centerY, r: ASSOCIATE.head.rx }),
   body: Object.freeze({ ay: ASSOCIATE.ankleHeight, by: ASSOCIATE.neckY, r: Math.max(...ASSOCIATE.torso.shirt.map(p => p[0])) }),
 });
+
+// The Rep's and the Personal Trainer's volumes (the view scales the Trainer's by trainer.scaleW and scaleH; see trainerShapes).
+export const ENEMY_SHAPES = Object.freeze({ associate: shapesOf(GLORP_REP), trainer: shapesOf(TRAINER) });
 
 function refreshShapes(d, hitPad = TUNING.combat.hitPad) {
   const [x, y, z] = d.pos, s = d.shapes;

@@ -16,7 +16,10 @@ import { addOutline } from '../render/outline.js';
 const CAP_ANGLES = [0.65, 1.2]; // radians from the tube wall toward the tip
 // Radius shrinks as 1 / sqrt(stretch): volume-preserving, 7 percent at +15.
 
-export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffffff' } = {}) {
+// `spots` (optional, the blob aliens' lighter green bubbles): { light, list: [[t, angle, dt, dangle], ...] }, vertex colours fixed at build:
+// a spot is centred t along the limb (0 to 1) and `angle` round it (radians), reaching dt along and dangle round. `rim` and `rimColor` tint
+// the lit edge as the torso's do.
+export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffffff', spots = null, rim, rimColor } = {}) {
   const ringCount = rings + 1;
   const capRings = CAP_ANGLES.length;
   const bodyVerts = ringCount * sides;
@@ -61,7 +64,25 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
   geometry.setAttribute('normal', nrmAttr);
   geometry.setIndex(index);
 
-  const mesh = new THREE.Mesh(geometry, createToonMaterial({ color }));
+  if (spots) {
+    const base = new THREE.Color(color), light = new THREE.Color(spots.light), col = new Float32Array(vertCount * 3);
+    for (let v = 0; v < vertCount; v++) { col[v * 3] = base.r; col[v * 3 + 1] = base.g; col[v * 3 + 2] = base.b; }
+    for (let i = 0; i < ringCount; i++) {
+      for (let s = 0; s < sides; s++) {
+        let k = 0;
+        for (const [t0, a0, dt, da] of spots.list) {
+          const x = (i / rings - t0) / dt;
+          let a = ((s / sides) * Math.PI * 2 - a0) % (Math.PI * 2);
+          if (a > Math.PI) a -= Math.PI * 2; else if (a < -Math.PI) a += Math.PI * 2;
+          k = Math.max(k, Math.min(Math.max((1 - Math.hypot(x, a / da)) * 3, 0), 1));
+        }
+        const v = (i * sides + s) * 3;
+        col[v] = base.r + (light.r - base.r) * k; col[v + 1] = base.g + (light.g - base.g) * k; col[v + 2] = base.b + (light.b - base.b) * k;
+      }
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  }
+  const mesh = new THREE.Mesh(geometry, createToonMaterial({ color, vertexColors: !!spots, ...(rim !== undefined ? { rim } : {}), ...(rimColor ? { rimColor } : {}) }));
   mesh.name = 'limb';
   // The bounding sphere is refreshed in set() (and shared by the outline, which
   // uses the same geometry), so culling stays on and is correct.

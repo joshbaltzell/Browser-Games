@@ -22,7 +22,11 @@ import { bodyPoint, makePose, samplePose } from './poses.js';
 //     shadow             blob on the floor
 //
 // Draw calls: 6 rigid meshes and 4 limbs, each outlined (20), the face (3) and
-// the shadow (1): 24.
+// the shadow (1): 24. A spec with body: 'blob' (the aliens, see associate.js)
+// builds the same parts and the same count, shaped differently: the head is
+// a pear-shaped mass sitting on the shirt with no neck, the shirt a polo (or
+// a tank top), the hands four-fingered mittens, the arms spotted with lighter
+// green bubbles, the shoes sneakers with a cream toe cap.
 //
 // setPose(pose, halfLife) stores a target and how quickly to ease toward it;
 // update(dt) eases, solves the limbs and updates the face. update() allocates
@@ -122,15 +126,14 @@ function headSurface(h, nx, ny, nz, out) {
   return out;
 }
 
-function torsoMesh(spec) {
-  const t = spec.torso, c = spec.colors, o = spec.outfit;
+// The shirt's lathe, and where its surface is: top is the height of the neckline, shirtR(y) the radius at height y above the hips bone, and
+// front(x, y) the z of the front at sideways offset x.
+function shirtShape(t) {
   const lathe = (profile, color) => {
     const g = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), 22);
     g.scale(1, 1, t.depth);
     return paint(g, color);
   };
-  const parts = [lathe(t.pants, c.pants), lathe(t.shirt, c.shirt)];
-  // Front of the shirt at height y (above the hips bone) and sideways offset x.
   const top = t.shirt[t.shirt.length - 2][1];
   const shirtR = (y) => {
     const p = t.shirt;
@@ -140,6 +143,67 @@ function torsoMesh(spec) {
     return 0;
   };
   const front = (x, y) => { const r = shirtR(y); return t.depth * r * Math.sqrt(Math.max(1 - (x * x) / (r * r), 0)); };
+  return { lathe, top, shirtR, front };
+}
+
+// The blob's body: the trousers and the shirt over its lower two thirds, a collar with two flaps, two buttons and a name tag (the polo), or
+// bare shoulders and a sweatband on the head (the tank top, see blobHeadMesh).
+function blobTorsoMesh(spec) {
+  const t = spec.torso, c = spec.colors, o = spec.outfit, w = spec.blob.width * spec.blob.scale, hs = spec.blob.scale;
+  const { lathe, top, shirtR, front } = shirtShape(t);
+  const parts = [lathe(t.pants, c.pants), lathe(t.shirt, c.shirt)];
+  const sy = spec.shoulderL[1] - spec.hipHeight, sx = Math.abs(spec.shoulderL[0]);
+  for (const s of [-1, 1]) {
+    // A sleeve cap hanging from each shoulder with a darker cuff (the polo), or a bare round shoulder (the tank top).
+    const g = ball(14, 10);
+    if (o.tank) place(g, s * sx * 0.88, sy - 0.02 * hs, 0, 0, 0, s * 0.3, t.sleeve * 1.1, t.sleeve * 1.15, t.sleeve * 1.1);
+    else place(g, s * sx * 0.88, sy - 0.05 * hs, 0, 0, 0, s * 0.25, t.sleeve * 1.15, t.sleeve * 1.4, t.sleeve * 1.15);
+    g.computeVertexNormals();
+    parts.push(paint(g, o.tank ? c.skin : c.shirt));
+    if (!o.tank) {
+      const cuff = new THREE.TorusGeometry(t.sleeve * 1.02, t.sleeve * 0.17, 8, 18);
+      place(cuff, s * (sx * 0.88 + t.sleeve * 0.15), sy - 0.05 * hs - t.sleeve * 1.15, 0, Math.PI / 2, 0, s * 0.25, 0.92, 0.92, 0.9);
+      parts.push(paint(cuff, c.cuff));
+    }
+  }
+  if (o.collar) {
+    const y = top - 0.04 * hs, r = shirtR(y);
+    const ring = new THREE.TorusGeometry(r * 0.97, 0.036 * w, 8, 22);
+    place(ring, 0, y, 0.005, Math.PI / 2 - 0.3, 0, 0, 1, 1, t.depth);
+    parts.push(paint(ring, c.collar));
+    for (const s of [-1, 1]) {
+      const flap = new THREE.BoxGeometry(0.1 * w, 0.014 * hs, 0.1 * w);
+      place(flap, s * 0.085 * w, y - 0.045 * hs, front(s * 0.085 * w, y - 0.045 * hs) + 0.012, -0.55, 0, s * 0.45);
+      parts.push(paint(flap, c.collar));
+    }
+  }
+  if (o.buttons) {
+    for (const k of [0, 1]) {
+      const y = top - (0.13 + k * 0.075) * hs;
+      const b = new THREE.CylinderGeometry(0.022 * w, 0.022 * w, 0.014, 10);
+      place(b, 0, y, front(0, y) + 0.004, Math.PI / 2 - 0.2, 0, 0);
+      parts.push(paint(b, c.button));
+    }
+  }
+  if (o.nameTag) {
+    const x = 0.12 * w, y = top - 0.17 * hs, z = front(x, y) + 0.01;
+    const tag = new THREE.BoxGeometry(0.13 * w, 0.075 * hs, 0.014);
+    place(tag, x, y, z, -0.2, -0.1, 0);
+    parts.push(paint(tag, c.badge));
+    for (const k of [-1, 1]) {
+      const line = new THREE.BoxGeometry(0.07 * w, 0.008 * hs, 0.016);
+      place(line, x, y + k * 0.014 * hs, z + 0.002, -0.2, -0.1, 0);
+      parts.push(paint(line, c.badgeStripe));
+    }
+  }
+  return finishMesh(parts, 'torso', c);
+}
+
+function torsoMesh(spec) {
+  if (spec.body === 'blob') return blobTorsoMesh(spec);
+  const t = spec.torso, c = spec.colors, o = spec.outfit;
+  const { lathe, top, front } = shirtShape(t);
+  const parts = [lathe(t.pants, c.pants), lathe(t.shirt, c.shirt)];
   // Short sleeves: caps over the shoulders.
   const sy = spec.shoulderL[1] - spec.hipHeight;
   for (const s of [-1, 1]) {
@@ -193,7 +257,53 @@ function torsoMesh(spec) {
   return finishMesh(parts, 'torso', c);
 }
 
+// Lighter vertex colour on a mass, as round bubbles: `spots` are [x, y, z, angle] (a direction from the middle, and how wide the spot reaches
+// in radians). The direction of a vertex is read as its position over the head's radii.
+function lightenSpots(g, radii, spots, base, light) {
+  const pos = g.getAttribute('position'), col = g.getAttribute('color');
+  const b = new THREE.Color(base), l = new THREE.Color(light), v = new THREE.Vector3();
+  const dirs = spots.map(([x, y, z, a]) => ({ d: new THREE.Vector3(x, y, z).normalize(), cos: Math.cos(a), a }));
+  for (let i = 0; i < pos.count; i++) {
+    v.set(pos.getX(i) / radii[0], pos.getY(i) / radii[1], pos.getZ(i) / radii[2]).normalize();
+    let k = 0;
+    for (const s of dirs) k = Math.max(k, Math.min(Math.max((v.dot(s.d) - s.cos) / (1 - s.cos) * 2.2, 0), 1));
+    k = k > 0.5 ? 1 : k * 0;          // bubbles have a hard edge
+    col.setXYZ(i, b.r + (l.r - b.r) * k, b.g + (l.g - b.g) * k, b.b + (l.b - b.b) * k);
+  }
+}
+
+// The blob head: a pear-shaped mass with a rounded crown, wider at the jaw, a few raised bubbles and lighter green spots, no hair, ears or
+// nose. The shirt's neckline cuts across its lower end. The Trainer's sweatband rings it.
+const BLOB_BUBBLES = [[-0.7, 0.55, -0.25, 0.8], [0.62, 0.62, -0.3, 0.75], [-0.62, 0.05, -0.7, 0.8], [0.55, 0.15, -0.78, 0.75], [0.05, 0.9, 0.1, 0.55], [-0.95, 0.1, 0.15, 0.5]];
+const BLOB_SPOTS = [...BLOB_BUBBLES, [0.2, 0.55, -0.7, 0.3], [-0.4, 0.8, -0.2, 0.28], [0.85, 0.15, 0.1, 0.34], [-0.2, -0.3, -0.9, 0.3], [0.4, 0.25, -0.88, 0.26], [-0.8, 0.3, 0.3, 0.3], [0.7, -0.1, 0.35, 0.28]];
+function blobHeadMesh(spec) {
+  const h = spec.head, c = spec.colors, o = spec.outfit;
+  const bubbles = BLOB_BUBBLES.map(([x, y, z, a]) => ({ d: new THREE.Vector3(x, y, z).normalize(), cos: Math.cos(a) }));
+  const v = new THREE.Vector3();
+  const skull = shaped((x, y, z, p) => {
+    headSurface(h, x, y, z, p);
+    p[0] *= 1 + h.pear * Math.max(-y, -0.4);
+    // Raised bubbles: push the surface out along the line from the middle.
+    v.set(x, y, z);
+    let k = 0;
+    for (const b of bubbles) k = Math.max(k, Math.min(Math.max((v.dot(b.d) - b.cos) / (1 - b.cos) * 3, 0), 1));
+    const bump = 1 + 0.13 * k * k * (3 - 2 * k);
+    p[0] *= bump; p[1] *= bump; p[2] = p[2] < h.flatZ ? p[2] * bump : p[2];
+  }, 44, 30);
+  paint(skull, c.skin);
+  lightenSpots(skull, [h.rx, h.ry, h.rz], BLOB_SPOTS, c.skin, c.spot);
+  const parts = [skull];
+  if (o.sweatband) {
+    const y = 0.17 * spec.blob.scale, r = h.rx * 0.855;
+    const band = new THREE.TorusGeometry(r, 0.024 * spec.blob.width * spec.blob.scale, 8, 28);
+    place(band, 0, y, -0.012, Math.PI / 2 - 0.05, 0, 0, 1, 1, (h.flatZ + 0.03) / r);
+    parts.push(paint(band, c.band));
+  }
+  return finishMesh(parts, 'headMesh', c);
+}
+
 function headMesh(spec) {
+  if (spec.body === 'blob') return blobHeadMesh(spec);
   const h = spec.head, hair = spec.hair, c = spec.colors, o = spec.outfit;
   const parts = [];
   const skull = shaped((x, y, z, p) => headSurface(h, x, y, z, p), 40, 28);
@@ -315,7 +425,28 @@ function headSurfaceZ(h, x, y) {
   return z > h.flatZ ? h.flatZ + (z - h.flatZ) * h.flatK : z;
 }
 
+// The blob's mitten: a fat palm, four chunky fingers side by side and a stubby thumb.
+function blobHandMesh(spec, side) {
+  const r = spec.hand.radius, c = spec.colors;
+  const palm = ball(14, 10);
+  place(palm, 0, r * 0.85, 0, 0, 0, 0, r * 0.9, r * 1.2, r * 1.05);
+  palm.computeVertexNormals();
+  const parts = [paint(palm, c.skin)];
+  for (let i = 0; i < 4; i++) {
+    const f = ball(10, 8), z = (-0.62 + i * 0.4) * r, len = 0.55 + 0.08 * Math.sin(i * 2.2 + 1);
+    place(f, r * 0.08, r * 1.95 + (i % 3 === 1 ? 0.12 : 0) * r, z, 0, 0, 0, r * 0.36, r * len * 1.1, r * 0.3);
+    f.computeVertexNormals();
+    parts.push(paint(f, c.skin));
+  }
+  const thumb = ball(10, 8);
+  place(thumb, r * 0.55, r * 0.95, side * r * 0.95, side * -0.5, 0, 0.5, r * 0.34, r * 0.62, r * 0.36);
+  thumb.computeVertexNormals();
+  parts.push(paint(thumb, c.skin));
+  return finishMesh(parts, side > 0 ? 'handL' : 'handR', c);
+}
+
 function handMesh(spec, side) {
+  if (spec.body === 'blob') return blobHandMesh(spec, side);
   // Hand space: +Y runs from the wrist out along the forearm, +X points toward
   // the body's middle (the palm), the thumb is forward (+Z on the left hand;
   // the right hand is built mirrored).
@@ -345,8 +476,24 @@ function shoeMesh(spec, side) {
     p[1] = Math.min(Math.max(sole * 0.5 + y * sole, 0), sole);
     p[2] = toe + z * (hl + 0.008);
   }, 20, 6);
-  return finishMesh([paint(upper, c.shoe), paint(bottom, c.sole)], side > 0 ? 'footL' : 'footR', c);
+  const parts = [paint(upper, c.shoe), paint(bottom, c.sole)];
+  if (spec.body === 'blob') {
+    // A sneaker: a cream toe cap over the front.
+    const cap = shaped((x, y, z, p) => {
+      p[0] = x * hw * 0.98;
+      p[1] = Math.max(sole * 0.9, s.height * 0.4 + y * s.height * 0.42);
+      p[2] = toe + hl * 0.5 + z * hl * 0.5;
+    }, 16, 10);
+    parts.push(paint(cap, c.toe));
+  }
+  return finishMesh(parts, side > 0 ? 'footL' : 'footR', c);
 }
+
+// Where the bubbles sit on the blob's arms: [t along from the shoulder (0 to 1), angle round (rad), reach along, reach round].
+const ARM_SPOTS = [
+  [[0.25, 0.4, 0.1, 0.55], [0.55, 2.4, 0.09, 0.5], [0.8, 4.4, 0.08, 0.5], [0.4, 3.6, 0.07, 0.4]],
+  [[0.3, 2.1, 0.1, 0.55], [0.6, 5.2, 0.09, 0.5], [0.15, 4.2, 0.07, 0.45], [0.8, 1.0, 0.08, 0.5]],
+];
 
 // ---------------------------------------------------------------- rig
 
@@ -377,13 +524,17 @@ export function buildRig(spec) {
 
   const hands = [handMesh(spec, 1), handMesh(spec, -1)];
   const feet = [shoeMesh(spec, 1), shoeMesh(spec, -1)];
-  const arms = [0, 1].map(() => createLimb({ radius: spec.armRadius, color: spec.colors.skin }));
+  const blob = spec.body === 'blob';
+  const arms = [0, 1].map((k) => createLimb(blob
+    ? { radius: spec.armRadius, color: spec.colors.skin, rings: 12, sides: 10, rim: spec.colors.rim, rimColor: spec.colors.rimColor,
+      spots: { light: spec.colors.spot, list: ARM_SPOTS[k] } }
+    : { radius: spec.armRadius, color: spec.colors.skin }));
   const legs = [0, 1].map(() => createLimb({ radius: spec.legRadius, color: spec.colors.pants }));
   arms[0].mesh.name = 'armL'; arms[1].mesh.name = 'armR';
   legs[0].mesh.name = 'legL'; legs[1].mesh.name = 'legR';
   body.add(...hands, ...feet, arms[0].mesh, arms[1].mesh, legs[0].mesh, legs[1].mesh);
 
-  const shadow = makeBlobShadow({ rx: 0.45, rz: 0.38, opacity: 0.55 });
+  const shadow = makeBlobShadow(blob ? { rx: 0.62 * spec.blob.width * spec.blob.scale, rz: 0.5 * spec.blob.width * spec.blob.scale, opacity: 0.55 } : { rx: 0.45, rz: 0.38, opacity: 0.55 });
   root.add(shadow);
 
   // Pose state: a target, and one critically damped spring per channel.

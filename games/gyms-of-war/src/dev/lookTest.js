@@ -8,7 +8,7 @@ import { setOutlinesVisible } from '../render/outline.js';
 import { buildLookCorner } from '../world/lookCorner.js';
 import { buildRig } from '../actors/rig.js';
 import { createAnimator } from '../actors/animator.js';
-import { ASSOCIATE } from '../actors/associate.js';
+import { ASSOCIATE, GLORP_REP, TRAINER } from '../actors/associate.js';
 import { CLIPS } from '../actors/poses.js';
 import { EXPRESSIONS } from '../actors/face.js';
 
@@ -69,8 +69,8 @@ export function startLookTest({ canvas, gl }) {
 
   // Everything that moves: the Associate, and the performance test's extras.
   const actors = [];
-  function addActor(x, z, seed) {
-    const rig = buildRig(seed === undefined ? ASSOCIATE : { ...ASSOCIATE, face: { ...ASSOCIATE.face, seed } });
+  function addActor(x, z, seed, base = GLORP_REP) {
+    const rig = buildRig(seed === undefined ? base : { ...base, face: { ...base.face, seed } });
     rig.root.position.set(x, 0, z);
     rig.root.rotation.y = FACING;
     scene.add(rig.root);
@@ -79,7 +79,7 @@ export function startLookTest({ canvas, gl }) {
     actors.push(actor);
     return actor;
   }
-  const hero = addActor(corner.spawn[0], corner.spawn[2]);
+  let hero = addActor(corner.spawn[0], corner.spawn[2]);
   let extras = [];
   let perfOn = false;
 
@@ -112,6 +112,17 @@ export function startLookTest({ canvas, gl }) {
     gameCamOn = !!on;
     // The game camera looks where the Associate faces: into the corner.
     hero.rig.root.rotation.y = gameCamOn ? GAME_CAM_FACING : FACING;
+  }
+  // For screenshots: swap the hero for another character ('rep', 'trainer' or 'human').
+  function setKind(name) {
+    const base = name === 'trainer' ? TRAINER : name === 'human' ? ASSOCIATE : GLORP_REP;
+    const old = hero;
+    hero = addActor(corner.spawn[0], corner.spawn[2], undefined, base);
+    hero.rig.root.rotation.y = old.rig.root.rotation.y;
+    actors.splice(actors.indexOf(old), 1);
+    old.rig.dispose();
+    if (name === 'trainer') hero.rig.root.scale.set(TUNING.trainer.scaleW, TUNING.trainer.scaleH, TUNING.trainer.scaleW);
+    setOutlinesVisible(scene, outlinesOn);
   }
   function setPerf(on) {
     on = !!on;
@@ -184,6 +195,7 @@ export function startLookTest({ canvas, gl }) {
   window.__cr.orbit = (y, p, d) => { yaw = y; pitch = p; if (d) dist = d; }; // for screenshots: a side view
   window.__cr.expression = setExpression;
   window.__cr.perf = setPerf;
+  window.__cr.kind = setKind;
   window.__cr.gameCam = setGameCam;
   window.__cr.outlines = setOutlines;
 

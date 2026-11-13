@@ -4,7 +4,7 @@ import { TUNING } from '../tuning.js';
 import { PALETTE } from '../render/palette.js';
 import { createToonMaterial } from '../render/toon.js';
 import { addOutline, computeOutlineNormals } from '../render/outline.js';
-import { ASSOCIATE, TRAINER, OVERLORD, GOLD } from './associate.js';
+import { GLORP_REP, TRAINER, OVERLORD, GOLD } from './associate.js';
 import { kettlebellGeometry } from '../render/grenadeView.js';
 import { buildRig } from './rig.js';
 import { createAnimator } from './animator.js';
@@ -185,7 +185,7 @@ function termsPage() {
 
 function buildChar(kind) {
   const trainer = kind === 'trainer', boss = kind === 'boss';
-  const rig = buildRig(trainer ? TRAINER : boss ? OVERLORD : ASSOCIATE);
+  const rig = buildRig(trainer ? TRAINER : boss ? OVERLORD : GLORP_REP);
   const anim = createAnimator(rig);
   const root = new THREE.Group();
   root.name = kind;
@@ -212,7 +212,8 @@ function buildChar(kind) {
   return { kind, rig, anim, root, tumble, handR, weapon, terms };
 }
 
-export function createAssociateView(e) {
+// `goo` (optional) is the shared goo-drops pool and `slot` this view's place in it: a blob alien's drops orbit and drip while it is on screen.
+export function createAssociateView(e, goo = null, slot = -1) {
   const group = new THREE.Group();
   group.name = `associate-${e.id}`;
   const chars = { associate: buildChar('associate'), trainer: null, boss: null };
@@ -250,7 +251,7 @@ export function createAssociateView(e) {
   function update(alpha, dt) {
     const fb = TUNING.feedback, ct = TUNING.cover, T = TUNING.associate;
     // An empty slot is never drawn. A slot that dies is a burst; one that comes alive again (a sauna spawn) is a fresh Rep.
-    if (e.state === 'unused') { group.visible = false; return; }
+    if (e.state === 'unused') { group.visible = false; if (goo) goo.hide(slot); return; }
     if (e.state === 'spawn' && (mode === 'burst' || mode === 'gone')) reset();
     if (e.state !== 'dead' && e.alive) useKind(e.kind || 'associate');
     if (!e.alive && e.state === 'dead' && mode === 'live') { mode = 'burst'; deathT = 0; }
@@ -263,7 +264,7 @@ export function createAssociateView(e) {
       group.scale.setScalar(1 + 0.2 * k);
       if (k >= 1) { mode = 'gone'; group.visible = false; }
     }
-    if (mode === 'gone') return;
+    if (mode === 'gone') { if (goo) goo.hide(slot); return; }
     const dead = mode === 'burst';
     const { rig, anim, tumble, handR } = cur, tr = cur.kind === 'trainer', bo = cur.kind === 'boss', TT = TUNING.trainer, BB = TUNING.boss;
     // The Overlord is boss.scale times a Rep, and stands only crouchY of that tall while it is tucked behind the desk (its hit volumes do the same).
@@ -291,6 +292,8 @@ export function createAssociateView(e) {
     const want = tr || bo || e.state === 'run' || SHOOTING.has(e.state) ? e.prevYaw + wrapAngle(e.yaw - e.prevYaw) * alpha : associateFacing(e);
     yaw = turnToward(yaw, want, (tr ? TT.turnRate : T.turnRate) * 1.5 * dt);
     group.rotation.y = yaw;
+    if (goo && !dead && !bo) goo.set(slot, group.position.x, group.position.y, group.position.z, tr ? TT.scaleH : 1, true);
+    if (dead || cur.kind === 'boss') { if (goo) goo.hide(slot); }
     if (dead) return;
     const name = tr ? pickTrainerClip(e) : bo ? pickBossClip(e) : pickAssociateClip(e);
     const key = tr || bo ? name + ':' + e.state : name;

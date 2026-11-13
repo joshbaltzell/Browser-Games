@@ -26,7 +26,7 @@ test('every PANEL path exists in TUNING, and its default is inside its range', (
 
 test('PANEL covers every number in move (but radius and height), camera, look, cover, weapons and combat', () => {
   const paths = new Set(PANEL.map(p => p.path));
-  for (const block of ['move', 'camera', 'look', 'cover', 'weapons', 'combat', 'associate', 'dummy', 'feedback', 'health', 'director', 'melee', 'grenade', 'pad', 'trainer', 'boss', 'ending', 'tobble']) {
+  for (const block of ['move', 'camera', 'look', 'cover', 'weapons', 'combat', 'associate', 'dummy', 'feedback', 'health', 'director', 'melee', 'grenade', 'pad', 'trainer', 'boss', 'ending', 'tobble', 'goo']) {
     for (const p of leaves(TUNING[block], block)) {
       if (p === 'move.radius' || p === 'move.height') assert.ok(!paths.has(p), p);
       else assert.ok(paths.has(p), `${p} missing from PANEL`);

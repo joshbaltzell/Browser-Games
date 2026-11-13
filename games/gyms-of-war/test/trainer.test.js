@@ -374,7 +374,7 @@ test('the Trainer view: its clip per state, an angry face on the charge, and the
   assert.equal(ASSOCIATE.colors, ENEMY_COLORS.associate);
   assert.equal(TRAINER.colors, ENEMY_COLORS.trainer);
   assert.notEqual(ENEMY_COLORS.trainer.shirt, ENEMY_COLORS.associate.shirt);
-  assert.equal(TRAINER.outfit.collar, false); assert.equal(TRAINER.outfit.lanyard, false);
+  assert.equal(TRAINER.outfit.collar, false); assert.ok(!TRAINER.outfit.lanyard); assert.equal(TRAINER.outfit.tank, true);
 });
 
 test('a view builds the Trainer character only when its slot holds one, scales it 1.2 wide and 1.1 tall, raises the kettlebell through the windup, and swaps back for a Rep', () => {

@@ -4,7 +4,9 @@ import { createAssociate, updateAssociate, hurtAssociate, pickPoint, associateSh
 import { createTokens } from '../src/director/tokens.js';
 import { coverPoints } from '../src/world/coverPoints.js';
 import { buildGraph, findPath } from '../src/world/waypoints.js';
-import { HIT_SHAPES } from '../src/combat/targets.js';
+import { ENEMY_SHAPES } from '../src/combat/targets.js';
+
+const HIT_SHAPES = ENEMY_SHAPES.associate;   // the blob Rep's volumes
 import { TUNING } from '../src/tuning.js';
 import { rng } from '../src/core/random.js';
 import { R, BOXES, EDGES } from './fightSim.js';

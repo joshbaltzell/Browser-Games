@@ -7,7 +7,7 @@ import { TUNING } from '../tuning.js';
 import { moveCapsule } from '../world/collide.js';
 import { findPath, clearPath } from '../world/waypoints.js';
 import { lineOfSight } from '../world/coverPoints.js';
-import { HIT_SHAPES } from '../combat/targets.js';
+import { ENEMY_SHAPES } from '../combat/targets.js';
 import { turnToward } from './moveMath.js';
 
 const LOCKED = new Set(['executed', 'unused', 'dead']);
@@ -33,10 +33,10 @@ export function initTrainer(e, tun = TUNING) {
 // Standing shapes scaled by the trainer's size: heights by scaleH, radii by scaleW.
 export function trainerShapes(e, combat = TUNING.combat, tun = TUNING) {
   const [x, y, z] = e.pos, s = e.shapes, W = tun.trainer.scaleW, H = tun.trainer.scaleH;
-  s.head.r = HIT_SHAPES.head.r * W + combat.hitPad; s.body.r = HIT_SHAPES.body.r * W + combat.hitPad;
-  s.head.c[0] = x; s.head.c[1] = y + HIT_SHAPES.head.cy * H; s.head.c[2] = z;
-  s.body.a[0] = x; s.body.a[1] = y + HIT_SHAPES.body.ay * H; s.body.a[2] = z;
-  s.body.b[0] = x; s.body.b[1] = y + HIT_SHAPES.body.by * H; s.body.b[2] = z;
+  s.head.r = ENEMY_SHAPES.trainer.head.r * W + combat.hitPad; s.body.r = ENEMY_SHAPES.trainer.body.r * W + combat.hitPad;
+  s.head.c[0] = x; s.head.c[1] = y + ENEMY_SHAPES.trainer.head.cy * H; s.head.c[2] = z;
+  s.body.a[0] = x; s.body.a[1] = y + ENEMY_SHAPES.trainer.body.ay * H; s.body.a[2] = z;
+  s.body.b[0] = x; s.body.b[1] = y + ENEMY_SHAPES.trainer.body.by * H; s.body.b[2] = z;
   return s;
 }
 

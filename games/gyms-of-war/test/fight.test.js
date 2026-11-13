@@ -336,7 +336,7 @@ test('popped at K1 with perfect aim at the chest, firing only while a clone is i
         if (t && stance === 'aim') {
           if (!seen.has(t.id)) { seen.add(t.id); firstHit.set(t.id, 0); }
           muzzleOf(m, stance, 0, TUNING.combat, mu);
-          const c = [t.pos[0], t.shapes.body.b[1], t.pos[2]];
+          const c = [t.pos[0], t.pos[1] + 1.1, t.pos[2]];   // the chest of a blob Rep (its body capsule's axis ends lower, under the shoulders)
           const l = Math.hypot(c[0] - mu[0], c[1] - mu[1], c[2] - mu[2]);
           dir = [(c[0] - mu[0]) / l, (c[1] - mu[1]) / l, (c[2] - mu[2]) / l];
           fireSteps++;
