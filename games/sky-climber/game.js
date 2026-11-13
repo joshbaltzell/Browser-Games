@@ -40,6 +40,22 @@ const CAMERA_LINE = VH * 0.42;
 const PLAT_W = 78;
 const PLAT_H = 16;
 
+// Difficulty tuning (easier than the original; still ramps up with height).
+const DIFFICULTY_RANGE_M = 1500;   // meters to reach full difficulty (was 900)
+const GAP_MIN_START = 52;          // min platform gap at the bottom (was 58)
+const GAP_MIN_GROW = 26;           // ...grows by this much at full difficulty (was 30)
+const GAP_MAX_START = 84;          // max platform gap at the bottom (was 96)
+const GAP_MAX_GROW = 44;           // ...grows by this much at full difficulty (was 56)
+const LAND_HALF_WIDTH = 1.0;       // landing overlap, in player radii each side (was 0.6)
+const LAND_SLACK_Y = 12;           // feet may be this far below a platform top and still land (was 0)
+const FALL_GRACE = 110;            // px below the screen bottom before a fall is fatal (was 0)
+const MOVING_SPEED_MIN = 30;       // moving platform base speed (was 40)
+const MOVING_SPEED_RANGE = 55;     // ...random extra (was 70)
+const MOVING_SPEED_GROW = 40;      // ...extra at full difficulty (was 60)
+const P_BREAK_START = 0.03, P_BREAK_GROW = 0.17;   // breakable chance (was 0.04 + 0.22)
+const P_MOVE_START = 0.04, P_MOVE_GROW = 0.24;     // moving chance (was 0.06 + 0.30)
+const P_SPRING_START = 0.06, P_SPRING_GROW = 0.03; // spring chance (was 0.04 + 0.03)
+
 // One "meter" of score per this many logical pixels climbed.
 const PIXELS_PER_METER = 8;
 
@@ -241,16 +257,16 @@ function steerInput() {
 // Difficulty grows with height (meters climbed). Returns 0..1.
 function difficulty() {
   const m = Math.max(0, score);
-  // Eases toward 1 over ~900m.
-  return Math.min(1, m / 900);
+  // Eases toward 1 over DIFFICULTY_RANGE_M.
+  return Math.min(1, m / DIFFICULTY_RANGE_M);
 }
 
 // Vertical gap between successive platforms grows with difficulty but always
 // stays within reach of a normal jump (so the game is always fair).
 function platformGap() {
   const d = difficulty();
-  const min = 58 + d * 30;   // 58 -> 88
-  const max = 96 + d * 56;   // 96 -> 152 (a normal jump clears ~190px)
+  const min = GAP_MIN_START + d * GAP_MIN_GROW;
+  const max = GAP_MAX_START + d * GAP_MAX_GROW;   // a normal jump clears ~220px
   return min + Math.random() * (max - min);
 }
 
@@ -259,9 +275,9 @@ function pickType() {
   const d = difficulty();
   const r = Math.random();
   // Spring chance is small but climbs slightly; provides clutch saves.
-  const pSpring = 0.04 + d * 0.03;          // 4% -> 7%
-  const pBreak = 0.04 + d * 0.22;           // 4% -> 26%
-  const pMove = 0.06 + d * 0.30;            // 6% -> 36%
+  const pSpring = P_SPRING_START + d * P_SPRING_GROW;
+  const pBreak = P_BREAK_START + d * P_BREAK_GROW;
+  const pMove = P_MOVE_START + d * P_MOVE_GROW;
   if (r < pSpring) return T_SPRING;
   if (r < pSpring + pBreak) return T_BREAK;
   if (r < pSpring + pBreak + pMove) return T_MOVING;
@@ -284,7 +300,7 @@ function makePlatform(y) {
     bounceAnim: 0,        // brief flash when landed on
   };
   if (type === T_MOVING) {
-    p.vx = (40 + Math.random() * 70 + difficulty() * 60) * (Math.random() < 0.5 ? -1 : 1);
+    p.vx = (MOVING_SPEED_MIN + Math.random() * MOVING_SPEED_RANGE + difficulty() * MOVING_SPEED_GROW) * (Math.random() < 0.5 ? -1 : 1);
   }
   return p;
 }
@@ -301,7 +317,7 @@ function fillPlatforms() {
 
 // Despawn anything that has scrolled below the bottom.
 function cullPlatforms() {
-  const bottom = cameraY + VH + 40;
+  const bottom = cameraY + VH + FALL_GRACE + 40;
   for (let i = platforms.length - 1; i >= 0; i--) {
     if (platforms[i].y > bottom) platforms.splice(i, 1);
   }
@@ -490,9 +506,9 @@ function update(dt) {
       if (p.broken && p.type === T_BREAK) continue;
       const top = p.y;
       // Crossed the platform top this frame?
-      if (footPrev <= top && footCurr >= top) {
+      if (footPrev <= top + LAND_SLACK_Y && footCurr >= top) {
         // Horizontal overlap (account for wrap-free simple case).
-        if (player.x + player.r * 0.6 > p.x && player.x - player.r * 0.6 < p.x + p.w) {
+        if (player.x + player.r * LAND_HALF_WIDTH > p.x && player.x - player.r * LAND_HALF_WIDTH < p.x + p.w) {
           land(p);
           break;
         }
@@ -543,7 +559,7 @@ function update(dt) {
   if (shake > 0) shake = Math.max(0, shake - dt * 60);
 
   // --- Game over: fell below the visible bottom ----------------------------
-  if (player.y - cameraY > VH + player.r) {
+  if (player.y - cameraY > VH + player.r + FALL_GRACE) {
     endGame();
   }
 }
