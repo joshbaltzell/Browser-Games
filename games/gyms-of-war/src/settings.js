@@ -1,4 +1,4 @@
-// The player's settings (the pause menu's): master volume, mouse sensitivity, invert Y, pad look sensitivity. Saved in localStorage
+// The player's settings (the pause menu's): master volume, mouse sensitivity, invert Y, pad look sensitivity, story cards, the how-to card. Saved in localStorage
 // (the caller passes storage in; every read and write is in try/catch, so a private window just keeps them for the session).
 // Pure: no DOM.
 export const SETTINGS_KEY = 'gyms-of-war.settings';
@@ -10,6 +10,7 @@ export const SETTING_ROWS = Object.freeze([
   Object.freeze({ key: 'invertY', label: 'Invert Y (look up/down)', kind: 'toggle', def: false }),
   Object.freeze({ key: 'padSens', label: 'Pad look sensitivity', kind: 'range', min: 0.3, max: 2.5, step: 0.1, def: 1 }),
   Object.freeze({ key: 'storyCards', label: 'Story cards (elevator rides)', kind: 'toggle', def: true }),
+  Object.freeze({ key: 'howTo', label: 'How-to card on New Run', kind: 'toggle', def: true }),
 ]);
 
 export const DEFAULT_SETTINGS = Object.freeze(Object.fromEntries(SETTING_ROWS.map(r => [r.key, r.def])));

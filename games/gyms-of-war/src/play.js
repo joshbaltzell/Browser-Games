@@ -107,6 +107,17 @@ export function showsTitle(params) {
   return !(params && (params.has('room') || params.has('arena') || params.has('skipTitle')));
 }
 
+// The cards between the title and play, in order: New Run shows the opening card once (introShown), then the how-to-fight card unless the
+// player turned it off in Settings or on the card. Continue (resuming) shows neither; the URLs that skip the title (?skipTitle, ?arena=, ?room)
+// skip the how-to card only, so the smoke harness's jump runs still meet the opening card as before.
+export function cardsBeforePlay({ resuming = false, introShown = false, settings = null, params = null } = {}) {
+  if (resuming) return [];
+  const steps = [];
+  if (!introShown) steps.push('intro');
+  if (showsTitle(params) && settings?.howTo !== false) steps.push('howTo');
+  return steps;
+}
+
 const TRANSITION_CAP = 2000;
 const SHOT_LOG_CAP = 500;
 const FIGHT_LOG_CAP = 500;
@@ -1055,13 +1066,13 @@ export function startPlay({ canvas, gl, params }) {
     settings,
     saved: () => loadCheckpoint(storage),
     arenaTitle: (i) => ARENA_TITLES[ARENAS[i]] || '',
+    device: () => input.device(),
     onSettings(next) { settings = next; applySettings(); saveSettings(storage, settings); },
     actions: {
-      continue() { run.goTo(loadCheckpoint(storage)); enterArena(run.arena); beginPlay(); },
+      continue() { run.goTo(loadCheckpoint(storage)); enterArena(run.arena); showCards(cardsBeforePlay({ resuming: true, settings, params })); },
       newRun() {
         run.newRun(); enterArena(ARENAS[0]);
-        if (introShown) beginPlay();
-        else { introShown = true; markIntroSeen(storage); onTitle = false; menus.showIntro(beginPlay); }
+        showCards(cardsBeforePlay({ introShown, settings, params }));
       },
       back() { window.location.href = '../../index.html'; },
       resume() { inputGate = true; input.requestLock(); },
@@ -1070,6 +1081,13 @@ export function startPlay({ canvas, gl, params }) {
       resetTutorial() { tutorial.reset(); },
     },
   });
+  // The cards before play, one after another (the opening card, then the how-to card), and then play itself.
+  function showCards(steps) {
+    const [step, ...rest] = steps;
+    if (step === 'intro') { introShown = true; markIntroSeen(storage); onTitle = false; menus.showIntro(() => showCards(rest)); }
+    else if (step === 'howTo') { onTitle = false; menus.showHowTo(() => showCards(rest)); }
+    else beginPlay();
+  }
   hooks.toTitle = () => { run.newRun(); goTitle(); };
   // The pointer lock went away while playing (Esc, or the window lost focus): the pause menu. The tuning panel closing the lock on purpose
   // does not count, and a pad needs no lock.

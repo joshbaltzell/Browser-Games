@@ -11,17 +11,17 @@ const memory = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m
 
 test('settings: defaults, clamping, bad input and unknown keys', () => {
   assert.deepEqual(clampSettings(null), DEFAULT_SETTINGS);
-  assert.deepEqual(clampSettings({ volume: 7, mouseSens: -1, invertY: 'yes', padSens: NaN, junk: 1 }), { volume: 1, mouseSens: 0.3, invertY: false, padSens: 1, storyCards: true });
+  assert.deepEqual(clampSettings({ volume: 7, mouseSens: -1, invertY: 'yes', padSens: NaN, junk: 1 }), { volume: 1, mouseSens: 0.3, invertY: false, padSens: 1, storyCards: true, howTo: true });
   assert.equal(clampSettings({ volume: 0.34 }).volume, 0.3);
-  assert.equal(SETTING_ROWS.length, 5);
+  assert.equal(SETTING_ROWS.length, 6);
   assert.equal(clampSettings({ storyCards: false }).storyCards, false);
   assert.equal(clampSettings({ storyCards: 'no' }).storyCards, true);
 });
 
 test('settings save and load through storage, and survive storage that throws or holds garbage', () => {
   const st = memory();
-  saveSettings(st, { volume: 0.5, mouseSens: 1.5, invertY: true, padSens: 0.7, storyCards: false });
-  assert.deepEqual(loadSettings(st), { volume: 0.5, mouseSens: 1.5, invertY: true, padSens: 0.7, storyCards: false });
+  saveSettings(st, { volume: 0.5, mouseSens: 1.5, invertY: true, padSens: 0.7, storyCards: false, howTo: false });
+  assert.deepEqual(loadSettings(st), { volume: 0.5, mouseSens: 1.5, invertY: true, padSens: 0.7, storyCards: false, howTo: false });
   st.setItem(SETTINGS_KEY, '{not json');
   assert.deepEqual(loadSettings(st), DEFAULT_SETTINGS);
   const bad = { getItem() { throw new Error('no'); }, setItem() { throw new Error('no'); } };

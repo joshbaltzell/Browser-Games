@@ -43,6 +43,37 @@ export function controlRows(keys = KEYS) {
   ];
 }
 
+// The how-to-fight card (the start of a new run): one row per thing the player does, keyboard + mouse and gamepad side by side. Every key
+// comes from KEYS (prompts.js), the bindings in src/core/input.js, so the card matches the live game.
+export function howToRows(keys = KEYS) {
+  const k = keys.kbm, p = keys.pad;
+  return [
+    { what: 'Move / look', kbm: `${k.move}, ${k.look}`, pad: `${p.move}, ${p.look}` },
+    { what: 'Sprint (roadie run)', kbm: `Hold ${k.cover} or ${k.sprint}`, pad: `Hold ${p.cover}` },
+    { what: 'Take cover: run straight into a wall', kbm: `Tap ${k.cover}`, pad: `Tap ${p.cover}` },
+    { what: 'Pop out and aim', kbm: 'Right mouse', pad: p.aim },
+    { what: 'Fire (in cover, firing without aiming is blind fire)', kbm: 'Left mouse', pad: p.fire },
+    { what: 'Reload (press again on the bright zone: perfect)', kbm: k.reload, pad: p.reload },
+    { what: 'Switch weapon', kbm: k.weapons, pad: p.weapons },
+    { what: 'Kettlebell', kbm: `Hold ${k.grenade}, release to throw`, pad: `${p.grenade}, then ${p.aim} aim, ${p.throw} throw` },
+    { what: 'Melee: tap to bash, hold for Cheat Day', kbm: k.melee, pad: p.melee },
+    { what: 'Revive Tobble, pick up', kbm: k.interact, pad: p.interact },
+    { what: 'Finish a downed alien', kbm: k.finish, pad: p.finish },
+    { what: 'Objective (tap) and Tac/Com (hold)', kbm: k.objective, pad: `${p.objective} tap, ${p.tacCom} hold` },
+    { what: 'Pause', kbm: k.pause, pad: p.pause },
+  ];
+}
+
+// The device whose column is lit on the how-to card: 'pad' or 'kbm' (anything else reads as keyboard + mouse).
+export function howToDevice(device) {
+  return device === 'pad' ? 'pad' : 'kbm';
+}
+
+// Dismissing the card takes a press made after every key and pad button is let go, so the key that opened the card cannot close it.
+export function releasedAll(heldCount, padDown) {
+  return heldCount === 0 && !padDown;
+}
+
 // The opening card (the first play): the premise, in the story's voice.
 export const INTRO_LINES = Object.freeze([
   'Seven years ago, on January 2nd, Doc Vex signed up for GlorpFit Orbital.',
