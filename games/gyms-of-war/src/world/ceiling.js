@@ -16,7 +16,7 @@ export const CEILING_Y = 6.5;       // m: the underside of the ceiling
 export const WALL_TOP = 4;          // m: where the colliding perimeter walls end and the carried-up band starts
 const SILL_TOP = 4.55, LINTEL_BOTTOM = 6.0, WINDOW_W = 3.2, PIER_MIN = 1.6, T = 0.3;
 const BEAM_STEP = 4, BEAM_H = 0.35, BEAM_W = 0.4, DUCT = 0.55;
-const COL = { ceiling: '#e4dcff', beam: PALETTE.teal, duct: '#9aa0c0', wall: PALETTE.cream, sill: PALETTE.lilac, housing: '#7d7fa0', rod: '#5c5f78' };
+const COL = { ceiling: '#e4dcff', beam: PALETTE.teal, duct: '#9aa0c0', wall: PALETTE.cream, sill: PALETTE.lilac, housing: PALETTE.lilac, rod: '#5c5f78' };
 
 // Floor extents of a level: { x0, x1, z0, z1 } from its floor box.
 export function floorExtents(level) {
@@ -61,8 +61,8 @@ export function ceilingParts(level) {
     const x = x0 + ((c + 0.5) * W) / cols;
     for (let i = 0; i < nb; i++) {
       const z = (beamZ[i] + beamZ[i + 1]) / 2, len = Math.min(2.6, (beamZ[i + 1] - beamZ[i]) - BEAM_W - 0.4);
-      box(solids, [x - 0.3, CEILING_Y - 0.09, z - len / 2 - 0.06], [x + 0.3, CEILING_Y, z + len / 2 + 0.06], COL.housing);
-      box(lights, [x - 0.2, CEILING_Y - 0.12, z - len / 2], [x + 0.2, CEILING_Y - 0.09, z + len / 2], '#fffbe8');
+      box(solids, [x - 0.36, CEILING_Y - 0.09, z - len / 2 - 0.06], [x + 0.36, CEILING_Y, z + len / 2 + 0.06], COL.housing);
+      box(lights, [x - 0.28, CEILING_Y - 0.12, z - len / 2], [x + 0.28, CEILING_Y - 0.09, z + len / 2], '#f2fff9');
     }
   }
   // Rods for the hanging signs.

@@ -5,6 +5,8 @@ import { TOON_SHARED } from './toon.js';
 const RADIUS = 400;
 // Where the ringed planet hangs: ahead of the default camera, up and to the left.
 const PLANET_DIR = [-0.45, 0.22, -1];
+// The distant ring station: a saucer and its ring, low and to the right of the planet, in the arenas' view.
+const STATION_DIR = [0.6, 0.14, -1];
 
 const vertexShader = /* glsl */ `
 varying vec3 vDir;
@@ -31,6 +33,7 @@ uniform float shadowLift;
 uniform float bandEdge;
 uniform vec3 lightDir;
 uniform vec3 planetDir;
+uniform vec3 stationDir;
 uniform float time;
 
 varying vec3 vDir;
@@ -138,6 +141,18 @@ void main() {
   col = mix(col, planet, disc);
   col = mix(col, ink, ring * ringInFront);
 
+  // The ring station: a flat lilac saucer with a pink ring round it, a few degrees across.
+  vec3 sup = abs(stationDir.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+  vec3 sx = normalize(cross(sup, stationDir));
+  vec3 sy = cross(stationDir, sx);
+  vec2 su = vec2(dot(d, sx), dot(d, sy)) / 0.03;
+  float sfront = step(0.0, dot(d, stationDir));
+  float spx = max(fwidth(length(su)), 1e-4);
+  float saucer = (1.0 - smoothstep(1.0 - spx, 1.0 + spx, length(vec2(su.x, su.y * 2.4)))) * sfront;
+  float sring = (1.0 - smoothstep(0.12 - spx, 0.12 + spx, abs(length(vec2(su.x, su.y * 6.0)) - 1.9))) * sfront;
+  col = mix(col, pink, sring);
+  col = mix(col, lilac, saucer);
+
   gl_FragColor = vec4(col, 1.0);
   #include <colorspace_fragment>
 }
@@ -146,7 +161,7 @@ void main() {
 // The nebula sky: an inward-facing sphere drawn behind everything. The sky
 // is never rotated (the planet is lit by the world-space scene light), so
 // planetDir, a world direction, is how a scene places the planet.
-export function createSky({ planetDir = PLANET_DIR } = {}) {
+export function createSky({ planetDir = PLANET_DIR, stationDir = STATION_DIR } = {}) {
   const c = (hex) => new THREE.Color(hex);
   const material = new THREE.ShaderMaterial({
     name: 'sky',
@@ -164,6 +179,7 @@ export function createSky({ planetDir = PLANET_DIR } = {}) {
       bandEdge: TOON_SHARED.bandEdge,
       lightDir: TOON_SHARED.lightDir,
       planetDir: { value: new THREE.Vector3(...planetDir).normalize() },
+      stationDir: { value: new THREE.Vector3(...stationDir).normalize() },
       time: { value: 0 },
     },
     vertexShader,

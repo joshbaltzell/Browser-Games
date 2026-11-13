@@ -132,7 +132,8 @@ export function startPlay({ canvas, gl, params }) {
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(TUNING.camera.fov, 1, 0.05, 100);
-  const sky = createSky();
+  // The arenas' sky: the run's camera looks down +z, so the planet and the ring station sit up-left and up-right of that view.
+  const sky = createSky({ planetDir: [-0.5, 0.3, 0.8], stationDir: [0.6, 0.14, 0.9] });
   scene.add(sky.mesh);
   // Everything that belongs to one arena hangs under arenaRoot and is rebuilt by loadArena (the run swaps arenas, see run.js);
   // disposeArena frees its GPU side. The player, the camera, the effects pool and the HUD outlive the swap.

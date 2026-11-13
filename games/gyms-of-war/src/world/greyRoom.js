@@ -8,6 +8,7 @@ import { makeBox } from './collide.js';
 import { propGeometry } from './props.js';
 import { buildGate } from './gate.js';
 import { buildCeiling } from './ceiling.js';
+import { backdropGeometry } from './backdrop.js';
 
 const deepFreeze = (o) => {
   if (o && typeof o === 'object' && !Object.isFrozen(o)) {
@@ -116,12 +117,20 @@ export function buildGreyRoom(room = GREY_ROOM) {
   const floorBox = room.boxes.find(b => b.kind === 'floor');
   group.add(makeFloor({ w: floorBox.max[0] - floorBox.min[0], d: floorBox.max[2] - floorBox.min[2] }));
   // Every box except the floor is drawn as a mall prop (see props.js): one vertex-coloured mesh, outlined.
-  const solids = room.boxes.filter(b => b.kind !== 'floor');
+  // Decor (level.decor: props that are drawn but not collided with, such as the potted plants by the walls) is dressed the same way.
+  const solids = [...room.boxes.filter(b => b.kind !== 'floor'), ...(room.decor || [])];
   if (solids.length) {
     const mesh = new THREE.Mesh(computeOutlineNormals(propGeometry(solids, floorBox)), createToonMaterial({ vertexColors: true }));
     mesh.name = 'grey-props';
     addOutline(mesh);
     group.add(mesh);
+  }
+  // Background equipment past the north wall (the arenas with an exit gate): drawing only, one mesh, no outline.
+  const backdrop = room.backdrop ? backdropGeometry(floorBox) : null;
+  if (backdrop) {
+    const bm = new THREE.Mesh(backdrop, createToonMaterial({ vertexColors: true }));
+    bm.name = 'backdrop-gym';
+    group.add(bm);
   }
   const trim = wallTrim(room);
   if (trim.length) {

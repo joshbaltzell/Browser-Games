@@ -216,7 +216,7 @@ export function makeWall({ w, h, color = PALETTE.cream, stripe = PALETTE.hotPink
 }
 
 // Draws the sign face to a canvas: the only place the kit touches the DOM.
-function signTexture(text, bg, fg, aspect) {
+function signTexture(text, bg, aspect) {
   // Longest side 1024 px, shortest at least 64: never beyond 2048 either way.
   const clamp = (v) => Math.min(2048, Math.max(64, Math.round(v)));
   const W = clamp(aspect >= 1 ? 1024 : 1024 * aspect);
@@ -237,17 +237,27 @@ function signTexture(text, bg, fg, aspect) {
   let best = null;
   for (const lines of options) {
     const widest = Math.max(...lines.map((l) => ctx.measureText(l).width));
-    const size = Math.min((W * 0.88 * 100) / widest, (H * 0.8) / (lines.length * 1.08));
+    const size = Math.min((W * 0.7 * 100) / widest, (H * 0.8) / (lines.length * 1.08));   // room left for the chevrons at each end
     if (!best || size > best.size) best = { lines, size };
   }
 
-  ctx.fillStyle = bg;
+  // Cream plate, a dashed rule in the sign's accent, and a pair of chevrons at each end in the accent (the gym's sign style).
+  ctx.fillStyle = PALETTE.cream;
   ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = fg;
+  ctx.strokeStyle = bg;
   ctx.lineWidth = 8;
   ctx.setLineDash([22, 14]);
   ctx.strokeRect(18, 18, W - 36, H - 36);
   ctx.setLineDash([]);
+  ctx.lineWidth = Math.max(10, H * 0.05);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const side of [-1, 1]) for (const dy of [-0.12, 0.12]) {
+    const cx = W / 2 + side * W * 0.41, cy = H / 2 + dy * H, s = H * 0.08;
+    ctx.beginPath();
+    ctx.moveTo(cx - s * side, cy - s); ctx.lineTo(cx, cy); ctx.lineTo(cx - s * side, cy + s);
+    ctx.stroke();
+  }
 
   ctx.font = `${best.size}px ${family}`;
   ctx.textAlign = 'center';
@@ -257,8 +267,6 @@ function signTexture(text, bg, fg, aspect) {
   best.lines.forEach((line, i) => {
     const y = top + i * lineH;
     ctx.fillStyle = PALETTE.ink;
-    ctx.fillText(line, W / 2 + best.size * 0.05, y + best.size * 0.06);
-    ctx.fillStyle = fg;
     ctx.fillText(line, W / 2, y);
   });
   const texture = new THREE.CanvasTexture(canvas);
@@ -280,7 +288,7 @@ export function makeSign({ text, w, h, bg = PALETTE.hotPink, fg = PALETTE.cream,
   const faceW = w - rim * 2, faceH = h - rim * 2;
   const face = new THREE.Mesh(
     new THREE.PlaneGeometry(faceW, faceH),
-    new THREE.MeshBasicMaterial({ map: signTexture(text, bg, fg, faceW / faceH), toneMapped: false }),
+    new THREE.MeshBasicMaterial({ map: signTexture(text, bg, faceW / faceH), toneMapped: false }),
   );
   face.name = 'signFace';
   face.position.z = depth / 2 + 0.008;

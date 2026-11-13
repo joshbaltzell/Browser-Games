@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { propKind, propGeometry, windowPanels } from '../src/world/props.js';
 import { KIOSK_ROW } from '../src/world/kioskRow.js';
 import { GREY_ROOM } from '../src/world/greyRoom.js';
+import { SMOOTHIE_BAR } from '../src/world/smoothieBar.js';
+import { CANCELLATION_DESK } from '../src/world/cancellationDesk.js';
+import { backdropGeometry } from '../src/world/backdrop.js';
 
 const solids = (r) => r.boxes.filter(b => b.kind !== 'floor');
 
@@ -36,4 +39,14 @@ test('the whole fight draws as one merged geometry with a colour per vertex and 
   const g = propGeometry(solids(KIOSK_ROW), KIOSK_ROW.boxes.find(b => b.kind === 'floor'));
   assert.equal(g.getAttribute('color').count, g.getAttribute('position').count);
   assert.ok(g.index.count / 3 < 20000, `${g.index.count / 3} tris`);
+});
+
+test('background equipment sits past the north wall, and decor is drawn without collision boxes', () => {
+  for (const room of [KIOSK_ROW, SMOOTHIE_BAR]) {
+    const floor = room.boxes.find(b => b.kind === 'floor'), pos = backdropGeometry(floor).getAttribute('position');
+    let minZ = Infinity;
+    for (let i = 0; i < pos.count; i++) minZ = Math.min(minZ, pos.getZ(i));
+    assert.ok(minZ > floor.max[2] + 0.3, `backdrop starts at z ${minZ}`);
+  }
+  for (const room of [KIOSK_ROW, CANCELLATION_DESK]) for (const d of room.decor || []) assert.ok(!room.boxes.includes(d));
 });

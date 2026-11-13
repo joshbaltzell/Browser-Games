@@ -83,6 +83,7 @@ export const SMOOTHIE_BAR = deepFreeze({
   tobble: { pos: [1.6, 0, -16.5], yaw: 0 },
   waypoints,
   ammoCrates: [{ pos: [6.5, 0, -16.8] }, { pos: [-16.5, 0, 14.5] }],
+  backdrop: true,
   // The exit gate in the north wall: opens when the arena is clear. pos is on the wall's inside face; yaw faces into the arena (signs' convention).
   exit: { pos: [-12, 0, Z], yaw: Math.PI, w: 3.4 },
   landmark: { pos: [9, 3.2, Z - 0.3], text: 'SMOOTHIE BAR', w: 7, h: 1.4 },

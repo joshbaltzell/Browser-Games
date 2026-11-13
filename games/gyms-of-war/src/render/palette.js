@@ -9,6 +9,7 @@ export const PALETTE = Object.freeze({
   lilac: '#b9a7ff',        // mall
   glorpPurple: '#7a3cff',  // clone polo shirts
   gel: '#b6ff3c',          // clone insides, enemy fire
+  signGreen: '#3dff8f',    // turnstile arrow lights (not enemy fire)
   playerOrange: '#ff8a1f', // player weapon and fire
   daleSkin: '#f4b6a6',     // clone skin
   daleHair: '#4a2f5a',     // clone hair

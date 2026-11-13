@@ -57,6 +57,7 @@ export const CANCELLATION_DESK = deepFreeze({
   tobble: { pos: [1.5, 0, -8.7], yaw: 0 },
   waypoints,
   ammoCrates: [{ pos: [-10.5, 0, -8.8] }],
+  decor: [{ min: [10.0, 0, -9.4], max: [10.8, 1, -8.6], kind: 'low', prop: 'plant' }],
   landmark: { pos: [0, 3.2, Z - 0.3], text: 'CANCELLATION DESK', w: 7, h: 1.3 },
   // The roof (view only, see ceiling.js): a hanging banner and the floor sign by the entry. yaw PI faces -z, toward Doc coming in.
   ceiling: {

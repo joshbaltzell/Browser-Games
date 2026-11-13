@@ -83,7 +83,14 @@ function frame(p, b) {
       const a = axis === 'y' ? 'y' : axis === 'u' ? (alongX ? 'x' : 'z') : (alongX ? 'z' : 'x');
       p.cyl(wx(u, v), yc, wz(u, v), r, len, hex, a);
     },
+    ball(u, v, y, r, hex) { p.ball(wx(u, v), y, wz(u, v), r, hex); },
   };
+}
+
+// A green up-arrow (chevron) on a turnstile post's face, between the slabs v0 and v1 (across the post, front or back).
+function chevron(f, cu, v0, v1) {
+  f.slab(cu - 0.03, cu + 0.03, v0, v1, 0.9, 0.95, PALETTE.signGreen);   // apex
+  f.slab(cu - 0.07, cu + 0.07, v0, v1, 0.83, 0.88, PALETTE.signGreen);  // arms
 }
 
 // Turnstile bank: a gate cabinet with posts, glass wings, arms and a red "ACCESS DENIED" light on each post.
@@ -94,8 +101,8 @@ function addTurnstile(p, b) {
   for (let i = 0; i <= lanes; i++) {
     const u = i * step;
     f.slab(u, u + pw, 0.06, dep - 0.06, 0, b.max[1], PALETTE.lilac);                        // post to the box top
-    f.slab(u + 0.03, u + pw - 0.03, 0, 0.07, 0.8, 0.94, PALETTE.hotPink);                  // light, front
-    f.slab(u + 0.03, u + pw - 0.03, dep - 0.07, dep, 0.8, 0.94, PALETTE.hotPink);          // light, back
+    chevron(f, u + pw / 2, 0, 0.07);                                                        // green arrow lights, front and back
+    chevron(f, u + pw / 2, dep - 0.07, dep);
   }
   for (let i = 0; i < lanes; i++) {
     const u0 = i * step + pw, u1 = (i + 1) * step;
@@ -104,20 +111,45 @@ function addTurnstile(p, b) {
   }
 }
 
-// Supplement counter: a cabinet with a counter top and protein tubs, all under the box top.
+// Rounded counter (Gyms of War): a hot-pink body with round ends, a cream top that overhangs as a lip (its surface at height ct), and a
+// dumbbell plate on each long face. Everything stays under the box top.
+function addRoundedCounter(p, b, ct) {
+  const f = frame(p, b), { len, dep } = f, top = b.max[1], r = dep / 2, mid = len / 2, yb = ct - 0.06;
+  f.slab(r, len - r, 0.04, dep - 0.04, 0, 0.1, PALETTE.shadowTint);                         // toe kick
+  f.slab(r, len - r, 0, dep, 0.1, yb, PALETTE.hotPink);                                     // body
+  for (const u of [r, len - r]) {
+    f.cyl(u, r, (0.1 + yb) / 2, r, yb - 0.1, PALETTE.hotPink);                              // round end
+    f.cyl(u, r, 0.05, r * 0.9, 0.1, PALETTE.shadowTint);                                    // round toe kick
+  }
+  f.slab(r, len - r, -0.03, dep + 0.03, yb, ct, PALETTE.cream);                             // cream top and lip
+  for (const u of [r, len - r]) f.cyl(u, r, (yb + ct) / 2, r + 0.03, ct - yb, PALETTE.cream);
+  for (const v0 of [-0.035, dep]) {                                                          // a dumbbell sign plate on each long face
+    const y0 = 0.26, y1 = yb - 0.04, y = (y0 + y1) / 2;
+    f.slab(mid - 0.2, mid + 0.2, v0, v0 + 0.035, y0, y1, PALETTE.cream);
+    f.slab(mid - 0.13, mid + 0.13, v0 + 0.01, v0 + 0.025, y - 0.02, y + 0.02, PALETTE.hotPink);
+    f.slab(mid - 0.17, mid - 0.11, v0 + 0.005, v0 + 0.03, y - 0.06, y + 0.06, PALETTE.hotPink);
+    f.slab(mid + 0.11, mid + 0.17, v0 + 0.005, v0 + 0.03, y - 0.06, y + 0.06, PALETTE.hotPink);
+  }
+  return { f, top, ct, dep, len };
+}
+
+// Supplement counter: the rounded counter with a row of protein jars on its top.
 function addSupplementCounter(p, b, seed) {
-  const f = frame(p, b), { len, dep } = f, top = b.max[1];
-  f.slab(0.08, len - 0.08, 0.08, dep - 0.08, 0, 0.1, PALETTE.shadowTint);                  // toe kick
-  f.slab(0.05, len - 0.05, 0.05, dep - 0.05, 0.1, 0.76, PALETTE.teal);                     // body
-  f.slab(-0.04, len + 0.04, -0.04, dep + 0.04, 0.76, 0.82, PALETTE.cream);                 // top slab, overhangs 4 cm
-  f.slab(0.15, len - 0.15, 0, 0.06, 0.25, 0.6, PALETTE.hotPink);                           // stripe, front
-  f.slab(0.15, len - 0.15, dep - 0.06, dep, 0.25, 0.6, PALETTE.hotPink);                   // stripe, back
+  const { f, top, ct, dep, len } = addRoundedCounter(p, b, 0.82);
   const rows = dep >= 0.8 ? 2 : 1, n = Math.max(2, Math.floor(len / 0.5));
   for (let r = 0; r < rows; r++) for (let i = 0; i < n; i++) {
     const u = (i + 0.5 + (r % 2) * 0.25) / n * len, v = rows === 1 ? dep / 2 : dep * (0.3 + r * 0.4);
-    f.cyl(u, v, (0.82 + top - 0.02) / 2, 0.14, top - 0.84, PRODUCTS[(i + r * 2 + seed) % PRODUCTS.length]);   // tub
-    f.cyl(u, v, top - 0.01, 0.15, 0.02, PALETTE.cream);                                      // lid
+    addJar(f, u, v, ct, top, PRODUCTS[(i + r * 2 + seed) % PRODUCTS.length], (i + r) % 2 === 0);
   }
+}
+
+// A protein jar on a counter top: a coloured body, a cream label band with a glyph (a dumbbell, or a lightning bolt) and a cream lid.
+function addJar(f, u, v, ct, top, hex, dumbbell) {
+  const r = 0.085, yb = top - 0.06, ym = (ct + yb) / 2;
+  f.cyl(u, v, ym, r, yb - ct, hex);                                                          // body
+  f.cyl(u, v, ym, r + 0.006, 0.06, PALETTE.cream);                                           // label band
+  f.slab(u - 0.03, u + 0.03, v - r - 0.014, v - r - 0.004, ym - 0.02, ym + 0.02, dumbbell ? PALETTE.ink : PALETTE.playerOrange);   // glyph
+  f.cyl(u, v, yb + 0.02, 0.06, 0.04, PALETTE.cream);                                         // lid
 }
 
 function addCounter(p, b, ordinal) {
@@ -214,19 +246,14 @@ function addBlenderBar(p, b, seed) {
   }
 }
 
-// Build-Your-Bowl counter: a teal cabinet, a cream top and a row of bowls of fruit set into it.
+// Build-Your-Bowl counter: the rounded counter with a row of fruit bowls on its top.
 function addBowlCounter(p, b, seed) {
-  const f = frame(p, b), { len, dep } = f, top = b.max[1];
-  f.slab(0.06, len - 0.06, 0.05, dep - 0.05, 0, 0.1, PALETTE.shadowTint);
-  f.slab(0.03, len - 0.03, 0.03, dep - 0.03, 0.1, top - 0.1, PALETTE.teal);
-  f.slab(0.2, len - 0.2, 0, 0.06, 0.25, 0.65, PALETTE.hotPink);
-  f.slab(0.2, len - 0.2, dep - 0.06, dep, 0.25, 0.65, PALETTE.hotPink);
-  f.slab(-0.04, len + 0.04, -0.04, dep + 0.04, top - 0.1, top - 0.04, PALETTE.cream);
+  const { f, top, ct, dep, len } = addRoundedCounter(p, b, b.max[1] - 0.1);
   const n = Math.max(2, Math.floor(len / 0.6));
   for (let i = 0; i < n; i++) {
     const u = (i + 0.5) / n * len;
-    f.cyl(u, dep / 2, top - 0.035, 0.2, 0.07, PALETTE.ink);                                   // bowl
-    f.cyl(u, dep / 2, top - 0.02, 0.17, 0.04, PRODUCTS[(i + seed) % PRODUCTS.length]);        // the fill
+    f.cyl(u, dep / 2, ct + 0.03, 0.2, 0.06, PALETTE.ink);                                     // bowl
+    f.cyl(u, dep / 2, ct + 0.05, 0.17, 0.03, PRODUCTS[(i + seed) % PRODUCTS.length]);        // the fill
   }
 }
 
@@ -258,13 +285,18 @@ function addSeat(p, b) {
   for (let u = 0.3; u < len - 0.2; u += 0.3) f.slab(u, u + 0.03, 0, dep, top - 0.125, top - 0.1, PALETTE.shadowTint);
 }
 
-// Planter: an orange trough with a row of leafy green balls that stay under the box top.
+// Potted pink alien plant: a cream pot with a hot-pink rim, and pink stalks with lilac or teal bulb tips, all under the box top.
 function addPlant(p, b, seed) {
-  const f = frame(p, b), { len, dep } = f, top = b.max[1];
-  f.slab(0.02, len - 0.02, 0.02, dep - 0.02, 0, top * 0.5, PALETTE.playerOrange);
-  f.slab(0, len, 0, dep, top * 0.5 - 0.06, top * 0.5, PALETTE.shadowTint);
-  const n = Math.max(2, Math.floor(len / 0.5)), r = Math.min(dep / 2 - 0.02, (top - top * 0.5) / 2 - 0.01);
-  for (let i = 0; i < n; i++) f.cyl((i + 0.5) / n * len, dep / 2, top * 0.5 + r + 0.005, r, r * 2, i % 2 ? PALETTE.gel : PALETTE.teal);
+  const f = frame(p, b), { len, dep } = f, top = b.max[1], pt = top * 0.45;
+  f.slab(0.02, len - 0.02, 0.02, dep - 0.02, 0, pt, PALETTE.cream);                          // pot
+  f.slab(0, len, 0, dep, pt - 0.06, pt, PALETTE.hotPink);                                    // rim
+  f.slab(0.05, len - 0.05, 0.05, dep - 0.05, pt - 0.01, pt + 0.01, PALETTE.shadowTint);      // soil
+  const n = Math.max(2, Math.floor(len / 0.5));
+  for (let i = 0; i < n; i++) {
+    const u = (i + 0.5) / n * len, v = dep / 2 + (i % 2 ? 0.08 : -0.08), hgt = (top - pt - 0.16) * (0.75 + 0.25 * (((i * 7 + seed) % 3) / 2));
+    f.cyl(u, v, pt + hgt / 2, 0.02, hgt, PALETTE.hotPink);                                   // stalk
+    f.ball(u, v, pt + hgt + 0.06, 0.06, i % 2 ? PALETTE.lilac : PALETTE.tealLight);          // bulb tip
+  }
 }
 
 // Velvet-rope partition (Cancellation Desk): a dark base, a gold-pink rail on top and a stripe.
@@ -298,9 +330,19 @@ export function windowPanels(floor) {
   return out;
 }
 
+// Round porthole windows high on the perimeter: a lilac ring with dark space behind the glass, between the big panels.
+function addPortholes(p, floor) {
+  if (!floor) return;
+  const [x0, , z0] = floor.min, [x1, , z1] = floor.max, Y = 3.2, R = 0.36, D = 0.03, step = 4;
+  const hole = (x, z, axis) => { p.cyl(x, Y, z, R, 0.06, PALETTE.lilac, axis); p.cyl(x, Y, z, R - 0.09, 0.07, PALETTE.nebulaDeep, axis); };
+  for (let x = x0 + 2; x < x1 - 1; x += step) { hole(x, z0 + D, 'z'); hole(x, z1 - D, 'z'); }
+  for (let z = z0 + 2; z < z1 - 1; z += step) { hole(x0 + D, z, 'x'); hole(x1 - D, z, 'x'); }
+}
+
 export function propGeometry(boxes, floor = null) {
   const p = parts();
   for (const w of windowPanels(floor)) p.box(w.min, w.max, PALETTE.tealLight);
+  addPortholes(p, floor);
   let counters = 0;
   boxes.forEach((b, i) => {
     const k = propKind(b);

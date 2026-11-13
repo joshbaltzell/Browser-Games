@@ -70,6 +70,12 @@ export const KIOSK_ROW = deepFreeze({
   tobble: { pos: [1.4, 0, -13.8], yaw: 0 },
   waypoints,
   ammoCrates: [{ pos: [5.5, 0, -12.5] }],
+  // Potted plants in the south corners, against the walls (drawing only: nothing collides with them).
+  decor: [
+    { min: [-6.8, 0, -14.6], max: [-6.0, 1, -13.8], kind: 'low', prop: 'plant' },
+    { min: [6.0, 0, -14.6], max: [6.8, 1, -13.8], kind: 'low', prop: 'plant' },
+  ],
+  backdrop: true,
   // The exit gate in the north wall, west of the front desk: it opens when the set is complete. pos is on the wall's inside face;
   // yaw faces into the arena (the signs' convention, yaw PI looks toward -z); w is the doorway width.
   exit: { pos: [-4.5, 0, Z], yaw: Math.PI, w: 3 },
