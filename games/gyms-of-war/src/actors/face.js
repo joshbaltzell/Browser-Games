@@ -72,9 +72,11 @@ const smooth01 = (t) => { const c = t < 0 ? 0 : t > 1 ? 1 : t; return c * c * (3
 export function createFace({
   eyeRadius = 0.1, eyeSpacing = 0.26, eyeY = 0.05, eyeZ = 0.3, mouthY = -0.12, mouthWidth = 0.22,
   mouthZ = eyeZ, brow = 'pair', seed = 1, lidColor = PALETTE.ink, fixedSmile = 0, eyeColor = PALETTE.eyeWhite, eyeGlow = false,
-  teeth = false, expressions = 'human',
+  teeth = false, expressions = 'human', neutral = null,
 } = {}) {
-  const TABLE = expressions === 'blob' ? BLOB_EXPRESSIONS : EXPRESSIONS;
+  // neutral (optional): fields that replace the table's neutral, e.g. Doc's scowl as his resting face. The other expressions are unchanged.
+  const base = expressions === 'blob' ? BLOB_EXPRESSIONS : EXPRESSIONS;
+  const TABLE = neutral ? { ...base, neutral: Object.freeze({ ...base.neutral, ...neutral }) } : base;
   const R = eyeRadius;
   const half = eyeSpacing / 2;
   const eyeX = [-half, half];

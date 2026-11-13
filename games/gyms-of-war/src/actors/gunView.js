@@ -42,12 +42,17 @@ function buildDisc() {
   return g;
 }
 
-// The Regret: a chunky orange rifle, about 0.7 m, with the Cheat Day disc under the barrel.
+// The Regret: a chunky orange rifle, about 0.7 m, with the Cheat Day disc under the barrel. Dark parts (grip, magazine, top rail) share one
+// mesh, so the rifle draws as many meshes as before.
 function buildRifle() {
   const g = new THREE.Group();
   g.name = 'rifle';
-  part(g, boxes([[0.06, 0.1, 0.15, 0, 0.04, -0.175], [0.09, 0.12, 0.4, 0, 0.05, 0.1], [0.05, 0.05, 0.15, 0, 0.06, 0.375]]), PALETTE.playerOrange);
-  part(g, boxes([[0.05, 0.12, 0.06, 0, -0.07, 0.0]]), PALETTE.ink);
+  part(g, boxes([[0.06, 0.1, 0.15, 0, 0.04, -0.175], [0.1, 0.13, 0.42, 0, 0.05, 0.1], [0.05, 0.05, 0.15, 0, 0.06, 0.375]]), PALETTE.playerOrange);
+  part(g, boxes([
+    [0.05, 0.12, 0.06, 0, -0.07, 0.0],          // grip
+    [0.05, 0.14, 0.06, 0, -0.07, 0.1],          // magazine
+    [0.03, 0.025, 0.3, 0, 0.12, 0.05],          // top rail
+  ]), PALETTE.ink);
   g.add(buildDisc());
   return g;
 }

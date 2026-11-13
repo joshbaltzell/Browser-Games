@@ -9,6 +9,7 @@ import { buildLookCorner } from '../world/lookCorner.js';
 import { buildRig } from '../actors/rig.js';
 import { createAnimator } from '../actors/animator.js';
 import { ASSOCIATE, GLORP_REP, TRAINER, OVERLORD } from '../actors/associate.js';
+import { DOC_PLACEHOLDER } from '../actors/docPlaceholder.js';
 import { CLIPS } from '../actors/poses.js';
 import { EXPRESSIONS } from '../actors/face.js';
 
@@ -113,9 +114,9 @@ export function startLookTest({ canvas, gl }) {
     // The game camera looks where the Associate faces: into the corner.
     hero.rig.root.rotation.y = gameCamOn ? GAME_CAM_FACING : FACING;
   }
-  // For screenshots: swap the hero for another character ('rep', 'trainer' or 'human').
+  // For screenshots: swap the hero for another character ('rep', 'trainer', 'human', 'boss' or 'doc').
   function setKind(name) {
-    const base = name === 'trainer' ? TRAINER : name === 'human' ? ASSOCIATE : name === 'boss' ? OVERLORD : GLORP_REP;
+    const base = name === 'trainer' ? TRAINER : name === 'human' ? ASSOCIATE : name === 'boss' ? OVERLORD : name === 'doc' ? DOC_PLACEHOLDER : GLORP_REP;
     const old = hero;
     hero = addActor(corner.spawn[0], corner.spawn[2], undefined, base);
     hero.rig.root.rotation.y = old.rig.root.rotation.y;

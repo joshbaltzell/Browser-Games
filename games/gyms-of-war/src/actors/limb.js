@@ -19,7 +19,9 @@ const CAP_ANGLES = [0.65, 1.2]; // radians from the tube wall toward the tip
 // `spots` (optional, the blob aliens' lighter green bubbles): { light, list: [[t, angle, dt, dangle], ...] }, vertex colours fixed at build:
 // a spot is centred t along the limb (0 to 1) and `angle` round it (radians), reaching dt along and dangle round. `rim` and `rimColor` tint
 // the lit edge as the torso's do.
-export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffffff', spots = null, rim, rimColor } = {}) {
+// `bands` (optional, Doc's knee pads): [[t0, t1, colour], ...], ring colours fixed at build, later bands win. Along the limb, round the
+// whole tube (no extra mesh, so no extra draw call). With bands the material is white and the vertex colours carry the colour.
+export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffffff', spots = null, bands = null, rim, rimColor } = {}) {
   const ringCount = rings + 1;
   const capRings = CAP_ANGLES.length;
   const bodyVerts = ringCount * sides;
@@ -64,7 +66,19 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
   geometry.setAttribute('normal', nrmAttr);
   geometry.setIndex(index);
 
-  if (spots) {
+  if (bands) {
+    const base = new THREE.Color(color), col = new Float32Array(vertCount * 3);
+    for (let v = 0; v < vertCount; v++) { col[v * 3] = base.r; col[v * 3 + 1] = base.g; col[v * 3 + 2] = base.b; }
+    for (let i = 0; i < ringCount; i++) {
+      const t = i / rings;
+      for (const [t0, t1, c] of bands) {
+        if (t < t0 || t > t1) continue;
+        const k = new THREE.Color(c);
+        for (let s = 0; s < sides; s++) { const v = (i * sides + s) * 3; col[v] = k.r; col[v + 1] = k.g; col[v + 2] = k.b; }
+      }
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  } else if (spots) {
     const base = new THREE.Color(color), light = new THREE.Color(spots.light), col = new Float32Array(vertCount * 3);
     for (let v = 0; v < vertCount; v++) { col[v * 3] = base.r; col[v * 3 + 1] = base.g; col[v * 3 + 2] = base.b; }
     for (let i = 0; i < ringCount; i++) {
@@ -82,7 +96,7 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
     }
     geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
   }
-  const mesh = new THREE.Mesh(geometry, createToonMaterial({ color, vertexColors: !!spots, ...(rim !== undefined ? { rim } : {}), ...(rimColor ? { rimColor } : {}) }));
+  const mesh = new THREE.Mesh(geometry, createToonMaterial({ color: bands ? '#ffffff' : color, vertexColors: !!(spots || bands), ...(rim !== undefined ? { rim } : {}), ...(rimColor ? { rimColor } : {}) }));
   mesh.name = 'limb';
   // The bounding sphere is refreshed in set() (and shared by the outline, which
   // uses the same geometry), so culling stays on and is correct.

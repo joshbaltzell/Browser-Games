@@ -28,6 +28,9 @@ import { bodyPoint, makePose, samplePose } from './poses.js';
 // a tank top), the hands four-fingered mittens, the arms spotted with lighter
 // green bubbles, the shoes sneakers with a cream toe cap.
 //
+// Doc's gear (spec.kit, see docKit below) is merged into the torso, head, hand and shoe meshes and into the legs' vertex colours, so it
+// adds no draw calls.
+//
 // setPose(pose, halfLife) stores a target and how quickly to ease toward it;
 // update(dt) eases, solves the limbs and updates the face. update() allocates
 // nothing.
@@ -286,13 +289,13 @@ function torsoMesh(spec) {
   const t = spec.torso, c = spec.colors, o = spec.outfit;
   const { lathe, top, front } = shirtShape(t);
   const parts = [lathe(t.pants, c.pants), lathe(t.shirt, c.shirt)];
-  // Short sleeves: caps over the shoulders.
+  // Short sleeves: caps over the shoulders. Doc's are bare deltoids (the vest is sleeveless).
   const sy = spec.shoulderL[1] - spec.hipHeight;
   for (const s of [-1, 1]) {
     const g = ball(14, 10);
     place(g, s * Math.abs(spec.shoulderL[0]) * 0.97, sy - 0.01, 0, 0, 0, s * 0.5, t.sleeve * 1.15, t.sleeve, t.sleeve * 1.05);
     g.computeVertexNormals();
-    parts.push(paint(g, c.shirt));
+    parts.push(paint(g, spec.kit ? c.skin : c.shirt));
   }
   if (spec.neck) {
     // A thick skin neck from inside the shoulders up into the head.
@@ -336,7 +339,67 @@ function torsoMesh(spec) {
     place(stripe, 0, by + 0.028, bz, -0.05, 0, 0.04);
     parts.push(paint(badge, c.badge), paint(stripe, c.badgeStripe));
   }
+  if (spec.kit) docTorsoParts(spec, parts, front, top);
   return finishMesh(parts, 'torso', c);
+}
+
+// Doc's tactical vest: a high magenta collar, two pink light panels on the chest and one on the back, a dumbbell chest badge, dark harness
+// straps over both shoulders and round the waist, and two cargo pouches on the hips. Parts go into the torso mesh.
+function docTorsoParts(spec, parts, front, top) {
+  const c = spec.colors, t = spec.torso;
+  const ring = new THREE.TorusGeometry(0.105, 0.04, 8, 22);
+  place(ring, 0, top - 0.02, 0, Math.PI / 2 - 0.2, 0, 0, 1, 1, 0.9);
+  parts.push(paint(ring, c.collar));
+  for (const s of [-1, 1]) {
+    const x = s * 0.13, y = 0.27;
+    const panel = new THREE.BoxGeometry(0.085, 0.032, 0.012);
+    place(panel, x, y, front(x, y) + 0.006, 0, 0, 0);
+    parts.push(paint(panel, c.panel));
+  }
+  // The dumbbell badge: a cream plate with a pink dumbbell.
+  const by = 0.18, bz = front(0, by) + 0.01;
+  const plate = new THREE.BoxGeometry(0.11, 0.08, 0.014);
+  place(plate, 0, by, bz, 0, 0, 0);
+  parts.push(paint(plate, c.badge));
+  const bar = new THREE.BoxGeometry(0.06, 0.013, 0.014);
+  place(bar, 0, by, bz + 0.008, 0, 0, 0);
+  parts.push(paint(bar, c.panel));
+  for (const s of [-1, 1]) {
+    const cap = new THREE.BoxGeometry(0.014, 0.036, 0.016);
+    place(cap, s * 0.03, by, bz + 0.008, 0, 0, 0);
+    parts.push(paint(cap, c.panel));
+  }
+  // The back panel: a cream plate with two pink bars.
+  const bkz = -front(0, 0.28) - 0.012;
+  const back = new THREE.BoxGeometry(0.2, 0.12, 0.012);
+  place(back, 0, 0.28, bkz, 0, 0, 0);
+  parts.push(paint(back, c.badge));
+  for (const y of [0.3, 0.25]) {
+    const bar2 = new THREE.BoxGeometry(0.13, 0.024, 0.014);
+    place(bar2, 0, y, bkz - 0.003, 0, 0, 0);
+    parts.push(paint(bar2, c.panel));
+  }
+  // Harness: two straps from each shoulder down the chest and two down the back, to a waist belt.
+  for (const s of [-1, 1]) {
+    for (const side of [1, -1]) {
+      const a = [s * 0.085, top - 0.03, side * (front(s * 0.085, top - 0.03) + 0.005)];
+      const b = [s * 0.16, 0.08, side * (front(s * 0.16, 0.08) + 0.01)];
+      parts.push(paint(rod(a, b, 0.02), c.strap));
+    }
+  }
+  const wy = -0.03, rb = radiusAt(t.pants, wy);
+  const belt = new THREE.TorusGeometry(rb * 1.0, 0.026, 8, 28);
+  place(belt, 0, wy, 0, Math.PI / 2, 0, 0, 1, 1, t.depth);
+  parts.push(paint(belt, c.strap));
+  // Cargo pouches on the hips, with a pink tab on each.
+  for (const s of [-1, 1]) {
+    const pouch = new THREE.BoxGeometry(0.1, 0.13, 0.1);
+    place(pouch, s * 0.255, -0.08, 0.0, 0, 0, 0);
+    parts.push(paint(pouch, c.pouch));
+    const tab = new THREE.BoxGeometry(0.035, 0.026, 0.012);
+    place(tab, s * 0.255, -0.05, 0.056, 0, 0, 0);
+    parts.push(paint(tab, c.panel));
+  }
 }
 
 // Lighter vertex colour on a mass, as round bubbles: `spots` are [x, y, z, angle] (a direction from the middle, and how wide the spot reaches
@@ -418,7 +481,9 @@ function headMesh(spec) {
   const h = spec.head, hair = spec.hair, c = spec.colors, o = spec.outfit;
   const parts = [];
   const skull = shaped((x, y, z, p) => headSurface(h, x, y, z, p), 40, 28);
-  parts.push(paint(skull, c.skin), paint(hairMesh(h, hair), c.hair));
+  paint(skull, c.skin);
+  if (spec.kit) tintRegion(skull, (x, y, z) => y < -0.05 && z > 0.05, c.stubble);
+  parts.push(skull, paint(hairMesh(h, hair), c.hair));
 
   // Ears.
   for (const s of [-1, 1]) {
@@ -437,7 +502,67 @@ function headMesh(spec) {
     parts.push(paint(g, c.skin));
   }
   if (o.headset) headsetParts(spec, parts);
+  if (spec.kit) docHeadParts(spec, parts);
   return finishMesh(parts, 'headMesh', c);
+}
+
+// Doc's head gear: spikes swept back and up out of the hair, a dark headband round the forehead, and pink-lensed goggles on the band.
+const DOC_SPIKES = [
+  [[0.0, 0.2, 0.1], [0.1, 1, 0.25], 0.12, 0.05],
+  [[-0.1, 0.22, 0.0], [-0.2, 1, -0.1], 0.14, 0.05],
+  [[0.1, 0.22, -0.02], [0.25, 1, -0.3], 0.13, 0.05],
+  [[0.0, 0.18, -0.13], [0.1, 0.7, -1], 0.13, 0.05],
+  [[-0.16, 0.15, -0.1], [-0.4, 0.6, -0.9], 0.12, 0.045],
+  [[0.17, 0.14, -0.1], [0.5, 0.5, -0.8], 0.11, 0.045],
+  [[-0.24, 0.12, 0.0], [-0.9, 0.5, -0.2], 0.1, 0.04],
+];
+function docHeadParts(spec, parts) {
+  const h = spec.head, c = spec.colors;
+  for (const [base, dir, len, r] of DOC_SPIKES) parts.push(paint(cone(base, dir, len, r), c.hair));
+  parts.push(paint(headbandGeometry(h, 0.17), c.band));
+  for (const s of [-1, 1]) {
+    const frame = ball(12, 8);
+    place(frame, s * 0.085, 0.18, 0.2, 0, 0, 0, 0.075, 0.06, 0.03);
+    frame.computeVertexNormals();
+    parts.push(paint(frame, c.band));
+    const lens = ball(12, 8);
+    place(lens, s * 0.085, 0.18, 0.225, 0, 0, 0, 0.058, 0.045, 0.02);
+    lens.computeVertexNormals();
+    parts.push(paint(lens, c.lens));
+  }
+  const bridge = new THREE.BoxGeometry(0.04, 0.02, 0.03);
+  place(bridge, 0, 0.18, 0.2, 0, 0, 0);
+  parts.push(paint(bridge, c.band));
+}
+
+// A tube round the head at height y, following the head's cross-section (the flat front included) and standing off the skull by the hair's
+// thickness, so it sits on the hair.
+function headbandGeometry(h, y) {
+  const e = 2 / h.power, R = Math.pow(1 - Math.pow(Math.abs(y / h.ry), h.power), 1 / h.power), off = 1.2;
+  const pts = [];
+  for (let i = 0; i < 48; i++) {
+    const a = (i / 48) * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a);
+    const x = Math.sign(sa) * Math.pow(Math.abs(sa), e) * h.rx * R;
+    let z = Math.sign(ca) * Math.pow(Math.abs(ca), e) * h.rz * R;
+    if (z > h.flatZ) z = h.flatZ + (z - h.flatZ) * h.flatK;
+    pts.push(new THREE.Vector3(x * off, y, z * off));
+  }
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 64, 0.018, 6, true);
+}
+
+// A cone from base along dir, length len and base radius r (a spike).
+function cone(base, dir, len, r) {
+  const g = new THREE.ConeGeometry(r, len, 6, 1);
+  g.translate(0, len / 2, 0);
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dir[0], dir[1], dir[2]).normalize());
+  g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(base[0], base[1], base[2]), q, new THREE.Vector3(1, 1, 1)));
+  return g;
+}
+
+// Repaints the vertices of a painted geometry that pass test(x, y, z) (in the geometry's own space).
+function tintRegion(g, test, color) {
+  const pos = g.getAttribute('position'), col = g.getAttribute('color'), c = new THREE.Color(color);
+  for (let i = 0; i < pos.count; i++) if (test(pos.getX(i), pos.getY(i), pos.getZ(i))) col.setXYZ(i, c.r, c.g, c.b);
 }
 
 // Hair: a shell over the skull from the crown down to the hairline, built on
@@ -569,7 +694,25 @@ function handMesh(spec, side) {
   const thumb = ball(10, 8);
   place(thumb, r * 0.3, r * 0.45, side * r * 0.75, side * -0.6, 0, 0.3, r * 0.34, r * 0.55, r * 0.34);
   thumb.computeVertexNormals();
-  return finishMesh([paint(palm, c.skin), paint(thumb, c.skin)], side > 0 ? 'handL' : 'handR', c);
+  const parts = [paint(palm, c.skin), paint(thumb, c.skin)];
+  if (spec.kit) docGloveParts(spec, parts, r, side);
+  return finishMesh(parts, side > 0 ? 'handL' : 'handR', c);
+}
+
+// Doc's fingerless gloves: a dark shell over the palm and the thumb, and a cuff at the wrist. The fingers stay bare.
+function docGloveParts(spec, parts, r, side) {
+  const c = spec.colors;
+  const shell = ball(14, 10);
+  place(shell, 0, r * 0.75, 0, 0, 0, 0, r * 0.86, r * 1.16, r * 1.02);
+  shell.computeVertexNormals();
+  parts.push(paint(shell, c.glove));
+  const thumb = ball(10, 8);
+  place(thumb, r * 0.3, r * 0.45, side * r * 0.75, side * -0.6, 0, 0.3, r * 0.38, r * 0.6, r * 0.38);
+  thumb.computeVertexNormals();
+  parts.push(paint(thumb, c.glove));
+  const cuff = new THREE.TorusGeometry(r * 0.92, r * 0.2, 8, 18);
+  place(cuff, 0, r * 0.25, 0, Math.PI / 2, 0, 0, 1, 1, 0.9);
+  parts.push(paint(cuff, c.glove));
 }
 
 function shoeMesh(spec, side) {
@@ -589,6 +732,14 @@ function shoeMesh(spec, side) {
     p[2] = toe + z * (hl + 0.008);
   }, 20, 6);
   const parts = [paint(upper, c.shoe), paint(bottom, c.sole)];
+  if (spec.kit) {
+    // Doc's boots: a pink accent strip down each outer side, toward the toe.
+    for (const x of [-1, 1]) {
+      const strip = new THREE.BoxGeometry(0.014, 0.035, hl * 0.7);
+      place(strip, x * hw * 0.99, s.height * 0.42, toe + hl * 0.1, 0, 0, 0);
+      parts.push(paint(strip, spec.colors.panel));
+    }
+  }
   if (spec.body === 'blob') {
     // A sneaker: a cream toe cap over the front.
     const cap = shaped((x, y, z, p) => {
@@ -641,7 +792,9 @@ export function buildRig(spec) {
     ? { radius: spec.armRadius, color: spec.colors.skin, rings: 12, sides: 10, rim: spec.colors.rim, rimColor: spec.colors.rimColor,
       spots: { light: spec.colors.spot, list: ARM_SPOTS[k] } }
     : { radius: spec.armRadius, color: spec.colors.skin }));
-  const legs = [0, 1].map(() => createLimb({ radius: spec.legRadius, color: spec.colors.pants }));
+  // Doc's knee pads: cream bands with two pink stripes, painted on the legs.
+  const knee = spec.kit ? { rings: 20, bands: [[0.38, 0.62, spec.colors.pad], [0.44, 0.47, spec.colors.panel], [0.53, 0.56, spec.colors.panel]] } : {};
+  const legs = [0, 1].map(() => createLimb({ radius: spec.legRadius, color: spec.colors.pants, ...knee }));
   arms[0].mesh.name = 'armL'; arms[1].mesh.name = 'armR';
   legs[0].mesh.name = 'legL'; legs[1].mesh.name = 'legR';
   body.add(...hands, ...feet, arms[0].mesh, arms[1].mesh, legs[0].mesh, legs[1].mesh);
