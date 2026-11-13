@@ -158,7 +158,7 @@ export function makeFloor({ w, d, tile = 1, colors = [PALETTE.cream, PALETTE.tea
   const b = builder(1, 0, 'floor');
   const depth = 0.15;
   // The slab sits just under y = 0; the tiles are flat quads on top of it.
-  b.span(-w / 2, w / 2, -depth, -0.002, -d / 2, d / 2, PALETTE.lilac, { top: new THREE.Color(PALETTE.lilac) });
+  b.span(-w / 2, w / 2, -depth, -0.002, -d / 2, d / 2, PALETTE.nebulaHot, { top: new THREE.Color(PALETTE.nebulaHot) });
   const nx = Math.round(w / tile);
   const nz = Math.round(d / tile);
   for (let i = 0; i < nx; i++) {
@@ -201,7 +201,7 @@ export function makeWall({ w, h, color = PALETTE.cream, stripe = PALETTE.hotPink
   slab.translate(0, 0, -front);
   b.add(slab, b.facePaint(color), { wonk: 0 });
   // Baseboard and crown.
-  b.span(x0, x1, below, 0.28, -front, front + 0.04, PALETTE.lilac);
+  b.span(x0, x1, below, 0.28, -front, front + 0.04, PALETTE.nebulaHot);
   b.span(x0 - 0.05, x1 + 0.05, h - 0.1, h + 0.12, -front - 0.06, front + 0.08, PALETTE.teal);
   // The stripe, left and right of any opening that crosses it.
   const sy0 = 0.5, sy1 = 0.8;
@@ -358,7 +358,7 @@ export function makeShopFront({ w, h, name, signColor = PALETTE.hotPink, seed = 
   return group;
 }
 
-export function makeKiosk({ w = 2, d = 1, h = 0.9, color = PALETTE.teal, seed = 7 } = {}) {
+export function makeKiosk({ w = 2, d = 1, h = 0.9, color = PALETTE.hotPink, seed = 7 } = {}) {
   const b = builder(seed, 0.018, 'kiosk');
   b.span(-w / 2 + 0.03, w / 2 - 0.03, 0, 0.16, -d / 2 + 0.03, d / 2 - 0.03, PALETTE.lilac);
   b.span(-w / 2, w / 2, 0.16, h - 0.08, -d / 2, d / 2, color);
@@ -372,7 +372,7 @@ export function makeKiosk({ w = 2, d = 1, h = 0.9, color = PALETTE.teal, seed = 
   }
   // A till and a pretzel on top.
   b.box(0.38, 0.28, 0.3, PALETTE.glorpPurple, { x: -0.55, y: h + 0.14, z: -0.1 });
-  b.box(0.3, 0.14, 0.04, PALETTE.gel, { x: -0.55, y: h + 0.28, z: 0.07, rx: -0.5, wonk: 0 });
+  b.box(0.3, 0.14, 0.04, PALETTE.signCyan, { x: -0.55, y: h + 0.28, z: 0.07, rx: -0.5, wonk: 0 });
   pretzel(b, 0.45, h + 0.06, 0.05, 0.1, 0.5);
   const group = propFrom(b.finish(0.006));
   group.userData.footprint = { w: w + 0.14, d: d + 0.14 };
@@ -382,7 +382,7 @@ export function makeKiosk({ w = 2, d = 1, h = 0.9, color = PALETTE.teal, seed = 
 export function makeBench({ w = 1.8, seed = 11 } = {}) {
   const b = builder(seed, 0.02, 'bench');
   const d = 0.5;
-  b.box(w, 0.1, d, PALETTE.lilac, { y: 0.46 });
+  b.box(w, 0.1, d, PALETTE.cream, { y: 0.46 });
   b.box(w, 0.42, 0.08, PALETTE.glorpPurple, { y: 0.86, z: -d / 2 + 0.04, rx: -0.14 });
   for (const s of [-1, 1]) {
     b.box(0.1, 0.46, d - 0.06, PALETTE.teal, { x: s * (w / 2 - 0.2), y: 0.23 });
@@ -429,7 +429,7 @@ export function makePlanter({ seed = 21 } = {}) {
     const m = new THREE.Matrix4().makeTranslation(tx, ty, 0)
       .multiply(new THREE.Matrix4().makeRotationY(yaw))
       .multiply(new THREE.Matrix4().makeRotationZ(-tilt));
-    b.add(frond(0.95, 0.24, i % 2 ? 0.22 : 0.4), flat(i % 2 ? PALETTE.gel : PALETTE.teal), { m, wonk: 0.03 });
+    b.add(frond(0.95, 0.24, i % 2 ? 0.22 : 0.4), flat(i % 2 ? PALETTE.tealLight : PALETTE.teal), { m, wonk: 0.03 });
   }
   b.add(new THREE.SphereGeometry(0.1, 10, 8), flat(PALETTE.planet), { x: tx, y: ty - 0.05, z: 0.08 });
   b.add(new THREE.SphereGeometry(0.1, 10, 8), flat(PALETTE.planet), { x: tx + 0.07, y: ty - 0.1, z: -0.07 });

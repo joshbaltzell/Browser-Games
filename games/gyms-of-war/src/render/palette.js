@@ -6,10 +6,10 @@ export const PALETTE = Object.freeze({
   tealLight: '#bfeee8',    // floor tiles
   hotPink: '#ff4f9a',      // mall accents, signs
   cream: '#fff3d6',        // walls, floor tiles
-  lilac: '#b9a7ff',        // mall
+  lilac: '#b9a7ff',        // mall walls and the shadowed purple base
   glorpPurple: '#7a3cff',  // clone polo shirts
   gel: '#b6ff3c',          // clone insides, enemy fire
-  signGreen: '#3dff8f',    // turnstile arrow lights (not enemy fire)
+  signCyan: '#5cf0ff',     // turnstile arrow lights, the gate opening, the HUD lime (acid gel green is enemy fire only)
   playerOrange: '#ff8a1f', // player weapon and fire
   daleSkin: '#f4b6a6',     // clone skin
   daleHair: '#4a2f5a',     // clone hair

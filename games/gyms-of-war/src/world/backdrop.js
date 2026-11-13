@@ -32,7 +32,7 @@ function cyl(x, y, z, r, len, hex, axis = 'y') {
 // A treadmill whose belt runs along z, its console toward the room.
 function treadmill(x, z) {
   return [
-    box([x - 0.45, 0, z - 0.9], [x + 0.45, 0.25, z + 0.9], PALETTE.lilac),         // base
+    box([x - 0.45, 0, z - 0.9], [x + 0.45, 0.25, z + 0.9], PALETTE.nebulaHot),         // base
     box([x - 0.35, 0.25, z - 0.8], [x + 0.35, 0.3, z + 0.8], PALETTE.shadowTint),  // belt
     box([x - 0.42, 0.25, z + 0.7], [x - 0.36, 1.1, z + 0.76], PALETTE.hotPink),    // uprights
     box([x + 0.36, 0.25, z + 0.7], [x + 0.42, 1.1, z + 0.76], PALETTE.hotPink),
@@ -42,7 +42,7 @@ function treadmill(x, z) {
 
 // A dumbbell rack: a cabinet with a row of dumbbells on top.
 function dumbbellRack(x, z) {
-  const parts = [box([x - 1.0, 0, z - 0.3], [x + 1.0, 0.8, z + 0.3], PALETTE.lilac), box([x - 1.02, 0.8, z - 0.32], [x + 1.02, 0.86, z + 0.32], PALETTE.cream)];
+  const parts = [box([x - 1.0, 0, z - 0.3], [x + 1.0, 0.8, z + 0.3], PALETTE.hotPink), box([x - 1.02, 0.8, z - 0.32], [x + 1.02, 0.86, z + 0.32], PALETTE.cream)];
   for (let i = 0; i < 7; i++) {
     const u = x - 0.9 + i * 0.3;
     parts.push(cyl(u, 0.95, z, 0.06, 0.34, PALETTE.hotPink, 'x'));                 // the bar, heads on each end

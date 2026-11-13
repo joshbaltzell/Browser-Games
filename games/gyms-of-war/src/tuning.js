@@ -282,6 +282,6 @@ export const TUNING = {
   // The ending: after the Overlord falls, deathDelay s of slump and goo, then the desk lights up and holds for holdTime s of interact within
   // deskReach m of it; then the cards (cardTime each for the first three, a press after skipLock s skips one, the last waits for a press after finalLock s).
   // The blob aliens' goo drops: floating drops that orbit each alien and drip off. count 0 to 4 per alien, sizes and radii in m, speeds in rad/s, times in s.
-  goo: { count: 3, size: 0.09, orbitRadius: 0.55, orbitSpeed: 1.1, dripEvery: 2.6, dripFall: 0.5, height: 1.9 },
+  goo: { count: 3, size: 0.09, orbitRadius: 0.55, orbitSpeed: 1.1, dripEvery: 2.6, dripFall: 0.5, height: 1.9, crouchDrop: 0.8 },
   ending: { deathDelay: 2.2, deskReach: 2.6, holdTime: 1, card1Time: 2.2, card2Time: 6, card3Time: 3.4, skipLock: 0.7, finalLock: 1.2 },
 };

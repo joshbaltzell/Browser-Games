@@ -117,6 +117,24 @@ function safeStorage() {
   try { return window.localStorage || null; } catch (e) { return null; }
 }
 
+// The objective plate's line. It always names the arena first ("Arena name: objective"), because the HUD splits the plate on the first ': '.
+export function objectiveLine({ title, bossArena = false, boss = null, started = false, endingState = 'off', endingLocked = false,
+  clear = false, gateOpen = false, saunaOpen = false, turnstiles = false, sauna = '' }) {
+  const say = (text) => `${title}: ${text}`;
+  if (bossArena) {
+    if (endingState === 'slump') return say('the Cancellation Manager has fallen');
+    if (endingState === 'desk') return say('cancel your membership at the desk');
+    if (endingLocked) return '';
+    if (!boss || !started) return say('walk in');
+    if (boss.invuln) return say(`Invulnerable! ${sauna}`);
+    return say('shoot the Cancellation Manager. Head shots count double');
+  }
+  if (clear) return say(gateOpen ? 'clear \u2014 head for the GO gate' : 'set complete');
+  if (saunaOpen) return say(sauna);
+  if (!started) return say('walk in');
+  return say(turnstiles ? 'get past the front desk' : 'clear the room');
+}
+
 export function startPlay({ canvas, gl, params }) {
   const gfx = createRenderer(canvas, gl);
   const renderer = gfx.renderer;
@@ -459,22 +477,15 @@ export function startPlay({ canvas, gl, params }) {
   }
 
   function objectiveText() {
-    const title = ARENA_TITLES[run.arena];
-    if (LEVEL.boss) {
-      const b = fight.boss;
-      if (ending.state === 'slump') return 'The Cancellation Manager has fallen';
-      if (ending.state === 'desk') return 'Cancel your membership at the desk';
-      if (ending.locked) return '';
-      if (!b || !fight.started) return title;
-      if (b.invuln) return `Invulnerable! ${promptText('sauna', input.device())}`;
-      return `${title}: shoot the Cancellation Manager. Head shots count double`;
-    }
-    if (fight.clear) return run.gateOpen ? `${title}: clear \u2014 head for the GO gate` : `${title}: set complete`;
-    if (fight.pads.some(p => p.state === 'open')) return promptText('sauna', input.device());
-    return fight.started ? (run.arena === 'turnstiles' ? 'Get past the front desk' : `${title}: clear the room`) : 'Walk in';
+    return objectiveLine({
+      title: ARENA_TITLES[run.arena], bossArena: !!LEVEL.boss, boss: fight.boss || null, started: fight.started,
+      endingState: ending.state, endingLocked: ending.locked, clear: fight.clear, gateOpen: run.gateOpen,
+      saunaOpen: !LEVEL.boss && fight.pads.some(p => p.state === 'open'), turnstiles: run.arena === 'turnstiles',
+      sauna: promptText('sauna', input.device()),
+    });
   }
 
-    // The boss bar: from the lockdown until it falls. Phase 2 greys the bar and says what to do.
+  // The boss bar: from the lockdown until it falls. Phase 2 greys the bar and says what to do.
   function bossModel() {
     const b = fight && fight.boss;
     if (!b || !fight.started || !b.alive) return null;

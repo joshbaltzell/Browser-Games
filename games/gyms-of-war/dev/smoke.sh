@@ -480,7 +480,7 @@ bexpect() { # label, js expression returning 'ok' or a description
 }
 ev "(async () => { __cr.go('desk'); __cr.god(true); __cr.drive({}); await __w(800); __cr.clearFightLog(); __cr.place('mid'); __cr.look(0, 0.1); await __until(() => __cr.fight().started, 2000); await __until(() => __cr.boss().state === 'telegraph', 15000); return 'ok'; })()" >/dev/null
 shotc boss-telegraph
-bexpect "past the trigger the fight starts and the Overlord telegraphs" "(() => { const b = __cr.boss(); return b.state === 'telegraph' && b.phase === 1 && !b.invuln && !!document.querySelector('.cr-boss') && !document.querySelector('.cr-boss').hidden && /CANCELLATION MANAGER/.test(document.querySelector('.cr-boss-name').textContent) ? 'ok' : 'bad'; })()"
+bexpect "past the trigger the fight starts and the Cancellation Manager telegraphs" "(() => { const b = __cr.boss(); return b.state === 'telegraph' && b.phase === 1 && !b.invuln && !!document.querySelector('.cr-boss') && !document.querySelector('.cr-boss').hidden && /CANCELLATION MANAGER/.test(document.querySelector('.cr-boss-name').textContent) ? 'ok' : 'bad'; })()"
 ev "(async () => { await __until(() => __cr.fightLog().some(x => x.type === 'enemyShot' && x.id === 'overlord'), 8000); return 'ok'; })()" >/dev/null
 bexpect "its telegraph came before its first shot" "(() => { const l = __cr.fightLog(), t = l.findIndex(x => x.type === 'telegraph' && x.id === 'overlord'), s = l.findIndex(x => x.type === 'enemyShot' && x.id === 'overlord'); return t >= 0 && s > t ? 'ok' : 'bad ' + t + ' ' + s; })()"
 ev "(async () => { await __until(() => __cr.boss().markers.length > 0, 40000); return 'ok'; })()" >/dev/null

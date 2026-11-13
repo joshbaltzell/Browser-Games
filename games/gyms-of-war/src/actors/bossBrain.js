@@ -55,10 +55,11 @@ function place(e, ctx, p) {
 }
 
 // Where its bursts and pages start: the goo cannon's muzzle as the view last drew it (e.gunTip, world space, written by the view each frame),
-// or a point above its feet before any view has drawn it (a test or a headless run).
-function muzzleAt(e, B, out) {
+// or a point above its feet before any view has drawn it (a test or a headless run). B.muzzleUp is that height in metres, the same height the
+// drawn cannon tip reads at while it fires (about 1.4 to 1.6 m; the view's publishMuzzle and test/boss.test.js check it).
+export function muzzleAt(e, B, out) {
   if (e.gunTip) { out[0] = e.gunTip[0]; out[1] = e.gunTip[1]; out[2] = e.gunTip[2]; return out; }
-  out[0] = e.pos[0]; out[1] = e.pos[1] + B.muzzleUp * B.scale; out[2] = e.pos[2];
+  out[0] = e.pos[0]; out[1] = e.pos[1] + B.muzzleUp; out[2] = e.pos[2];
   return out;
 }
 

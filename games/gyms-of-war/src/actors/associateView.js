@@ -294,7 +294,7 @@ export function createAssociateView(e, goo = null, slot = -1) {
     const want = tr || bo || e.state === 'run' || SHOOTING.has(e.state) ? e.prevYaw + wrapAngle(e.yaw - e.prevYaw) * alpha : associateFacing(e);
     yaw = turnToward(yaw, want, (tr ? TT.turnRate : T.turnRate) * 1.5 * dt);
     group.rotation.y = yaw;
-    if (goo && !dead && !bo) goo.set(slot, group.position.x, group.position.y, group.position.z, tr ? TT.scaleH : 1, true);
+    if (goo && !dead && !bo) goo.set(slot, group.position.x, group.position.y, group.position.z, tr ? TT.scaleH : 1, true, drawW);
     if (dead || cur.kind === 'boss') { if (goo) goo.hide(slot); }
     if (dead) return;
     const name = tr ? pickTrainerClip(e) : bo ? pickBossClip(e) : pickAssociateClip(e);

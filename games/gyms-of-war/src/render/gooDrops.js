@@ -37,7 +37,7 @@ export function createGooDrops(scene, slots = 10, tuning = () => TUNING.goo) {
   mesh.name = 'gooDrops';
   mesh.frustumCulled = false;
   const dummy = new THREE.Object3D();
-  const anchor = new Float32Array(slots * 5);            // x, y, z, scale, on
+  const anchor = new Float32Array(slots * 6);            // x, y, z, scale, on, crouch (0 standing to 1 tucked)
   let t = 0;
 
   function hideAll() {
@@ -50,33 +50,33 @@ export function createGooDrops(scene, slots = 10, tuning = () => TUNING.goo) {
 
   return {
     mesh,
-    // Alien `slot` is at (x, y, z) (its feet) and `scale` times a Rep's size; on false hides its drops.
-    set(slot, x, y, z, scale, on) {
+    // Alien `slot` is at (x, y, z) (its feet) and `scale` times a Rep's size; on false hides its drops; crouch 1 lowers them by goo.crouchDrop.
+    set(slot, x, y, z, scale, on, crouch = 0) {
       if (slot < 0 || slot >= slots) return;
-      const a = slot * 5;
-      anchor[a] = x; anchor[a + 1] = y; anchor[a + 2] = z; anchor[a + 3] = scale; anchor[a + 4] = on ? 1 : 0;
+      const a = slot * 6;
+      anchor[a] = x; anchor[a + 1] = y; anchor[a + 2] = z; anchor[a + 3] = scale; anchor[a + 4] = on ? 1 : 0; anchor[a + 5] = crouch;
     },
-    hide(slot) { if (slot >= 0 && slot < slots) anchor[slot * 5 + 4] = 0; },
+    hide(slot) { if (slot >= 0 && slot < slots) anchor[slot * 6 + 4] = 0; },
     clear() { anchor.fill(0); hideAll(); },
     update(dt) {
       if (dt > 0) t += dt;
       const G = tuning(), count = Math.min(Math.max(Math.round(G.count), 0), MAX_DROPS);
       for (let s = 0; s < slots; s++) {
-        const a = s * 5, on = anchor[a + 4] === 1;
+        const a = s * 6, on = anchor[a + 4] === 1;
         for (let j = 0; j < MAX_DROPS; j++) {
           const i = s * MAX_DROPS + j;
           if (!on || j >= count) {
             dummy.position.set(0, -1000, 0); dummy.scale.setScalar(0); dummy.rotation.set(0, 0, 0); dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix);
             continue;
           }
-          const sc = anchor[a + 3];
+          const sc = anchor[a + 3], low = G.crouchDrop * anchor[a + 5];
           const ang = t * G.orbitSpeed * SPEEDS[j] + (j / count + s * 0.37) * Math.PI * 2;
           const p = (t / Math.max(G.dripEvery, 0.1) + j * 0.37 + s * 0.13) % 1;       // 0 to 1 through this drop's cycle
           const drip = smooth(0.72, 1, p), grow = smooth(0, 0.12, p);
           const r = G.orbitRadius * RADII[j] * sc;
           dummy.position.set(
             anchor[a] + Math.cos(ang) * r,
-            anchor[a + 1] + (G.height + HEIGHTS[j] + 0.04 * Math.sin(t * 2.3 + j * 1.7)) * sc - G.dripFall * drip * drip,
+            anchor[a + 1] + (G.height + HEIGHTS[j] + 0.04 * Math.sin(t * 2.3 + j * 1.7)) * sc - low - G.dripFall * drip * drip,
             anchor[a + 2] + Math.sin(ang) * r,
           );
           dummy.rotation.set(0, 0, 0);

@@ -185,7 +185,7 @@ export const ASSOCIATE = deepFreeze({
 //   costume  'polo' (collar, two buttons, a name tag, short sleeves) or 'tank' (a sleeveless top and a sweatband)
 // The clips read hipHeight, the shoulder and hip points and the limb lengths, which are scaled the same way, so they play unchanged.
 const scaleProfile = (profile, w, h) => profile.map(([r, y]) => [r * w, y * h]);
-export function blobSpec({ name, colors, width = 1, scale = 1, costume = 'polo', seed = 6, outfit = {}, eyeColor }) {
+export function blobSpec({ name, colors, width = 1, scale = 1, costume = 'polo', seed = 6, outfit = {}, eyeColor, lowDip = 0 }) {
   const w = width * scale, h = scale;
   const tank = costume === 'tank';
   const shirt = tank
@@ -195,6 +195,7 @@ export function blobSpec({ name, colors, width = 1, scale = 1, costume = 'polo',
     name,
     body: 'blob',
     blob: { width, scale, costume },
+    lowDip,             // extra hip drop in low cover: the blob crown is 1.02 m, so the Rep and Trainer crouch deeper (see poses.js)
     height: 1.8 * h,
     hipHeight: 0.72 * h,
     armLength: 0.52 * h,
@@ -236,9 +237,13 @@ export function blobSpec({ name, colors, width = 1, scale = 1, costume = 'polo',
   return deepFreeze(spec);
 }
 
+// Low cover: the blob Rep's crown is about 1.03 m, so it crouches deeper than Doc (poses.js lowDip) to keep the head under the 0.95 m rule (the blind
+// crouch takes 0.6 of it). The Trainer holds no cover (trainerBrain), so no low-cover clip plays on it and it keeps the standard hips.
+const BLOB_LOW_DIP = -0.18;
+
 // The GlorpFit Employee ("Rep") and the Personal Trainer: the blob body in the polo and in the tank top. The view scales the Trainer by
 // TUNING.trainer.scaleW and scaleH on top of its width here, so it reads about 1.25 times a Rep's girth.
-export const GLORP_REP = blobSpec({ name: 'associate', colors: ENEMY_COLORS.blobRep, seed: 6 });
+export const GLORP_REP = blobSpec({ name: 'associate', colors: ENEMY_COLORS.blobRep, seed: 6, lowDip: BLOB_LOW_DIP });
 export const TRAINER = blobSpec({ name: 'trainer', colors: ENEMY_COLORS.trainer, width: 1.04, costume: 'tank', seed: 11 });
 
 // The Cancellation Manager (the boss; the view scales it by TUNING.boss.scale): the blob body at 1.2 girth, in the reference's costume. The

@@ -86,8 +86,9 @@ export function createMenus(opts) {
       const logo = el('div', 'cr-menu-title', box);
       const img = el('img', 'cr-logo', logo);
       img.src = LOGO_SRC; img.alt = `${TITLE}: ${TAGLINE}`; img.draggable = false;
-      // The same words as text for a screen reader and the dev checks (visually hidden).
+      // The same words as text for a screen reader and the dev checks (visually hidden). If the logo does not load, they show as the title instead.
       el('h1', 'cr-sr-only', logo, TITLE); el('p', 'cr-sr-only', logo, TAGLINE);
+      img.onerror = () => logo.classList.add('cr-logo-failed');
       const story = el('div', 'cr-title-story', box);
       TITLE_STORY.forEach(l => el('div', 'cr-title-line', story, l));
       el('div', 'cr-title-clock', story, titleClock(opts.saved ? opts.saved() : 0));

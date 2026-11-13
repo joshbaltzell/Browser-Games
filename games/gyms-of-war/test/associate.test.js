@@ -91,7 +91,7 @@ test('pickPoint skips points reserved by others or within reserveRadius of the p
   assert.ok(pl && pr);
 });
 
-test('associateShapes: tucked behind low cover the head sphere top is 0.96 (< the 1 m wall top) and the body capsule ends at 0.45; popped uses HIT_SHAPES', () => {
+test('associateShapes: tucked behind low cover the head sphere top is 0.96 (< the 1 m wall top) and the body capsule ends at 0.20; popped uses HIT_SHAPES', () => {
   const e = createAssociate({ id: 'a', pos: [-4.3, 0, 4.88] });
   e.point = nearest(-4.3, 4.88);
   assert.equal(e.point.kind, 'low');
@@ -99,7 +99,7 @@ test('associateShapes: tucked behind low cover the head sphere top is 0.96 (< th
     e.state = state; e.pop = 0; associateShapes(e);
     assert.ok(Math.abs(e.shapes.head.c[1] + e.shapes.head.r - 0.96) < 1e-9);
     assert.ok(e.shapes.head.c[1] + e.shapes.head.r < 1);
-    assert.equal(e.shapes.body.b[1], TUNING.combat.crouchBodyTop);
+    assert.equal(e.shapes.body.b[1], 0.2);   // the crouched Rep's body capsule ends at 0.2 m (associateBrain CROUCH_BODY_TOP)
   }
   e.state = 'burst'; e.pop = 1; associateShapes(e);
   assert.equal(e.shapes.head.c[1], HIT_SHAPES.head.cy);
@@ -107,6 +107,18 @@ test('associateShapes: tucked behind low cover the head sphere top is 0.96 (< th
   assert.equal(e.shapes.body.a[1], HIT_SHAPES.body.ay);
   e.state = 'run'; e.pop = 0; associateShapes(e);
   assert.equal(e.shapes.head.c[1], HIT_SHAPES.head.cy, 'running is standing');
+});
+
+test('a crouched Rep takes head hits: a ray from the front or the side at the head centre hits the head sphere, not the body capsule', async () => {
+  const { castRay } = await import('../src/combat/hits.js');
+  const e = createAssociate({ id: 'c', pos: [-4.3, 0, 4.88] });
+  e.point = nearest(-4.3, 4.88);
+  e.state = 'cover'; e.pop = 0; associateShapes(e);
+  const [x, y, z] = e.pos, hy = e.shapes.head.c[1];
+  assert.equal(castRay([x, hy, z + 6], [0, 0, -1], 20, [], [e]).kind, 'head', 'from the front');
+  assert.equal(castRay([x + 6, hy, z], [-1, 0, 0], 20, [], [e]).kind, 'head', 'from the side');
+  assert.equal(castRay([x, 0.3, z + 6], [0, 0, -1], 20, [], [e]).kind, 'body', 'the chest still takes body hits');
+  assert.ok(e.shapes.body.b[1] + e.shapes.body.r <= 0.77, 'the crouched body dome stays under the head');
 });
 
 test('hurtAssociate: 7 x 16 kills; a hit while bursting goes to flinch and releases the token; a kill frees the point and emits death', () => {

@@ -148,6 +148,30 @@ test('and the volumes are not bloated: a ray 0.2 m beyond the widest drawn point
   assert.equal(out(0, R.head.cy + R.head.r + 0.2), 'none');
 });
 
+// The real crown: every vertex of the head mesh (skull, hair, eyes, mouth and all) in the three low-cover clips. The owner rule is at most
+// 0.95 m, the wall top is 1 m. Only the Rep takes low cover (the Trainer holds none), so only the Rep is measured.
+function crown(spec) {
+  const rig = buildRig(spec);
+  const head = rig.root.getObjectByName('headMesh');
+  const pos = head.geometry.getAttribute('position'), v = new THREE.Vector3();
+  const worst = {};
+  for (const n of ['coverLow', 'coverLowMove', 'coverBlindLow']) {
+    worst[n] = 0;
+    for (let i = 0; i <= 50; i++) {
+      rig.setPose(samplePose(n, (i / 50) * CLIPS[n].duration, spec), 0);
+      rig.update(1 / 60);
+      rig.root.updateMatrixWorld(true);
+      for (let k = 0; k < pos.count; k++) worst[n] = Math.max(worst[n], v.fromBufferAttribute(pos, k).applyMatrix4(head.matrixWorld).y);
+    }
+  }
+  return worst;
+}
+
+test('the blob Rep crown stays at most 0.95 m up in low cover (the real head mesh, every vertex, all three clips)', () => {
+  for (const [n, top] of Object.entries(crown(GLORP_REP)))
+    assert.ok(top <= 0.95, `${n}: crown ${top.toFixed(3)} m`);
+});
+
 // ---- the face ----
 
 test('the blob face has a tongue and two teeth that grow with the open mouth; the human faces have neither', () => {
@@ -211,6 +235,18 @@ test('goo drops orbit and drip: they move round the head and a drop falls and sh
   const off = createGooDrops(new THREE.Scene(), 1, () => ({ ...G, count: 0 }));
   off.set(0, 0, 0, 0, 1, true); off.update(0.1); off.mesh.getMatrixAt(0, m);
   assert.equal(Math.hypot(m.elements[0], m.elements[1], m.elements[2]), 0, 'goo.count 0 shows none');
+});
+
+test('goo drops follow a crouch: a tucked alien (crouch 1) has its drops goo.crouchDrop lower than a standing one, at the same time', () => {
+  const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+  const drop0 = (crouch) => {
+    const goo = createGooDrops(new THREE.Scene(), 1);
+    goo.set(0, 0, 0, 0, 1, true, crouch);
+    for (let i = 0; i < 90; i++) goo.update(1 / 60);
+    goo.mesh.getMatrixAt(0, m); m.decompose(p, q, s);
+    return p.y;
+  };
+  assert.ok(Math.abs((drop0(0) - drop0(1)) - TUNING.goo.crouchDrop) < 1e-4, `${drop0(0)} vs ${drop0(1)}`);
 });
 
 test('an alien view feeds its drops: on while it lives, off when its slot is unused or it bursts', () => {

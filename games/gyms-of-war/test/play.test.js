@@ -1,6 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldSimulate, edgesKey, levelFor, gateInput, showsTitle } from '../src/play.js';
+import { objectiveLine, shouldSimulate, edgesKey, levelFor, gateInput, showsTitle } from '../src/play.js';
+
+test('objectiveLine: every objective names the arena first, so the plate always shows both (the locked boss ending is blank)', () => {
+  const title = 'The Cancellation Desk';
+  const cases = [
+    { bossArena: true }, { bossArena: true, started: true, boss: { invuln: true }, sauna: 'Hold X' },
+    { bossArena: true, started: true, boss: { invuln: false } }, { bossArena: true, endingState: 'slump' }, { bossArena: true, endingState: 'desk' },
+    { clear: true, gateOpen: true }, { clear: true }, { saunaOpen: true, sauna: 'Hold X' }, { started: false }, { started: true, turnstiles: true },
+    { started: true },
+  ];
+  for (const c of cases) {
+    const line = objectiveLine({ title, ...c });
+    assert.ok(line.startsWith(`${title}: `), line);
+    assert.ok(line.length > title.length + 2, line);
+  }
+  assert.equal(objectiveLine({ title, bossArena: true, endingLocked: true }), '');
+  assert.equal(objectiveLine({ title: 'Smoothie Bar', started: true, turnstiles: true }), 'Smoothie Bar: get past the front desk');
+  assert.equal(objectiveLine({ title, bossArena: true, started: true, boss: { invuln: false } }), 'The Cancellation Desk: shoot the Cancellation Manager. Head shots count double');
+});
 
 test('shouldSimulate: paused only when unlocked, on keyboard and mouse, with the panel closed', () => {
   assert.equal(shouldSimulate({ locked: false, device: 'kbm', panelOpen: false }), false);

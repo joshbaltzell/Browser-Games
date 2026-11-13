@@ -80,7 +80,7 @@ It is Tuesday. It is 1:30. Doc docks his shuttle, loads The Regret, and goes in.
    - The Bulk arrives with Reps, and two Spawn Saunas open from the locker room steam.
 5. **The Cancellation Desk**, the boss.
    - The top floor, in a velvet-roped room behind a "Please Take a Number" dispenser (Doc takes number 4,912,006; now serving: 3).
-   - **Phase 1, Shiatsu Mode:** the Cancellation Manager's massage-chair mech stomps, kneads and fires terms-of-service missiles that unfurl as fine print.
+   - **Phase 1, Goo Cannon:** the Cancellation Manager, a huge blob in his headset and shoulder pads, plants his feet and fires goo bursts from the cannon his backpack tank feeds, and lobs terms-of-service pages that unfurl as fine print.
    - **Phase 2, Retention Surge:** it retreats behind the desk and opens two Spawn Saunas ("Have you met our team?").
    - **Phase 3, The Final Offer:** desperate, it bargains between attacks: "One month free." "THREE months!" "SIX MONTHS AND A TOWEL!" Tobble: "Doc, that's actually a good—" Doc: "No."
 

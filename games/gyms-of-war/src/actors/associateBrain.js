@@ -20,6 +20,9 @@ const MAX_DT = 0.25;
 const LOCKED = new Set(['executed', 'unused', 'dead']);
 const CALM_REP = new Set(['cover', 'suppress', 'reload']);   // a downed Rep crawls toward one of these
 const DOWNED = { r: 0.25, y: 0.25, back: 0.2, front: 0.6 };
+// A crouched Rep's body capsule ends at 0.20 m, so its dome (0.20 m plus the Rep's body radius and the pad) tops out at about 0.72 m and at the
+// head centre (0.57 m) it is narrower than the head sphere: a shot at the head hits the head, not the body.
+const CROUCH_BODY_TOP = 0.2;
 const TUCKED = new Set(['idle', 'cover', 'telegraph', 'burst', 'suppress', 'reload', 'flinch']);
 const SHOOTING = new Set(['telegraph', 'burst', 'suppress']);
 const clamp01 = v => Math.max(0, Math.min(1, v));
@@ -103,7 +106,7 @@ export function associateShapes(e, combat = TUNING.combat, all = TUNING) {
   s.head.c[0] = x; s.head.c[2] = z; s.body.a[0] = x; s.body.a[2] = z; s.body.b[0] = x; s.body.b[2] = z;
   if (crouch) {
     // The pad lowers the head centre so the padded sphere's top stays at the crouch height, under the wall top (and the blob's bigger head sinks by the difference).
-    s.head.c[1] = y + combat.crouchHead - combat.hitPad + (HIT_SHAPES.head.r - REP.head.r); s.body.a[1] = y + 0.1; s.body.b[1] = y + combat.crouchBodyTop;
+    s.head.c[1] = y + combat.crouchHead - combat.hitPad + (HIT_SHAPES.head.r - REP.head.r); s.body.a[1] = y + 0.1; s.body.b[1] = y + CROUCH_BODY_TOP;
   } else {
     s.head.c[1] = y + REP.head.cy; s.body.a[1] = y + REP.body.ay; s.body.b[1] = y + REP.body.by;
   }

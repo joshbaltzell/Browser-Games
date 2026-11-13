@@ -89,8 +89,8 @@ function frame(p, b) {
 
 // A green up-arrow (chevron) on a turnstile post's face, between the slabs v0 and v1 (across the post, front or back).
 function chevron(f, cu, v0, v1) {
-  f.slab(cu - 0.03, cu + 0.03, v0, v1, 0.9, 0.95, PALETTE.signGreen);   // apex
-  f.slab(cu - 0.07, cu + 0.07, v0, v1, 0.83, 0.88, PALETTE.signGreen);  // arms
+  f.slab(cu - 0.03, cu + 0.03, v0, v1, 0.9, 0.95, PALETTE.signCyan);   // apex
+  f.slab(cu - 0.07, cu + 0.07, v0, v1, 0.83, 0.88, PALETTE.signCyan);  // arms
 }
 
 // Turnstile bank: a gate cabinet with posts, glass wings, arms and a red "ACCESS DENIED" light on each post.
@@ -100,7 +100,7 @@ function addTurnstile(p, b) {
   f.slab(0.03, len - 0.03, 0.04, dep - 0.04, 0, 0.5, PALETTE.shadowTint);              // rubber plinth under every lane
   for (let i = 0; i <= lanes; i++) {
     const u = i * step;
-    f.slab(u, u + pw, 0.06, dep - 0.06, 0, b.max[1], PALETTE.lilac);                        // post to the box top
+    f.slab(u, u + pw, 0.06, dep - 0.06, 0, b.max[1], PALETTE.nebulaHot);                        // post to the box top
     chevron(f, u + pw / 2, 0, 0.07);                                                        // green arrow lights, front and back
     chevron(f, u + pw / 2, dep - 0.07, dep);
   }
@@ -163,14 +163,14 @@ function addBench(p, b, seed) {
   f.slab(0.1, len * 0.62, dep * 0.18, dep * 0.82, 0.42, 0.56, PALETTE.hotPink);            // pad
   f.slab(0.1, len * 0.62, dep * 0.18, dep * 0.82, 0.56, 0.58, PALETTE.cream);              // pad seam
   const u = len * 0.8;                                                                       // plate tree: a post and stacked plates
-  f.cyl(u, dep / 2, (0.42 + top) / 2, 0.05, top - 0.42, PALETTE.lilac);
+  f.cyl(u, dep / 2, (0.42 + top) / 2, 0.05, top - 0.42, PALETTE.nebulaHot);
   for (let i = 0; i < 4; i++) f.cyl(u, dep / 2, 0.485 + i * 0.12, i % 2 ? 0.2 : 0.23, 0.09, i % 2 ? PALETTE.ink : PRODUCTS[(i + seed) % PRODUCTS.length]);
 }
 
 // Dumbbell rack: a cabinet with a counter top and two rows of dumbbells, all under the box top.
 function addDumbbellRack(p, b, seed) {
   const f = frame(p, b), { len, dep } = f, top = b.max[1];
-  f.slab(0.04, len - 0.04, 0.04, dep - 0.04, 0, 0.74, PALETTE.lilac);                      // cabinet
+  f.slab(0.04, len - 0.04, 0.04, dep - 0.04, 0, 0.74, PALETTE.nebulaHot);                      // cabinet
   f.slab(0.04, len - 0.04, 0.04, dep - 0.04, 0.3, 0.34, PALETTE.shadowTint);               // mid rail
   f.slab(-0.02, len + 0.02, -0.02, dep + 0.02, 0.74, 0.8, PALETTE.cream);                  // top rail
   const rows = dep >= 0.55 ? 2 : 1, n = Math.max(3, Math.floor(len / 0.32)), r = (top - 0.8) / 2 - 0.005, yc = 0.8 + r + 0.005;
@@ -200,15 +200,15 @@ function addDesk(p, b) {
   const ends = alongX
     ? [[b.min[0], b.min[0] + pw], [b.max[0] - pw, b.max[0]]] : [[b.min[2], b.min[2] + pw], [b.max[2] - pw, b.max[2]]];
   for (const [a0, a1] of ends) {
-    if (alongX) p.box([a0, b.min[1], b.min[2]], [a1, top, b.max[2]], PALETTE.lilac);
-    else p.box([b.min[0], b.min[1], a0], [b.max[0], top, a1], PALETTE.lilac);
+    if (alongX) p.box([a0, b.min[1], b.min[2]], [a1, top, b.max[2]], PALETTE.nebulaHot);
+    else p.box([b.min[0], b.min[1], a0], [b.max[0], top, a1], PALETTE.nebulaHot);
   }
   const g0 = ends[0][1], g1 = ends[1][0];
   if (alongX) {
-    p.box([g0, top - 0.12, b.min[2]], [g1, top, b.max[2]], PALETTE.lilac);
+    p.box([g0, top - 0.12, b.min[2]], [g1, top, b.max[2]], PALETTE.nebulaHot);
     p.box([g0, cmax[1], b.min[2] + 0.2], [g1, top - 0.12, b.max[2] - 0.2], PALETTE.tealLight);
   } else {
-    p.box([b.min[0], top - 0.12, g0], [b.max[0], top, g1], PALETTE.lilac);
+    p.box([b.min[0], top - 0.12, g0], [b.max[0], top, g1], PALETTE.nebulaHot);
     p.box([b.min[0] + 0.2, cmax[1], g0], [b.max[0] - 0.2, top - 0.12, g1], PALETTE.tealLight);
   }
 }
@@ -217,7 +217,7 @@ function addDesk(p, b) {
 function addSquatRack(p, b, seed) {
   const f = frame(p, b), { len, dep } = f, top = b.max[1], up = 0.1;
   f.slab(0, len, 0, dep, 0, 0.12, PALETTE.shadowTint);                                      // base
-  for (const [u0, u1] of [[0, up], [len - up, len]]) for (const [v0, v1] of [[0, up], [dep - up, dep]]) f.slab(u0, u1, v0, v1, 0.12, top, PALETTE.lilac);
+  for (const [u0, u1] of [[0, up], [len - up, len]]) for (const [v0, v1] of [[0, up], [dep - up, dep]]) f.slab(u0, u1, v0, v1, 0.12, top, PALETTE.nebulaHot);
   f.slab(0, len, 0, dep, top - 0.1, top, PALETTE.hotPink);                                  // top bar
   f.slab(up, len - up, dep / 2 - 0.02, dep / 2 + 0.02, 0.12, top - 0.1, PALETTE.tealLight);   // mirror panel
   const y = 1.35, v = dep * 0.32;
@@ -235,7 +235,7 @@ function addBlenderBar(p, b, seed) {
   f.slab(0.15, len - 0.15, 0, 0.05, 0.3, 0.7, PALETTE.cream);                               // stripe, front
   f.slab(0.15, len - 0.15, dep - 0.05, dep, 0.3, 0.7, PALETTE.cream);                       // stripe, back
   f.slab(-0.04, len + 0.04, -0.04, dep + 0.04, cy - 0.06, cy, PALETTE.cream);               // counter top
-  f.slab(0, len, dep / 2 - 0.04, dep / 2 + 0.04, cy, top, PALETTE.lilac);                   // back panel up to the top
+  f.slab(0, len, dep / 2 - 0.04, dep / 2 + 0.04, cy, top, PALETTE.nebulaHot);                   // back panel up to the top
   f.slab(0, len, dep / 2 - 0.07, dep / 2 + 0.07, top - 0.1, top, PALETTE.shadowTint);       // header rail
   const n = Math.max(2, Math.floor(len / 0.9));
   for (let i = 0; i < n; i++) for (const v of [dep * 0.2, dep * 0.8]) {
@@ -264,7 +264,7 @@ function addBooth(p, b, seed) {
   f.slab(0.08, len - 0.08, 0.08, dep - 0.08, 0.1, top - 0.08, PALETTE.cream);
   f.slab(0.08, len - 0.08, 0.04, 0.09, 0.4, 0.55, PRODUCTS[seed % PRODUCTS.length]);
   f.slab(0.08, len - 0.08, dep - 0.09, dep - 0.04, 0.4, 0.55, PRODUCTS[seed % PRODUCTS.length]);
-  f.slab(-0.04, len + 0.04, -0.04, dep + 0.04, top - 0.08, top, PALETTE.lilac);
+  f.slab(-0.04, len + 0.04, -0.04, dep + 0.04, top - 0.08, top, PALETTE.nebulaHot);
 }
 
 // Menu-board pillar: a cream column with a chalkboard band and bars of "menu text" all round it.
@@ -279,8 +279,8 @@ function addMenuBoard(p, b, seed) {
 // Bench seat: a lilac frame with a teal slatted top.
 function addSeat(p, b) {
   const f = frame(p, b), { len, dep } = f, top = b.max[1];
-  f.slab(0.05, 0.2, 0.05, dep - 0.05, 0, top - 0.12, PALETTE.lilac);
-  f.slab(len - 0.2, len - 0.05, 0.05, dep - 0.05, 0, top - 0.12, PALETTE.lilac);
+  f.slab(0.05, 0.2, 0.05, dep - 0.05, 0, top - 0.12, PALETTE.nebulaHot);
+  f.slab(len - 0.2, len - 0.05, 0.05, dep - 0.05, 0, top - 0.12, PALETTE.nebulaHot);
   f.slab(0, len, 0, dep, top - 0.12, top, PALETTE.teal);
   for (let u = 0.3; u < len - 0.2; u += 0.3) f.slab(u, u + 0.03, 0, dep, top - 0.125, top - 0.1, PALETTE.shadowTint);
 }
@@ -358,7 +358,7 @@ export function propGeometry(boxes, floor = null) {
     else if (k === 'seat') addSeat(p, b);
     else if (k === 'plant') addPlant(p, b, i);
     else if (k === 'velvet') addVelvet(p, b);
-    else p.box(b.min, b.max, PALETTE.lilac);
+    else p.box(b.min, b.max, PALETTE.nebulaHot);
   });
   return mergeGeometries(p.list, false);
 }

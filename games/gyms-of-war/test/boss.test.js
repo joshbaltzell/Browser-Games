@@ -574,6 +574,20 @@ test('boss.phase3At is wired: phase 3 starts when health falls to that line afte
   assert.ok(Math.abs(r.boss.health - 0.5 * at) < 1e-6);
 });
 
+test('the headless cannon muzzle (no view drew it) sits where the drawn cannon tip is while it fires, within 0.3 m in height', async () => {
+  const { muzzleAt } = await import('../src/actors/bossBrain.js');
+  const r = rig();
+  const v = createAssociateView(r.boss);
+  const fallback = muzzleAt({ pos: [0, 0, 0], gunTip: null }, TUNING.boss, [0, 0, 0]);
+  for (const st of ['telegraph', 'burst']) {
+    r.boss.state = st; r.boss.pop = 1; r.boss.yaw = 0;
+    for (let i = 0; i < 5; i++) v.update(1, DT);
+    const tip = v.tip();
+    assert.ok(Math.abs(tip[1] - r.boss.pos[1] - fallback[1]) <= 0.3, `${st}: drawn tip ${(tip[1] - r.boss.pos[1]).toFixed(2)} m, fallback ${fallback[1]} m`);
+  }
+  assert.ok(fallback[1] < TUNING.boss.muzzleUp * TUNING.boss.scale - 0.5, 'and not the old 2.43 m above the feet');
+});
+
 test('the boss is the Cancellation Manager on the boss bar, Tac/Com and the bark line; its view writes the cannon muzzle for the brain', async () => {
   const { BOSS_NAME } = await import('../src/actors/bossBrain.js');
   const { objectiveTarget } = await import('../src/ui/tacCom.js');

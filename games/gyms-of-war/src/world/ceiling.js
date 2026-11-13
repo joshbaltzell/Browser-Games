@@ -16,7 +16,7 @@ export const CEILING_Y = 6.5;       // m: the underside of the ceiling
 export const WALL_TOP = 4;          // m: where the colliding perimeter walls end and the carried-up band starts
 const SILL_TOP = 4.55, LINTEL_BOTTOM = 6.0, WINDOW_W = 3.2, PIER_MIN = 1.6, T = 0.3;
 const BEAM_STEP = 4, BEAM_H = 0.35, BEAM_W = 0.4, DUCT = 0.55;
-const COL = { ceiling: '#e4dcff', beam: PALETTE.teal, duct: '#9aa0c0', wall: PALETTE.cream, sill: PALETTE.lilac, housing: PALETTE.lilac, rod: '#5c5f78' };
+const COL = { ceiling: '#e4dcff', beam: PALETTE.teal, duct: '#9aa0c0', wall: PALETTE.cream, sill: PALETTE.hotPink, housing: PALETTE.nebulaHot, rod: '#5c5f78' };
 
 // Floor extents of a level: { x0, x1, z0, z1 } from its floor box.
 export function floorExtents(level) {

@@ -43,11 +43,11 @@ export function buildGate(exit) {
   // The frame and the lit opening behind the doors: one mesh. The arch is pink, with a thin teal neon strip outside it.
   const R = h + POST / 2;
   const frame = new THREE.Mesh(mergeGeometries([
-    box([-h - POST, 0, 0], [-h, SPRING, DEPTH], PALETTE.lilac),
-    box([h, 0, 0], [h + POST, SPRING, DEPTH], PALETTE.lilac),
+    box([-h - POST, 0, 0], [-h, SPRING, DEPTH], PALETTE.hotPink),
+    box([h, 0, 0], [h + POST, SPRING, DEPTH], PALETTE.hotPink),
     arch(R, POST / 2, PALETTE.hotPink, DEPTH / 2),
     arch(R + POST / 2 + 0.05, 0.025, PALETTE.tealLight, DEPTH / 2),
-    box([-h, 0, 0.005], [h, SPRING, 0.04], PALETTE.gel),
+    box([-h, 0, 0.005], [h, SPRING, 0.04], PALETTE.signCyan),
   ], false), createToonMaterial({ vertexColors: true, rim: 0.1 }));
   frame.name = 'gate-frame';
   group.add(frame);
