@@ -1,0 +1,28 @@
+// The on-screen prompt lines, with the key swapped for the device in use. Pure strings: no DOM.
+export const KEYS = Object.freeze({
+  // The rest are the how-to card's keys (menuModel.js howToRows): the same bindings as src/core/input.js, named once here.
+  kbm: Object.freeze({ melee: 'F', interact: 'E', grenade: 'G', finish: 'E', cover: 'Space', aim: 'right mouse', pop: 'right mouse', reload: 'R', throw: 'Release G', rev: 'F',
+    sprint: 'Shift', fire: 'left mouse', move: 'WASD', look: 'mouse', weapons: '1, 3 or mouse wheel', objective: 'Tab', pause: 'Esc' }),
+  pad: Object.freeze({ melee: 'B', interact: 'X', grenade: 'D-pad Up', finish: 'Y', cover: 'A', aim: 'LT', pop: 'LT', reload: 'RB', throw: 'RT', rev: 'B',
+    fire: 'RT', move: 'Left stick', look: 'right stick', weapons: 'D-pad Right, Down', objective: 'Y', tacCom: 'LB', pause: 'Start' }),
+});
+
+const LINES = {
+  throw: k => `${k.throw}  throw`,
+  equipped: k => `${k.aim} aim  ${k.throw} throw`,
+  reviveTobble: k => `Hold ${k.interact}  revive Tobble`,
+  finish: k => `${k.finish}  finish`,
+  revving: () => 'Cheat Day: run into a Rep',
+  bash: k => `${k.melee}  bash`,
+  rev: k => `Hold ${k.melee}  rev Cheat Day`,
+  giveUp: k => `Hold ${k.interact}  renew your membership`,
+  giveUpTobble: k => `Tobble is coming! Hold ${k.interact} to renew your membership`,
+  sauna: k => `Close the Spawn Sauna (${k.grenade} kettlebell)`,
+  cancel: k => `Hold ${k.interact}  CANCEL`,
+};
+
+// device is 'kbm' or 'pad'; anything else reads as kbm. An unknown kind gives ''.
+export function promptText(kind, device = 'kbm') {
+  const line = Object.hasOwn(LINES, kind) ? LINES[kind] : null;
+  return line ? line(KEYS[device] || KEYS.kbm) : '';
+}

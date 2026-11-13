@@ -1,0 +1,248 @@
+// Shoulder camera: pure maths, no three.js. Springs blend the mode offsets, a
+// pair of sphere sweeps keep the lens out of walls and the floor.
+import { TUNING } from '../tuning.js';
+import { springStep } from '../core/spring.js';
+import { sweepSphere } from '../world/collide.js';
+
+const KEYS = ['fov', 'right', 'up', 'back'];
+const TAU = Math.PI * 2;
+
+export const CAMERA_MODES = Object.freeze(['normal', 'aim', 'sprint', 'coverLow', 'coverTall', 'downed']);
+const isMode = (mode) => mode !== 'normal' && CAMERA_MODES.includes(mode);
+
+export function modeParams(cam, mode, out = {}) {
+  const m = (isMode(mode) && cam[mode] && typeof cam[mode] === 'object') ? cam[mode] : null;
+  for (const k of KEYS) out[k] = m && m[k] !== undefined ? m[k] : cam[k];
+  return out;
+}
+
+export function shakeWeightOf(tuning, mode) {
+  const m = isMode(mode) ? tuning[mode] : null;
+  return m && typeof m === 'object' && m.shakeWeight > 0 ? m.shakeWeight : 0;
+}
+
+// Whether the player's head is drawn, given the lens-to-head distance. Hidden inside hideDist,
+// back only past hideDist + margin, so it cannot flicker at the edge.
+export function headVisibleFor(dist, wasVisible, hideDist, margin = 0) {
+  return wasVisible ? dist >= hideDist : dist >= hideDist + margin;
+}
+
+export function createCameraRig({ tuning = TUNING.camera, look = TUNING.look } = {}) {
+  const sp = { fov: { x: 0, v: 0 }, right: { x: 0, v: 0 }, up: { x: 0, v: 0 }, back: { x: 0, v: 0 } };
+  const side = { x: 1, v: 0 };
+  const kick = { x: 0, v: 0 };     // slam bump: metres of lens pull toward the player
+  const dip = { x: 0, v: 0 };      // footstep dip: metres the lens is below where it would be
+  const slam = { t: 0, amp: 0 };   // slam shake: seconds left and the peak offset in metres (a transient, not a camera mode)
+  const recoil = { p: { x: 0, v: 0 }, y: { x: 0, v: 0 } }; // gun kick offsets, degrees
+  const fk = { x: 0, v: 0 };       // slam fov kick: degrees added to the lens fov, springing back
+  const sus = { shake: { x: 0, v: 0 }, fov: { x: 0, v: 0 }, pull: { x: 0, v: 0 } }; // sustained shake (m), fov change (deg) and pull-in (m), eased toward this frame's asks
+  const ask = { shake: 0, fov: 0, pull: 0 };
+  let turn = null;                 // a timed turn toward a point: { t, dur, y0, dy, p0, dp }
+  const free = [0, 0, 0];          // un-lagged head, where the pivot may not be dragged through a corner from
+  const shakeW = { x: 0, v: 0 };   // mode shake weight, blended like the other mode params
+  const piv = [{ x: 0, v: 0 }, { x: 0, v: 0 }, { x: 0, v: 0 }];
+  const goal = {};
+  const head = [0, 0, 0], shoulder = [0, 0, 0], want = [0, 0, 0];
+  const pos = [0, 0, 0], dir = [0, 0, 1];
+  // update() returns this one object every frame; copy pos/dir if you keep them.
+  const result = { pos, dir, fov: 70 };
+  const held = { on: false, t: 0, p: [0, 0, 0] }; // the world point the reticle is held on while a mode blend runs
+  let ratio = 1;       // fraction of `back` the walls currently allow
+  let clock = 0;
+  let ready = false;
+
+  const cam = {
+    yaw: 0, pitch: 0,
+    look(dxPx, dyPx, padX, padY, dt, aiming, padScale = 1) {
+      if (dxPx || dyPx || padX || padY) { held.on = false; turn = null; } // the player took the view back
+      const s = aiming ? look.aimScale : 1;
+      const inv = look.invertY ? -1 : 1;
+      this.yaw -= dxPx * look.mouse * s;
+      this.pitch -= dyPx * look.mouse * s * inv;
+      const p = look.pad, ps = s * padScale;
+      if (padX) this.yaw -= Math.sign(padX) * Math.abs(padX) ** p.expo * p.yawRate * ps * dt;
+      if (padY) this.pitch -= Math.sign(padY) * Math.abs(padY) ** p.expo * p.pitchRate * ps * dt * inv;
+      if (this.pitch < tuning.pitchMin) this.pitch = tuning.pitchMin;
+      if (this.pitch > tuning.pitchMax) this.pitch = tuning.pitchMax;
+    },
+    bump(scale = 1) {
+      const b = tuning.bump;
+      if (!b || !(b.amount > 0) || !(scale > 0)) return;
+      kick.x = Math.min(kick.x + b.amount * scale, 2 * b.amount);
+      const s = tuning.slamShake;
+      if (s && s.amount > 0 && s.time > 0) { slam.t = s.time; slam.amp = s.amount * scale; }
+    },
+    // A slam into cover: the bump and the shake, plus a fov kick (tuning.slamFovKick deg) that springs back over slamFovHalfLife.
+    slam(scale = 1) {
+      this.bump(scale);
+      const k = tuning.slamFovKick;
+      if (Number.isFinite(k) && k !== 0 && scale > 0) fk.x = Math.max(-20, Math.min(20, fk.x + k * scale));
+    },
+    // Asks for a sustained effect this frame (call every frame it should run): a shake of `shake` m, a fov change of `fov` deg and a pull-in of `pull` m.
+    // They ease in and out over tuning.sustainHalfLife; several asks in one frame take the largest shake and pull and add the fov.
+    sustain({ shake = 0, fov = 0, pull = 0 } = {}) {
+      if (Number.isFinite(shake) && shake > ask.shake) ask.shake = shake;
+      if (Number.isFinite(pull) && pull > ask.pull) ask.pull = pull;
+      if (Number.isFinite(fov)) ask.fov += fov;
+    },
+    // Turns the view to yaw (and pitch, when given) over `time` s, easing in and out, by the short way round. Looking cancels it.
+    turnTo(yaw, pitch = null, time = tuning.objectiveTurnTime) {
+      if (!Number.isFinite(yaw)) return false;
+      const TWO = Math.PI * 2;
+      const dy = yaw - this.yaw, wrapped = dy - TWO * Math.round(dy / TWO);
+      turn = { t: 0, dur: Math.max(time, 1e-3), y0: this.yaw, dy: wrapped, p0: this.pitch, dp: Number.isFinite(pitch) ? Math.max(tuning.pitchMin, Math.min(tuning.pitchMax, pitch)) - this.pitch : 0 };
+      held.on = false;
+      return true;
+    },
+    turning() { return turn !== null; },
+    // A foot plant: the lens dips by `amount` m and springs back (at the bump's half-life).
+    dip(amount) {
+      if (Number.isFinite(amount) && amount > 0) dip.x = Math.min(dip.x + amount, 0.1);
+    },
+    // Gun kick in degrees: adds to a pitch and a yaw offset of the view (each capped at recoil.max)
+    // that spring back. cam.yaw and cam.pitch, which movement reads, never change.
+    kick(pitchDeg, yawDeg = 0) {
+      const max = tuning.recoil ? tuning.recoil.max : 0;
+      if (!(max > 0)) return;
+      const cap = (x, d) => Math.max(-max, Math.min(max, x + (Number.isFinite(d) ? d : 0)));
+      recoil.p.x = Math.max(0, cap(recoil.p.x, pitchDeg));
+      recoil.y.x = cap(recoil.y.x, yawDeg);
+    },
+    // Keep the world point p under the reticle while the camera blends: the view turns each frame so the lens-to-centre ray
+    // passes through p, for tuning.holdTime s, until the player looks, or until the mode leaves aim. cam.yaw and cam.pitch
+    // take the turn (a small change), so movement and the next look carry on from where the reticle is.
+    hold(p) {
+      if (!(tuning.holdTime > 0)) { held.on = false; return; }
+      held.on = true; held.t = tuning.holdTime; held.p[0] = p[0]; held.p[1] = p[1]; held.p[2] = p[2];
+    },
+    holding() { return held.on; },
+    // Level the view and drop the gun kick (a restart): yaw stays.
+    recenter() {
+      this.pitch = 0;
+      recoil.p.x = 0; recoil.p.v = 0; recoil.y.x = 0; recoil.y.v = 0;
+    },
+    snap(target, yaw, mode = 'normal', sideArg = 1) {
+      if (yaw !== undefined) this.yaw = yaw;
+      modeParams(tuning, mode, goal);
+      for (const k of KEYS) { sp[k].x = goal[k]; sp[k].v = 0; }
+      side.x = sideArg; side.v = 0;
+      shakeW.x = shakeWeightOf(tuning, mode); shakeW.v = 0;
+      for (let i = 0; i < 3; i++) { piv[i].x = target[i]; piv[i].v = 0; }
+      kick.x = 0; kick.v = 0; dip.x = 0; dip.v = 0; slam.t = 0; fk.x = 0; fk.v = 0; turn = null;
+      for (const k of ['shake', 'fov', 'pull']) { sus[k].x = 0; sus[k].v = 0; ask[k] = 0; }
+      recoil.p.x = 0; recoil.p.v = 0; recoil.y.x = 0; recoil.y.v = 0;
+      ratio = 1; ready = true; held.on = false;
+    },
+    update(dt, { target, mode = 'normal', side: sideTarget = 1 }, boxes) {
+      if (!ready) this.snap(target, this.yaw, mode, sideTarget);
+      if (!(dt > 0)) dt = 0;
+      clock += dt;
+      modeParams(tuning, mode, goal);
+      for (const k of KEYS) springStep(sp[k], goal[k], tuning.blendHalfLife, dt);
+      springStep(shakeW, shakeWeightOf(tuning, mode), tuning.blendHalfLife, dt);
+      springStep(side, sideTarget, tuning.sideHalfLife, dt);
+      for (let i = 0; i < 3; i++) springStep(piv[i], target[i], tuning.followHalfLife, dt);
+      springStep(kick, 0, tuning.bump ? tuning.bump.halfLife : 0, dt);
+      springStep(dip, 0, tuning.bump ? tuning.bump.halfLife : 0, dt);
+
+      springStep(fk, 0, tuning.slamFovHalfLife, dt);
+      for (const k of ['shake', 'fov', 'pull']) { springStep(sus[k], ask[k], tuning.sustainHalfLife, dt); ask[k] = 0; }
+      if (turn) {
+        turn.t += dt;
+        const u = Math.min(1, turn.t / turn.dur), e = u * u * (3 - 2 * u);
+        this.yaw = turn.y0 + turn.dy * e; this.pitch = turn.p0 + turn.dp * e;
+        if (u >= 1) turn = null;
+      }
+      const rh = tuning.recoil ? tuning.recoil.halfLife : 0;
+      springStep(recoil.p, 0, rh, dt); springStep(recoil.y, 0, rh, dt);
+      const DEG = Math.PI / 180;
+      const r = tuning.probeRadius;
+      const back = Math.max(sp.back.x - sus.pull.x, Math.min(sp.back.x, tuning.minBack));
+      let cy = 1, sy = 0;
+      // Head, shoulder, lens and view for the current yaw and pitch. The wall pull-in eases only on the first pass.
+      const place = (first) => {
+        const yaw = this.yaw + recoil.y.x * DEG;
+        const pitch = Math.max(tuning.pitchMin, Math.min(tuning.pitchMax, this.pitch + recoil.p.x * DEG));
+        sy = Math.sin(yaw); cy = Math.cos(yaw);
+        const sinP = Math.sin(pitch), cp = Math.cos(pitch);
+        // 1. head, then out to the shoulder as far as the walls allow
+        head[0] = piv[0].x; head[1] = piv[1].x + sp.up.x; head[2] = piv[2].x;
+        // the trailing pivot can cut a corner the player has already turned; stop
+        // it at the first wall between it and the real head. At rest the two
+        // coincide, so this is a no-op and cannot jitter.
+        free[0] = target[0]; free[1] = target[1] + sp.up.x; free[2] = target[2];
+        const th = sweepSphere(boxes, free, head, r);
+        if (th < 1) for (let i = 0; i < 3; i++) head[i] = free[i] + (head[i] - free[i]) * th;
+        const off = sp.right.x * side.x;
+        shoulder[0] = head[0] - cy * off; shoulder[1] = head[1]; shoulder[2] = head[2] + sy * off;
+        const ts = sweepSphere(boxes, head, shoulder, r);
+        for (let i = 0; i < 3; i++) shoulder[i] = head[i] + (shoulder[i] - head[i]) * ts;
+        // 2. back along the view direction
+        dir[0] = sy * cp; dir[1] = sinP; dir[2] = cy * cp;
+        for (let i = 0; i < 3; i++) want[i] = shoulder[i] - dir[i] * back;
+        const tb = sweepSphere(boxes, shoulder, want, r);
+        // 3. pull in at once, ease back out
+        let allowed = back > 1e-6 ? Math.max(tuning.minBack / back, tb) : 1;
+        if (allowed > 1) allowed = 1;
+        if (allowed < ratio) ratio = allowed;
+        else if (first) ratio += (allowed - ratio) * (tuning.wallReturnHalfLife > 0 ? 1 - Math.pow(2, -dt / tuning.wallReturnHalfLife) : 1);
+        const pull = back * ratio - kick.x;
+        for (let i = 0; i < 3; i++) pos[i] = shoulder[i] - dir[i] * pull;
+        // the minBack floor must never win against a wall: keep the lens a full
+        // probe radius from every face by sweeping the head out to it
+        const tl = sweepSphere(boxes, head, pos, r);
+        if (tl < 1) for (let i = 0; i < 3; i++) pos[i] = head[i] + (pos[i] - head[i]) * tl;
+      };
+      place(true);
+      // Held reticle: turn the view so the centre ray passes through the held point. The lens depends on the view, so a few
+      // passes settle it (the lens moves a little per degree).
+      if (held.on) {
+        held.t -= dt;
+        if (held.t <= 0 || (mode !== 'aim')) held.on = false;
+        else for (let k = 0; k < 3; k++) {
+          const dx = held.p[0] - pos[0], dy = held.p[1] - pos[1], dz = held.p[2] - pos[2];
+          const l = Math.hypot(dx, dy, dz);
+          if (l < 0.5) break;
+          this.yaw = Math.atan2(dx, dz) - recoil.y.x * DEG;
+          this.pitch = Math.max(tuning.pitchMin, Math.min(tuning.pitchMax, Math.asin(dy / l) - recoil.p.x * DEG));
+          place(false);
+        }
+      }
+      // 4. sprint shake
+      const sh = tuning.shake;
+      if (sh && sh.amp && shakeW.x > 0) {
+        const a = sh.amp * (shakeW.x > 1 ? 1 : shakeW.x);
+        const sx = Math.sin(TAU * sh.hz * clock) * a;
+        const shakeUp = Math.sin(TAU * sh.hz * 1.3 * clock + 1) * a;
+        // camera right = (-cy, 0, sy); camera up = right x dir
+        const rx = -cy, rz = sy;
+        pos[0] += rx * sx - rz * dir[1] * shakeUp;
+        pos[1] += (rz * dir[0] - rx * dir[2]) * shakeUp;
+        pos[2] += rz * sx + rx * dir[1] * shakeUp;
+      }
+      pos[1] -= dip.x;
+      // sustained shake: blind fire, Cheat Day and the grind
+      if (sus.shake.x > 1e-6) {
+        const a = sus.shake.x, sx = Math.sin(TAU * 17 * clock) * a, su = Math.sin(TAU * 23 * clock + 0.7) * a;
+        const rx = -cy, rz = sy;
+        pos[0] += rx * sx - rz * dir[1] * su;
+        pos[1] += (rz * dir[0] - rx * dir[2]) * su;
+        pos[2] += rz * sx + rx * dir[1] * su;
+      }
+      // 5. slam shake: a decaying jitter across the view, for slam.t seconds
+      const sl = tuning.slamShake;
+      if (slam.t > 0 && sl && sl.time > 0) {
+        slam.t = Math.max(0, slam.t - dt);
+        const k = slam.t / sl.time, a = slam.amp * k * k;
+        const sx = Math.sin(TAU * sl.hz * slam.t) * a, sy2 = Math.sin(TAU * sl.hz * 1.27 * slam.t + 2) * a;
+        const rx = -cy, rz = sy;
+        pos[0] += rx * sx - rz * dir[1] * sy2;
+        pos[1] += (rz * dir[0] - rx * dir[2]) * sy2;
+        pos[2] += rz * sx + rx * dir[1] * sy2;
+      }
+      result.fov = sp.fov.x + fk.x + sus.fov.x;
+      return result;
+    },
+  };
+  return cam;
+}

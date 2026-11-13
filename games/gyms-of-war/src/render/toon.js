@@ -1,0 +1,114 @@
+import * as THREE from 'three';
+import { PALETTE } from './palette.js';
+import { TUNING } from '../tuning.js';
+
+// Uniforms shared by reference by every toon material: change one value here
+// and every surface follows. lightDir points from the surface toward the light,
+// in world space.
+export const TOON_SHARED = {
+  lightDir: { value: new THREE.Vector3(...TUNING.lightDir).normalize() },
+  shadowTint: { value: new THREE.Color(PALETTE.shadowTint) },
+  bandEdge: { value: 0.15 },
+  shadowLift: { value: TUNING.shadowLift },
+};
+
+const vertexShader = /* glsl */ `
+varying vec3 vViewNormal;
+varying vec3 vViewPos;
+varying vec3 vTint;
+
+void main() {
+  vTint = vec3(1.0);
+#if defined( USE_COLOR_ALPHA )
+  vTint = color.rgb;
+#elif defined( USE_COLOR )
+  vTint = color;
+#endif
+  vec3 pos = position;
+  vec3 nrm = normal;
+#ifdef USE_INSTANCING
+  // Instanced meshes (the shot effects) carry a matrix per instance.
+  pos = (instanceMatrix * vec4(position, 1.0)).xyz;
+  nrm = mat3(instanceMatrix) * normal;
+#endif
+  vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+  vViewPos = mvPosition.xyz;
+  vViewNormal = normalize(normalMatrix * nrm);
+  gl_Position = projectionMatrix * mvPosition;
+}
+`;
+
+const fragmentShader = /* glsl */ `
+uniform vec3 baseColor;
+uniform vec3 lightDir;
+uniform vec3 shadowTint;
+uniform float bandEdge;
+uniform float shadowLift;
+uniform float shadowMix;
+uniform float rim;
+uniform vec3 rimColor;
+
+varying vec3 vViewNormal;
+varying vec3 vViewPos;
+varying vec3 vTint;
+
+// How far toward edge-on a lit surface must turn before the rim lightens it.
+const float RIM_EDGE = 0.3;
+// Only rounded surfaces get a rim (radius under about 2 m). A flat face seen
+// edge-on (a floor, a wall, a box side) would otherwise lighten all over.
+const float RIM_MIN_CURVATURE = 0.5;
+
+// A hard step at edge, softened over about one pixel so it does not crawl
+// on moving meshes. The width is capped so a 2x2 pixel block that straddles a
+// sharp crease (a box edge) is not smeared into a visible gradient.
+float pixelStep(float edge, float x, float w) {
+  float h = 0.5 * clamp(w, 1e-4, 0.1);
+  return smoothstep(edge - h, edge + h, x);
+}
+
+void main() {
+  vec3 n = normalize(vViewNormal);
+  vec3 l = normalize((viewMatrix * vec4(lightDir, 0.0)).xyz);
+  vec3 v = isOrthographic ? vec3(0.0, 0.0, 1.0) : normalize(-vViewPos);
+  float ndl = dot(n, l);
+  float facing = dot(n, v);
+  // All derivatives up front, in uniform control flow.
+  float curvature = length(fwidth(n)) / max(length(fwidth(vViewPos)), 1e-6);
+  float ndlWidth = fwidth(ndl);
+  float facingWidth = fwidth(facing);
+
+  vec3 base = baseColor * vTint;
+  // Shadow: darken through the tint, then lift toward the tint itself so warm
+  // colours go plum instead of brown.
+  vec3 shade = mix(mix(base, base * shadowTint, shadowMix), shadowTint, shadowLift);
+  float lit = pixelStep(bandEdge, ndl, ndlWidth);
+  vec3 col = mix(shade, base, lit);
+  float rimAmount = lit * (1.0 - pixelStep(RIM_EDGE, facing, facingWidth))
+    * step(RIM_MIN_CURVATURE, curvature);
+  col = mix(col, mix(col, rimColor, rim), rimAmount);
+
+  gl_FragColor = vec4(col, 1.0);
+  #include <colorspace_fragment>
+}
+`;
+
+// Two-tone cartoon material: one hard step between the lit colour and the
+// purple shadow colour, plus a thin light rim on the lit side.
+export function createToonMaterial({ color = '#ffffff', vertexColors = false, shadowMix = 0.55, rim = 0.25, rimColor = '#ffffff' } = {}) {
+  return new THREE.ShaderMaterial({
+    name: 'toon',
+    uniforms: {
+      baseColor: { value: new THREE.Color(color) },
+      shadowMix: { value: shadowMix },
+      rim: { value: rim },
+      rimColor: { value: new THREE.Color(rimColor) },
+      lightDir: TOON_SHARED.lightDir,
+      shadowTint: TOON_SHARED.shadowTint,
+      bandEdge: TOON_SHARED.bandEdge,
+      shadowLift: TOON_SHARED.shadowLift,
+    },
+    vertexShader,
+    fragmentShader,
+    vertexColors,
+  });
+}

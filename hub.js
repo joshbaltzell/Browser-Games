@@ -245,6 +245,16 @@ const GAMES = [
         <path d="M84 56 l10 9 -4.5 0.6 2.4 5 -2.2 1 -2.4-5 -3.3 3z" fill="#1a1a1a" stroke="#fffaf3" stroke-width="0.8" />
       </svg>`,
   },
+  {
+    title: "Gyms of War: No Pain, No Cancel",
+    description:
+      "Aliens took over your gym and won't let you cancel. Go cancel in person.",
+    path: "games/gyms-of-war/index.html",
+    tags: ["Shooter", "3D", "Satire"],
+    accent: "#b6ff3c",
+    // The emblem from the game's assets (a transparent WebP, 256 px).
+    art: `<img src="games/gyms-of-war/assets/emblem-256.webp" alt="" />`,
+  },
 ];
 
 function buildCard(game) {
