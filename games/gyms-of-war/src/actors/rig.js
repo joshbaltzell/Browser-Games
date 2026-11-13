@@ -45,6 +45,13 @@ const CHANNELS = SCALARS.length + POINTS.length * 3;
 // the chest, and hands at the sides bow the arms out from the belly.
 const ELBOW_BACK = [0.35, -0.2, -0.8];
 const ELBOW_OUT = [0.75, -0.85, -0.15];
+// The blob's skin samples, for the goo drops (render/gooDrops.js): 6 on the head, 6 on the shirt and 6 on the arms, in rig root space with
+// their outward normals. The head and shirt samples are fixed in their bones' spaces; apply() writes the arms' (shoulder to elbow to wrist)
+// and every sample's root-space position each frame, so they follow the pose. The head's directions stay below 0.6 of its height.
+export const SKIN_COUNT = 18;
+const SKIN_HEAD = [[-0.7, 0.6, 0.4], [0.7, 0.6, 0.4], [-0.95, 0.15, 0.2], [0.95, 0.15, 0.2], [0, 0.45, 0.9], [-0.35, -0.3, 0.9]];
+const SKIN_SHIRT = [[0.3, -1], [0.3, 0], [0.3, 1], [0.65, -1], [0.65, 0], [0.65, 1]];   // [fraction of the shirt's height, angle round from the front]
+const SKIN_ARM_U = [0.25, 0.5, 0.75];                                                   // along the arm, shoulder to wrist
 
 // ---------------------------------------------------------------- geometry
 
@@ -410,6 +417,25 @@ function lightenSpots(g, radii, spots, base, light) {
     k = k > 0.5 ? 1 : k * 0;          // bubbles have a hard edge
     col.setXYZ(i, b.r + (l.r - b.r) * k, b.g + (l.g - b.g) * k, b.b + (l.b - b.b) * k);
   }
+}
+
+// The blob's fixed skin samples (SKIN_HEAD, SKIN_SHIRT) in their bones' spaces, written to out.pos and out.nrm (SKIN_COUNT each). Returns the
+// crown's height in the head's space.
+function blobSkinLocal(spec, out) {
+  const h = spec.head, t = spec.torso, top = t.shirt[t.shirt.length - 2][1], p = [0, 0, 0];
+  SKIN_HEAD.forEach(([nx, ny, nz], i) => {
+    headSurface(h, nx, ny, nz, p);
+    p[0] *= 1 + h.pear * Math.max(-ny, -0.4);
+    const gx = p[0] / (h.rx * h.rx), gy = p[1] / (h.ry * h.ry), gz = p[2] / (h.rz * h.rz), l = Math.hypot(gx, gy, gz) || 1;
+    out.pos.set([p[0], p[1] + h.centerY, p[2]], i * 3);   // the head mesh sits centerY above the head bone
+    out.nrm.set([gx / l, gy / l, gz / l], i * 3);
+  });
+  SKIN_SHIRT.forEach(([f, phi], j) => {
+    const y = f * top, r = radiusAt(t.shirt, y), sn = Math.sin(phi), cs = Math.cos(phi), nz = cs / t.depth, l = Math.hypot(sn, nz);
+    out.pos.set([r * sn, y, t.depth * r * cs], (6 + j) * 3);
+    out.nrm.set([sn / l, 0, nz / l], (6 + j) * 3);
+  });
+  return h.centerY + h.ry * 1.14;
 }
 
 // The blob head: a pear-shaped mass with a rounded crown, wider at the jaw, a few raised bubbles and lighter green spots, no hair, ears or
@@ -833,6 +859,11 @@ export function buildRig(spec) {
   const hands = [handMesh(spec, 1), handMesh(spec, -1)];
   const feet = [shoeMesh(spec, 1), shoeMesh(spec, -1)];
   const blob = spec.body === 'blob';
+  // The skin samples (see SKIN_COUNT): local ones are fixed now; the arms' and the root-space results are written by apply().
+  const skinLocal = { pos: new Float32Array(SKIN_COUNT * 3), nrm: new Float32Array(SKIN_COUNT * 3) };
+  const skinCrown = blob ? blobSkinLocal(spec, skinLocal) : 0;
+  const skin = { n: blob ? SKIN_COUNT : 0, pos: new Float32Array(SKIN_COUNT * 3), nrm: new Float32Array(SKIN_COUNT * 3), crownY: 0 };
+  const skinSv = new THREE.Vector3(), skinHips = new THREE.Matrix4(), skinHead = new THREE.Matrix4();
   const arms = [0, 1].map((k) => createLimb(blob
     ? { radius: spec.armRadius, color: spec.colors.skin, rings: 12, sides: 10, rim: spec.colors.rim, rimColor: spec.colors.rimColor,
       spots: { light: spec.colors.spot, list: ARM_SPOTS[k] } }
@@ -887,6 +918,32 @@ export function buildRig(spec) {
     pole[0] = bx * ct + bz * st; pole[1] = by; pole[2] = -bx * st + bz * ct;
   }
 
+  // Arm samples (body space): points along the arm, pushed out by its radius away from the body's middle.
+  function armSkin(k, a, m, e) {
+    for (let j = 0; j < SKIN_ARM_U.length; j++) {
+      const u = SKIN_ARM_U[j], i = 12 + k * 3 + j, from = u < 0.5 ? a : m, to = u < 0.5 ? m : e, f = u < 0.5 ? u * 2 : (u - 0.5) * 2;
+      const x = from[0] + (to[0] - from[0]) * f, y = from[1] + (to[1] - from[1]) * f, z = from[2] + (to[2] - from[2]) * f;
+      const l = Math.hypot(x, z) || 1, nx = x / l, nz = z / l;
+      skinLocal.pos.set([x + nx * spec.armRadius, y, z + nz * spec.armRadius], i * 3);
+      skinLocal.nrm.set([nx, 0, nz], i * 3);
+    }
+  }
+
+  // Every skin sample in root space: head samples through the head bone, shirt samples through the hips, arm samples through the body.
+  function skinApply() {
+    body.updateMatrix(); hips.updateMatrix(); head.updateMatrix();
+    skinHips.multiplyMatrices(body.matrix, hips.matrix);
+    skinHead.multiplyMatrices(skinHips, head.matrix);
+    for (let i = 0; i < SKIN_COUNT; i++) {
+      const M = i < 6 ? skinHead : i < 12 ? skinHips : body.matrix;
+      skinSv.fromArray(skinLocal.pos, i * 3).applyMatrix4(M);
+      skin.pos[i * 3] = skinSv.x; skin.pos[i * 3 + 1] = skinSv.y; skin.pos[i * 3 + 2] = skinSv.z;
+      skinSv.fromArray(skinLocal.nrm, i * 3).transformDirection(M);
+      skin.nrm[i * 3] = skinSv.x; skin.nrm[i * 3 + 1] = skinSv.y; skin.nrm[i * 3 + 2] = skinSv.z;
+    }
+    skin.crownY = skinSv.set(0, skinCrown, 0).applyMatrix4(skinHead).y;
+  }
+
   function apply() {
     const s = cur.squash > 0.2 ? cur.squash : 0.2;
     const w = 1 / Math.sqrt(s);
@@ -907,6 +964,7 @@ export function buildRig(spec) {
       );
       solveTwoBone(shoulder, k === 0 ? cur.handL : cur.handR, armLen, armLen, pole, solved);
       arms[k].set(shoulder, solved.mid, solved.end, solved.stretch);
+      if (blob) armSkin(k, shoulder, solved.mid, solved.end);
       // Hand: +Y along the forearm, +X toward the middle of the body.
       const hand = hands[k];
       hand.position.set(solved.end[0], solved.end[1], solved.end[2]);
@@ -933,6 +991,7 @@ export function buildRig(spec) {
       // A lifted foot points its toe down a little.
       shoe.rotation.set(Math.min(Math.max(solved.end[1] - ankleH, 0), 0.3) * 1.1, cur.twist * 0.3, 0);
     }
+    if (blob) skinApply();
   }
 
   function update(dt) {
@@ -960,5 +1019,5 @@ export function buildRig(spec) {
     root.removeFromParent();
   }
 
-  return { root, spec, face, setPose, update, dispose, shadow };
+  return { root, spec, face, setPose, update, dispose, shadow, skin };
 }

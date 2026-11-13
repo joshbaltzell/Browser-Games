@@ -214,7 +214,7 @@ function buildChar(kind) {
   return { kind, rig, anim, root, tumble, handR, weapon, terms };
 }
 
-// `goo` (optional) is the shared goo-drops pool and `slot` this view's place in it: a blob alien's drops orbit and drip while it is on screen.
+// `goo` (optional) is the shared goo-drops pool and `slot` this view's place in it: a blob alien's drops sit on its skin and drip while it is on screen.
 export function createAssociateView(e, goo = null, slot = -1) {
   const group = new THREE.Group();
   group.name = `associate-${e.id}`;
@@ -294,7 +294,6 @@ export function createAssociateView(e, goo = null, slot = -1) {
     const want = tr || bo || e.state === 'run' || SHOOTING.has(e.state) ? e.prevYaw + wrapAngle(e.yaw - e.prevYaw) * alpha : associateFacing(e);
     yaw = turnToward(yaw, want, (tr ? TT.turnRate : T.turnRate) * 1.5 * dt);
     group.rotation.y = yaw;
-    if (goo && !dead && !bo) goo.set(slot, group.position.x, group.position.y, group.position.z, tr ? TT.scaleH : 1, true, drawW);
     if (dead || cur.kind === 'boss') { if (goo) goo.hide(slot); }
     if (dead) return;
     const name = tr ? pickTrainerClip(e) : bo ? pickBossClip(e) : pickAssociateClip(e);
@@ -327,6 +326,8 @@ export function createAssociateView(e, goo = null, slot = -1) {
     if (ex !== expression) { rig.face.setExpression(ex); expression = ex; }
     if (tr) updateKettlebell(dt);
     else if (bo) { cur.weapon.group.scale.setScalar(BB.scale); updateBlaster(name, dt, handR, cur.weapon); updateTerms(dt); publishMuzzle(); } else updateBlaster(name, dt, handR);
+    // The drops follow the skin as the rig has posed it this frame (the group's world matrix is current once it is updated).
+    if (goo && !bo) { group.updateMatrixWorld(true); goo.set(slot, rig.skin, rig.root.matrixWorld, tr ? TT.scaleH : 1, true); }
   }
 
   // The Trainer's glint pulses while it winds up.

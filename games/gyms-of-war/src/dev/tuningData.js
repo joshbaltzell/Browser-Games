@@ -106,7 +106,7 @@ export const PANEL = Object.freeze([
   n('boss.lobEvery', 1, 8, 1), n('boss.lobWindup', 0.2, 4, 0.05), n('boss.lobFlight', 0.5, 4, 0.05), n('boss.lobRecover', 0, 3, 0.05), n('boss.lobRadius', 0.5, 6, 0.1), n('boss.lobDamage', 0, 150, 1), n('boss.lobTobbleDamage', 0, 150, 1), n('boss.lobFalloff', 0, 1, 0.05),
   n('boss.retreatSpeed', 0.5, 12, 0.1), n('boss.returnSpeed', 0.5, 12, 0.1), n('boss.minHide', 0, 20, 0.5),
   n('boss.fastTelegraph', 0.1, 3, 0.05), n('boss.fastBurstTime', 0.2, 6, 0.1), n('boss.fastRate', 0.5, 20, 0.5), n('boss.fastWaitMin', 0, 6, 0.1), n('boss.fastWaitMax', 0, 8, 0.1),
-  n('goo.count', 0, 4, 1), n('goo.size', 0.02, 0.2, 0.005), n('goo.orbitRadius', 0.2, 1.5, 0.05), n('goo.orbitSpeed', 0, 4, 0.1), n('goo.dripEvery', 0.5, 8, 0.1), n('goo.dripFall', 0, 1.5, 0.05), n('goo.height', 0.5, 3, 0.05), n('goo.crouchDrop', 0, 1.5, 0.05),
+  n('goo.count', 0, 4, 1), n('goo.size', 0.02, 0.2, 0.005), n('goo.slide', 0, 0.4, 0.01), n('goo.dripEvery', 0.5, 8, 0.1), n('goo.dripFall', 0, 1.5, 0.05),
   n('ending.deathDelay', 0, 10, 0.1), n('ending.deskReach', 0.5, 6, 0.1), n('ending.holdTime', 0.1, 5, 0.1), n('ending.card1Time', 0.5, 15, 0.1), n('ending.card2Time', 0.5, 20, 0.1), n('ending.card3Time', 0.5, 15, 0.1), n('ending.skipLock', 0, 5, 0.1), n('ending.finalLock', 0, 5, 0.1),
   n('tobble.enabled', 0, 1, 1), n('tobble.scale', 0.3, 1.2, 0.01), n('tobble.radius', 0.1, 0.6, 0.01), n('tobble.height', 0.5, 2, 0.01), n('tobble.health', 1, 1000, 1),
   n('tobble.regenDelay', 0, 20, 0.5), n('tobble.regenTime', 0, 20, 0.5), n('tobble.runSpeed', 0, 12, 0.1), n('tobble.turnRate', 1, 30, 0.5),

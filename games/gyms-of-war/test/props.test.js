@@ -50,3 +50,40 @@ test('background equipment sits past the north wall, and decor is drawn without 
   }
   for (const room of [KIOSK_ROW, CANCELLATION_DESK]) for (const d of room.decor || []) assert.ok(!room.boxes.includes(d));
 });
+
+// Two flat up-facing faces in one plane z-fight where they overlap seen from above. Every prop top face (normal straight up) in each room
+// must not share a plane with another overlapping top face within 1 mm.
+function upFaces(geo) {
+  const pos = geo.getAttribute('position'), idx = geo.index, n = idx ? idx.count : pos.count, out = [];
+  for (let i = 0; i + 2 < n; i += 3) {
+    const a = [0, 1, 2].map(k => { const v = idx ? idx.getX(i + k) : i + k; return [pos.getX(v), pos.getY(v), pos.getZ(v)]; });
+    const e1 = [a[1][0] - a[0][0], a[1][1] - a[0][1], a[1][2] - a[0][2]], e2 = [a[2][0] - a[0][0], a[2][1] - a[0][1], a[2][2] - a[0][2]];
+    const nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
+    const len = Math.hypot(nx, ny, nz);
+    if (len < 1e-12 || Math.abs(ny) / len < 0.999 || ny < 0) continue;   // flat, facing up
+    out.push({ y: (a[0][1] + a[1][1] + a[2][1]) / 3, xz: a.map(v => [v[0], v[2]]) });
+  }
+  return out;
+}
+// Separating-axis test for two 2D triangles: true when they overlap with positive area.
+function overlap2d(A, B) {
+  for (const T of [A, B]) for (let i = 0; i < 3; i++) {
+    const [x0, z0] = T[i], [x1, z1] = T[(i + 1) % 3];
+    const ax = -(z1 - z0), az = x1 - x0;
+    const pa = A.map(([x, z]) => x * ax + z * az), pb = B.map(([x, z]) => x * ax + z * az);
+    if (Math.max(...pa) <= Math.min(...pb) + 1e-7 || Math.max(...pb) <= Math.min(...pa) + 1e-7) return false;
+  }
+  return true;
+}
+test('no two prop top faces share a plane (within 1 mm) where they overlap: no z-fighting on counters, trims or caps', () => {
+  // Plain wall slabs are the room shell (the grey room's two corner walls overlap in the level layout); they are not counters or trims.
+  for (const room of [KIOSK_ROW, GREY_ROOM, SMOOTHIE_BAR, CANCELLATION_DESK]) {
+    const floor = room.boxes.find(b => b.kind === 'floor');
+    const faces = upFaces(propGeometry(solids(room).filter(b => propKind(b) !== 'wall'), floor)).sort((p, q) => p.y - q.y);
+    for (let i = 0; i < faces.length; i++) {
+      for (let j = i + 1; j < faces.length && faces[j].y - faces[i].y < 0.001; j++) {
+        if (overlap2d(faces[i].xz, faces[j].xz)) assert.fail(`coplanar top faces at y ${faces[i].y.toFixed(4)} and ${faces[j].y.toFixed(4)}`);
+      }
+    }
+  }
+});

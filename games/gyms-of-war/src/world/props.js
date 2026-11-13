@@ -55,6 +55,9 @@ function parts() {
 // Expand [x0,y0,z0]-[x1,y1,z1] by e on every side (e < 0 shrinks).
 const grow = (b, e, y0 = b.min[1], y1 = b.max[1]) => [[b.min[0] - e, y0, b.min[2] - e], [b.max[0] + e, y1, b.max[2] + e]];
 
+// Trim and caps that overlap a box top stand CAP_LIFT above it, or their top is inset CAP_LIFT below it (m): two faces in one plane z-fight.
+const CAP_LIFT = 0.006;
+
 // A stripe on both long faces (or both short ones when `alongX` is false), proud of the body by ~3 cm.
 function stripes(p, b, y0, y1, inset, hex, alongX) {
   const [x0, z0, x1, z1] = [b.min[0], b.min[2], b.max[0], b.max[2]], t = 0.015, o = 0.06;
@@ -115,14 +118,16 @@ function addTurnstile(p, b) {
 // dumbbell plate on each long face. Everything stays under the box top.
 function addRoundedCounter(p, b, ct) {
   const f = frame(p, b), { len, dep } = f, top = b.max[1], r = dep / 2, mid = len / 2, yb = ct - 0.06;
-  f.slab(r, len - r, 0.04, dep - 0.04, 0, 0.1, PALETTE.shadowTint);                         // toe kick
+  // The round ends sit at the middle of the counter; a counter as long as it is deep has one end, not two (their caps would share a plane).
+  const ends = len - 2 * r > 0.02 ? [r, len - r] : [len / 2], capR = ends.length === 1 ? r + 0.03 : Math.min(r + 0.03, (len - 2 * r) / 2);
+  f.slab(r, len - r, 0.04, dep - 0.04, 0, 0.1 + CAP_LIFT, PALETTE.shadowTint);              // toe kick (its top inside the body)
   f.slab(r, len - r, 0, dep, 0.1, yb, PALETTE.hotPink);                                     // body
-  for (const u of [r, len - r]) {
-    f.cyl(u, r, (0.1 + yb) / 2, r, yb - 0.1, PALETTE.hotPink);                              // round end
+  for (const u of ends) {
+    f.cyl(u, r, (0.1 + yb - CAP_LIFT) / 2, r, yb - CAP_LIFT - 0.1, PALETTE.hotPink);        // round end (under the cream cap)
     f.cyl(u, r, 0.05, r * 0.9, 0.1, PALETTE.shadowTint);                                    // round toe kick
   }
   f.slab(r, len - r, -0.03, dep + 0.03, yb, ct, PALETTE.cream);                             // cream top and lip
-  for (const u of [r, len - r]) f.cyl(u, r, (yb + ct) / 2, r + 0.03, ct - yb, PALETTE.cream);
+  for (const u of ends) f.cyl(u, r, (yb + ct + CAP_LIFT) / 2, capR, ct - yb + CAP_LIFT, PALETTE.cream);   // caps, lifted off the top's plane
   for (const v0 of [-0.035, dep]) {                                                          // a dumbbell sign plate on each long face
     const y0 = 0.26, y1 = yb - 0.04, y = (y0 + y1) / 2;
     f.slab(mid - 0.2, mid + 0.2, v0, v0 + 0.035, y0, y1, PALETTE.cream);
@@ -217,7 +222,7 @@ function addDesk(p, b) {
 function addSquatRack(p, b, seed) {
   const f = frame(p, b), { len, dep } = f, top = b.max[1], up = 0.1;
   f.slab(0, len, 0, dep, 0, 0.12, PALETTE.shadowTint);                                      // base
-  for (const [u0, u1] of [[0, up], [len - up, len]]) for (const [v0, v1] of [[0, up], [dep - up, dep]]) f.slab(u0, u1, v0, v1, 0.12, top, PALETTE.nebulaHot);
+  for (const [u0, u1] of [[0, up], [len - up, len]]) for (const [v0, v1] of [[0, up], [dep - up, dep]]) f.slab(u0, u1, v0, v1, 0.12, top - 0.1, PALETTE.nebulaHot);
   f.slab(0, len, 0, dep, top - 0.1, top, PALETTE.hotPink);                                  // top bar
   f.slab(up, len - up, dep / 2 - 0.02, dep / 2 + 0.02, 0.12, top - 0.1, PALETTE.tealLight);   // mirror panel
   const y = 1.35, v = dep * 0.32;
@@ -235,7 +240,7 @@ function addBlenderBar(p, b, seed) {
   f.slab(0.15, len - 0.15, 0, 0.05, 0.3, 0.7, PALETTE.cream);                               // stripe, front
   f.slab(0.15, len - 0.15, dep - 0.05, dep, 0.3, 0.7, PALETTE.cream);                       // stripe, back
   f.slab(-0.04, len + 0.04, -0.04, dep + 0.04, cy - 0.06, cy, PALETTE.cream);               // counter top
-  f.slab(0, len, dep / 2 - 0.04, dep / 2 + 0.04, cy, top, PALETTE.nebulaHot);                   // back panel up to the top
+  f.slab(0, len, dep / 2 - 0.04, dep / 2 + 0.04, cy, top - 0.1, PALETTE.nebulaHot);            // back panel up to the header rail
   f.slab(0, len, dep / 2 - 0.07, dep / 2 + 0.07, top - 0.1, top, PALETTE.shadowTint);       // header rail
   const n = Math.max(2, Math.floor(len / 0.9));
   for (let i = 0; i < n; i++) for (const v of [dep * 0.2, dep * 0.8]) {
@@ -269,7 +274,7 @@ function addBooth(p, b, seed) {
 
 // Menu-board pillar: a cream column with a chalkboard band and bars of "menu text" all round it.
 function addMenuBoard(p, b, seed) {
-  p.box(...grow(b, 0, b.min[1], b.max[1]), PALETTE.cream);
+  p.box(...grow(b, 0, b.min[1], b.max[1] - CAP_LIFT), PALETTE.cream);
   p.box(...grow(b, 0.05, b.min[1], b.min[1] + 0.25), PALETTE.shadowTint);
   p.box(...grow(b, 0.04, b.min[1] + 1.1, b.min[1] + 2.9), PALETTE.ink);
   [1.4, 1.75, 2.1, 2.45].forEach((y, i) => p.box(...grow(b, 0.055, b.min[1] + y, b.min[1] + y + 0.1), PRODUCTS[(i + seed) % PRODUCTS.length]));
@@ -288,7 +293,7 @@ function addSeat(p, b) {
 // Potted pink alien plant: a cream pot with a hot-pink rim, and pink stalks with lilac or teal bulb tips, all under the box top.
 function addPlant(p, b, seed) {
   const f = frame(p, b), { len, dep } = f, top = b.max[1], pt = top * 0.45;
-  f.slab(0.02, len - 0.02, 0.02, dep - 0.02, 0, pt, PALETTE.cream);                          // pot
+  f.slab(0.02, len - 0.02, 0.02, dep - 0.02, 0, pt - CAP_LIFT, PALETTE.cream);               // pot (under the rim)
   f.slab(0, len, 0, dep, pt - 0.06, pt, PALETTE.hotPink);                                    // rim
   f.slab(0.05, len - 0.05, 0.05, dep - 0.05, pt - 0.01, pt + 0.01, PALETTE.shadowTint);      // soil
   const n = Math.max(2, Math.floor(len / 0.5));
@@ -310,7 +315,7 @@ function addVelvet(p, b) {
 }
 
 function addPillar(p, b) {
-  p.box(...grow(b, 0, b.min[1], b.max[1]), PALETTE.cream);
+  p.box(...grow(b, 0, b.min[1], b.max[1] - CAP_LIFT), PALETTE.cream);
   p.box(...grow(b, 0.05, b.min[1], b.min[1] + 0.25), PALETTE.shadowTint);      // base
   p.box(...grow(b, 0.03, b.min[1] + 1.0, b.min[1] + 1.12), PALETTE.hotPink);   // band at hand height
   p.box(...grow(b, 0.05, b.max[1] - 0.25, b.max[1]), PALETTE.shadowTint);      // cap

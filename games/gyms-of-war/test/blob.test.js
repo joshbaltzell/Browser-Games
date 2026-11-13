@@ -200,53 +200,101 @@ test('the blob face has a tongue and two teeth that grow with the open mouth; th
 
 // ---- the goo drops ----
 
+// A blob rig posed in `clip` (idle, run or the low-cover crouch), its root at (x, 0, z), its skin in the world.
+function posedBlob(clip, x = 0, z = 0) {
+  const rig = buildRig(GLORP_REP);
+  rig.root.position.set(x, 0, z);
+  rig.setPose(samplePose(clip, CLIPS[clip].duration / 2, GLORP_REP), 0);
+  for (let i = 0; i < 30; i++) rig.update(1 / 60);
+  rig.root.updateMatrixWorld(true);
+  return rig;
+}
+const DM = new THREE.Matrix4(), DP = new THREE.Vector3(), DQ = new THREE.Quaternion(), DS = new THREE.Vector3();
+// Drop i of a pool as its world position and scale.
+function dropAt(goo, i) { goo.mesh.getMatrixAt(i, DM); DM.decompose(DP, DQ, DS); return { p: DP.clone(), s: Math.hypot(DM.elements[0], DM.elements[1], DM.elements[2]) }; }
+// The distance from p (world) to the nearest of a rig's skin samples.
+function nearestSkin(rig, p) {
+  const v = new THREE.Vector3();
+  let best = Infinity;
+  for (let i = 0; i < rig.skin.n; i++) best = Math.min(best, v.fromArray(rig.skin.pos, i * 3).applyMatrix4(rig.root.matrixWorld).distanceTo(p));
+  return best;
+}
+
 test('goo drops are one instanced mesh for every alien, finite, and hidden when an alien is off', () => {
   const scene = new THREE.Scene();
   const goo = createGooDrops(scene, 6);
   assert.equal(scene.children.length, 1); assert.ok(goo.mesh.isInstancedMesh); assert.equal(goo.mesh.count, 6 * MAX_DROPS);
-  goo.set(0, 1, 0, 2, 1, true); goo.set(1, -3, 0.5, 4, 1.1, true);
-  for (let i = 0; i < 120; i++) goo.update(1 / 60);
+  const a = posedBlob('idle'), b = posedBlob('run', 3, 1);
+  goo.set(0, a.skin, a.root.matrixWorld, 1, true); goo.set(1, b.skin, b.root.matrixWorld, 1.1, true);
+  let seenOther = 0;
+  for (let i = 0; i < 120; i++) { goo.update(1 / 60); if (dropAt(goo, MAX_DROPS).s > 0) seenOther++; }
   assert.ok(Array.from(goo.mesh.instanceMatrix.array).every(Number.isFinite));
-  const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
-  const at = (i) => { goo.mesh.getMatrixAt(i, m); m.decompose(p, q, s); return { p: p.clone(), s: Math.hypot(m.elements[0], m.elements[1], m.elements[2]) }; };
-  const G = TUNING.goo;
-  for (let j = 0; j < G.count; j++) { const d = at(j); assert.ok(d.s > 0 && Math.hypot(d.p.x - 1, d.p.z - 2) <= G.orbitRadius * 1.2 + 1e-6, `drop ${j}`); }
-  assert.equal(at(G.count).s, 0, 'only goo.count drops show');
-  assert.equal(at(2 * MAX_DROPS).s, 0, 'an alien never set shows none');
-  goo.hide(0);
-  goo.update(1 / 60);
-  for (let j = 0; j < MAX_DROPS; j++) assert.equal(at(j).s, 0);
-  assert.ok(at(MAX_DROPS).s > 0, 'the other alien keeps its drops');
+  assert.ok(seenOther > 0, 'the other alien keeps its drops');
+  assert.equal(dropAt(goo, TUNING.goo.count).s, 0, 'only goo.count drops show');
+  assert.equal(dropAt(goo, 2 * MAX_DROPS).s, 0, 'an alien never set shows none');
+  goo.hide(0); goo.update(1 / 60);
+  for (let j = 0; j < MAX_DROPS; j++) assert.equal(dropAt(goo, j).s, 0);
   goo.clear();
-  for (let i = 0; i < 6 * MAX_DROPS; i++) assert.equal(at(i).s, 0);
+  for (let i = 0; i < 6 * MAX_DROPS; i++) assert.equal(dropAt(goo, i).s, 0);
 });
 
-test('goo drops orbit and drip: they move round the head and a drop falls and shrinks before it grows back', () => {
-  const scene = new THREE.Scene();
-  const goo = createGooDrops(scene, 2);
-  goo.set(0, 0, 0, 0, 1, true);
-  const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
-  const trace = [];
-  for (let i = 0; i < 60 * 8; i++) { goo.update(1 / 60); goo.mesh.getMatrixAt(0, m); m.decompose(p, q, s); trace.push({ x: p.x, y: p.y, z: p.z, s: Math.hypot(m.elements[0], m.elements[1], m.elements[2]) }); }
-  const G = TUNING.goo, top = Math.max(...trace.map(t => t.y)), low = Math.min(...trace.map(t => t.y));
-  assert.ok(top - low >= G.dripFall * 0.5, `fell ${top - low}`);
-  assert.ok(Math.min(...trace.slice(30).map(t => t.s)) < G.size * 0.5, 'shrinks while it falls');
-  assert.ok(Math.max(...trace.map(t => t.x)) - Math.min(...trace.map(t => t.x)) > G.orbitRadius, 'it orbits');
-  const off = createGooDrops(new THREE.Scene(), 1, () => ({ ...G, count: 0 }));
-  off.set(0, 0, 0, 0, 1, true); off.update(0.1); off.mesh.getMatrixAt(0, m);
-  assert.equal(Math.hypot(m.elements[0], m.elements[1], m.elements[2]), 0, 'goo.count 0 shows none');
-});
-
-test('goo drops follow a crouch: a tucked alien (crouch 1) has its drops goo.crouchDrop lower than a standing one, at the same time', () => {
-  const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
-  const drop0 = (crouch) => {
+test('goo drops stay on the skin in idle, run and the low-cover crouch: near a skin sample, never above the crown', () => {
+  const G = TUNING.goo, reach = G.slide + G.dripFall + G.size + 0.15;   // a slid, dripping drop is no further than this from its sample
+  for (const clip of ['idle', 'run', 'coverLow']) {
+    const rig = posedBlob(clip, 1, 2);
     const goo = createGooDrops(new THREE.Scene(), 1);
-    goo.set(0, 0, 0, 0, 1, true, crouch);
-    for (let i = 0; i < 90; i++) goo.update(1 / 60);
-    goo.mesh.getMatrixAt(0, m); m.decompose(p, q, s);
-    return p.y;
-  };
-  assert.ok(Math.abs((drop0(0) - drop0(1)) - TUNING.goo.crouchDrop) < 1e-4, `${drop0(0)} vs ${drop0(1)}`);
+    goo.set(0, rig.skin, rig.root.matrixWorld, 1, true);
+    const crown = new THREE.Vector3(0, rig.skin.crownY, 0).applyMatrix4(rig.root.matrixWorld).y;
+    let worst = 0, shown = 0;
+    for (let i = 0; i < 60 * 6; i++) {
+      goo.update(1 / 60);
+      if (i % 6) continue;
+      for (let j = 0; j < G.count; j++) {
+        const d = dropAt(goo, j);
+        if (d.s < 1e-3) continue;
+        shown++;
+        worst = Math.max(worst, nearestSkin(rig, d.p));
+        assert.ok(d.p.y <= crown + 1e-6, `${clip}: drop at ${d.p.y} above the crown ${crown}`);
+      }
+    }
+    assert.ok(shown > 100, `${clip}: drops shown ${shown}`);
+    assert.ok(worst <= reach, `${clip}: a drop ${worst} m from the skin (reach ${reach})`);
+  }
+});
+
+test('goo drops move with the alien: placing it 3 m along x moves each drop 3 m along x', () => {
+  const rig = posedBlob('idle');
+  const goo = createGooDrops(new THREE.Scene(), 1);
+  goo.set(0, rig.skin, rig.root.matrixWorld, 1, true); goo.update(1 / 60);
+  const before = [0, 1, 2].map(j => dropAt(goo, j).p);
+  rig.root.position.x += 3; rig.root.updateMatrixWorld(true);
+  goo.set(0, rig.skin, rig.root.matrixWorld, 1, true); goo.update(0);
+  [0, 1, 2].forEach((j, k) => { const p = dropAt(goo, j).p; assert.ok(Math.abs(p.x - before[k].x - 3) < 1e-4 && Math.abs(p.y - before[k].y) < 1e-4, `drop ${j}`); });
+});
+
+test('a goo drop slides down its sample, drips off and shrinks, then grows back on a fresh sample', () => {
+  const G = TUNING.goo, rig = posedBlob('idle');
+  const goo = createGooDrops(new THREE.Scene(), 1, () => ({ ...G, count: 1 }));
+  goo.set(0, rig.skin, rig.root.matrixWorld, 1, true);
+  const cycle = Math.round(G.dripEvery * 60), starts = [], cyc0 = [];
+  for (let i = 0; i < cycle * 3; i++) {
+    goo.update(1 / 60);
+    const d = dropAt(goo, 0);
+    if (i < cycle) cyc0.push(d);
+    if (i % cycle === 1) starts.push(d.p);
+  }
+  const ys = cyc0.map(d => d.p.y);
+  assert.ok(Math.max(...ys) - Math.min(...ys) >= G.dripFall * 0.5, `fell ${Math.max(...ys) - Math.min(...ys)}`);
+  assert.ok(Math.min(...cyc0.slice(cycle / 2 | 0).map(d => d.s)) < G.size * 0.3, 'shrinks as it drips');
+  assert.ok(Math.max(...cyc0.map(d => d.s)) > G.size * 0.7, 'and is full size on the skin (drop 0 is the 0.75 size)');
+  assert.ok(starts.some((p, k) => k > 0 && p.distanceTo(starts[0]) > 0.02), 'a fresh cycle grows on another sample');
+});
+
+test('goo.count 0 shows no drops', () => {
+  const rig = posedBlob('idle');
+  const off = createGooDrops(new THREE.Scene(), 1, () => ({ ...TUNING.goo, count: 0 }));
+  off.set(0, rig.skin, rig.root.matrixWorld, 1, true); off.update(0.1);
+  for (let j = 0; j < MAX_DROPS; j++) assert.equal(dropAt(off, j).s, 0);
 });
 
 test('an alien view feeds its drops: on while it lives, off when its slot is unused or it bursts', () => {
