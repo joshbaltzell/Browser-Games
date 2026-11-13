@@ -141,8 +141,12 @@ body {
 .game-title span {
   display: block;
   font-weight: 300;
-  letter-spacing: 0.5em;
-  margin-left: 0.5em;
+  /* Trailing letter-spacing is cancelled by the negative right margin so the
+     word stays optically centred and never overflows the gradient box. */
+  font-size: 0.74em;
+  letter-spacing: 0.24em;
+  margin: 0.15em -0.24em 0 0;
+  white-space: nowrap;
 }
 
 .subtitle {
