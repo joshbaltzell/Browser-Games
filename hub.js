@@ -273,7 +273,8 @@ function renderGames() {
   const grid = document.getElementById("game-grid");
   if (!grid) return;
 
-  GAMES.forEach((game) => grid.appendChild(buildCard(game)));
+  // Newest first: GAMES is append-only, so reverse at render time.
+  GAMES.slice().reverse().forEach((game) => grid.appendChild(buildCard(game)));
 
   // Friendly placeholder so it's obvious more games can be added.
   const soon = document.createElement("div");
