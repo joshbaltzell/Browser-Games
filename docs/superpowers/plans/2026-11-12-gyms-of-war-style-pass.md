@@ -102,7 +102,7 @@ The cannon's muzzle is where its bursts and the terms-of-service lobs come from.
 
 **Commit:** "Gyms of War: the Cancellation Manager".
 
-## S4. GlorpFit Bomber, a third enemy (ref: enemy-bomber)
+## S4. GlorpFit Bomber — MOVED TO THE SEQUEL (Josh, 2026-11-12). Kept here as the sequel brief.
 
 **Look:** the S2 blob body with:
 - an angry wide-eyed shout face;
@@ -211,3 +211,6 @@ This is higher than the earlier quick quote of $28–45. Written out, the Bomber
 - Skip S7 and rely on smoke plus Josh's play: about −$4.
 
 Doing all three brings it to about $20–30.
+
+## Decision (2026-11-12)
+Josh: "Bomber can be in a sequel. Do this with subagents on cheaper models." Run S1, S2, S3, S5, S6, S7 (no S4). Models: Haiku for S1, S3, S6 and the S7 fix wave; Sonnet for S2 (new body type) and the S7 review; S5 tries Haiku first and escalates to Sonnet only if it reports BLOCKED or its screenshots miss the reference badly. Revised estimate: about $18–30.
