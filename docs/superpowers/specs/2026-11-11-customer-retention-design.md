@@ -1,10 +1,10 @@
-# Gyms of War: No Pain, No Cancel (was Customer Retention): design and build plan
+# Gyms of War: No Pain, No Cancel — design (formerly Customer Retention)
 
 > Story re-themed 2026-11-12 to Gyms of War: No Pain, No Cancel — see 2026-11-12-gyms-of-war-story.md, which overrides the premise, cast, level names, enemy and weapon names and sample lines; mechanics and numbers here still bind.
 
 Date: 2026-11-11
 Status: draft, awaiting approval
-Folder: `games/customer-retention/`
+Folder: `games/gyms-of-war/`
 
 A third-person cover shooter in the mould of *Gears of War*, drawn like an adult sci-fi cartoon (the look of *High on Life*), with one complete level of about 10 to 15 minutes.
 
@@ -321,8 +321,8 @@ All sound is synthesized in the browser; there are no audio files.
 
 The repo's games must run from `file://`, which forbids modules and file loading. This game keeps that rule this way:
 
-- Source lives in `games/customer-retention/src/` as modules.
-- `npm run build` bundles it into a single classic script, `games/customer-retention/game.js`, which is committed.
+- Source lives in `games/gyms-of-war/src/` as modules.
+- `npm run build` bundles it into a single classic script, `games/gyms-of-war/game.js`, which is committed.
 - `index.html` loads only `game.js` and `style.css`. No network, no modules, no file loading at run time. All level data, text and shaders are inside the bundle.
 - `package.json` and `node_modules` stay inside the game's folder, so the rest of the repo remains dependency-free. GitHub Pages needs no build step.
 - A check script rebuilds and fails if the committed `game.js` is stale.
@@ -343,7 +343,7 @@ This is the first game in the repo with a build step. It is the price of using t
 ## 9. Engine layout
 
 ```
-games/customer-retention/
+games/gyms-of-war/
   index.html  style.css  game.js (built)  package.json  NOTICES.md
   src/
     main.js              boot, title, game states

@@ -75,7 +75,7 @@ This milestone is L, like milestone 4, but has more separate systems (squadmate,
   - Hits land on what you see (R15m4).
   - Every new action has a clear on-screen prompt.
 - Owner pose rules apply to Doc, Tobble and the Reps: no arms crossing the body or hugging the belly. In low cover the head stays fully below the wall top (head top ≤ 0.95 m), and only a pop shows it.
-- All commands run from `games/customer-retention/`. Work on local branch `customer-retention-m5`. Do not push and do not open a pull request. Every commit message starts with `Gyms of War:` and ends with:
+- All commands run from `games/gyms-of-war/`. Work on local branch `customer-retention-m5`. Do not push and do not open a pull request. Every commit message starts with `Gyms of War:` and ends with:
   ```
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
   Claude-Session: https://claude.ai/code/session_01NkcHs93LrHhvrHh4G8aXjZ
@@ -245,7 +245,7 @@ These are the conditions the spec implies that a person will hit. Each has a tes
 ## File Structure
 
 ```
-games/customer-retention/
+games/gyms-of-war/
   src/tuning.js                   + melee, grenade, pad, tobble blocks; associate down/revive/stagger/dive numbers;
                                     director.maxEnemies; health.giveUpHold; feedback additions
   src/combat/grenades.js          NEW throwVelocity, throwOrigin, stepBall, predictArc, createGrenades, blastDamage, solveThrowPitch,
@@ -980,7 +980,7 @@ Fix anything that fails, with a test where the fix is logic, and re-run Step 1.
 
 ```bash
 git status --short   # only intended files
-git add -A games/customer-retention
+git add -A games/gyms-of-war
 git commit -m "Gyms of War: milestone 5 controller check fixes"   # plus the trailer; skip if nothing changed
 ```
 

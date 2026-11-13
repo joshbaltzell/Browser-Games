@@ -58,7 +58,7 @@ The milestone-3 plan is `docs/superpowers/plans/2026-11-11-customer-retention-m3
 - Controls are unchanged, and input actions keep their names. Interact is E or pad X (`interact`, already mapped). Gate B round 1 still holds: running straight into cover slams you in, and a tap also takes cover. Nothing in this milestone changes when cover grabs.
 - Mouse and keyboard, and gamepad, are both first-class.
 - Owner pose rules apply to Associates too: no arms crossing the body or hugging the belly. In low cover the head stays fully below the wall top (head top ≤ 0.95 m), and only a pop shows it.
-- All commands run from `games/customer-retention/`. Work on local branch `customer-retention-m4`. Do not push and do not open a pull request. Every commit message starts with `Customer Retention:` and ends with:
+- All commands run from `games/gyms-of-war/`. Work on local branch `customer-retention-m4`. Do not push and do not open a pull request. Every commit message starts with `Customer Retention:` and ends with:
   ```
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
   Claude-Session: https://claude.ai/code/session_01NkcHs93LrHhvrHh4G8aXjZ
@@ -144,7 +144,7 @@ These are the conditions the spec implies that a person will hit. Each has a tes
 ## File Structure
 
 ```
-games/customer-retention/
+games/gyms-of-war/
   src/tuning.js                   + health, associate, director blocks; move.crawlSpeed/crawlTurnRate; camera.downed;
                                     combat.crouchHead/crouchBodyTop/shoulderDrop/pickupRadius; feedback enemy/hurt/HUD numbers
   src/world/kioskRow.js           NEW KIOSK_ROW level data (pure)
@@ -783,7 +783,7 @@ Fix anything that fails, with a test where the fix is logic, and re-run Step 1.
 
 ```bash
 git status --short   # only intended files
-git add -A games/customer-retention
+git add -A games/gyms-of-war
 git commit -m "Customer Retention: Gate C controller check fixes"   # plus the trailer; skip if nothing changed
 ```
 

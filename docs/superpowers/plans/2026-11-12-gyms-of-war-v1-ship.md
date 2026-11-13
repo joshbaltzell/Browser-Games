@@ -1,6 +1,6 @@
 # Gyms of War v1: the short, shippable version
 
-> For agentic workers: this replaces spec milestones 6–12 for v1. Each piece below is the full brief for one Sonnet builder. Code lives in `games/customer-retention/`, on local branch `gyms-of-war-v1`, built on milestone 5 (`ad012d9`, 596/596 tests).
+> For agentic workers: this replaces spec milestones 6–12 for v1. Each piece below is the full brief for one Sonnet builder. Code lives in `games/gyms-of-war/`, on local branch `gyms-of-war-v1`, built on milestone 5 (`ad012d9`, 596/596 tests).
 
 **Goal:** Josh wants the cheapest finished game on the bones that exist. v1 is one run of three arenas with two enemy types (Reps, plus Personal Trainers as rushers), Tobble, a cheap boss, text story, a title screen and pause. It ships on the hub.
 

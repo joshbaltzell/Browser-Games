@@ -21,7 +21,7 @@
 - A cover state sets `acceptsTap: false` and reads `intent.tap` itself. No camera mode may be named `shake`, `look` or `bump` (Task 3 enforces this with an allow-list).
 - Mouse and keyboard, and gamepad, are both first-class. Performance: 60 fps on an Apple-silicon Mac in Chrome, under 400 draw calls and 300,000 triangles.
 - Owner feedback on poses still binds: no arms crossing the body or hugging the belly.
-- All commands run from `games/customer-retention/`. Work on local branch `customer-retention-m2`. Do not push and do not open a pull request. Every commit message starts with `Customer Retention:` and ends with:
+- All commands run from `games/gyms-of-war/`. Work on local branch `customer-retention-m2`. Do not push and do not open a pull request. Every commit message starts with `Customer Retention:` and ends with:
   ```
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
   Claude-Session: https://claude.ai/code/session_01NkcHs93LrHhvrHh4G8aXjZ
@@ -59,7 +59,7 @@ Conditions the spec implies that a person will hit. Each has a test in the task 
 ## File Structure
 
 ```
-games/customer-retention/
+games/gyms-of-war/
   dev/smoke.sh                 + cover checks and a 20 s run-around
   dev/runaround.js             NEW page-side scripted run-around (classic script, not bundled)
   src/tuning.js                + cover block; camera coverLow, coverTall, bump
@@ -691,7 +691,7 @@ Commit any fixes and the rebuilt `game.js`. Do not push and do not open a pull r
 
 ```bash
 git status --short   # only intended files
-git add -A games/customer-retention
+git add -A games/gyms-of-war
 git commit -m "Customer Retention: milestone 2 controller check fixes"   # plus the trailer; skip if nothing changed
 ```
 

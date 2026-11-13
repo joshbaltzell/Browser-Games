@@ -2,7 +2,7 @@
 
 A growing arcade of tiny, **dependency-free** browser games. No frameworks, no
 build step, no `node_modules` — just plain HTML, CSS, and Canvas (plus WebGL
-for the Tank Yard games). One exception: Gyms of War (games/customer-retention) is written in games/customer-retention/src and bundled with esbuild. The built game.js is committed, so it still opens by double-click. Open the landing page and play.
+for the Tank Yard games). One exception: Gyms of War (games/gyms-of-war) is written in games/gyms-of-war/src and bundled with esbuild. The built game.js is committed, so it still opens by double-click. Open the landing page and play.
 
 ## Play
 
@@ -36,7 +36,7 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 | **[Neon Gauntlet](games/neon-gauntlet/)** | A room-by-room neon dungeon crawler. Clear rooms, fight six enemy archetypes, and build your skill tree one level at a time. |
 | **[Switchback](games/switchback/)** | A one-button runner. A droplet rolls forever forward; flip gravity to arc between floor and ceiling and bank off the bulges to keep your speed. |
 | **[Tank Yard Fable](games/tank-yard-fable/)** | A 3D toon-shaded tank survival game: drive a slow, sturdy tank, aim the turret, and outlast an endless stream of enemy tanks. |
-| **[Gyms of War: No Pain, No Cancel](games/customer-retention/)** | Aliens took over your gym and won't let you cancel. Go cancel in person. A third-person cover shooter through three arenas, from the Check-in Turnstiles to the Membership Overlord at the Cancellation Desk. Mouse and keyboard or gamepad. |
+| **[Gyms of War: No Pain, No Cancel](games/gyms-of-war/)** | Aliens took over your gym and won't let you cancel. Go cancel in person. A third-person cover shooter through three arenas, from the Check-in Turnstiles to the Membership Overlord at the Cancellation Desk. Mouse and keyboard or gamepad. |
 
 ### Puzzle and word
 

@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Runs from `file://` by double-click. `index.html` loads only `game.js` and `style.css` with classic tags: no `type="module"`, no `fetch`, no network, no file loading at run time. `npm run check` fails if the committed `game.js` is stale; `npm run filecheck` boots it from `file://`.
-- Dependencies stay inside `games/customer-retention/`, at exact versions: `three@0.187.0`, `esbuild@0.28.2`, and new in this milestone `lil-gui@0.21.0` (MIT; added to `NOTICES.md`). No others.
+- Dependencies stay inside `games/gyms-of-war/`, at exact versions: `three@0.187.0`, `esbuild@0.28.2`, and new in this milestone `lil-gui@0.21.0` (MIT; added to `NOTICES.md`). No others.
 - Bundle under 1.5 MB.
 - Logic modules (`collide.js`, `contextButton.js`, `movement.js`, `cameraRig.js`, `tuningData.js`, `greyRoom.js` data) import nothing that needs WebGL or the DOM at load time and are tested in Node. The suite starts at 110/110 and every existing test keeps passing.
 - Every gameplay number lives in `src/tuning.js` (`TUNING`) and is read at the moment it is used, never copied at creation, so the tuning panel changes take effect on the next step.
@@ -24,7 +24,7 @@
 - Performance: 60 fps on an Apple-silicon MacBook in Chrome at native resolution; under 400 draw calls and 300,000 triangles in view; at most 26 draw calls per character including outlines.
 - Simulation is separate from drawing: fixed 60 Hz steps (`createLoop`), drawing interpolates.
 - No cover in this milestone. Movement and camera leave the extension points named in Tasks 2 and 3; nothing cover-specific is built.
-- All commands run from `games/customer-retention/` unless stated. Work on local branch `customer-retention-m1`. Do not push and do not open a pull request (the owner said not to push yet). Every commit message starts with `Customer Retention:` and ends with:
+- All commands run from `games/gyms-of-war/` unless stated. Work on local branch `customer-retention-m1`. Do not push and do not open a pull request (the owner said not to push yet). Every commit message starts with `Customer Retention:` and ends with:
   ```
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
   Claude-Session: https://claude.ai/code/session_01NkcHs93LrHhvrHh4G8aXjZ
@@ -54,7 +54,7 @@ Conditions the spec implies that a person will hit. Each has a test in the task 
 ## File Structure
 
 ```
-games/customer-retention/
+games/gyms-of-war/
   index.html               + #cr-pause overlay
   style.css                + overlay style
   NOTICES.md               + lil-gui
@@ -677,7 +677,7 @@ Commit any fixes and the rebuilt `game.js`. Do not push and do not open a pull r
 
 ```bash
 git status --short   # only intended files
-git add -A games/customer-retention
+git add -A games/gyms-of-war
 git commit -m "Customer Retention: milestone 1 controller check fixes"   # plus the trailer; skip if nothing changed
 ```
 

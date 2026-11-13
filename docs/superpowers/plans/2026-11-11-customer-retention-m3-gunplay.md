@@ -31,7 +31,7 @@
 - Controls are unchanged, and input actions keep their names. Fire is left mouse or right trigger, and reload is R or right bumper. Switch weapon is 1, 2, 3 or the mouse wheel, or the D-pad (left `weapon1`, right `weapon2`, down `weapon3`). Space or pad A remains the context button. Gate B round 1 still holds: running straight into cover slams you in, and a tap also takes cover. No weapon code may change when cover grabs.
 - Mouse and keyboard, and gamepad, are both first-class. Performance: 60 fps on an Apple-silicon Mac in Chrome, under 400 draw calls and 300,000 triangles.
 - Owner pose rules: no arms crossing the body or hugging the belly. In low cover the head stays fully below the wall top (head top ≤ 0.95 m), and that includes blind fire. Only the pop-out shows the head over the top.
-- All commands run from `games/customer-retention/`. Work on local branch `customer-retention-m3`. Do not push and do not open a pull request. Every commit message starts with `Customer Retention:` and ends with:
+- All commands run from `games/gyms-of-war/`. Work on local branch `customer-retention-m3`. Do not push and do not open a pull request. Every commit message starts with `Customer Retention:` and ends with:
   ```
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
   Claude-Session: https://claude.ai/code/session_01NkcHs93LrHhvrHh4G8aXjZ
@@ -81,7 +81,7 @@ These are the conditions the spec implies that a person will hit. Each has a tes
 ## File Structure
 
 ```
-games/customer-retention/
+games/gyms-of-war/
   src/tuning.js                + weapons, combat, dummy, feedback blocks; cover.blindTime; camera.recoil; look.pad.assist
   src/combat/weapons.js        NEW weapon metadata (names, slots), the rows' order (pure)
   src/combat/arsenal.js        NEW ammo, fire rate, bloom, switching, active reload (pure)
@@ -769,7 +769,7 @@ Commit any fixes and the rebuilt `game.js`. Do not push and do not open a pull r
 
 ```bash
 git status --short   # only intended files
-git add -A games/customer-retention
+git add -A games/gyms-of-war
 git commit -m "Customer Retention: milestone 3 controller check fixes"   # plus the trailer; skip if nothing changed
 ```
 

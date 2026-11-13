@@ -4,7 +4,7 @@
 
 **Goal:** A page that opens by double-click and shows one finished, animated Associate clone in a corner of the mall, with thick ink outlines and flat two-tone colour, so Josh can approve the look and the motion before anything else is built.
 
-**Architecture:** Source is ES modules under `games/customer-retention/src/`, bundled by esbuild into one classic script, `game.js`, which is committed. Pure logic (loop, springs, input mapping, IK, pose sampling, outline normals) has no DOM access and is tested in Node. Rendering uses three.js with a custom toon shader and inverted-hull outlines. The look test is a small dev scene with on-screen controls.
+**Architecture:** Source is ES modules under `games/gyms-of-war/src/`, bundled by esbuild into one classic script, `game.js`, which is committed. Pure logic (loop, springs, input mapping, IK, pose sampling, outline normals) has no DOM access and is tested in Node. Rendering uses three.js with a custom toon shader and inverted-hull outlines. The look test is a small dev scene with on-screen controls.
 
 **Tech Stack:** three 0.187.0, esbuild 0.28.2 (both exact, dev-time only), Node 24 built-in test runner, playwright-cli for browser checks.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - The shipped page loads only `game.js` and `style.css` with classic tags. No `type="module"`, no `fetch`, no network, no file loading at run time. It must work from `file://`.
-- `package.json`, `package-lock.json` and `node_modules` live inside `games/customer-retention/`. Nothing is added to the repo root's dependencies.
+- `package.json`, `package-lock.json` and `node_modules` live inside `games/gyms-of-war/`. Nothing is added to the repo root's dependencies.
 - Dependency versions are exact: `three@0.187.0`, `esbuild@0.28.2`. No other packages in this milestone.
 - The built `game.js` is committed and must match the source (`npm run check`). Bundle under 1.5 MB.
 - No downloaded models, textures, fonts or audio. Everything is built in code.
@@ -21,7 +21,7 @@
 - Outline colour is dark navy `#1b1f3b`, never pure black. Shadows are tinted purple, never grey.
 - No character, name, line or design copied from *Rick and Morty*, *Gears of War* or *High on Life*.
 - `index.html` has a `← Back to games` link to `../../index.html`. The game is **not** added to `hub.js` in this milestone.
-- All commands below run from `games/customer-retention/` unless stated.
+- All commands below run from `games/gyms-of-war/` unless stated.
 - Work on branch `customer-retention`. Every commit message ends with:
   ```
   Co-Authored-By: Claude <noreply@anthropic.com>
@@ -41,7 +41,7 @@ Conditions the spec implies that a person will hit. Each has a test in the task 
 ## File Structure
 
 ```
-games/customer-retention/
+games/gyms-of-war/
   index.html            canvas, read-out panel, error panel, back link
   style.css             page and overlay styles
   game.js               BUILT, committed
@@ -81,7 +81,7 @@ games/customer-retention/
 ### Task 1: Scaffold, build pipeline and boot
 
 **Files:**
-- Create: `games/customer-retention/{index.html,style.css,package.json,NOTICES.md}`, `dev/build.mjs`, `dev/check.mjs`, `dev/filecheck.mjs`, `dev/smoke.sh`, `src/main.js`, `src/tuning.js`, `test/build.test.js`
+- Create: `games/gyms-of-war/{index.html,style.css,package.json,NOTICES.md}`, `dev/build.mjs`, `dev/check.mjs`, `dev/filecheck.mjs`, `dev/smoke.sh`, `src/main.js`, `src/tuning.js`, `test/build.test.js`
 - Create (generated, committed): `game.js`, `package-lock.json`
 - Modify: repo `README.md` (one sentence, see step 7)
 
@@ -173,12 +173,12 @@ Exit 1 naming the run that failed.
 Run: `npm run build && npm test && npm run check && npm run filecheck && npm run smoke`
 Expected: all pass. `game.js` is about 0.5 MB.
 
-Add `NOTICES.md` (three.js and esbuild, both MIT, with copyright lines from their `LICENSE` files). In the repo `README.md`, directly after the sentence that promises no build step, add: `One exception: Customer Retention is written in games/customer-retention/src and bundled with esbuild. The built game.js is committed, so it still opens by double-click.`
+Add `NOTICES.md` (three.js and esbuild, both MIT, with copyright lines from their `LICENSE` files). In the repo `README.md`, directly after the sentence that promises no build step, add: `One exception: Customer Retention is written in games/gyms-of-war/src and bundled with esbuild. The built game.js is committed, so it still opens by double-click.`
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add games/customer-retention README.md
+git add games/gyms-of-war README.md
 git commit -m "Customer Retention: scaffold, build pipeline and boot checks"
 ```
 
@@ -364,7 +364,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add games/customer-retention
+git add games/gyms-of-war
 git commit -m "Customer Retention: fixed-step loop, springs, input mapping, renderer sizing"
 ```
 
@@ -456,7 +456,7 @@ Expected: PASS. Open the screenshot: a shape with one hard light/shadow edge, a 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add games/customer-retention
+git add games/gyms-of-war
 git commit -m "Customer Retention: palette, toon material, ink outlines, nebula sky"
 ```
 
@@ -534,7 +534,7 @@ Expected: PASS. In the screenshot the corner reads as a drawing: flat colours, e
 - [ ] **Step 5: Commit**
 
 ```bash
-git add games/customer-retention
+git add games/gyms-of-war
 git commit -m "Customer Retention: prop kit and the look-test mall corner"
 ```
 
@@ -632,7 +632,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add games/customer-retention
+git add games/gyms-of-war
 git commit -m "Customer Retention: noodle limb IK and cartoon faces"
 ```
 
@@ -730,7 +730,7 @@ Expected: PASS. In the screenshot an Associate stands in the corner, about a kio
 - [ ] **Step 5: Commit**
 
 ```bash
-git add games/customer-retention
+git add games/gyms-of-war
 git commit -m "Customer Retention: character rig, pose clips, animator and the Associate"
 ```
 
@@ -787,7 +787,7 @@ Expected: all PASS.
 
 - [ ] **Step 4: Check the real thing by hand (the controller of this plan does this, not a subagent)**
 
-1. `open games/customer-retention/index.html` (a real double-click equivalent, `file://`). The corner and the Associate appear.
+1. `open games/gyms-of-war/index.html` (a real double-click equivalent, `file://`). The corner and the Associate appear.
 2. Press P. Read the panel after 5 s: at least 58 frames per second at native resolution, resolution scale 1.
 3. Press L: the panel shows the pointer locked and mouse deltas changing. Esc releases it.
 4. If a controller is available, move its sticks: the panel shows it.
@@ -798,7 +798,7 @@ Record the numbers and anything that fell short in the pull request description.
 - [ ] **Step 5: Commit and open the gate pull request**
 
 ```bash
-git add games/customer-retention
+git add games/gyms-of-war
 git commit -m "Customer Retention: look test with animation, camera, input and performance read-outs"
 git push -u origin customer-retention
 gh pr create --base main --title "Customer Retention: milestone 0 look test" --body "<what to open, the keys, the measured numbers, known shortfalls>"
