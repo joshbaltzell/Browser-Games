@@ -1,5 +1,7 @@
 export const TUNING = {
   outlinePx: 3,
+  // The toon outlines' width multiplier: the ink hull is outlinePx * outlineWidth pixels at 1080 lines (about 1.5x the v1 width).
+  render: { outlineWidth: 1.5 },
   lightDir: [0.45, 0.8, 0.35],
   // How far the shadow side is pulled toward the purple shadow tint, so warm
   // colours go plum rather than brown.

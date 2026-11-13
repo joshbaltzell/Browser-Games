@@ -1,7 +1,7 @@
 import { TUNING } from '../tuning.js';
 
 // The tunable numbers: every number in TUNING.move (but radius and height),
-// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.health, TUNING.melee, TUNING.grenade, TUNING.pad, TUNING.run, TUNING.boss, TUNING.ending, TUNING.tobble, TUNING.trainer, TUNING.associate, TUNING.director, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
+// TUNING.camera, TUNING.look, TUNING.cover, TUNING.weapons, TUNING.combat, TUNING.health, TUNING.melee, TUNING.grenade, TUNING.pad, TUNING.run, TUNING.boss, TUNING.ending, TUNING.tobble, TUNING.render, TUNING.trainer, TUNING.associate, TUNING.director, TUNING.dummy and TUNING.feedback, with a slider range, plus look.invertY.
 // Pure data and helpers; no DOM.
 
 const n = (path, min, max, step) => ({ path, min, max, step });
@@ -53,6 +53,8 @@ export const PANEL = Object.freeze([
   n('look.pad.yawRate', 0.5, 10, 0.1), n('look.pad.pitchRate', 0.5, 10, 0.1), n('look.pad.expo', 1, 3, 0.05),
   n('look.aimScale', 0.1, 1.5, 0.01),
   { path: 'look.invertY' },
+
+  n('render.outlineWidth', 0.5, 3, 0.05),
 
   n('cover.grabRange', 0, 5, 0.05), n('cover.grabAngle', 0, 180, 1), n('cover.grabViewAngle', 0, 180, 1),
   n('cover.grabSlack', 0, 5, 0.05), n('cover.grabMinTilt', 0, 1, 0.05),

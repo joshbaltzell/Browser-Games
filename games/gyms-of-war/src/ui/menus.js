@@ -5,8 +5,10 @@
 // Pure content lives in menuModel.js and settings.js; this file is only DOM and events.
 import { TITLE, TAGLINE, titleItems, PAUSE_ITEMS, controlRows, INTRO_LINES, moveSelection } from './menuModel.js';
 import { TITLE_STORY, titleClock } from '../story.js';
-import { LOGO_SVG } from './logo.js';
 import { SETTING_ROWS, adjustSetting, settingText } from '../settings.js';
+
+// The full logo (games/gyms-of-war/assets, relative to index.html): a transparent WebP, 900 px wide.
+const LOGO_SRC = 'assets/logo-full.webp';
 
 const PASS_THROUGH = new Set(['Backquote', 'KeyH']);   // the dev tuning panel and read-out stay reachable
 const REPEAT_FIRST = 0.4, REPEAT_EVERY = 0.12;          // seconds, for a held pad direction
@@ -80,10 +82,12 @@ export function createMenus(opts) {
       return;
     }
     if (screen === 'title') {
-      // The logo carries the name and the tag; the wrapper's label keeps them for a screen reader.
+      // The logo image carries the name and the tag; its alt text says them for a screen reader.
       const logo = el('div', 'cr-menu-title', box);
-      logo.setAttribute('role', 'img'); logo.setAttribute('aria-label', `${TITLE}: ${TAGLINE}`);
-      logo.innerHTML = LOGO_SVG;
+      const img = el('img', 'cr-logo', logo);
+      img.src = LOGO_SRC; img.alt = `${TITLE}: ${TAGLINE}`; img.draggable = false;
+      // The same words as text for a screen reader and the dev checks (visually hidden).
+      el('h1', 'cr-sr-only', logo, TITLE); el('p', 'cr-sr-only', logo, TAGLINE);
       const story = el('div', 'cr-title-story', box);
       TITLE_STORY.forEach(l => el('div', 'cr-title-line', story, l));
       el('div', 'cr-title-clock', story, titleClock(opts.saved ? opts.saved() : 0));

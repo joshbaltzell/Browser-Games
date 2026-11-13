@@ -116,7 +116,14 @@ export function createHud(root = document.body) {
   const actionEl = el('div', 'cr-action', hud);
   const actionText = el('span', 'cr-action-text', actionEl);
   const actionRing = el('i', 'cr-ring', actionEl);
+  // The objective plate, top left: a yellow "!" badge, the arena name (the text before ': ') in bold italic, and the objective with a checkbox.
   const objectiveEl = el('div', 'cr-objective', hud);
+  el('span', 'cr-obj-badge', objectiveEl, '!');
+  const objectiveBody = el('div', 'cr-obj-body', objectiveEl);
+  const objTitle = el('div', 'cr-obj-title', objectiveBody);
+  const objRow = el('div', 'cr-obj-row', objectiveBody);
+  el('i', 'cr-obj-box', objRow);
+  const objText = el('span', 'cr-obj-text', objRow);
   const bossEl = el('div', 'cr-boss', hud);
   const bossName = el('div', 'cr-boss-name', bossEl);
   const bossBar = el('div', 'cr-boss-bar', bossEl);
@@ -136,11 +143,17 @@ export function createHud(root = document.body) {
   const barkText = el('span', 'cr-bark-text', barkEl);
   const panel = el('div', 'cr-weapon', hud);
   const name = el('div', 'cr-weapon-name', panel);
-  const ammo = el('div', 'cr-ammo', panel);
+  const ammoRow = el('div', 'cr-ammo-row', panel);
+  // The orange gun icon (inline SVG) sits left of the count.
+  const gun = sv('svg', { class: 'cr-gun', viewBox: '0 0 64 32', 'aria-hidden': 'true' }, ammoRow);
+  sv('path', { d: 'M4 12 H42 L46 7 H58 L60 11 V16 H50 L47 19 H41 L39 29 H29 L31 19 H13 Q4 19 4 12 Z', fill: '#ff8a1f', stroke: '#14172e', 'stroke-width': 2.5, 'stroke-linejoin': 'round' }, gun);
+  sv('path', { d: 'M44 11 H54', stroke: '#14172e', 'stroke-width': 2 }, gun);
+  const ammo = el('div', 'cr-ammo', ammoRow);
   const kbEl = el('div', 'cr-kb', panel);
   const prompt = el('div', 'cr-prompt', panel);
   // The reload bar lives beside the reticle, not in the weapon panel: prompt on top, the bar, the result flash under it.
   const reloadBox = el('div', 'cr-reloadbox', hud);
+  const reloadLabel = el('div', 'cr-reload-label', reloadBox, 'ACTIVE RELOAD');
   const barPrompt = el('div', 'cr-reload-prompt', reloadBox);
   const bar = el('div', 'cr-reload', reloadBox);
   const grey = el('div', 'cr-zone cr-zone-good', bar);
@@ -165,7 +178,7 @@ export function createHud(root = document.body) {
       // While reloading the prompt rides the bar; otherwise (an empty magazine) it is the small line in the weapon panel.
       set('prompt', m.reload.show ? '' : m.reload.prompt, v => { prompt.textContent = v; });
       set('barPrompt', m.reload.show ? m.reload.prompt : '', v => { barPrompt.textContent = v; barPrompt.hidden = !v; });
-      set('reload.show', m.reload.show, v => { bar.hidden = !v; });
+      set('reload.show', m.reload.show, v => { bar.hidden = !v; reloadLabel.hidden = !v; });
       set('reload.box', `${m.reload.show || !!m.reload.flash}`, v => { reloadBox.hidden = v !== 'true'; });
       set('reload.look', `${Math.round(m.reload.offset)}|${m.reload.barScale}|${m.reload.pulseHz}|${m.reload.flashScale}`, () => {
         reloadBox.style.setProperty('--off', `${m.reload.offset.toFixed(0)}px`);
@@ -199,7 +212,12 @@ export function createHud(root = document.body) {
       const bh = m.banner && m.banner.hold !== undefined && m.banner.hold !== null ? Math.round(clamp01(m.banner.hold) * 100) : -1;
       set('banner.hold', bh, v => { bannerRing.hidden = v < 0; bannerRing.style.setProperty('--hold', `${Math.max(v, 0) * 3.6}deg`); });
       set('banner', m.banner ? `${m.banner.title}|${m.banner.hint}` : '', v => { bannerEl.hidden = !m.banner; if (m.banner) { bannerTitle.textContent = m.banner.title; bannerHint.textContent = m.banner.hint; } });
-      set('objective', m.objective || '', v => { objectiveEl.textContent = v; objectiveEl.hidden = !v; });
+      set('objective', m.objective || '', v => {
+        const cut = v.indexOf(': ');   // "Arena name: the objective"; a line with no name just shows the objective
+        objTitle.textContent = cut > 0 ? v.slice(0, cut) : ''; objTitle.hidden = cut <= 0;
+        objText.textContent = cut > 0 ? v.slice(cut + 2) : v;
+        objectiveEl.hidden = !v;
+      });
       const bs = m.boss;
       set('boss', bs ? `${bs.name}|${bs.phase}|${bs.invuln}|${bs.hint}` : '', () => { bossEl.hidden = !bs; if (bs) { bossName.textContent = bs.name; bossEl.dataset.invuln = bs.invuln ? '1' : '0'; bossHint.textContent = bs.hint; } });
       set('boss.fill', bs ? Math.round(bs.fraction * 500) : -1, () => { if (bs) bossFill.style.width = pct(bs.fraction); });

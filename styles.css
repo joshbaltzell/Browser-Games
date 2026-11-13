@@ -112,6 +112,14 @@ main {
   filter: drop-shadow(0 0 8px var(--accent));
 }
 
+.card-art img {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px var(--accent));
+}
+
 .card-body {
   padding: 1.1rem 1.25rem 0.5rem;
   flex: 1;

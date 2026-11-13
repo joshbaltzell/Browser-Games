@@ -83,7 +83,7 @@ void main() {
   float len = length(pixelDir);
   pixelDir = len > 1e-9 ? pixelDir / len : vec2(0.0);
 
-  // Thickness is TUNING.outlinePx at 1080 lines and scales with the viewport,
+  // Thickness is TUNING.outlinePx * TUNING.render.outlineWidth at 1080 lines and scales with the viewport,
   // but never thinner than one pixel. Multiplying by w keeps it the same on
   // screen at any distance.
   float thickness = max(px * (viewportHeight / 1080.0), 1.0);
@@ -104,7 +104,10 @@ void main() {
 // Inverted-hull outline: back faces pushed out along the normal on screen.
 // outlineNormal: true reads the `outlineNormal` attribute (see
 // computeOutlineNormals); false reads `normal`. addOutline picks it for you.
-export function createOutlineMaterial({ px = TUNING.outlinePx, color = PALETTE.ink, outlineNormal = false } = {}) {
+// The outline width in pixels at 1080 lines, read at use time so a tuned value applies to the next outline built.
+export const outlinePixels = () => TUNING.outlinePx * TUNING.render.outlineWidth;
+
+export function createOutlineMaterial({ px = outlinePixels(), color = PALETTE.ink, outlineNormal = false } = {}) {
   return new THREE.ShaderMaterial({
     name: 'outline',
     uniforms: {
@@ -138,7 +141,7 @@ function sharedOutlineMaterial(px, color, outlineNormal) {
 // Adds a child mesh named `outline` that shares the parent's geometry and
 // follows its transform. Uses `outlineNormal` when the geometry has it.
 // Outlines with the same settings share one material: do not dispose it.
-export function addOutline(mesh, { px = TUNING.outlinePx } = {}) {
+export function addOutline(mesh, { px = outlinePixels() } = {}) {
   const outlineNormal = !!mesh.geometry.getAttribute('outlineNormal');
   const material = sharedOutlineMaterial(px, PALETTE.ink, outlineNormal);
   const outline = new THREE.Mesh(mesh.geometry, material);
