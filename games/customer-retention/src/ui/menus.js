@@ -4,6 +4,7 @@
 // here directly (D-pad or left stick to move, A to pick, B to go back, Start to resume) with its own edge detection.
 // Pure content lives in menuModel.js and settings.js; this file is only DOM and events.
 import { TITLE, TAGLINE, titleItems, PAUSE_ITEMS, controlRows, INTRO_LINES, moveSelection } from './menuModel.js';
+import { TITLE_STORY, titleClock } from '../story.js';
 import { SETTING_ROWS, adjustSetting, settingText } from '../settings.js';
 
 const PASS_THROUGH = new Set(['Backquote', 'KeyH']);   // the dev tuning panel and read-out stay reachable
@@ -80,6 +81,9 @@ export function createMenus(opts) {
     if (screen === 'title') {
       el('div', 'cr-menu-title', box, TITLE);
       el('div', 'cr-menu-tag', box, TAGLINE);
+      const story = el('div', 'cr-title-story', box);
+      TITLE_STORY.forEach(l => el('div', 'cr-title-line', story, l));
+      el('div', 'cr-title-clock', story, titleClock(opts.saved ? opts.saved() : 0));
     } else el('div', 'cr-menu-head', box, screen === 'pause' ? 'PAUSED' : screen === 'settings' ? 'SETTINGS' : 'CONTROLS');
     if (screen === 'controls') {
       const t = el('div', 'cr-controls', box);

@@ -58,6 +58,13 @@ export const CANCELLATION_DESK = deepFreeze({
   waypoints,
   ammoCrates: [{ pos: [-10.5, 0, -8.8] }],
   landmark: { pos: [0, 3.2, Z - 0.3], text: 'CANCELLATION DESK', w: 7, h: 1.3 },
+  // The roof (view only, see ceiling.js): a hanging banner and the floor sign by the entry. yaw PI faces -z, toward Doc coming in.
+  ceiling: {
+    floorSign: { pos: [0, 4.6, -5.2], yaw: Math.PI, text: 'TOP FLOOR \u2014 CANCELLATIONS', w: 5.6, h: 0.9, bg: '#7a3cff' },
+    banners: [
+      { pos: [0, 5.35, 2.5], yaw: Math.PI, text: 'WHERE QUITTING IS NOT AN OPTION', w: 4.8, h: 1.1, bg: '#ff8a1f' },
+    ],
+  },
   signs: [
     { pos: [-X + 0.14, 2.2, -1], yaw: Math.PI / 2, text: 'PLEASE TAKE A NUMBER — NOW SERVING: 3', w: 4.2, h: 1.3, bg: '#ff4f9a' },
     { pos: [X - 0.14, 2.2, -1], yaw: -Math.PI / 2, text: 'ALL SALES FINAL. ALL EXITS FINAL.', w: 4.2, h: 1.3, bg: '#7a3cff' },

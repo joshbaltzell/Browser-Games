@@ -35,10 +35,13 @@ export function inGate(exit, pos, reach = TUNING.run.gateReach) {
   return Math.abs(along) <= exit.w / 2 && out >= -0.25 && out <= reach;
 }
 
-// phases: 'play' | 'fadeOut' | 'black' | 'fadeIn'. Times come from TUNING.run at every use.
+// phases: 'play' | 'fadeOut' | 'black' | 'card' | 'fadeIn'. Times come from TUNING.run at every use.
+// The story card (the elevator ride between arenas, or the line before an arena restarts after a down) takes the place of the black hold while
+// `cards` is on: the screen stays black for cardTime s (defeatCardTime for the restart card), or until skipCard() after cardSkipDelay s.
+// A swap is `kind` 'swap'; a restart after a down is 'defeat' (beginDefeat): its 'defeat' event is the moment to restart the arena.
 export function createRun({ storage = null, tuning = TUNING } = {}) {
   const R = () => tuning.run;
-  let index = 0, checkpoint = 0, phase = 'play', t = 0, cleared = false;
+  let index = 0, checkpoint = 0, phase = 'play', t = 0, cleared = false, kind = 'swap', cards = false;
   const saved = loadCheckpoint(storage);
   const setCheckpoint = (i) => { checkpoint = clampIndex(i); saveCheckpoint(storage, checkpoint); };
   const run = {
@@ -48,13 +51,20 @@ export function createRun({ storage = null, tuning = TUNING } = {}) {
     get phase() { return phase; },
     get cleared() { return cleared; },
     get fading() { return phase !== 'play'; },
+    get kind() { return kind; },
+    // Story cards between arenas: on or off (the caller sets it from the player's setting).
+    get cards() { return cards; },
+    set cards(v) { cards = !!v; },
+    // Seconds into the card (0 outside it) and the card's length.
+    get cardElapsed() { return phase === 'card' ? t : 0; },
+    get cardLength() { return kind === 'defeat' ? R().defeatCardTime : R().cardTime; },
     get hasNext() { return index < ARENAS.length - 1; },
     // The checkpoint found in storage when the run was created (what "Continue" offers).
     saved,
     // 0 (clear) to 1 (black).
     get fade() {
       if (phase === 'fadeOut') return Math.min(1, t / Math.max(R().fadeOut, 1e-6));
-      if (phase === 'black') return 1;
+      if (phase === 'black' || phase === 'card') return 1;
       if (phase === 'fadeIn') return Math.max(0, 1 - t / Math.max(R().fadeIn, 1e-6));
       return 0;
     },
@@ -65,13 +75,25 @@ export function createRun({ storage = null, tuning = TUNING } = {}) {
     // Doc walked into the open gate. True when the fade began.
     touchGate() {
       if (phase !== 'play' || !run.gateOpen) return false;
-      phase = 'fadeOut'; t = 0;
+      kind = 'swap'; phase = 'fadeOut'; t = 0;
+      return true;
+    },
+    // Doc went down for good: fade out, then a 'defeat' event (restart the arena under the black), the card, and the fade in. False when a fade is already running.
+    beginDefeat() {
+      if (phase !== 'play') return false;
+      kind = 'defeat'; phase = 'fadeOut'; t = 0;
+      return true;
+    },
+    // Skip the card (any key or button): only after cardSkipDelay, so the press that was already down does not skip it. True when it ended.
+    skipCard() {
+      if (phase !== 'card' || t < R().cardSkipDelay) return false;
+      t = Math.max(t, run.cardLength);
       return true;
     },
     // Both Doc and Tobble down, or Doc bled out: the current arena restarts from the start (the checkpoint is its own entry).
-    restart() { cleared = false; phase = 'play'; t = 0; return ARENAS[index]; },
+    restart() { cleared = false; phase = 'play'; t = 0; kind = 'swap'; return ARENAS[index]; },
     // Jump to an arena (the ?arena param, Continue, the dev hook): it becomes the checkpoint.
-    goTo(i) { index = clampIndex(i); setCheckpoint(index); cleared = false; phase = 'play'; t = 0; return ARENAS[index]; },
+    goTo(i) { index = clampIndex(i); setCheckpoint(index); cleared = false; phase = 'play'; t = 0; kind = 'swap'; return ARENAS[index]; },
     // A fresh run from the Turnstiles: the saved checkpoint resets too.
     newRun() { return run.goTo(0); },
     // Advance the fade by dt (real seconds). Returns events: { type: 'swap', from, to } when the screen is black and the next arena should
@@ -82,12 +104,16 @@ export function createRun({ storage = null, tuning = TUNING } = {}) {
       if (phase === 'play') return out;
       t += dt;
       if (phase === 'fadeOut' && t >= R().fadeOut) {
-        const from = ARENAS[index];
-        index = Math.min(ARENAS.length - 1, index + 1); setCheckpoint(index); cleared = false;
-        phase = 'black'; t = 0;
-        out.push({ type: 'swap', from, to: ARENAS[index] });
+        if (kind === 'defeat') { cleared = false; out.push({ type: 'defeat', arena: ARENAS[index] }); }
+        else {
+          const from = ARENAS[index];
+          index = Math.min(ARENAS.length - 1, index + 1); setCheckpoint(index); cleared = false;
+          out.push(cards ? { type: 'swap', from, to: ARENAS[index], card: true } : { type: 'swap', from, to: ARENAS[index] });
+        }
+        phase = cards ? 'card' : 'black'; t = 0;
       }
       if (phase === 'black' && t >= R().blackHold) { phase = 'fadeIn'; t = 0; }
+      if (phase === 'card' && t >= run.cardLength) { phase = 'fadeIn'; t = 0; out.push({ type: 'cardDone', kind }); }
       if (phase === 'fadeIn' && t >= R().fadeIn) { phase = 'play'; t = 0; out.push({ type: 'faded' }); }
       return out;
     },

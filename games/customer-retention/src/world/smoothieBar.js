@@ -86,6 +86,14 @@ export const SMOOTHIE_BAR = deepFreeze({
   // The exit gate in the north wall: opens when the arena is clear. pos is on the wall's inside face; yaw faces into the arena (signs' convention).
   exit: { pos: [-12, 0, Z], yaw: Math.PI, w: 3.4 },
   landmark: { pos: [9, 3.2, Z - 0.3], text: 'SMOOTHIE BAR', w: 7, h: 1.4 },
+  // The roof (view only, see ceiling.js): hanging banners and the floor sign by the entry. yaw PI faces -z, toward Doc coming in.
+  ceiling: {
+    floorSign: { pos: [0, 4.3, -11.8], yaw: Math.PI, text: 'FLOOR 12 \u2014 SMOOTHIE BAR', w: 5.4, h: 0.9, bg: '#ff4f9a' },
+    banners: [
+      { pos: [-9, 5.35, -3], yaw: Math.PI, text: 'NEW YEAR, NEW YOU (FOREVER)', w: 4.4, h: 1.1, bg: '#b9a7ff' },
+      { pos: [9, 5.35, 6], yaw: Math.PI, text: 'FIRST ONE\u2019S FREE!*', w: 3.6, h: 1.1, bg: '#2ec4b6' },
+    ],
+  },
   signs: [
     { pos: [0, 2.9, 14.95], yaw: Math.PI, text: 'FREE TRIAL COUNTER — No commitment!*', w: 6.2, h: 1.0, bg: '#ff4f9a' },
     { pos: [-X + 0.14, 2.2, -2], yaw: Math.PI / 2, text: 'BUILD-YOUR-BOWL', w: 3.2, h: 1.2, bg: '#2ec4b6' },

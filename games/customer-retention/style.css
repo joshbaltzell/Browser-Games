@@ -154,3 +154,38 @@ body.cr-menu-open .back { display: none; }
 .cr-tac-bar[hidden] { display: none; }
 .cr-tac-bar b { display: block; height: 100%; background: currentColor; }
 @keyframes cr-tac-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .65; } }
+
+/* The story cards (src/ui/storyCard.js): the elevator ride between arenas, and the line before a restart. Over the black fade, under the menus. */
+#cr-story { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: #1b1f3b; color: #fff; user-select: none; padding: 16px; box-sizing: border-box; }
+#cr-story[hidden] { display: none; }
+.cr-cab { position: relative; width: min(680px, 94vw); max-height: 94vh; box-sizing: border-box; padding: 18px 28px 20px; border: 6px solid #8c8fa8; border-radius: 10px; background: linear-gradient(to right, #2a2f55, #373d6b 50%, #2a2f55); box-shadow: inset 0 0 0 3px #1b1f3b, 0 0 40px rgba(0,0,0,.6); display: flex; flex-direction: column; gap: 10px; animation: cr-cab-shake .16s linear infinite; overflow: hidden; }
+.cr-cab::before, .cr-cab::after { content: ''; position: absolute; top: 0; bottom: 0; width: 50%; background: #5c5f78; border-right: 3px solid #1b1f3b; z-index: 2; animation: cr-door-l .7s .1s ease-in forwards; }
+.cr-cab::after { right: 0; left: auto; border-right: 0; border-left: 3px solid #1b1f3b; animation-name: cr-door-r; }
+.cr-cab::before { left: 0; }
+@keyframes cr-door-l { to { transform: translateX(-101%); } }
+@keyframes cr-door-r { to { transform: translateX(101%); } }
+@keyframes cr-cab-shake { 0% { transform: translate(0, 0); } 25% { transform: translate(1px, -1px); } 50% { transform: translate(-1px, 0); } 75% { transform: translate(0, 1px); } 100% { transform: translate(0, 0); } }
+#cr-story.arrived .cr-cab { animation: none; }
+.cr-cab-head { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 6px 16px; background: #0d0f1f; border: 3px solid #8c8fa8; border-radius: 6px; align-self: center; min-width: 190px; }
+.cr-cab-arrow { color: #ffcf3a; font-size: 24px; }
+#cr-story.arrived .cr-cab-arrow { opacity: .25; }
+.cr-cab-floor { font: 900 46px/1 ui-monospace, Menlo, Consolas, monospace; color: #b6ff3c; letter-spacing: .08em; text-shadow: 0 0 10px rgba(182,255,60,.7); min-width: 3ch; text-align: center; }
+.cr-cab-name { text-align: center; font-size: 15px; font-weight: 800; letter-spacing: .3em; color: #ff4f9a; }
+.cr-story-lines, .cr-defeat { display: flex; flex-direction: column; gap: 8px; }
+.cr-story-line { font-size: 21px; line-height: 1.35; font-weight: 600; color: #fff3d6; opacity: 0; animation: cr-story-in .35s forwards; }
+.cr-story-line .cr-bark-who { font-weight: 800; text-shadow: 0 1px 2px rgba(0,0,0,.8); margin-right: .5em; }
+@keyframes cr-story-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.cr-cab-hours { margin-top: 6px; text-align: center; font-size: 17px; font-weight: 800; letter-spacing: .05em; color: #ffcf3a; }
+.cr-cab-muzak { text-align: center; font-size: 14px; letter-spacing: .06em; color: #b9a7ff; opacity: .9; }
+.cr-defeat { width: min(640px, 92vw); text-align: left; }
+.cr-defeat .cr-story-line { font-size: 26px; }
+.cr-story-hint { text-align: center; margin-top: 4px; }
+@media (max-width: 640px), (max-height: 560px) { .cr-cab { padding: 12px 16px 14px; gap: 6px; } .cr-cab-floor { font-size: 34px; } .cr-story-line { font-size: 17px; } .cr-defeat .cr-story-line { font-size: 21px; } }
+@media (prefers-reduced-motion: reduce) { .cr-cab { animation: none; } }
+
+/* The title's backstory: a dark panel on the right on wide windows, under the logo (and above the menu) on narrow ones. */
+.cr-title-story { position: fixed; right: 5vw; top: 50%; transform: translateY(-50%); width: min(380px, 34vw); box-sizing: border-box; padding: 16px 18px; border-left: 4px solid #ff4f9a; border-radius: 4px; background: rgba(27,31,59,.74); display: flex; flex-direction: column; gap: 8px; text-shadow: 0 1px 2px rgba(27,31,59,.95); }
+.cr-title-line { font-size: 17px; line-height: 1.4; font-weight: 600; color: #fff3d6; }
+.cr-title-line:last-of-type { font-weight: 900; color: #ffcf3a; }
+.cr-title-clock { margin-top: 4px; padding-top: 8px; border-top: 1px solid rgba(255,243,214,.3); font-size: 14px; font-weight: 800; letter-spacing: .05em; color: #b6ff3c; }
+@media (max-width: 900px), (max-height: 600px) { .cr-title-story { position: static; transform: none; width: auto; padding: 8px 12px; gap: 4px; } .cr-title-line { font-size: 14px; line-height: 1.3; } .cr-title-clock { font-size: 12px; } .cr-menu-tag { margin-bottom: 8px; } }

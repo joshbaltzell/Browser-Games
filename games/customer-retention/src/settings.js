@@ -9,6 +9,7 @@ export const SETTING_ROWS = Object.freeze([
   Object.freeze({ key: 'mouseSens', label: 'Mouse sensitivity', kind: 'range', min: 0.3, max: 2.5, step: 0.1, def: 1 }),
   Object.freeze({ key: 'invertY', label: 'Invert Y (look up/down)', kind: 'toggle', def: false }),
   Object.freeze({ key: 'padSens', label: 'Pad look sensitivity', kind: 'range', min: 0.3, max: 2.5, step: 0.1, def: 1 }),
+  Object.freeze({ key: 'storyCards', label: 'Story cards (elevator rides)', kind: 'toggle', def: true }),
 ]);
 
 export const DEFAULT_SETTINGS = Object.freeze(Object.fromEntries(SETTING_ROWS.map(r => [r.key, r.def])));

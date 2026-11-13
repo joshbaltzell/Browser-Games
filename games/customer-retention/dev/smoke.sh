@@ -574,6 +574,37 @@ ev "__cr.pause(); " >/dev/null
 ev "__cr.menuChoose('quit')" >/dev/null
 rexpect "Quit to title shows the title over the Turnstiles, Continue still offered" "(() => { const m = __cr.menu(); return m.open && m.onTitle && m.items[0] === 'continue' && __cr.level() === 'kioskRow' ? 'ok' : 'bad ' + JSON.stringify(m); })()"
 ev "(() => { localStorage.clear(); return 'ok'; })()" >/dev/null
+# ---- Story (piece 4c): the title's backstory, the elevator ride between floors, the card before a restart, ceilings and floor signs.
+pw goto "http://localhost:$PORT/index.html" >/dev/null || fail "could not open the title"
+sleep 2
+ev "(() => { window.__w = (ms) => new Promise(r => setTimeout(r, ms)); window.__until = async (f, ms = 4000) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (f()) return true; await __w(10); } return false; }; return 'ok'; })()" >/dev/null
+sexpect() { local r; r=$(ev "$2"); [ "$r" = "ok" ] || fail "story: $1: $(pw --raw eval "JSON.stringify([__cr.run(), __cr.card()])") ($r)"; }
+sexpect "the title carries the backstory and the new-run clock line" "(() => { const t = document.getElementById('cr-menu').textContent; return /January 2nd/.test(t) && /49\.99/.test(t) && /in person/.test(t) && /1:30 p\.m\./.test(t) && /2:15/.test(t) ? 'ok' : 'bad ' + t; })()"
+shotc story-title
+pw goto "http://localhost:$PORT/index.html?arena=turnstiles&cards" >/dev/null
+sleep 2
+ev "(() => { window.__w = (ms) => new Promise(r => setTimeout(r, ms)); window.__until = async (f, ms = 4000) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (f()) return true; await __w(10); } return false; }; return 'ok'; })()" >/dev/null
+sexpect "?cards turns the story cards on in a jump URL" "__cr.run().cards ? 'ok' : 'bad'"
+ev "(async () => { __cr.god(true); __cr.drive({}); __cr.clearArena(); await __until(() => __cr.run().gateOpen, 3000); const g = __cr.gate(); __cr.at(g.pos[0], g.pos[2] - 3, 0); __cr.drive({ moveY: -1 }); await __until(() => __cr.run().phase === 'card', 6000); __cr.drive({}); await __w(100); const c = __cr.card(), r = __cr.run(), fl = document.querySelector('.cr-cab-floor'); window.__ride = c.visible && r.phase === 'card' && r.fade === 1 && /Smoothie Bar/i.test(c.text) && /asterisk/.test(c.text) && /Cancellation hours: Tues 2:00.2:05/.test(c.text) && /Sweatin/.test(c.text) && !!fl && fl.textContent.length > 0; window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyX' })); await __w(150); window.__early = __cr.run().phase; await __w(700); window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyX' })); await __until(() => __cr.run().phase === 'play', 3000); return 'ok'; })()" >/dev/null
+sexpect "walking into the gate rides the elevator: the card was up, black, with the Smoothie Bar's lines, the hours, the muzak and a floor counter" "window.__ride === true ? 'ok' : 'bad'"
+sexpect "a key press before the skip delay did not skip the card" "window.__early === 'card' ? 'ok' : 'bad ' + window.__early"
+sexpect "a later press skipped it: the Smoothie Bar is the checkpoint, the card is gone, the hours line shows, Doc is at the entry" "(() => { const r = __cr.run(), p = __cr.player().pos; return r.arena === 'smoothie' && r.checkpoint === 1 && !__cr.card().visible && r.fade === 0 && /Cancellation hours/.test(r.hours || '') && p[2] < -14 ? 'ok' : 'bad ' + JSON.stringify([r, p]); })()"
+ev "(async () => { __cr.god(false); __cr.hurtTobble(1e6); __cr.hurt(1e6); await __until(() => __cr.run().phase === 'fadeOut' || __cr.run().phase === 'card', 8000); await __until(() => __cr.run().phase === 'card', 3000); await __w(300); return 'ok'; })()" >/dev/null
+sexpect "both down: the defeat card shows a line and Doc's reply, and the arena restarted under it" "(() => { const c = __cr.card(), r = __cr.run(); return c.visible && r.kind === 'defeat' && /Doc:/.test(c.text) && /(PA|Tobble):/.test(c.text) && r.arena === 'smoothie' && __cr.health().hp === 100 && !__cr.health().downed ? 'ok' : 'bad ' + JSON.stringify([c, r, __cr.health()]); })()"
+shotc story-defeat
+ev "(async () => { await __w(600); window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyX' })); await __until(() => __cr.run().phase === 'play', 3000); return 'ok'; })()" >/dev/null
+sexpect "the defeat card skips, and play resumes in the same arena" "(() => { const r = __cr.run(); return r.arena === 'smoothie' && r.phase === 'play' && !__cr.card().visible ? 'ok' : 'bad'; })()"
+# Ceilings: no open sky overhead, the floor sign is in the scene, and the budget holds with the roof.
+ev "(async () => { __cr.setCards(false); __cr.god(true); __cr.drive({}); __cr.place('open'); await __w(2500); return 'ok'; })()" >/dev/null
+CE_CALLS=$(ev "__cr.stats().calls"); CE_TRIS=$(ev "__cr.stats().tris")
+[ "$CE_CALLS" -lt 400 ] 2>/dev/null || fail "story: smoothie bar with its ceiling: draw calls '$CE_CALLS', expected under 400"
+[ "$CE_TRIS" -lt 300000 ] 2>/dev/null || fail "story: smoothie bar with its ceiling: triangles '$CE_TRIS', expected under 300000"
+ev "(() => { __cr.look(0, 0.5); return 'ok'; })()" >/dev/null
+sleep 1
+shotc story-ceiling
+ev "__cr.god(false)" >/dev/null
+check_console
+
 echo "run: smoothie bar $SM_FPS fps $SM_CALLS calls $SM_TRIS tris; desk $D_FPS fps $D_CALLS calls $D_TRIS tris; boss fight $FPS_B fps $CALLS_B calls $TRIS_B tris"
 check_console
 

@@ -75,6 +75,14 @@ export const KIOSK_ROW = deepFreeze({
   exit: { pos: [-4.5, 0, Z], yaw: Math.PI, w: 3 },
   landmark: { pos: [0, 3, 14.7], text: 'FRONT DESK', w: 6, h: 1.2 },
   // More wall signs (view only): pos, the way it faces (yaw 0 faces +z), size and optional colours.
+  // The roof (view only, see ceiling.js): hanging banners and the floor sign by the entry. yaw PI faces -z, toward Doc coming in.
+  ceiling: {
+    floorSign: { pos: [0, 4.6, -10.2], yaw: Math.PI, text: 'FLOOR 1 \u2014 CHECK-IN', w: 4.6, h: 0.9, bg: '#2ec4b6' },
+    banners: [
+      { pos: [-2.5, 5.35, -1], yaw: Math.PI, text: 'NEW YEAR, NEW YOU (FOREVER)', w: 4.4, h: 1.1, bg: '#b9a7ff' },
+      { pos: [2.5, 5.35, 7], yaw: Math.PI, text: 'WHERE QUITTING IS NOT AN OPTION', w: 4.6, h: 1.1, bg: '#ff8a1f' },
+    ],
+  },
   signs: [
     { pos: [4.3, 1.8, 14.7], yaw: Math.PI, text: 'CANCELLATIONS: TOP FLOOR \u2192', w: 4.6, h: 1.1, bg: '#2ec4b6' },
     { pos: [-6.86, 2.0, 6], yaw: Math.PI / 2, text: 'NEW YEAR, NEW YOU (FOREVER)', w: 3.2, h: 1.5, bg: '#b9a7ff' },

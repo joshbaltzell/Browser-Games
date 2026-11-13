@@ -11,6 +11,8 @@ import { ARENA_LEVELS } from './world/arenas.js';
 import { ARENAS, ARENA_TITLES, arenaIndex, createRun, hoursLine, inGate, loadCheckpoint } from './run.js';
 import { loadSettings, saveSettings, introSeen, markIntroSeen } from './settings.js';
 import { createMenus } from './ui/menus.js';
+import { createStoryCard } from './ui/storyCard.js';
+import { transitionCard, DEFEAT_CARDS, pickDefeat } from './story.js';
 import { disposeTree } from './render/dispose.js';
 import { pointInBoxes } from './world/collide.js';
 import { createTuningPanel } from './dev/tuningPanel.js';
@@ -154,7 +156,11 @@ export function startPlay({ canvas, gl, params }) {
   const storage = safeStorage();
   let settings = loadSettings(storage);
   // The player's settings win over the dev panel's look.invertY and the tuned speeds (they scale them).
-  function applySettings() { sfx.setVolume(settings.volume); TUNING.look.invertY = settings.invertY; }
+  // Story cards (the elevator rides and the line before a restart): the setting, off for the smoke harness's jump URLs (?skipTitle, ?arena, ?room)
+  // unless ?cards asks for them, and __cr.setCards(on) overrides both.
+  let cardsOverride = null;
+  const cardsOn = () => (cardsOverride !== null ? cardsOverride : settings.storyCards && ((params && params.has('cards')) || showsTitle(params)));
+  function applySettings() { sfx.setVolume(settings.volume); TUNING.look.invertY = settings.invertY; run.cards = cardsOn(); }
   applySettings();
   const trigger = createTrigger();
   const glow = createCoverGlowView(scene);
@@ -171,6 +177,8 @@ export function startPlay({ canvas, gl, params }) {
   const arsenal = createArsenal();
   const effects = createEffects(scene);
   const hud = createHud(document.body);
+  const storyCard = createStoryCard();
+  let cardPress = false, pendingCard = null, lastDefeat = -1;   // any fresh key / click / button since the card began; what to draw when the card phase starts
   const shotRand = rng(1);
   // The player's health and the kettlebells outlive the arena; the fight, Tobble and the views do not.
   const health = createHealth();
@@ -286,6 +294,9 @@ export function startPlay({ canvas, gl, params }) {
   const unlockSound = () => sfx.unlock();
   window.addEventListener('pointerdown', unlockSound);
   const markPress = () => { anyPress = true; };
+  const cardKey = (e) => { if (!e.repeat && e.code !== 'Escape') cardPress = true; };
+  window.addEventListener('keydown', cardKey);
+  window.addEventListener('pointerdown', () => { cardPress = true; });
   window.addEventListener('keydown', markPress);
   window.addEventListener('pointerdown', markPress);
   window.addEventListener('keydown', unlockSound);
@@ -314,32 +325,45 @@ export function startPlay({ canvas, gl, params }) {
   }
 
   // Both down (or Doc bled out): the arena starts again, with the gym's line.
-  function gameOver() { restart(); pop('Your membership has been renewed.', 'over', 3.2, 3); }
+  // With story cards on, the arena restarts under a short card (run.beginDefeat; the restart itself happens at its 'defeat' event).
+  function gameOver() {
+    if (run.cards) {
+      if (run.phase === 'play') { lastDefeat = pickDefeat(Math.random, lastDefeat); pendingCard = { kind: 'defeat', lines: DEFEAT_CARDS[lastDefeat] }; run.beginDefeat(); }
+      return;
+    }
+    restart(); pop('Your membership has been renewed.', 'over', 3.2, 3);
+  }
 
-  function restart() {
+  function restart(fromRun = false) {
     if (fight) fight.reset();
     resetPlayerSide();
     if (fv) fv.reset();
     for (const v of views) v.reset();
     if (fight) { actions.reset(); gv.reset(); pv.reset(); syncTobble(); if (tv) tv.reset(); }
     // The current arena again: the gate shuts, the checkpoint is its own entry.
-    run.restart();
+    if (!fromRun) run.restart();
     room.setGateOpen(false, true); gateWasOpen = false;
     ending.reset(); room.setCancelLit(false);
   }
 
   // Doc steps into an arena (a swap, the ?arena jump, Continue): it is built, Doc and Tobble stand at its entry with full health
   // and ammo, and the cancellation hours line shows for a few seconds.
-  function enterArena(name) {
+  // quiet: the elevator card is up, so the hours line, the PA and the photo come when it ends (arrive).
+  function enterArena(name, quiet = false) {
     loadArena(name);
     resetPlayerSide();
     cam.snap(spawn.pos, spawn.yaw, 'normal', 1);
-    hoursT = name === 'greyRoom' ? 0 : TUNING.run.hoursTime;
+    hoursT = name === 'greyRoom' || quiet ? 0 : TUNING.run.hoursTime;
     popState = null;
-    // The PA between arenas.
+    if (!quiet) paArrival(name);
+  }
+  // The PA between arenas.
+  function paArrival(name) {
     if (fv && name === 'smoothie') fv.forceBark('paSmoothie');
     else if (fv && name === 'desk') fv.forceBark('paDesk');
   }
+  // The elevator card is over: the new floor's hours line, the PA and the checkpoint photo.
+  function arrive() { hoursT = TUNING.run.hoursTime; paArrival(run.arena); pop('Progress photo saved.', 'photo', 2.6, 2); }
   let hoursT = 0;
 
   // The arena is clear: the gate opens (when there is a next arena).
@@ -480,7 +504,9 @@ export function startPlay({ canvas, gl, params }) {
   cr.dummies = () => dummyList.map(d => ({ id: d.id, health: d.health, alive: d.alive, pos: d.pos.slice() }));
   cr.level = () => LEVEL.name || levelName;
   // The run: which arena, the checkpoint, the fade; the exit gate; and a way to jump (the ?arena param does the same at load).
-  cr.run = () => ({ arena: run.arena, index: run.index, checkpoint: run.checkpoint, phase: run.phase, cleared: run.cleared, gateOpen: run.gateOpen, fade: run.fade, saved: run.saved, hours: hoursT > 0 ? hoursLine(run.checkpoint) : null });
+  cr.run = () => ({ kind: run.kind, cards: run.cards, arena: run.arena, index: run.index, checkpoint: run.checkpoint, phase: run.phase, cleared: run.cleared, gateOpen: run.gateOpen, fade: run.fade, saved: run.saved, hours: hoursT > 0 ? hoursLine(run.checkpoint) : null });
+  cr.card = () => ({ visible: storyCard.visible, text: storyCard.text() });
+  cr.setCards = (on) => { cardsOverride = on === null ? null : !!on; run.cards = cardsOn(); };
   cr.gate = () => (LEVEL.exit ? { pos: LEVEL.exit.pos.slice(), yaw: LEVEL.exit.yaw, w: LEVEL.exit.w, open: gateWasOpen, openness: room.gate ? room.gate.openness() : 0 } : null);
   cr.go = (name) => { if (!ARENAS.includes(name)) return false; run.goTo(arenaIndex(name)); enterArena(name); return true; };
   // God-mode clear for smoke tests: every Rep dies and every sauna closes; the fight reports 'clear' on its next step.
@@ -781,7 +807,7 @@ export function startPlay({ canvas, gl, params }) {
         if (GATED.some(a => h[a])) for (const a of GATED) { h[a] = false; snap.pressed[a] = false; } else inputGate = false;
       }
       if (blocked) for (const a of GATED) snap.pressed[a] = false;
-      if (Object.values(snap.pressed).some(Boolean)) anyPress = true;
+      if (Object.values(snap.pressed).some(Boolean)) { anyPress = true; cardPress = true; }
       const driving = !!drive || driveTap;
       simulating = !blocked && !menus.open && (driving || shouldSimulate({ locked: input.isLocked(), device: input.device(), panelOpen: hooks.panelOpen() }));
       pauseBox.hidden = simulating || blocked || menus.open;
@@ -845,7 +871,29 @@ export function startPlay({ canvas, gl, params }) {
       // dt is the simulation's own time: the real frame time, slowed while a hitstop crawls (so the visuals freeze with the world).
       const dt = simulating ? Math.min(realSeconds * scale, MAX_DT) : 0;
       // The fade between arenas runs on real time. At 'swap' the screen is black: the next arena is built and the old one freed.
-      for (const ev of run.step(Math.min(realSeconds, MAX_DT))) if (ev.type === 'swap') { enterArena(ev.to); pop('Progress photo saved.', 'photo', 2.6, 2); }
+      // A story card holds still under the pause menu (a skip press is read below).
+      if (run.phase === 'card' && cardPress) { cardPress = false; run.skipCard(); }
+      for (const ev of menus.open && run.phase === 'card' ? [] : run.step(Math.min(realSeconds, MAX_DT))) {
+        if (ev.type === 'swap') {
+          if (ev.card) {
+            enterArena(ev.to, true);
+            pendingCard = { kind: 'ride', card: transitionCard(arenaIndex(ev.from), arenaIndex(ev.to)) };
+          } else { enterArena(ev.to); pop('Progress photo saved.', 'photo', 2.6, 2); }
+        } else if (ev.type === 'defeat') restart(true);
+        else if (ev.type === 'cardDone') {
+          inputGate = true; resetButton();   // buttons still down from skipping the card stay dead until released
+          if (ev.kind === 'swap') arrive();
+        }
+      }
+      if (run.phase === 'card') {
+        if (!storyCard.visible && pendingCard) {
+          cardPress = false;
+          if (pendingCard.kind === 'ride') storyCard.showRide(pendingCard.card, () => sfx.play('pickup', TUNING.feedback.pickupVolume));
+          else storyCard.showDefeat(pendingCard.lines);
+          pendingCard = null;
+        }
+        storyCard.tick(run.cardElapsed, run.cardLength, TUNING.run.cardSkipDelay);
+      } else if (storyCard.visible) { storyCard.hide(); pendingCard = null; }
       if (hoursT > 0 && simulating) hoursT = Math.max(0, hoursT - dt);
       if (popState && popState.t > 0) popState.t -= dt;
       setFade(run.fade);

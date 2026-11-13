@@ -7,6 +7,7 @@ import { makeFloor, makeSign } from './kit.js';
 import { makeBox } from './collide.js';
 import { propGeometry } from './props.js';
 import { buildGate } from './gate.js';
+import { buildCeiling } from './ceiling.js';
 
 const deepFreeze = (o) => {
   if (o && typeof o === 'object' && !Object.isFrozen(o)) {
@@ -170,6 +171,8 @@ export function buildGreyRoom(room = GREY_ROOM) {
     cancel.visible = false;
     group.add(cancel);
   }
+  // The roof (the run's arenas carry `ceiling` data; the grey room keeps its open sky).
+  if (room.ceiling) group.add(buildCeiling(room));
   // The exit gate (arenas that lead on): closed until setGateOpen(true).
   const gate = room.exit ? buildGate(room.exit) : null;
   if (gate) group.add(gate.group);
