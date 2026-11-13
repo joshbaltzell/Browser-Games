@@ -317,7 +317,7 @@ const LOW_HIPS = 0.25, LOW_LEAN = 0.85, LOW_SQUASH = 0.82;
 function coverLow(t, spec, p) {
   const f = frame(spec);
   const ph = (TAU * t) / CLIPS.coverLow.duration;
-  p.hipsY = LOW_HIPS + 0.006 * Math.sin(ph);
+  p.hipsY = LOW_HIPS + (spec.lowDip || 0) + 0.006 * Math.sin(ph); // lowDip: a spec with a taller crown (Doc's spiky hair) crouches a little deeper
   p.lean = LOW_LEAN + 0.015 * Math.sin(ph + 0.4);
   p.twist = 0.03 * Math.sin(ph + 0.6);
   p.headYaw = 0.04 * Math.sin(ph);
@@ -421,7 +421,7 @@ const BLIND_HIPS = 0.17, BLIND_LEAN = 0.5, BLIND_HEAD = -0.9, BLIND_SQUASH = 0.8
 function coverBlindLow(t, spec, p) {
   const f = frame(spec);
   const ph = (TAU * t) / CLIPS.coverBlindLow.duration;
-  p.hipsY = BLIND_HIPS + 0.006 * Math.sin(ph);
+  p.hipsY = BLIND_HIPS + (spec.lowDip || 0) * 0.6 + 0.006 * Math.sin(ph);
   p.lean = BLIND_LEAN + 0.015 * Math.sin(ph + 0.4);
   p.twist = 0.03 * Math.sin(ph + 0.6);
   p.headYaw = 0.04 * Math.sin(ph);

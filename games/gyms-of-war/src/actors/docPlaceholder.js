@@ -24,26 +24,31 @@ export const DOC_PLACEHOLDER = deepFreeze({
   // Wider shoulders (rig x), thicker arms, a neck.
   shoulderL: [0.275, 1.095, 0],
   shoulderR: [-0.275, 1.095, 0],
-  armRadius: 0.075,
+  armRadius: 0.07,
+  legRadius: 0.085,
   neck: { radius: 0.1, depth: 0.85 },
+  // The head sits low between the traps (as in the turnaround), with a thin hair shell under the spikes.
+  head: { ...ASSOCIATE.head, centerY: 0.27 },
+  hair: { ...ASSOCIATE.hair, thickness: 0.02, lift: 0, quiff: false },
   torso: {
     ...ASSOCIATE.torso,
     pants: [[0, -0.125], [0.14, -0.12], [0.205, -0.09], [0.238, -0.035], [0.245, 0.02], [0.235, 0.06], [0, 0.06]],
     // Narrow waist, deep chest, wide shoulders, a sloping trapezius up to the neck.
     shirt: [[0, 0], [0.232, 0], [0.245, 0.02], [0.242, 0.07], [0.258, 0.13], [0.295, 0.22], [0.318, 0.3], [0.29, 0.375],
       [0.235, 0.415], [0.17, 0.445], [0.11, 0.47], [0.075, 0.482], [0, 0.49]],
-    sleeve: 0.12,      // round deltoids (the vest is sleeveless)
+    sleeve: 0.135,     // round deltoids (the vest is sleeveless)
   },
   // Human skin, normal toon rim, plain white eyes (the alien look is for the Glorp only).
   colors: {
     ...ASSOCIATE.colors,
     skin: PALETTE.docSkin, hair: HAIR_BLUE, shirt: OFF_WHITE, collar: PALETTE.nebulaHot, rim: 0.25, rimColor: '#ffffff',
-    pants: DARK_PURPLE, pouch: '#2f2250', strap: INK_PURPLE, band: INK_PURPLE, glove: INK_PURPLE,
+    pants: DARK_PURPLE, pouch: '#6a5590', strap: INK_PURPLE, band: INK_PURPLE, glove: INK_PURPLE,
     panel: PALETTE.hotPink, lens: PALETTE.hotPink, badge: OFF_WHITE, pad: OFF_WHITE,
-    stubble: '#c28a66', shoe: OFF_WHITE, sole: INK_PURPLE,
+    stubble: '#a97855', browRidge: '#e5a57c', shoe: OFF_WHITE, sole: INK_PURPLE,
   },
   outfit: { collar: false, lanyard: false, logo: false, headset: false },
   kit: true,
+  lowDip: -0.05,     // crouches deeper in low cover so the spiky hair stays below the wall top
   // The resting face is a heavy-browed scowl with gritted teeth; the other expressions are the Associate's.
   face: {
     ...ASSOCIATE.face, brow: 'uni', fixedSmile: 0, eyeColor: PALETTE.eyeWhite, eyeGlow: false, teeth: true,

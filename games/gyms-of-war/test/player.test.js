@@ -15,7 +15,8 @@ const near = (a, b, e) => assert.ok(Math.abs(a - b) <= e, `${a} vs ${b}`);
 
 test('DOC_PLACEHOLDER keeps the Associate heights and limb lengths and changes the look', () => {
   for (const k of ['height', 'hipHeight', 'armLength', 'legLength', 'neckY']) assert.equal(DOC_PLACEHOLDER[k], ASSOCIATE[k]);
-  assert.deepEqual(DOC_PLACEHOLDER.head, ASSOCIATE.head);
+  // The head is the Associate's, sunk a little between the shoulders (centerY only).
+  assert.deepEqual({ ...DOC_PLACEHOLDER.head, centerY: ASSOCIATE.head.centerY }, ASSOCIATE.head);
   assert.notEqual(DOC_PLACEHOLDER.colors.hair, ASSOCIATE.colors.hair);
   assert.equal(DOC_PLACEHOLDER.face.brow, 'uni');
   assert.equal(DOC_PLACEHOLDER.face.fixedSmile, 0);
@@ -286,5 +287,24 @@ test('Doc stays within the cover pose rules: head top at most 0.95 m in low cove
     for (let i = 0; i <= 50; i++) {
       const p = samplePose(n, (i / 50) * CLIPS[n].duration, S);
       assert.ok(p.handL[0] > 0.1 && p.handR[0] < -0.1 || n === 'run', `${n} arms cross ${p.handL} ${p.handR}`);
+    }
+});
+
+test('Doc low cover: the real crown (skull, hair spikes, goggles and headband, every vertex of the head mesh) stays at most 0.95 m up', async () => {
+  const THREE = await import('three');
+  const { buildRig } = await import('../src/actors/rig.js');
+  const { samplePose, CLIPS } = await import('../src/actors/poses.js');
+  const S = DOC_PLACEHOLDER;
+  const rig = buildRig(S);
+  const head = rig.root.getObjectByName('headMesh');
+  const pos = head.geometry.getAttribute('position'), v = new THREE.Vector3();
+  for (const n of ['coverLow', 'coverLowMove', 'coverBlindLow'])
+    for (let i = 0; i <= 50; i++) {
+      rig.setPose(samplePose(n, (i / 50) * CLIPS[n].duration, S), 0);
+      rig.update(1 / 60);
+      rig.root.updateMatrixWorld(true);
+      let top = 0;
+      for (let k = 0; k < pos.count; k++) top = Math.max(top, v.fromBufferAttribute(pos, k).applyMatrix4(head.matrixWorld).y);
+      assert.ok(top <= 0.95, `${n} frame ${i}: crown ${top.toFixed(3)}`);
     }
 });

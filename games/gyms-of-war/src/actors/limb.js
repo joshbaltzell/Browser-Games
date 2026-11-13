@@ -21,12 +21,32 @@ const CAP_ANGLES = [0.65, 1.2]; // radians from the tube wall toward the tip
 // the lit edge as the torso's do.
 // `bands` (optional, Doc's knee pads): [[t0, t1, colour], ...], ring colours fixed at build, later bands win. Along the limb, round the
 // whole tube (no extra mesh, so no extra draw call). With bands the material is white and the vertex colours carry the colour.
-export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffffff', spots = null, bands = null, rim, rimColor } = {}) {
+// `profile` (optional): [[t, factor], ...] ascending, multiplies the radius along the limb (Doc's baggy trousers and biceps).
+// `attach` (optional): rounded boxes carried on the limb, in the same mesh and so the same draw calls (Doc's thigh pouches and knee pads):
+// { t, dir: [x, y, z], size: [along, across, round], off, color }. The box sits at t along the limb, on the side of the tube facing the
+// body-space direction `dir`, centred `off` beyond the tube wall, with half sizes along the limb, along `dir` and across both.
+export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffffff', spots = null, bands = null, profile = null, attach = null, rim, rimColor } = {}) {
   const ringCount = rings + 1;
   const capRings = CAP_ANGLES.length;
   const bodyVerts = ringCount * sides;
   const capBase = [bodyVerts, bodyVerts + capRings * sides + 1]; // start cap, end cap
-  const vertCount = bodyVerts + 2 * (capRings * sides + 1);
+  const tubeVerts = bodyVerts + 2 * (capRings * sides + 1);
+  const boxes = attach || [];
+  const boxBase = tubeVerts;
+  const vertCount = tubeVerts + 8 * boxes.length;
+  const scaleAt = (t) => {
+    if (!profile) return 1;
+    if (t <= profile[0][0]) return profile[0][1];
+    for (let k = 1; k < profile.length; k++) {
+      if (t <= profile[k][0]) { const u = (t - profile[k - 1][0]) / (profile[k][0] - profile[k - 1][0] || 1); return profile[k - 1][1] + (profile[k][1] - profile[k - 1][1]) * u; }
+    }
+    return profile[profile.length - 1][1];
+  };
+  const ringScale = new Float64Array(ringCount);
+  for (let i = 0; i < ringCount; i++) ringScale[i] = scaleAt(i / rings);
+  const maxScale = Math.max(...ringScale);
+  // Per-ring centre and tangent, kept by set() for the attached boxes.
+  const ringC = new Float64Array(ringCount * 3), ringT = new Float64Array(ringCount * 3);
 
   // Indices, built once. Triangles face outward (counter-clockwise from outside).
   const index = [];
@@ -55,6 +75,10 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
     }
   }
 
+  // Box corners: bit 0 = along, bit 1 = across, bit 2 = round; outward faces, counter-clockwise from outside.
+  const BOX_QUADS = [[1, 3, 7, 5], [0, 4, 6, 2], [2, 6, 7, 3], [0, 1, 5, 4], [4, 5, 7, 6], [0, 2, 3, 1]];
+  boxes.forEach((_, b) => { for (const q of BOX_QUADS) index.push(...[0, 1, 2, 0, 2, 3].map((k) => boxBase + b * 8 + q[k])); });
+
   const positions = new Float32Array(vertCount * 3);
   const normals = new Float32Array(vertCount * 3);
   const geometry = new THREE.BufferGeometry();
@@ -66,12 +90,17 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
   geometry.setAttribute('normal', nrmAttr);
   geometry.setIndex(index);
 
-  if (bands) {
+  const painted = !!(bands || attach);
+  if (painted) {
     const base = new THREE.Color(color), col = new Float32Array(vertCount * 3);
     for (let v = 0; v < vertCount; v++) { col[v * 3] = base.r; col[v * 3 + 1] = base.g; col[v * 3 + 2] = base.b; }
+    boxes.forEach((bx, b) => {
+      const k = new THREE.Color(bx.color);
+      for (let v = boxBase + b * 8; v < boxBase + b * 8 + 8; v++) { col[v * 3] = k.r; col[v * 3 + 1] = k.g; col[v * 3 + 2] = k.b; }
+    });
     for (let i = 0; i < ringCount; i++) {
       const t = i / rings;
-      for (const [t0, t1, c] of bands) {
+      for (const [t0, t1, c] of bands || []) {
         if (t < t0 || t > t1) continue;
         const k = new THREE.Color(c);
         for (let s = 0; s < sides; s++) { const v = (i * sides + s) * 3; col[v] = k.r; col[v + 1] = k.g; col[v + 2] = k.b; }
@@ -96,11 +125,11 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
     }
     geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
   }
-  const mesh = new THREE.Mesh(geometry, createToonMaterial({ color: bands ? '#ffffff' : color, vertexColors: !!(spots || bands), ...(rim !== undefined ? { rim } : {}), ...(rimColor ? { rimColor } : {}) }));
+  const mesh = new THREE.Mesh(geometry, createToonMaterial({ color: painted ? '#ffffff' : color, vertexColors: !!(spots || painted), ...(rim !== undefined ? { rim } : {}), ...(rimColor ? { rimColor } : {}) }));
   mesh.name = 'limb';
   // The bounding sphere is refreshed in set() (and shared by the outline, which
   // uses the same geometry), so culling stays on and is correct.
-  const sphere = new THREE.Sphere(new THREE.Vector3(), radius * 2);
+  const sphere = new THREE.Sphere(new THREE.Vector3(), radius * 2 * maxScale);
   geometry.boundingSphere = sphere;
   addOutline(mesh);
 
@@ -140,7 +169,8 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
   let refx = 1, refy = 0, refz = 0;
 
   function set(root, mid, end, stretch = 1) {
-    const r = radius / Math.sqrt(stretch > 1 ? stretch : 1);
+    const rBody = radius / Math.sqrt(stretch > 1 ? stretch : 1);
+    const r = rBody;
     let cx = 2 * mid[0] - (root[0] + end[0]) / 2;
     let cy = 2 * mid[1] - (root[1] + end[1]) / 2;
     let cz = 2 * mid[2] - (root[2] + end[2]) / 2;
@@ -177,7 +207,7 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
       Math.hypot(e0x - gx, e0y - gy, e0z - gz),
     );
     sphere.center.set(gx, gy, gz);
-    sphere.radius = far + radius * 1.5 + 0.02;
+    sphere.radius = far + radius * maxScale * 1.5 + 0.02 + (boxes.length ? 0.08 : 0);
 
     for (let i = 0; i < ringCount; i++) {
       const t = i / rings;
@@ -225,7 +255,9 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
       by = tz * nx - tx * nz;
       bz = tx * ny - ty * nx;
 
-      writeRing(i * sides, px, py, pz, r, nx, ny, nz, bx, by, bz, 0, 0, 0, 1, 0);
+      writeRing(i * sides, px, py, pz, r * ringScale[i], nx, ny, nz, bx, by, bz, 0, 0, 0, 1, 0);
+      ringC[i * 3] = px; ringC[i * 3 + 1] = py; ringC[i * 3 + 2] = pz;
+      ringT[i * 3] = tx; ringT[i * 3 + 1] = ty; ringT[i * 3 + 2] = tz;
 
       if (i === 0) {
         t0x = tx; t0y = ty; t0z = tz; n0x = nx; n0y = ny; n0z = nz; b0x = bx; b0y = by; b0z = bz;
@@ -243,6 +275,7 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
       const uX = e === 0 ? n0x : n1x, uY = e === 0 ? n0y : n1y, uZ = e === 0 ? n0z : n1z;
       const vX = e === 0 ? b0x : b1x, vY = e === 0 ? b0y : b1y, vZ = e === 0 ? b0z : b1z;
       const dirx = tX * sgn, diry = tY * sgn, dirz = tZ * sgn;
+      const r = rBody * ringScale[e === 0 ? 0 : rings];
       for (let k = 0; k < capRings; k++) {
         const th = CAP_ANGLES[k];
         const c = Math.cos(th), sn = Math.sin(th);
@@ -255,6 +288,34 @@ export function createLimb({ radius = 0.06, rings = 8, sides = 8, color = '#ffff
       const a = (capBase[e] + capRings * sides) * 3;
       positions[a] = px + dirx * r; positions[a + 1] = py + diry * r; positions[a + 2] = pz + dirz * r;
       normals[a] = dirx; normals[a + 1] = diry; normals[a + 2] = dirz;
+    }
+
+    // Attached boxes, in the frame of the nearest ring.
+    for (let b = 0; b < boxes.length; b++) {
+      const bx = boxes[b];
+      const i = Math.min(Math.max(Math.round(bx.t * rings), 0), rings);
+      const Tx = ringT[i * 3], Ty = ringT[i * 3 + 1], Tz = ringT[i * 3 + 2];
+      let Vx = bx.dir[0], Vy = bx.dir[1], Vz = bx.dir[2];
+      const dk = Vx * Tx + Vy * Ty + Vz * Tz;
+      Vx -= Tx * dk; Vy -= Ty * dk; Vz -= Tz * dk;
+      const vl = Math.hypot(Vx, Vy, Vz) || 1;
+      Vx /= vl; Vy /= vl; Vz /= vl;
+      const Wx = Ty * Vz - Tz * Vy, Wy = Tz * Vx - Tx * Vz, Wz = Tx * Vy - Ty * Vx;
+      const reach = rBody * ringScale[i] + bx.off;
+      const cx0 = ringC[i * 3] + Vx * reach, cy0 = ringC[i * 3 + 1] + Vy * reach, cz0 = ringC[i * 3 + 2] + Vz * reach;
+      const [sa, sb, sc] = bx.size;
+      for (let c = 0; c < 8; c++) {
+        const a = c & 1 ? 1 : -1, d = c & 2 ? 1 : -1, w = c & 4 ? 1 : -1;
+        const v = (boxBase + b * 8 + c) * 3;
+        positions[v] = cx0 + Tx * a * sa + Vx * d * sb + Wx * w * sc;
+        positions[v + 1] = cy0 + Ty * a * sa + Vy * d * sb + Wy * w * sc;
+        positions[v + 2] = cz0 + Tz * a * sa + Vz * d * sb + Wz * w * sc;
+        // Pillow normals: each corner leans out along the three axes, weighted by the box's thinness.
+        const na = a / sa, nd = d / sb, nw = w / sc;
+        let nxx = Tx * na + Vx * nd + Wx * nw, nyy = Ty * na + Vy * nd + Wy * nw, nzz = Tz * na + Vz * nd + Wz * nw;
+        const nl = Math.hypot(nxx, nyy, nzz) || 1;
+        normals[v] = nxx / nl; normals[v + 1] = nyy / nl; normals[v + 2] = nzz / nl;
+      }
     }
 
     posAttr.needsUpdate = true;
