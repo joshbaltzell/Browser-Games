@@ -17,9 +17,9 @@ test('the order is Turnstiles, Smoothie Bar, Cancellation Desk, with the story n
   assert.equal(arenaIndex('nope'), 0);
 });
 
-test('the cancellation hours shrink at each checkpoint: Tues 2:00-2:10, then 2:00-2:05, then by appointment', () => {
-  assert.deepEqual([...HOURS], ['Tues 2:00–2:10', 'Tues 2:00–2:05', 'By appointment']);
-  assert.equal(hoursLine(0), 'Cancellation hours: Tues 2:00–2:10');
+test('the cancellation hours shrink at each checkpoint: Tues 2:00-2:15, then 2:00-2:05, then by appointment', () => {
+  assert.deepEqual([...HOURS], ['Tues 2:00–2:15', 'Tues 2:00–2:05', 'By appointment']);
+  assert.equal(hoursLine(0), 'Cancellation hours: Tues 2:00–2:15');
   assert.equal(hoursLine(1), 'Cancellation hours: Tues 2:00–2:05');
   assert.equal(hoursLine(2), 'Cancellation hours: By appointment');
   assert.equal(hoursLine(99), hoursLine(2));
@@ -153,4 +153,14 @@ test('arenaFor: ?room is the grey room, ?arena= jumps, anything else is the firs
   assert.deepEqual(arenaFor(p('room')), { name: 'greyRoom', jumped: false });
   assert.deepEqual(arenaFor(p('room&arena=desk')), { name: 'greyRoom', jumped: false });
   assert.deepEqual(arenaFor(null), { name: 'turnstiles', jumped: false });
+});
+
+test('the saved checkpoint is untouched by a run with no storage (?arena=, ?skipTitle, ?room runs pass none), and written by one with storage', () => {
+  const store = fakeStorage({ [STORAGE_KEY]: '2' });
+  const test1 = createRun({ storage: null });
+  test1.goTo(0); test1.goTo(1);
+  assert.equal(store.data[STORAGE_KEY], '2');
+  const real = createRun({ storage: store });
+  real.goTo(1);
+  assert.equal(store.data[STORAGE_KEY], '1');
 });

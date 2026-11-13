@@ -91,6 +91,15 @@ export function gatePlayerInput(intent, arsenalIn, { downed = false, busy = fals
   return intent;
 }
 
+// The input gate: while any of `actions` is still held, those buttons read as released (held and pressed cleared) and the gate stays on;
+// once they are all let go it opens (returns false). `force` (a story card is up) clears them whether held or not and keeps the gate on.
+export function gateInput(snap, actions, force = false) {
+  const any = force || actions.some(a => snap.held[a]);
+  if (!any) return false;
+  for (const a of actions) { snap.held[a] = false; snap.pressed[a] = false; }
+  return true;
+}
+
 // The title screen shows unless the URL jumps straight into play: ?room (the grey room), ?arena=... or ?skipTitle (the smoke harness).
 export function showsTitle(params) {
   return !(params && (params.has('room') || params.has('arena') || params.has('skipTitle')));
@@ -126,7 +135,8 @@ export function startPlay({ canvas, gl, params }) {
   // Everything that belongs to one arena hangs under arenaRoot and is rebuilt by loadArena (the run swaps arenas, see run.js);
   // disposeArena frees its GPU side. The player, the camera, the effects pool and the HUD outlive the swap.
   const first = arenaFor(params);
-  const run = createRun({ storage: first.name === 'greyRoom' ? null : safeStorage() });
+  // Test runs (?arena=, ?skipTitle, ?room) never touch the saved Continue checkpoint.
+  const run = createRun({ storage: first.name === 'greyRoom' || !showsTitle(params) ? null : safeStorage() });
   let arenaRoot = null, levelName = '', LEVEL = null, room = null, boxes = [], spawn = { pos: [0, 0, 0], yaw: 0 };
   let dummies = [], dummyList = [], fight = null, views = [], viewOf = new Map(), gv = null, pv = null, fv = null, tv = null, tvFor = null;
   let actions = null, targetList = [];
@@ -201,6 +211,7 @@ export function startPlay({ canvas, gl, params }) {
   }
 
   function disposeArena() {
+    if (actions) actions.silence();   // the old actions are replaced: their looping motor must not outlive them
     if (!arenaRoot) return;
     disposeTree(arenaRoot);
     arenaRoot = null; tv = null; tvFor = null; fvHooks.tobbleView = null;
@@ -535,6 +546,7 @@ export function startPlay({ canvas, gl, params }) {
   cr.health = () => ({ hp: health.hp, max: TUNING.health.max, downed: health.downed, downT: health.downT });
   cr.hurt = (n) => { if (health.damage(n) === 'downed') goDown(); };
   cr.god = (on) => { TUNING.health.godMode = on ? 1 : 0; };
+  cr.simTime = () => simTime;   // seconds of simulated play (smoke checks measure in this, not wall time, so machine load cannot fail them)
   cr.fightLog = () => fightLog.map(x => ({ ...x }));
   cr.clearFightLog = () => { fightLog.length = 0; };
   cr.restart = () => restart();
@@ -801,17 +813,17 @@ export function startPlay({ canvas, gl, params }) {
       const blocked = menuWas || menus.open;
       if (!blocked && snap.pressed.pause && !onTitle && !drive) openPause();
       else if (!blocked && snap.pressed.controls && !onTitle && !drive) openControls();
-      if (inputGate) {
-        // After a menu closes: buttons still held from picking the item stay dead until they are let go.
-        const h = snap.held;
-        if (GATED.some(a => h[a])) for (const a of GATED) { h[a] = false; snap.pressed[a] = false; } else inputGate = false;
-      }
+      // A story card is up: the press that skips it is read here and goes no further, and its key must be let go before it counts in play.
+      const inCard = run.phase === 'card';
+      if (inCard) { if (Object.values(snap.pressed).some(Boolean)) cardPress = true; inputGate = true; }
+      // After a menu closes: buttons still held from picking the item stay dead until they are let go.
+      if (inputGate) inputGate = gateInput(snap, GATED, inCard);
       if (blocked) for (const a of GATED) snap.pressed[a] = false;
       if (Object.values(snap.pressed).some(Boolean)) { anyPress = true; cardPress = true; }
       const driving = !!drive || driveTap;
       simulating = !blocked && !menus.open && (driving || shouldSimulate({ locked: input.isLocked(), device: input.device(), panelOpen: hooks.panelOpen() }));
       pauseBox.hidden = simulating || blocked || menus.open;
-      if (!simulating) { button.reset(); trigger.reset(); pending.cover = false; pending.fire = false; pending.reload = false; pending.weapon = null; pending.interact = false; pending.melee = false; pending.objective = false; pending.equip = false; pending.switched = false; return; }
+      if (!simulating) { if (actions) actions.silence(); button.reset(); trigger.reset(); pending.cover = false; pending.fire = false; pending.reload = false; pending.weapon = null; pending.interact = false; pending.melee = false; pending.objective = false; pending.equip = false; pending.switched = false; return; }
       const dt = Math.min(realSeconds, MAX_DT);
       aimHeld = snap.held.aim || (drive && drive.aim);
       cam.look(snap.lookDX * settings.mouseSens, snap.lookDY * settings.mouseSens, snap.lookX, snap.lookY, dt, aimHeld, padScale * settings.padSens);
@@ -848,6 +860,7 @@ export function startPlay({ canvas, gl, params }) {
           arsenalIn.fire = false; arsenalIn.firePressed = false; inp.fire = false;
         }
         if (actions.busy()) { arsenalIn.fire = false; arsenalIn.firePressed = false; inp.fire = false; }   // a throw in progress: no fire
+        if (run.fading) actions.silence();   // the fade to the next arena or a card: the motor does not run under it
       }
       mover.update(inp, dt);
       stance = fireStance(mover);
@@ -995,7 +1008,7 @@ export function startPlay({ canvas, gl, params }) {
   }
 
   // ---- the menus: the title, the pause, the opening card
-  const GATED = ['cover', 'fire', 'aim', 'melee', 'interact', 'grenade', 'reload', 'sprint', 'objective', 'equipKb', 'tacCom', 'controls'];
+  const GATED = ['cover', 'fire', 'aim', 'melee', 'interact', 'grenade', 'reload', 'sprint', 'objective', 'equipKb', 'tacCom', 'controls', 'weapon1', 'weapon2', 'weapon3', 'weaponNext', 'weaponPrev'];
   let inputGate = false;      // true after a menu closes, until the buttons held from picking an item are let go
   let onTitle = false;        // the title screen (and its Settings / Controls cards): the attract camera runs, the HUD is hidden
   let orbitT = 0;

@@ -73,6 +73,9 @@ export function createPlayerActions({ mover, fight, arsenal, bag, cam, sfx, effe
     if (motor) motor.update(mode, Math.min(1, revT / Math.max(TUNING.feedback.motorRevTime, 1e-3)), TUNING.feedback.motorVolume);
   }
 
+  // Everything that loops goes quiet (the chainsaw motor): the arena is torn down, a menu or card is up, or the game is not simulating.
+  function silence() { runMotor(0, null); }
+
   function startExecution(e, time, kind) {
     if (!fight.beginExecution(e)) return false;
     if (!mover.execute([e.pos[0], e.pos[2]], time)) { fight.releaseExecution(e); return false; }
@@ -276,7 +279,7 @@ export function createPlayerActions({ mover, fight, arsenal, bag, cam, sfx, effe
   }
 
   return {
-    step, reset, onAction, onPlayerHit, aimThrow,
+    step, reset, silence, onAction, onPlayerHit, aimThrow,
     prompt: () => prompt,
     arc: () => ({ count: arc.count, land: arc.land, show: arc.show }),
     busy: () => throwBusy > 0,

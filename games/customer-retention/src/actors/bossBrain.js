@@ -204,15 +204,22 @@ function retreat(e, ctx, B, dt) {
   }
 }
 
-// Hiding and invulnerable until the fight reports both saunas closed or spent (and at least minHide s have passed); then phase 3.
+// Phase 3 begins: faster, bargaining. It starts when its health falls to phase3At (see hurtBoss), or at once on the return if it is already there.
+function startPhase3(e, ctx) {
+  e.phase = 3;
+  ctx.events.push({ type: 'bossPhase', id: e.id, phase: 3 });
+}
+
+// Hiding and invulnerable until the fight reports both saunas closed or spent (and at least minHide s have passed); then it comes back out
+// vulnerable (still phase 2, at the phase2At line) and phase 3 starts when its health falls to phase3At.
 function hiding(e, ctx, B, dt) {
   faceXZ(e, ctx.player.pos[0], ctx.player.pos[2], dt);
   if (e.stateT < B.minHide - EPS || !(ctx.saunasDone && ctx.saunasDone())) return;
-  e.phase = 3; e.invuln = false;
+  e.invuln = false;
   e.spot = ctx.player.pos[0] < 0 ? 0 : 1;   // it comes back out on the side Doc is on
   e.shiftFrom[0] = e.pos[0]; e.shiftFrom[1] = e.pos[2]; e.shiftT = 0; e.shiftPending = false;
   go(e, 'return');
-  ctx.events.push({ type: 'bossPhase', id: e.id, phase: 3 });
+  if (e.health <= B.phase3At * B.health + EPS) startPhase3(e, ctx);
   bark(e, ctx, 'bossReturn');
 }
 
@@ -246,7 +253,7 @@ export function killBoss(e, ctx, kind) {
 }
 
 // 'hit' | 'kill' | 'immune' | null. The head takes boss.headMult more. While it hides (phase 2) nothing hurts it ('immune'). In phase 1 the health
-// never goes below phase2At (the hit that crosses it starts the retreat), so no single hit skips a phase; phase 3 can end in 'kill'.
+// never goes below phase2At and back out in phase 2 never below phase3At (the hit that crosses a line starts the next phase), so no single hit skips a phase; phase 3 can end in 'kill'.
 export function hurtBoss(e, amount, ctx, kind = 'body') {
   if (!e.alive || !(amount > 0) || e.state === 'unused') return null;
   if (e.invuln) return 'immune';
@@ -261,6 +268,12 @@ export function hurtBoss(e, amount, ctx, kind = 'body') {
       bark(e, ctx, 'bossTeam');
       return 'hit';
     }
+    return 'hit';
+  }
+  if (e.phase === 2) {
+    // Back out after the saunas: no single hit skips phase 3 either (it stops at the phase3At line).
+    const at3 = B.phase3At * B.health;
+    if (e.health <= at3 + EPS) { e.health = at3; startPhase3(e, ctx); }
     return 'hit';
   }
   if (e.health <= 0) { e.health = 0; return killBoss(e, ctx, kind); }

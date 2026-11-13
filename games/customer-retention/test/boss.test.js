@@ -54,6 +54,15 @@ function rig({ tobble = false, at = COUNTER, tune, seed = 3, god = false } = {})
   return r;
 }
 
+// After the saunas: it comes back out vulnerable (still phase 2, at the 66% line); one more huge hit takes it to the 33% line, which is phase 3.
+const backOut = (r, max = 30) => r.until(x => x.boss.phase === 2 && !x.boss.invuln, max);
+function toPhase3(r, max = 30) {
+  assert.ok(backOut(r, max), 'it came back out');
+  assert.equal(r.f.hurt(r.boss, 1e6, 'body'), 'hit');
+  r.step();
+  assert.equal(r.boss.phase, 3);
+}
+
 test('the Overlord is a slot kind: the level starts it as slot 0, it is 2x a Rep with a crouching shape, holds no cover point or token, and is never pushed or flanked', () => {
   const r = rig({ god: true });
   const b = r.boss;
@@ -104,7 +113,7 @@ test('the telegraph is always longer than a Rep\'s (a longer windup), and a burs
   r.run(1); r.f.hurt(r.boss, 1e6, 'body'); r.step();   // phase 2
   assert.ok(r.until(x => x.boss.state === 'hiding', 10));
   for (const p of r.f.pads) p.state = 'closed';
-  assert.ok(r.until(x => x.boss.phase === 3, 30));
+  toPhase3(r);
   const seq = [];
   r.run(30, () => { for (const e of r.log.splice(0)) if (e.id === 'overlord' && (e.type === 'telegraph' || e.type === 'enemyShot')) seq.push(e.type); });
   assert.ok(seq.includes('enemyShot') && seq.includes('telegraph'));
@@ -144,8 +153,14 @@ test('the phase transitions: 66% starts phase 2 (it retreats, invulnerable, both
   assert.ok(Math.abs(b.pos[0] - D.overlord.deskHide[0]) < 1e-6 && Math.abs(b.pos[2] - D.overlord.deskHide[1]) < 1e-6);
   // Close both: it returns (after minHide), phase 3, vulnerable.
   for (const p of r.f.pads) p.state = 'closed';
-  assert.ok(r.until(x => x.boss.phase === 3, 10));
-  assert.equal(b.invuln, false);
+  assert.ok(backOut(r, 10));
+  assert.equal(b.invuln, false); assert.equal(b.phase, 2, 'vulnerable at the 66% line, not yet phase 3');
+  assert.ok(!r.of('bossPhase').some(e => e.phase === 3));
+  // A huge hit stops at the 33% line (phase3At) and starts phase 3.
+  assert.equal(r.f.hurt(b, 1e6, 'body'), 'hit');
+  r.step();
+  assert.equal(b.phase, 3); assert.equal(b.invuln, false);
+  assert.ok(Math.abs(b.health - B.phase3At * B.health) < 1e-6, `${b.health}`);
   assert.ok(r.of('bossPhase').some(e => e.phase === 3));
   // Phase 3 hits: health falls; another huge hit kills it exactly once.
   assert.equal(r.f.hurt(b, 100, 'body'), 'hit');
@@ -194,7 +209,7 @@ test('the saunas end phase 2: closed with kettlebells, or both spent after their
   a.f.throwGrenade([9, 0.3, 8.4], [0, 0, 0]);
   a.run(TUNING.grenade.fuse + 0.1);
   assert.deepEqual(a.f.pads.map(p => p.state), ['closed', 'closed']);
-  assert.ok(a.until(x => x.boss.phase === 3, 5));
+  assert.ok(backOut(a, 5));
   // (b) left alone, each sauna makes its `total` spawns (a mix of Reps and Trainers) and is spent; the team is killed as it comes.
   const r = rig({ god: true, seed: 7, tune: t => { t.pad.total = 3; t.pad.interval = 1; } });
   r.run(1); r.f.hurt(r.boss, 1e6, 'body'); r.step();
@@ -204,7 +219,7 @@ test('the saunas end phase 2: closed with kettlebells, or both spent after their
   for (let i = 0; i < 60 * 80 && !ok; i++) {
     r.step();
     for (const e of r.f.enemies) if (e.alive && e.kind !== 'boss' && e.state !== 'unused') { kinds.add(e.kind); if (e.state !== 'spawn') r.f.hurt(e, 1e6, 'blast'); }
-    ok = r.boss.phase === 3;
+    ok = r.boss.phase === 2 && !r.boss.invuln;
   }
   assert.ok(ok, 'the boss returned after both saunas were spent');
   assert.deepEqual(r.f.pads.map(p => p.state), ['spent', 'spent']);
@@ -274,7 +289,7 @@ test('phase 3: faster (shorter wait, higher rate), and the bargaining barks come
   const b = r.boss;
   r.run(1); r.f.hurt(b, 1e6, 'body'); r.step();
   for (const p of r.f.pads) p.state = 'closed';
-  assert.ok(r.until(x => x.boss.phase === 3, 30));
+  toPhase3(r);
   r.log.length = 0;
   r.run(40);
   const keys = r.of('bark').filter(e => e.id === 'overlord').map(e => e.key);
@@ -541,4 +556,19 @@ test('a whole boss fight, headless, is survivable with good play (numbers in the
   const won = rows.filter(r => r.beatT !== null);
   assert.equal(won.length, 3, `beaten in ${won.length}/3: ${JSON.stringify(rows)}`);
   for (const w of won) assert.ok(w.phaseT[2] > 0 && w.phaseT[3] > w.phaseT[2], JSON.stringify(w));
+});
+
+test('boss.phase3At is wired: phase 3 starts when health falls to that line after phase 2, and a higher line starts it sooner', () => {
+  const r = rig({ god: true, tune: t => { t.boss.phase3At = 0.5; } });
+  r.run(1); r.f.hurt(r.boss, 1e6, 'body'); r.step();
+  assert.ok(r.until(x => x.boss.state === 'hiding', 10));
+  for (const p of r.f.pads) p.state = 'closed';
+  assert.ok(backOut(r, 10));
+  const at = r.tuning.boss.health;
+  r.f.hurt(r.boss, 0.05 * at, 'body');   // 66% -> 61%: still above 50%
+  assert.equal(r.boss.phase, 2);
+  r.f.hurt(r.boss, 0.2 * at, 'body');    // below 50%
+  r.step();
+  assert.equal(r.boss.phase, 3);
+  assert.ok(Math.abs(r.boss.health - 0.5 * at) < 1e-6);
 });

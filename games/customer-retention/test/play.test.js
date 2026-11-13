@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldSimulate, edgesKey, levelFor } from '../src/play.js';
+import { shouldSimulate, edgesKey, levelFor, gateInput, showsTitle } from '../src/play.js';
 
 test('shouldSimulate: paused only when unlocked, on keyboard and mouse, with the panel closed', () => {
   assert.equal(shouldSimulate({ locked: false, device: 'kbm', panelOpen: false }), false);
@@ -164,4 +164,26 @@ test('give up needs E released once after the down; E held through the down does
   r.health.downed = false; r.a.step(1 / 60, r.inp({})); r.health.downed = true;
   for (let i = 0; i < 120; i++) r.a.step(1 / 60, r.inp({ interactHeld: true }));
   assert.equal(r.restarts(), 1);
+});
+
+test('gateInput: while a gated button is held it reads as released and the gate stays on; once all are let go it opens', () => {
+  const A = ['melee', 'reload', 'weapon1'];
+  const mk = (held = [], pressed = []) => ({ held: Object.fromEntries(A.map(a => [a, held.includes(a)])), pressed: Object.fromEntries(A.map(a => [a, pressed.includes(a)])) });
+  let s = mk(['melee'], ['melee']);
+  assert.equal(gateInput(s, A), true);
+  assert.deepEqual([s.held.melee, s.pressed.melee], [false, false]);
+  s = mk();
+  assert.equal(gateInput(s, A), false, 'released: the gate opens');
+});
+
+test('gateInput with force (a story card is up): a skip key, even a tap that is already up, never reaches the game, and the gate stays on', () => {
+  const A = ['melee', 'reload', 'weapon1', 'weapon3', 'interact'];
+  const s = { held: Object.fromEntries(A.map(a => [a, false])), pressed: Object.fromEntries(A.map(a => [a, a === 'reload' || a === 'weapon3' || a === 'melee']))};
+  assert.equal(gateInput(s, A, true), true);
+  assert.ok(A.every(a => !s.pressed[a] && !s.held[a]));
+});
+
+test('test URLs (?arena=, ?skipTitle, ?room) skip the title, which is what keeps them off the saved checkpoint', () => {
+  for (const q of ['arena=smoothie', 'skipTitle', 'room']) assert.equal(showsTitle(new URLSearchParams(q)), false);
+  assert.equal(showsTitle(new URLSearchParams('')), true);
 });

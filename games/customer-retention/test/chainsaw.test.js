@@ -5,6 +5,7 @@ import { TUNING } from '../src/tuning.js';
 import { createPlayerActions } from '../src/playerActions.js';
 import { createMovement } from '../src/actors/movement.js';
 import { makeBox } from '../src/world/collide.js';
+import { createSfx } from '../src/audio/sfx.js';
 
 const DT = 1 / 60;
 const FLOOR = makeBox([-100, -1, -100], [100, 0, 100], 'floor');
@@ -188,4 +189,38 @@ test('D-pad Up with an empty bag does nothing', () => {
   const r = rig({ enemy: false, bagCount: 0 });
   r.step({ equipPressed: true, device: 'pad' });
   assert.equal(r.actions.equipped(), false);
+});
+
+test('silence() stops the motor mid-rev without another step, frees it, and is harmless when nothing runs', () => {
+  const r = rig({ enemy: false });
+  r.actions.silence();
+  assert.equal(r.motors(), 0, 'nothing to stop');
+  r.run(20, hold);
+  assert.equal(r.mover.state, 'rev');
+  r.actions.silence();
+  assert.equal(r.handle.stopped, 1);
+  r.actions.silence();
+  assert.equal(r.handle.stopped, 1, 'stopped once');
+  r.run(5, hold);
+  assert.equal(r.motors(), 2, 'a rev still running starts a fresh motor at the next step');
+});
+
+test('silence() with the real sfx on a fake audio context stops every looping node (the motor does not drone on when the actions are replaced)', () => {
+  const stops = [], starts = [];
+  const param = () => ({ value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} });
+  const node = () => ({ connect() { return this; }, start() { starts.push(1); }, stop(t) { stops.push(t); }, gain: param(), frequency: param(), Q: param(), type: '', buffer: null });
+  class Ctx {
+    constructor() { this.state = 'running'; this.currentTime = 1; this.sampleRate = 8000; this.destination = {}; }
+    resume() { return Promise.resolve(); }
+    createOscillator() { return node(); } createBufferSource() { return node(); } createBiquadFilter() { return node(); } createGain() { return node(); }
+    createBuffer(c, n) { return { getChannelData: () => new Float32Array(n) }; }
+  }
+  const sfx = createSfx({ AudioContextCtor: Ctx });
+  const mover = { state: 'rev', pos: [0, 0, 0], facing: 0, bashReadyAt: 0, clock: 0, rev() {}, bash() {}, execute() { return false; }, stateTime: 0 };
+  const a = createPlayerActions({ mover, fight: { enemies: [], tobble: null, clear: false, boss: null }, arsenal: { current: () => 'regret', reload: null, switching: 0 }, bag: { count: 0 }, cam: { bump() {}, kick() {} }, sfx, effects: { gel() {}, spark() {} }, health: { downed: false }, boxes: [], hooks: {} });
+  a.step(DT, inp({ meleeHeld: true }));
+  assert.equal(starts.length, 5, 'the motor started (3 oscillators, the buzz, the noise)');
+  assert.equal(stops.length, 0);
+  a.silence();
+  assert.equal(stops.length, 5, 'all five looping nodes stopped');
 });

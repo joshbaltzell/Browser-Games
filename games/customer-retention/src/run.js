@@ -8,7 +8,7 @@ export const ARENAS = Object.freeze(['turnstiles', 'smoothie', 'desk']);
 // Player-facing names (the story's), not the code names.
 export const ARENA_TITLES = Object.freeze({ turnstiles: 'Check-in Turnstiles', smoothie: 'Smoothie Bar', desk: 'The Cancellation Desk' });
 // The running gag: the cancellation hours shrink at every checkpoint.
-export const HOURS = Object.freeze(['Tues 2:00–2:10', 'Tues 2:00–2:05', 'By appointment']);
+export const HOURS = Object.freeze(['Tues 2:00–2:15', 'Tues 2:00–2:05', 'By appointment']);
 export const hoursLine = (index) => `Cancellation hours: ${HOURS[Math.max(0, Math.min(HOURS.length - 1, index | 0))]}`;
 export const STORAGE_KEY = 'gyms-of-war.checkpoint';
 
