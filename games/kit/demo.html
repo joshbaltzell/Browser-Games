@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kit demo</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #101a1e; color: #eee; font-family: system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; position: fixed; inset: 0; touch-action: none; }
+  #side { position: fixed; right: 8px; bottom: 8px; width: 330px; max-height: 60vh; overflow: auto; padding: 10px;
+          background: rgba(10, 14, 18, .88); border-radius: 8px; z-index: 5; }
+  #side h2 { margin: 0 0 8px; font-size: 15px; }
+  #beat { min-height: 44px; font: inherit; margin-bottom: 10px; cursor: pointer; }
+  #hint { position: fixed; left: 8px; top: 8px; z-index: 5; font-size: 14px; background: rgba(0,0,0,.5); padding: 6px 10px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hint">Click the canvas for a burst. Backtick opens the tuning panel.</div>
+<div id="side">
+  <h2>Sound board</h2>
+  <button id="beat" type="button">Start beat (96 BPM)</button>
+  <div id="board"></div>
+</div>
+<script src="kit.js"></script>
+<script src="../pond-chorus/assets/manifest.js"></script>
+<script>
+(function () {
+  'use strict';
+  // The manifest's src values are relative to the game folder, so point them at pond-chorus from here.
+  var manifest = {};
+  Object.keys(ASSETS).forEach(function (n) {
+    var a = ASSETS[n];
+    manifest[n] = { src: '../pond-chorus/' + a.src, w: a.w, h: a.h, fallback: a.fallback };
+  });
+
+  // One sound per voice, plus one made of several voices
+  var SOUNDS = {
+    thump: { voice: 'thump', gain: 0.8, vary: 15 },
+    chirp: { voice: 'chirp', gain: 0.3, vary: 40 },
+    hoot: { voice: 'hoot', midi: 62, gain: 0.35, send: 0.3 },
+    bell: { voice: 'bell', midi: 84, gain: 0.25, send: 0.4 },
+    pluck: { voice: 'pluck', midi: 64, gain: 0.3, vary: 10, send: 0.2 },
+    brass: { voice: 'brass', midi: 52, gain: 0.22 },
+    organ: { voice: 'organ', midi: 60, gain: 0.25, send: 0.2 },
+    noiseHit: { voice: 'noiseHit', freq: 2500, gain: 0.35 },
+    tick: { voice: 'tick', gain: 0.3 },
+    sweep: { voice: 'sweep', from: 300, to: 1200, gain: 0.25 },
+    splash: function (t, o) {
+      Kit.audio.noiseHit(t, { freq: 1800, dur: 0.25, gain: 0.3 * (o.gain || 1) });
+      Kit.audio.sweep(t, { from: 700, to: 200, dur: 0.2, gain: 0.25 * (o.gain || 1), send: 0.3 });
+    }
+  };
+  var play = Kit.audio.sfx(SOUNDS);
+  Kit.soundBoard(SOUNDS, document.getElementById('board'));
+  Kit.audio.reverb(1.8);
+
+  var scale = Kit.audio.scale(62, 'minorPent', 2), beatOn = false, step = 0;
+  var clock = Kit.audio.clock({
+    bpm: 96, stepsPerBeat: 2,
+    onStep: function (i, t) {
+      step = i;
+      if (i % 4 === 0) play('thump', { time: t });
+      else play('tick', { time: t, gain: 0.5 });
+      if (i % 2 === 1) play('pluck', { time: t, midi: scale[(i * 3) % scale.length] });
+    }
+  });
+  document.getElementById('beat').addEventListener('click', function () {
+    beatOn = !beatOn;
+    if (beatOn) clock.start(); else clock.stop();
+    this.textContent = beatOn ? 'Stop beat (96 BPM)' : 'Start beat (96 BPM)';
+  });
+
+  var clicks = 0, hop = { y: 0, sx: 1, sy: 1 }, hopT = 0;
+  var g = Kit.boot({
+    slug: 'kit-demo',
+    world: { w: 1280, h: 720 },
+    assets: manifest,
+    tune: {
+      hopHeight: { v: 140, min: 40, max: 260, step: 5 },
+      squash: { v: 0.25, min: 0, max: 0.5, step: 0.01 }
+    },
+    onFrame: function (dt, game) {
+      var ctx = game.ctx, T = game.tune;
+      hopT += dt;
+      var cycle = 1100, p = (hopT % cycle) / cycle;
+      if (p < 0.2) { // crouch
+        var c = Kit.ease.inOutSine(p / 0.2);
+        hop.y = 0; hop.sx = 1 + T.squash * c; hop.sy = 1 - T.squash * c;
+      } else if (p < 0.8) { // airborne, stretched
+        var a = (p - 0.2) / 0.6;
+        hop.y = -4 * T.hopHeight * a * (1 - a); hop.sx = 1 - T.squash * 0.4; hop.sy = 1 + T.squash * 0.5;
+      } else { // landing
+        var l = Kit.ease.outElastic((p - 0.8) / 0.2);
+        hop.y = 0; hop.sx = 1 + T.squash * (1 - l); hop.sy = 1 - T.squash * (1 - l);
+      }
+      ctx.save();
+      Kit.applyShake(ctx);
+      Kit.draw(ctx, 'bg-pond', 640, 720, { w: 1280, h: 720 });
+      var base = 560, opts = { h: 170, sx: hop.sx, sy: hop.sy };
+      Kit.draw(ctx, 'frog-idle', 280, base + hop.y, opts);
+      Kit.draw(ctx, 'frog-idle', 640, base + hop.y, { h: 170, sx: hop.sx, sy: hop.sy, multiply: '#27408b', multiplyAmount: 0.6 });
+      Kit.draw(ctx, 'frog-idle', 1000, base + hop.y, { h: 170, sx: hop.sx, sy: hop.sy, tint: '#00e5ff', tintAmount: 0.5 });
+      ctx.fillStyle = '#fff'; ctx.font = '18px system-ui, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('plain', 280, base + 34); ctx.fillText('night (multiply)', 640, base + 34); ctx.fillText('cyan tint', 1000, base + 34);
+      ctx.textAlign = 'left';
+      ctx.fillText('beat step ' + (beatOn ? step : '-') + '   clicks ' + clicks, 24, 700);
+      Kit.drawParticles(ctx);
+      ctx.restore();
+      Kit.grain(ctx, 1280, 720, 0.1);
+    }
+  });
+  Kit.pointer(g.canvas, {
+    down: function (x, y) {
+      clicks++;
+      Kit.burst(x, y, { n: 24, color: '#ffe27a', speed: 260, life: 700, gravity: 500, size: 5 });
+      Kit.shake(6, 160);
+      play('splash');
+    }
+  });
+  window.__demo = { clicks: function () { return clicks; }, game: g, SOUNDS: SOUNDS };
+})();
+</script>
+</body>
+</html>
