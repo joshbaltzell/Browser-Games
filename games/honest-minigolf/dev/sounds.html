@@ -3,15 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hal's Completely, Totally, Absolutely Honest Minigolf sounds</title>
-<style>body { font-family: system-ui, sans-serif; background: #14161c; color: #eee; padding: 16px; }</style>
+<title>Hal's Honest Minigolf sounds</title>
+<style>body { font-family: system-ui, sans-serif; background: #1d2540; color: #f6ead2; padding: 16px; }</style>
 </head>
 <body>
-<h1>Hal's Completely, Totally, Absolutely Honest Minigolf sounds</h1>
-<p>One button per sound. The bar shows the loudest level so far; keep it under -3 dB.</p>
+<h1>Hal's Completely, Totally, Absolutely Honest Minigolf: sounds</h1>
+<p>One button per sound. The bar shows the loudest level so far; keep it under -3 dB. Wall sounds: plain is a low tick, red is a rising zip, blue is a muffled thud, yellow is a chirp.</p>
 <div id="board"></div>
+<p><button id="bed" type="button" style="min-height:44px;font-size:16px">Toggle fairground bed and waltz</button></p>
 <script src="../../kit/kit.js"></script>
 <script src="../audio.js"></script>
-<script>Kit.soundBoard(SOUNDS, document.getElementById('board'));</script>
+<script>
+Kit.soundBoard(SOUNDS, document.getElementById('board'));
+var bedOn = false;
+document.getElementById('bed').addEventListener('click', function () {
+  Kit.audio.unlock();
+  bedOn = !bedOn;
+  if (bedOn) BED.start(); else BED.stop();
+});
+</script>
 </body>
 </html>
