@@ -1,21 +1,40 @@
-:root { --bg: #14161c; --ink: #f2efe6; --accent: #ffcf5a; --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+:root {
+  --night: #2b2140; --pink: #ff4f9a; --orange: #f08a4b; --yellow: #f7d154; --teal: #4fb0c6; --paper: #f3e9dc;
+  --bg: #2b2140; --ink: #f3e9dc;
+  --slab: "Alfa Slab One", "Rockwell", "Georgia", serif;
+  --font: "Work Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font); overflow: hidden; }
 canvas { display: block; position: fixed; inset: 0; touch-action: none; }
 .back {
-  position: fixed; left: 8px; top: 8px; z-index: 5; min-height: 44px; display: inline-flex; align-items: center;
-  padding: 0 12px; color: var(--ink); text-decoration: none; font-size: 15px;
-  background: rgba(0, 0, 0, .45); border-radius: 22px;
+  position: fixed; left: 8px; bottom: 8px; z-index: 5; min-height: 44px; display: inline-flex; align-items: center;
+  padding: 0 14px; color: var(--paper); text-decoration: none; font-size: 15px; font-weight: 700;
+  background: var(--night); border-radius: 0; transform: rotate(-1deg); box-shadow: 4px 4px 0 var(--pink);
 }
 .overlay {
-  position: fixed; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 12px; padding: 24px; text-align: center; background: rgba(10, 10, 14, .55);
+  position: fixed; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 5vh 24px 7vh; text-align: center; background: transparent; pointer-events: none;
 }
+.overlay > * { pointer-events: auto; }
 .overlay.hidden { display: none; }
-.overlay h1 { margin: 0; font-size: clamp(32px, 7vw, 64px); }
-.overlay p { margin: 0; max-width: 34em; font-size: clamp(16px, 2.4vw, 22px); }
-.overlay .controls { opacity: .8; font-size: clamp(14px, 2vw, 18px); }
-button {
-  min-width: 160px; min-height: 56px; padding: 0 28px; font: inherit; font-size: 20px; cursor: pointer;
-  color: #1b1b1b; background: var(--accent); border: 0; border-radius: 28px;
+#end { justify-content: center; gap: 22px; background: rgba(43, 33, 64, .72); }
+.overlay h1 {
+  margin: 0; font-family: var(--slab); font-weight: 400; font-size: clamp(34px, 7.4vw, 88px); line-height: 1.05; color: var(--paper);
+  background: var(--pink); padding: .12em .5em .16em; transform: rotate(-1deg); box-shadow: 8px 8px 0 var(--night), 14px 14px 0 var(--orange);
 }
+.overlay .goal, .overlay .controls { margin: 0; }
+.overlay p span {
+  display: inline-block; padding: .35em .9em; font-weight: 700; font-size: clamp(16px, 2.4vw, 24px); color: var(--night);
+  background: var(--paper); transform: rotate(1deg); box-shadow: 5px 5px 0 var(--teal);
+}
+.overlay .controls span { background: var(--night); color: var(--paper); box-shadow: 5px 5px 0 var(--orange); font-size: clamp(14px, 2vw, 19px); }
+button {
+  min-width: 200px; min-height: 64px; padding: 0; font: inherit; cursor: pointer; border: 0; background: none;
+}
+button span {
+  display: block; padding: .3em 1.6em; font-family: var(--slab); font-size: 32px; color: var(--paper); background: var(--pink);
+  transform: rotate(-1deg); box-shadow: 6px 6px 0 var(--yellow); transition: transform .08s;
+}
+button:hover span, button:focus-visible span { transform: rotate(-1deg) scale(1.05); }
+button:active span { transform: rotate(-1deg) translate(3px, 3px); box-shadow: 3px 3px 0 var(--yellow); }

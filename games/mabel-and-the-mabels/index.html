@@ -4,17 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Mabel &amp; the Mabels</title>
-<!-- FONTS: replace this comment with the game's Google Fonts <link> tags. Keep a system fallback in style.css. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Work+Sans:wght@500;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <a class="back" href="../../index.html">← Back to games</a>
 <canvas id="game"></canvas>
 <div id="title" class="overlay">
-  <h1>Mabel &amp; the Mabels</h1>
-  <p class="goal">Win the crowd for three minutes.</p>
-  <p class="controls">CONTROLS: replace this line with how to play.</p>
-  <button id="start" type="button">Start</button>
+  <h1><span>Mabel &amp; the Mabels</span></h1>
+  <p class="goal"><span>Win the crowd for 90 seconds.</span></p>
+  <p class="controls"><span>Move with WASD. Tap Space to play. On touch, drag left and tap right.</span></p>
+  <button id="start" type="button"><span>Play</span></button>
+</div>
+<div id="end" class="overlay hidden">
+  <h1><span id="endTitle">Set survived</span></h1>
+  <p class="goal"><span id="endStats"></span></p>
+  <button id="again" type="button"><span>Play again</span></button>
 </div>
 <script src="../kit/kit.js"></script>
 <script src="assets/manifest.js"></script>
