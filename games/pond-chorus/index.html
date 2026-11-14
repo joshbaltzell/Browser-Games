@@ -4,21 +4,62 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Pond Chorus</title>
-<!-- FONTS: replace this comment with the game's Google Fonts <link> tags. Keep a system fallback in style.css. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&family=Nunito:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <a class="back" href="../../index.html">← Back to games</a>
 <canvas id="game"></canvas>
-<div id="title" class="overlay">
+
+<div id="panel" aria-label="Sequencer">
+  <p id="caption" class="caption"></p>
+  <div class="controls-row">
+    <div class="hush" id="hush"><span class="hush-dots" id="hushDots"></span><span class="hush-label">Hush</span></div>
+    <div class="btns">
+      <button type="button" id="btnPlay" class="small">Pause</button>
+      <button type="button" id="btnRestart" class="small">Restart</button>
+    </div>
+  </div>
+  <div class="grid" id="grid"><div class="playhead" id="playhead"></div></div>
+</div>
+
+<div id="title" class="overlay title">
+  <div class="title-art" aria-hidden="true">
+    <img class="deco owl" src="assets/owl-idle.png" alt="" onerror="this.style.display='none'">
+    <img class="deco jar" src="assets/jar-glow.png" alt="" onerror="this.style.display='none'">
+    <div class="deco frogwrap"><i class="ring r1"></i><i class="ring r2"></i><i class="ring r3"></i><img src="assets/frog-sing.png" alt="" onerror="this.style.display='none'"></div>
+  </div>
   <h1>Pond Chorus</h1>
   <p class="goal">Tap pads to make the pond sing. Keep the slugs off the lilies.</p>
-  <p class="controls">CONTROLS: replace this line with how to play.</p>
-  <button id="start" type="button">Start</button>
+  <p class="controls">Tap or click a pad to switch a note. Space plays and pauses.</p>
+  <div class="title-buttons">
+    <button id="start" type="button" class="big">Start</button>
+    <button id="jam" type="button" class="big alt">Just jam</button>
+  </div>
+  <div class="night-chips" id="chips"></div>
+  <p class="nightof" id="nightof">Night 1 of 6</p>
 </div>
+
+<div id="results" class="overlay results hidden" role="dialog" aria-live="polite">
+  <div class="card">
+    <h2 id="resTitle"></h2>
+    <p id="resStars" class="stars"></p>
+    <p id="resLine" class="resline"></p>
+    <p id="resQuiet" class="quiet"></p>
+    <div class="res-buttons">
+      <button type="button" id="resNext" class="big"></button>
+      <button type="button" id="resAgain" class="big alt">Try again</button>
+      <button type="button" id="resTitleBtn" class="big alt">Title</button>
+    </div>
+  </div>
+</div>
+
 <script src="../kit/kit.js"></script>
 <script src="assets/manifest.js"></script>
 <script src="sim.js"></script>
+<script src="levels.js"></script>
 <script src="audio.js"></script>
 <script src="game.js"></script>
 </body>
