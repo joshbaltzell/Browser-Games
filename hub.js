@@ -255,6 +255,78 @@ const GAMES = [
     // The emblem from the game's assets (a transparent WebP, 256 px).
     art: `<img src="games/gyms-of-war/assets/emblem-256.webp" alt="" />`,
   },
+  {
+    title: "Pond Chorus",
+    description:
+      "Tap pads to make the pond sing, and keep the slugs off the lilies.",
+    path: "games/pond-chorus/index.html",
+    tags: ["Music", "Puzzle", "Cozy"],
+    accent: "#7bd389",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect width="120" height="80" fill="#1d3b4a"/><ellipse cx="38" cy="48" rx="20" ry="9" fill="#7bd389"/><ellipse cx="86" cy="36" rx="16" ry="7" fill="#5fb874"/><circle cx="38" cy="38" r="8" fill="#a8e6a1"/><circle cx="35" cy="35" r="2" fill="#14161c"/><circle cx="42" cy="35" r="2" fill="#14161c"/>
+      </svg>`,
+  },
+  {
+    title: "Nerf the Wolves, Buff the Bunnies",
+    description:
+      "A new wolf is in the meadow. Rebalance the animals until the meadow is fair.",
+    path: "games/nerf-the-wolves/index.html",
+    tags: ["Puzzle", "Satire", "Strategy"],
+    accent: "#f2b84b",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect width="120" height="80" fill="#8fc66b"/><polygon points="30,52 38,28 48,40 58,28 66,52" fill="#6b7a8f"/><ellipse cx="90" cy="54" rx="10" ry="12" fill="#fffaf3"/><rect x="83" y="30" width="5" height="16" rx="2.5" fill="#fffaf3"/><rect x="92" y="30" width="5" height="16" rx="2.5" fill="#fffaf3"/>
+      </svg>`,
+  },
+  {
+    title: "Launch Window",
+    description:
+      "30 seconds to launch. Record your earlier attempts and let them help you.",
+    path: "games/launch-window/index.html",
+    tags: ["Puzzle", "Time", "Robots"],
+    accent: "#f2c230",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect width="120" height="80" fill="#f4a6c0"/><rect x="52" y="14" width="16" height="42" rx="8" fill="#fffaf3"/><polygon points="52,56 44,66 52,62" fill="#f2c230"/><polygon points="68,56 76,66 68,62" fill="#f2c230"/><rect x="20" y="58" width="14" height="14" rx="3" fill="#5be3ff" opacity="0.6"/><rect x="86" y="58" width="14" height="14" rx="3" fill="#5be3ff" opacity="0.35"/>
+      </svg>`,
+  },
+  {
+    title: "Picnic Raid",
+    description:
+      "One lawn, two sides: send bugs to raid the picnic, then defend it as Gran.",
+    path: "games/picnic-raid/index.html",
+    tags: ["Strategy", "Tower Defense", "Cozy"],
+    accent: "#d8463a",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect width="120" height="80" fill="#9bd16a"/><rect x="24" y="20" width="72" height="44" fill="#fffaf3"/><rect x="24" y="20" width="24" height="22" fill="#d8463a" opacity="0.7"/><rect x="72" y="20" width="24" height="22" fill="#d8463a" opacity="0.7"/><rect x="48" y="42" width="24" height="22" fill="#d8463a" opacity="0.7"/><circle cx="14" cy="50" r="4" fill="#2b2118"/><circle cx="104" cy="30" r="4" fill="#2b2118"/>
+      </svg>`,
+  },
+  {
+    title: "Hal's Completely, Totally, Absolutely Honest Minigolf",
+    description:
+      "Three holes. One rule is rigged. Work out which, and call it.",
+    path: "games/honest-minigolf/index.html",
+    tags: ["Sports", "Puzzle", "Deduction"],
+    accent: "#e9b43c",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect width="120" height="80" fill="#3f8f4f"/><rect x="14" y="14" width="92" height="52" fill="none" stroke="#e9b43c" stroke-width="4"/><circle cx="88" cy="40" r="5" fill="#14161c"/><circle cx="30" cy="40" r="4" fill="#fffaf3"/><path d="M34 40 L80 40" stroke="#fffaf3" stroke-width="1.5" stroke-dasharray="3 3"/>
+      </svg>`,
+  },
+  {
+    title: "Mabel & the Mabels",
+    description:
+      "Win the crowd for three minutes: play, record a band of yourselves and rock the plaza.",
+    path: "games/mabel-and-the-mabels/index.html",
+    tags: ["Music", "Action", "Rhythm"],
+    accent: "#f08a4b",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect width="120" height="80" fill="#2a2140"/><circle cx="60" cy="42" r="30" fill="#f08a4b" opacity="0.35"/><circle cx="60" cy="34" r="9" fill="#f08a4b"/><rect x="50" y="44" width="20" height="18" rx="6" fill="#f08a4b"/><circle cx="30" cy="48" r="6" fill="#f08a4b" opacity="0.6"/><circle cx="90" cy="48" r="6" fill="#f08a4b" opacity="0.6"/>
+      </svg>`,
+  },
 ];
 
 function buildCard(game) {
