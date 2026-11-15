@@ -54,7 +54,8 @@ ok(B.blocked(facing, { x: 0, y: 100 }, lady) === false, 'umbrella lets flank thr
 let early = 0, grumps = 0, late = 0;
 for (let s = 0; s < 112; s++) { const w = B.wave(s, 'short'); early += w.filter(t => t === 'pigeon').length; grumps += w.filter(t => t === 'grump').length; }
 ok(early === 0, 'no pigeons before step 112');
-ok(grumps === 28, 'grump every 4 steps, got ' + grumps);
+ok(grumps === 14, 'sparse opening: a grump every 8 steps, got ' + grumps);
+ok(B.wave(0, 'short').length === 0 && B.wave(4, 'short').indexOf('grump') >= 0, 'first grump at step 4, none at step 0');
 for (let s = 112; s < 336; s++) late += B.wave(s, 'short').filter(t => t === 'pigeon').length;
 ok(late > 0, 'pigeons arrive after step 112');
 ok(B.wave(336, 'short').length === 0, 'no hecklers after the set');
@@ -62,6 +63,7 @@ let a = 0, b = 0;
 for (let s = 0; s < 112; s++) a += B.wave(s + 112, 'short').filter(t => t === 'grump').length;
 for (let s = 0; s < 112; s++) b += B.wave(s + 224, 'short').filter(t => t === 'grump').length;
 ok(b === 2 * a, 'grumps twice as often from step 224');
+ok(a === 2 * grumps, 'grumps twice as often from step 112 as in the opening');
 
 if (bad) { console.log(bad + ' check(s) failed'); process.exit(1); }
 console.log('band sim ok');

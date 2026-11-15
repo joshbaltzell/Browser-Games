@@ -4,11 +4,20 @@ Slice 1: a 90-second set with the guitar, grumps and pigeons, and two recordable
 
 ## Verified, and how
 
-- `node games/mabel-and-the-mabels/dev/check.js` prints `band sim ok`. It pins: power rule, loop replay over three cycles, guitar ring at 180 px but not 181, tambourine ignores power, trumpet cone misses a target 30 degrees off axis, snare stun, umbrella blocks from the front only, no pigeons before step 112, grumps twice as often from step 224.
+- `node games/mabel-and-the-mabels/dev/check.js` prints `band sim ok`. It pins: power rule, loop replay over three cycles, guitar ring at 180 px but not 181, tambourine ignores power, trumpet cone misses a target 30 degrees off axis, snare stun, umbrella blocks from the front only, no pigeons before step 112, a sparse opening (one grump every 8 steps, first at step 4, 14 in the first 112), grumps twice as often from step 112 and again from step 224.
 - `node tools/pages-check.js games/mabel-and-the-mabels` and `node tools/cdp-smoke.js games/mabel-and-the-mabels/index.html` both pass.
 - A headless bot (`__game.debug.auto(n)` over `cdp-smoke --eval`, no audio clock) played a whole set: the first card appeared, the count-in and recording ran, two copies were created, the applause ending and the end screen were reached. The bot is not a person.
 - Sound levels, measured offline with `Kit.audio.measure` (peak dB, power 3): kick -10.1, guitar -8.1, tamb -15.0, trumpet -4.3 (before a gain trim of 0.2 to 0.15, so about -6.8 now), snare -12.0, clap -26.3 at gain 1 (now about -23.7), charm -15.3, fan -7.2, coin -16.1, snap -15.1, rec -17.4, splat -25.1. Every single sound was under -3 dB.
 - One screenshot of mid-set play was looked at. It was taken from the bot run, so the crowd density is not representative.
+
+## Revision: teach the rhythm (Josh's feedback)
+
+- Demo: a run starts in mode `demo`. The clock runs, the strip pulses, Mabel plays an 8-note riff on the beat for two passes (32 steps, about 8.6 s), each note sends a drop onto its strip square, and the caption reads "Fire on the beat. Your notes make the song." Any tap or key skips it after 800 ms. Then mode `ready` ("Your turn...") and the clock restarts on the first input as before. `debug.auto` skips the demo.
+- Strip: a dot under every beat (bigger on bar starts) and a target box on the next square that closes in as the step arrives, brightening in the last 90 ms (`WINDOW_MS`).
+- Approach ring: an ellipse closes on Mabel before each step, bright in the window. Full strength for the first 200 set steps, fading out by 260 (about the first minute), always on while counting in or recording.
+- Press feedback: a press within 90 ms before a step is "on beat": ON BEAT text, thicker glowing ring with a white inner ring, a spark, gain 1.35. Otherwise a soft "off beat" label, thinner ring at 55% alpha, gain 0.7. The note still lands on the next step either way; the power rule is unchanged. This only affects look and loudness, not hits.
+- Recording: the pick hint says what recording is, "Play a pattern. It will loop." shows at the start of recording, and a LOOP bar (16 steps, midway tick at 2 bars, played notes marked) shows during the count-in and recording.
+- Gentler start: opening grumps halved (one per 8 steps from step 4, then every 4 from step 112, every 2 from step 224). `grumpPatience` 3 to 4, `threshold1` 8 to 10. The perfect bot now reaches the first card at about 27 s and the second at about 41 s, which is still faster than a person; headless bot is not a person.
 
 ## Not verified
 
@@ -31,7 +40,7 @@ Slice 1: a 90-second set with the guitar, grumps and pigeons, and two recordable
 
 ## TUNE values worth trying (backtick key)
 
-1. `grumpPatience` 3 to 4, or `threshold1` 8 to 10, if the first card comes too early.
+1. `grumpPatience` and `threshold1` (now 4 and 10) if the first card still comes too early or too late.
 2. `recSpeed` 0.6 to 0 (hecklers frozen while recording), the plan's fix if recording under pressure is stressful.
 3. `trumpetLen` and `tambRadius` (320 and 80). If copies feel useless, raise them.
 

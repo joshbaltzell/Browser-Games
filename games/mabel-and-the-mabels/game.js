@@ -6,11 +6,11 @@
     strings:        { v: 4, min: 1, max: 8, step: 1 },
     safeMs:         { v: 1500, min: 0, max: 4000, step: 100 },
     grumpSpeed:     { v: 60, min: 20, max: 140, step: 5 },
-    grumpPatience:  { v: 3, min: 1, max: 8, step: 1 },
+    grumpPatience:  { v: 4, min: 1, max: 8, step: 1 },
     pigeonSpeed:    { v: 150, min: 60, max: 300, step: 10 },
     pigeonPatience: { v: 1, min: 1, max: 4, step: 1 },
     fanSpeed:       { v: 110, min: 40, max: 240, step: 10 },
-    threshold1:     { v: 8, min: 3, max: 20, step: 1 },
+    threshold1:     { v: 10, min: 3, max: 20, step: 1 },
     threshold2:     { v: 20, min: 6, max: 40, step: 1 },
     slowTime:       { v: 0.15, min: 0.05, max: 1, step: 0.05 },
     recSpeed:       { v: 0.6, min: 0, max: 1, step: 0.05 },
@@ -39,6 +39,11 @@
   };
   var STEP_MS = 60000 / 112 / 2;
   var DEG = Math.PI / 180;
+  var WINDOW_MS = 90;       // a press this close before a step counts as on the beat
+  var DEMO_NOTES = [0, 2, 4, 7, 8, 10, 12, 14];   // the demo riff, in steps of a 16-step loop
+  var DEMO_STEPS = 32;      // two passes of the riff
+  var DEMO_SKIP_MS = 800;   // skippable after this long
+  var CUE_FADE = [200, 260]; // set steps over which the approach ring fades out (about the first minute)
 
   var assets = typeof ASSETS !== 'undefined' ? ASSETS : {};
   var rng = Kit.rng((Math.random() * 1e9) | 0);
@@ -62,10 +67,12 @@
       mabel: { x: 560, y: 440, dx: 1, dy: 0, face: 1, strumUntil: 0, safeUntil: 0, moving: false },
       strings: T('strings'), hecklers: [], copies: [], coins: 0, fans: 0, nextTh: 0,
       fx: [], hearts: [], flying: [], strip: [], recInstr: null, rec: null, recStart: 0, countFrom: 0, countN: 0,
-      cards: null, hint: null, nextId: 1, endSteps: 0, stick: null, everPlayed: false, applause: 0
+      cards: null, hint: null, nextId: 1, endSteps: 0, stick: null, everPlayed: false, applause: 0,
+      drops: [], pressFx: null, qGood: null, demoAt: 0
     };
     for (var i = 0; i < 16; i++) S.strip.push(0);
     setHint('Move with WASD. Tap Space to play.', 1e9);
+    startDemo();
   }
 
   function setHint(text, ms) { S.hint = { text: text, until: S.time + ms, born: S.time }; }
@@ -73,6 +80,53 @@
   function chordIdx(gs) { return Math.floor(gs / 8) % 4; }
 
   // ===== set flow =====================================================
+
+  function startDemo() {
+    S.mode = 'demo';
+    S.demoAt = S.time;
+    S.hint = null;
+    clock.reset();
+    clock.start();
+  }
+
+  function demoStep(gs, t, delay) {
+    var M = S.mabel, at = S.time + delay;
+    S.gs = gs;
+    CHORD.i = chordIdx(gs);
+    S.lastStepAt = at;
+    if (gs % 2 === 0) S.beatAt = at;
+    if (gs % 8 === 0) S.barAt = at;
+    if (gs % 4 === 0) play('kick', { time: t });
+    if (DEMO_NOTES.indexOf(gs % 16) >= 0) {
+      play('guitar', { time: t, power: 1, gain: 1.3 });
+      M.strumUntil = at + 150;
+      S.fx.push({ kind: 'ring', x: M.x, y: M.y, dx: 1, dy: 0, p: 1, color: PAL.yellow, t0: at, dur: 440, reach: BandSim.INSTR.guitar.radius(1), q: 'good' });
+      S.drops.push({ t0: at, i: gs % 16, landed: false });
+    }
+    if (gs >= DEMO_STEPS) endDemo();
+  }
+
+  function endDemo() {
+    if (!S || S.mode !== 'demo') return;
+    clock.stop();
+    clock.reset();
+    S.mode = 'ready';
+    S.gs = 0; S.beatAt = -9999; S.barAt = -9999; S.lastStepAt = 0;
+    S.fx = []; S.drops = [];
+    for (var i = 0; i < 16; i++) S.strip[i] = 0;
+    setHint('Your turn. Move with WASD. Tap Space on the beat.', 1e9);
+  }
+
+  function updateDrops() {
+    for (var i = S.drops.length - 1; i >= 0; i--) {
+      var d = S.drops[i];
+      if (!d.landed && S.time - d.t0 >= 320) {
+        d.landed = true; d.landAt = S.time;
+        S.strip[d.i] = 1;
+      }
+      if (d.landed && S.time - d.landAt > 400) S.drops.splice(i, 1);
+    }
+  }
 
   function firstInput() {
     if (!S || S.mode !== 'ready') return;
@@ -139,7 +193,7 @@
     S.countFrom = S.recStart - 8;
     S.countN = 0;
     S.cards = null;
-    setHint('Recording starts after the count-in. Play your part.', 4000);
+    setHint('Next you record a part. What you play gets looped as a band member.', 5000);
   }
 
   function endRec() {
@@ -166,14 +220,14 @@
 
   // ===== one musical step =============================================
 
-  function fireNote(instr, p, x, y, dx, dy, color, t, delay) {
+  function fireNote(instr, p, x, y, dx, dy, color, t, delay, q) {
     var targets = [];
     S.hecklers.forEach(function (h) { if (h.state === 'walk' || h.state === 'fly' || h.state === 'leave') targets.push({ id: h.id, x: h.x, y: h.y }); });
     var hits = BandSim.hits(instr, p, { x: x, y: y }, { x: dx, y: dy }, targets);
-    play(instr, { time: t, power: p });
+    play(instr, { time: t, power: p, gain: q === 'good' ? 1.35 : q === 'off' ? 0.7 : 1 });
     var d = BandSim.INSTR[instr];
     S.fx.push({
-      kind: d.shape, x: x, y: y, dx: dx, dy: dy, p: p, color: color, t0: S.time + delay, dur: 440,
+      kind: d.shape, x: x, y: y, dx: dx, dy: dy, p: p, color: color, t0: S.time + delay, dur: 440, q: q,
       reach: d.shape === 'ring' ? d.radius(p) : d.length
     });
     var conv = 0;
@@ -208,6 +262,7 @@
         S.rec = BandSim.recorder();
         for (var i = 0; i < 16; i++) S.strip[i] = 0;
         play('rec', { time: t, go: true });
+        setHint('Play a pattern. It will loop.', 5000);
       } else if (gs >= S.countFrom && (gs - S.countFrom) % 2 === 0) {
         play('rec', { time: t });
         S.countN = 4 - (gs - S.countFrom) / 2;
@@ -222,6 +277,7 @@
     // hecklers arrive
     if (S.mode === 'play' || S.mode === 'rec') {
       BandSim.wave(S.setStep, 'short').forEach(spawn);
+      if (S.setStep === 10 && S.everPlayed) setHint('Press as the ring closes on a square. That is the beat.', 7000);
       if (S.setStep === 112) setHint('Rest a beat and the next note is bigger.', 6000);
       if (S.setStep === 136) setHint('Pigeons steal coins. Ring one and it drops the coin.', 5000);
       S.setStep++;
@@ -237,9 +293,13 @@
       S.kickOn = true;
       S.everPlayed = true;
       M.strumUntil = at + 150;
-      fireNote(S.mode === 'rec' ? S.recInstr : 'guitar', notePower, M.x, M.y, M.dx, M.dy, PAL.yellow, t, delay);
+      var q = S.qGood;
+      S.qGood = null;
+      fireNote(S.mode === 'rec' ? S.recInstr : 'guitar', notePower, M.x, M.y, M.dx, M.dy, PAL.yellow, t, delay, q);
+      if (q === 'good') Kit.burst(M.x, M.y - 60, { n: 8, color: PAL.yellow, speed: 140, life: 380, gravity: 0, size: 3 });
     } else if (canPlay) S.rest++;
     S.queued = false;
+    S.qGood = null;
     if (S.mode === 'rec') {
       var rs = gs - S.recStart;
       S.rec.push(rs, M.x, M.y, notePower, M.dx, M.dy);
@@ -270,8 +330,9 @@
   }
 
   function onClockStep(idx, audioTime) {
-    if (!S || S.mode === 'ready' || S.mode === 'over') return;
+    if (!S || S.mode === 'ready' || S.mode === 'over' || S.mode === 'title') return;
     var delay = ac ? Math.max(0, (audioTime - ac.currentTime) * 1000) : 0;
+    if (S.mode === 'demo') { demoStep(idx, audioTime, delay); return; }
     stepLogic(idx, audioTime, delay);
   }
 
@@ -292,7 +353,7 @@
   function moveMabel(dt) {
     var M = S.mabel, v = inputVec();
     M.moving = v.m > 0.05;
-    if (!M.moving || S.mode === 'choice' || S.mode === 'over') return;
+    if (!M.moving || S.mode === 'choice' || S.mode === 'over' || S.mode === 'demo') return;
     firstInput();
     var sp = T('mabelSpeed') * dt / 1000;
     M.x += v.x * sp * v.m; M.y += v.y * sp * v.m;
@@ -375,7 +436,8 @@
     syncCfg();
     if (S.mode === 'title') return;
     moveMabel(dt);
-    if (S.mode !== 'ready') {
+    if (S.mode === 'demo') updateDrops();
+    if (S.mode !== 'ready' && S.mode !== 'demo') {
       updateHecklers(dt);
       checkThreshold();
     }
@@ -432,13 +494,15 @@
     ctx.globalAlpha = a;
     ctx.lineCap = 'round';
     var th = 3 + f.p * 2.2;
+    if (f.q === 'good') { th *= 1.5; ctx.shadowColor = PAL.yellow; ctx.shadowBlur = 18; }
+    else if (f.q === 'off') { th *= 0.7; ctx.globalAlpha = a * 0.55; }
     if (f.kind === 'ring') {
       var r = f.reach * e;
       twice(ctx, f.color === PAL.yellow ? PAL.yellow : f.color, PAL.pink, function () {
         ctx.lineWidth = th; ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, Math.PI * 2); ctx.stroke();
       });
       ctx.globalAlpha = a * 0.6;
-      ctx.strokeStyle = PAL.pink; ctx.lineWidth = th * 0.6;
+      ctx.strokeStyle = f.q === 'good' ? PAL.paper : PAL.pink; ctx.lineWidth = th * 0.6;
       ctx.beginPath(); ctx.arc(f.x, f.y, r * 0.82, 0, Math.PI * 2); ctx.stroke();
     } else {
       var ang = Math.atan2(f.dy, f.dx), len = f.reach * e;
@@ -528,6 +592,46 @@
     });
   }
 
+  function cueAmount() {
+    if (S.mode === 'rec' || S.mode === 'countin') return 1;
+    return 1 - clamp((S.setStep - CUE_FADE[0]) / (CUE_FADE[1] - CUE_FADE[0]), 0, 1);
+  }
+
+  // A ring that closes on Mabel as the next step arrives. The last WINDOW_MS is the window: it brightens.
+  function drawApproach(ctx) {
+    if (S.mode === 'demo') return;
+    if (S.mode !== 'play' && S.mode !== 'rec' && S.mode !== 'ready') return;
+    var cue = cueAmount();
+    if (cue <= 0) return;
+    var M = S.mabel, frac = S.mode === 'ready' ? ((S.time % STEP_MS) / STEP_MS) : clamp((S.time - S.lastStepAt) / STEP_MS, 0, 1);
+    var until = (1 - frac) * STEP_MS, inWin = S.mode !== 'ready' && until <= WINDOW_MS;
+    var r = 36 + 64 * Math.pow(1 - frac, 2);
+    ctx.save();
+    ctx.globalAlpha = cue * (inWin ? 0.95 : 0.4);
+    ctx.strokeStyle = inWin ? PAL.yellow : PAL.paper;
+    ctx.lineWidth = inWin ? 6 : 3;
+    ctx.beginPath(); ctx.ellipse(M.x, M.y - 6, r, r * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPressFx(ctx) {
+    var f = S.pressFx;
+    if (!f) return;
+    var k = (S.time - f.at) / 700;
+    if (k > 1) { S.pressFx = null; return; }
+    var M = S.mabel;
+    ctx.save();
+    ctx.globalAlpha = (1 - k) * (f.good ? 1 : 0.6);
+    if (f.good) {
+      ctx.translate(M.x, M.y - 190 - k * 24);
+      ctx.scale(1 + 0.2 * (1 - k), 1 + 0.2 * (1 - k));
+      twice(ctx, PAL.yellow, PAL.pink, function () { ctx.font = '34px ' + SLAB; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('ON BEAT', 0, 0); });
+    } else {
+      text(ctx, f.text, M.x, M.y - 190 - k * 12, '700 20px ' + SANS, '#b8a8cc', 'center');
+    }
+    ctx.restore();
+  }
+
   function drawWorld(ctx) {
     var pulse = Math.max(0, 1 - (S.time - S.barAt) / 200), sc = 1 + 0.02 * pulse;
     ctx.save();
@@ -543,6 +647,8 @@
     items.sort(function (a, b) { return a.y - b.y; });
     items.forEach(function (it) { it.draw(); });
     S.fx.forEach(function (f) { drawRingFx(ctx, f); });
+    drawApproach(ctx);
+    drawPressFx(ctx);
     drawFlying(ctx);
     drawHearts(ctx);
     Kit.drawParticles(ctx);
@@ -572,13 +678,28 @@
   function drawStrip(ctx) {
     var ph = S.mode === 'rec' ? S.gs - S.recStart : S.gs % 16;
     var running = S.mode !== 'ready' && S.mode !== 'title';
+    var live = S.mode === 'play' || S.mode === 'rec' || S.mode === 'ending';
+    var frac = clamp((S.time - S.lastStepAt) / STEP_MS, 0, 1);
+    var nextI = (ph + 1) % 16;
+    var pulse = S.mode === 'demo' ? Math.max(0, 1 - (S.time - S.beatAt) / 220) : 0;
     block(ctx, 360, 18, 560, 62, PAL.night, PAL.orange, 1, function () {
       for (var i = 0; i < 16; i++) {
         var x = 12 + i * 34, p = S.strip[i], on = running && i === ph;
-        var s = on ? 1.22 : 1;
+        // beat dots: a dot under every beat, a bigger one under each bar start
+        ctx.fillStyle = i % 8 === 0 ? PAL.yellow : (i % 2 === 0 ? PAL.paper : '#52446b');
+        ctx.beginPath(); ctx.arc(x + 14, 55, i % 8 === 0 ? 4 : (i % 2 === 0 ? 3 : 2), 0, Math.PI * 2); ctx.fill();
+        if (live && i === nextI) {
+          var until = (1 - frac) * STEP_MS, inWin = until <= WINDOW_MS, cs = 17 + (1 - frac) * 9;
+          ctx.save();
+          ctx.globalAlpha = inWin ? 1 : 0.55;
+          ctx.strokeStyle = inWin ? PAL.yellow : PAL.paper; ctx.lineWidth = inWin ? 4 : 2;
+          ctx.strokeRect(x + 14 - cs, 31 - cs, cs * 2, cs * 2);
+          ctx.restore();
+        }
+        var s = (on ? 1.22 : 1) + (S.mode === 'demo' ? pulse * 0.12 : 0);
         ctx.save();
         ctx.translate(x + 14, 31); ctx.scale(s, s);
-        ctx.fillStyle = p ? (S.mode === 'rec' ? PAL.pink : PAL.orange) : '#52446b';
+        ctx.fillStyle = p ? (S.mode === 'rec' ? PAL.pink : (S.mode === 'demo' ? PAL.yellow : PAL.orange)) : '#52446b';
         var sz = p ? 20 + p * 3 : 20;
         ctx.fillRect(-sz / 2, -sz / 2, sz, sz);
         if (on) { ctx.strokeStyle = PAL.yellow; ctx.lineWidth = 4; ctx.strokeRect(-17, -17, 34, 34); }
@@ -610,6 +731,21 @@
     ctx.restore();
   }
 
+  // The loop-length indicator: 16 steps (2 bars). rs is the current step, or -1 before recording starts.
+  function loopBar(ctx, rs, caption) {
+    block(ctx, 360, 196, 560, 74, PAL.night, PAL.red, 1, function () {
+      for (var i = 0; i < 16; i++) {
+        var x = 14 + i * 34, hit = rs >= 0 && S.strip[i];
+        ctx.fillStyle = rs >= 0 && i === rs ? PAL.yellow : (rs >= 0 && i < rs ? PAL.pink : '#52446b');
+        ctx.fillRect(x, 10, 28, 20);
+        if (hit) { ctx.fillStyle = PAL.paper; ctx.fillRect(x + 8, 14, 12, 12); }
+        if (i === 8) { ctx.fillStyle = PAL.paper; ctx.fillRect(x - 4, 6, 2, 28); }
+      }
+      text(ctx, 'LOOP', 14, 50, '14px ' + SLAB, PAL.yellow);
+      text(ctx, caption, 288, 52, '700 17px ' + SANS, PAL.paper, 'center');
+    });
+  }
+
   function drawRecUi(ctx) {
     if (S.mode === 'rec') {
       var rs = clamp(S.gs - S.recStart, 0, 15);
@@ -621,9 +757,11 @@
         text(ctx, 'REC', 68, 40, '34px ' + SLAB, PAL.paper);
         text(ctx, (rs + 1) + ' / 16', 262, 40, '34px ' + SLAB, PAL.paper, 'right');
       });
+      loopBar(ctx, rs, 'This 2-bar pattern repeats as your band member.');
     } else if (S.mode === 'countin') {
       var n = S.countN;
       var k = clamp((S.time - (S.countAt || 0)) / 400, 0, 1);
+      loopBar(ctx, -1, 'Play a pattern. It will loop.');
       if (n > 0) {
         ctx.save();
         ctx.globalAlpha = 1 - k * 0.5;
@@ -672,7 +810,41 @@
     ctx.restore();
   }
 
+  function drawDemo(ctx) {
+    var age = S.time - S.demoAt;
+    var M = S.mabel;
+    S.drops.forEach(function (d) {
+      var k = clamp((S.time - d.t0) / 320, 0, 1), tx = 386 + d.i * 34, ty = 49;
+      var sx = M.x, sy = M.y - 100;
+      ctx.save();
+      if (!d.landed) {
+        twice(ctx, PAL.yellow, PAL.pink, function () {
+          ctx.beginPath(); ctx.arc(sx + (tx - sx) * k, sy + (ty - sy) * k - Math.sin(k * Math.PI) * 60, 9, 0, Math.PI * 2); ctx.fill();
+        });
+      } else {
+        var lk = clamp((S.time - d.landAt) / 400, 0, 1);
+        ctx.globalAlpha = 1 - lk;
+        ctx.strokeStyle = PAL.yellow; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(tx, ty, 16 + lk * 22, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+    });
+    ctx.save();
+    ctx.globalAlpha = clamp(age / 400, 0, 1);
+    var w = 760;
+    block(ctx, CX - w / 2, 560, w, 76, PAL.paper, PAL.pink, -1, function () {
+      text(ctx, 'Fire on the beat. Your notes make the song.', w / 2, 38, '700 30px ' + SANS, PAL.night, 'center');
+    });
+    block(ctx, 360, 98, 560, 34, PAL.night, PAL.orange, 1, function () {
+      text(ctx, 'The beat strip. Every note lands on a square.', 280, 18, '700 17px ' + SANS, PAL.paper, 'center');
+    });
+    ctx.globalAlpha = clamp((age - DEMO_SKIP_MS) / 400, 0, 1) * (0.6 + 0.4 * Math.sin(S.time / 300));
+    text(ctx, 'Tap or press any key to skip', CX, 664, '700 18px ' + SANS, PAL.paper, 'center');
+    ctx.restore();
+  }
+
   function drawHud(ctx) {
+    if (S.mode === 'demo') { drawStrip(ctx); drawDemo(ctx); return; }
     drawStrings(ctx);
     drawStrip(ctx);
     drawCoinsHud(ctx);
@@ -703,7 +875,13 @@
 
   function pressNote() {
     if (!S || S.mode === 'title' || S.mode === 'over' || S.mode === 'choice') return;
-    if (S.mode === 'ready') firstInput();
+    if (S.mode === 'demo') { if (S.time - S.demoAt > DEMO_SKIP_MS) endDemo(); return; }
+    if (S.mode === 'ready') { firstInput(); S.qGood = 'good'; }
+    else if (S.mode === 'play' || S.mode === 'rec' || S.mode === 'ending') {
+      var until = S.lastStepAt + STEP_MS - S.time, good = until <= WINDOW_MS;
+      S.qGood = good ? 'good' : 'off';
+      S.pressFx = { at: S.time, good: good, text: 'off beat' };
+    }
     S.queued = true;
     if (S.hint && S.hint.until > 1e8) S.hint = null;
   }
@@ -711,6 +889,10 @@
   function onKeyDown(e) {
     var k = e.key.toLowerCase();
     if (!S || S.mode === 'title') return;
+    if (S.mode === 'demo') {
+      if (k !== 'f5' && k !== 'f12' && !e.metaKey && !e.ctrlKey && S.time - S.demoAt > DEMO_SKIP_MS) { e.preventDefault(); endDemo(); }
+      return;
+    }
     if (k === ' ' || k === 'j') {
       e.preventDefault();
       if (!e.repeat) pressNote();
@@ -725,6 +907,7 @@
   function onDown(x, y, e) {
     pointerPos.x = x; pointerPos.y = y;
     if (!S || S.mode === 'title' || S.mode === 'over') return;
+    if (S.mode === 'demo') { if (S.time - S.demoAt > DEMO_SKIP_MS) endDemo(); return; }
     if (S.mode === 'choice') {
       for (var i = 0; i < CARD_RECTS.length; i++) {
         var r = CARD_RECTS[i];
@@ -815,6 +998,7 @@
       pick: pick,
       // Plays n steps with no audio clock: a bot that plays every other step and keeps away from hecklers.
       auto: function (n, bot) {
+        if (S.mode === 'demo') endDemo();
         if (S.mode === 'ready') firstInput();
         for (var i = 0; i < n && S.mode !== 'over'; i++) {
           if (S.mode === 'choice') pick(0);

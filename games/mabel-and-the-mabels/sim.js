@@ -100,8 +100,10 @@ var BandSim = (function () {
       return out;
     }
     if (stepIndex >= 336) return out;
-    var every = stepIndex >= 224 ? 2 : 4;
-    if (stepIndex % every === 0) out.push('grump');
+    // Sparse opening: one grump every 8 steps (first at step 4) for the first 112, then every 4, then every 2.
+    if (stepIndex >= 224) { if (stepIndex % 2 === 0) out.push('grump'); }
+    else if (stepIndex >= 112) { if (stepIndex % 4 === 0) out.push('grump'); }
+    else if (stepIndex % 8 === 4) out.push('grump');
     if (stepIndex >= 112 && stepIndex % 12 === 6) out.push('pigeon');
     return out;
   }
