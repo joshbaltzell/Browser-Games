@@ -168,7 +168,7 @@ var PondSim = (function () {
     // win or lose
     if (state.base !== null) {
       if (state.lilies <= 0) { state.over = 'lose'; events.push({ type: 'lose' }); }
-      else if (state.spawned >= lv.wave.length && state.enemies.length === 0) { state.over = 'win'; events.push({ type: 'win', lilies: state.lilies }); }
+      else if (state.spawned >= lv.wave.length && state.enemies.length === 0 && goalProgress(lv, state.placements).met) { state.over = 'win'; events.push({ type: 'win', lilies: state.lilies }); }
     }
     return events;
   }
@@ -177,6 +177,29 @@ var PondSim = (function () {
     var n = 0;
     for (var i = 0; i < placements.length; i++) for (var s = 0; s < STEPS; s++) if (placements[i].pattern[s]) n++;
     return n;
+  }
+
+  // Night goal: level.goal = { voices: {frog: n, cricket: n}, harmony: n }. The night is won when every
+  // slug is dealt with AND the pattern meets the goal. voices counts notes per creature type, harmony counts
+  // steps where two or more different creature types sing together. Returns {met, parts:[{key, have, need}]}.
+  function goalProgress(level, placements) {
+    var goal = level.goal, parts = [], met = true, key;
+    if (!goal) return { met: true, parts: parts };
+    var have = {}, harm = 0, s, i;
+    for (i = 0; i < placements.length; i++) {
+      for (s = 0; s < STEPS; s++) if (placements[i].pattern[s]) have[placements[i].type] = (have[placements[i].type] || 0) + 1;
+    }
+    for (s = 0; s < STEPS; s++) {
+      var seen = {}, n = 0;
+      for (i = 0; i < placements.length; i++) if (placements[i].pattern[s] && !seen[placements[i].type]) { seen[placements[i].type] = 1; n++; }
+      if (n >= 2) harm++;
+    }
+    for (key in (goal.voices || {})) {
+      parts.push({ key: key, have: have[key] || 0, need: goal.voices[key] });
+    }
+    if (goal.harmony) parts.push({ key: 'harmony', have: harm, need: goal.harmony });
+    for (i = 0; i < parts.length; i++) if (parts[i].have < parts[i].need) met = false;
+    return { met: met, parts: parts };
   }
 
   function run(level, placements) {
@@ -205,7 +228,7 @@ var PondSim = (function () {
   return {
     STEPS: STEPS, STONES: STONES, LILIES: LILIES, RULES: RULES,
     power: power, geometry: geometry, create: create, arm: arm, step: step,
-    inRange: inRange, enemiesInRange: enemiesInRange, run: run, hints: hints, notes: notes, stars: stars
+    inRange: inRange, goalProgress: goalProgress, enemiesInRange: enemiesInRange, run: run, hints: hints, notes: notes, stars: stars
   };
 })();
 if (typeof module !== 'undefined') module.exports = PondSim;

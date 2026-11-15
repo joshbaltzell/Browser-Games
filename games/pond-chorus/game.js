@@ -33,18 +33,30 @@
     roster: ['frog', 'cricket'], fixed: [{ perch: 1, type: 'frog' }, { perch: 3, type: 'cricket' }], budget: 16, wave: []
   };
   var CAPTION = {
-    1: ['Tap a glowing pad. The frog sings on that beat.', 'Slugs hop on the beat. Sing while one is on your stones.'],
+    1: ['Your turn. Tap a glowing pad to add a croak.', 'Slugs hop on the beat. Sing while one is on your stones.'],
     2: ['A rest before a note makes it louder. Snails shrug off soft notes.', null],
     3: ['Small things move fast. The cricket sings to every slug in range.', null],
+    4: ['A frog and a cricket on the same step sing louder. Shellbacks need it.', null],
+    5: ['Keep editing while it plays. The slugs shift partway through.', null],
+    6: ['Lots of croaks, lots of chirps, all in harmony.', null],
     jam: ['No slugs tonight. Switch pads and listen.', null]
   };
+  var TEACH = {
+    demo: 'Tap the pads to make a pattern. The pond plays it on a loop.',
+    first: 'Heard that? The frog sings on that beat every loop.',
+    rhythm: "That's your rhythm. Add more.",
+    done: 'The slugs are gone. Finish the goal to end the night.'
+  };
+  var VOICE = { frog: ['croak', 'croaks'], cricket: ['chirp', 'chirps'], owl: ['hoot', 'hoots'], harmony: ['harmony beat', 'harmony beats'] };
+  var DEMO_PATTERN = [1, 0, 0, 0, 1, 0, 0, 0];   // what the frog sings in the demo: two croaks, six rests
+  var DEMO_LOOPS = 3;
 
   var T = TUNE;                   // replaced by the live tuning object after boot
   var progress = Kit.store.get(STORE, null) || { stars: {}, quiet: {}, jam: false };
 
   var el = {};
   ['panel', 'caption', 'hush', 'hushDots', 'btnPlay', 'btnRestart', 'grid', 'playhead', 'title', 'start', 'jam', 'chips', 'nightof',
-    'results', 'resTitle', 'resStars', 'resLine', 'resQuiet', 'resNext', 'resAgain', 'resTitleBtn'].forEach(function (id) { el[id] = document.getElementById(id); });
+    'btnSkip', 'results', 'resTitle', 'resStars', 'resLine', 'resQuiet', 'resNext', 'resAgain', 'resTitleBtn'].forEach(function (id) { el[id] = document.getElementById(id); });
 
   var geo = P.geometry();
   var rs = [];                    // radius scale of each stone, for drawing size
@@ -64,6 +76,7 @@
   var rows = [];                  // [{row, icon, pads:[]}]
   var clock = null, timer = null, stepCount = 0, driveStarted = false, lastBpm = 0;
   var lastLayout = '';
+  var demo = false, demoSteps = 0, capHold = 0, heardFirst = false, playedFirst = false;
 
   // Ambient fireflies are fixed at load from a seeded rng.
   var flies = [];
@@ -161,9 +174,23 @@
     });
     for (var i = 0; i < events.length; i++) handle(events[i], when, at, loopStep);
 
+    // the demo plays a few loops, then hands over
+    if (demo && ++demoSteps >= DEMO_LOOPS * P.STEPS) queue(when + stepMs(), endDemo);
+    // the first time the loop plays the player's own pattern
+    if (!demo && !playedFirst && started && (level.id === 1 || level.id === 'jam')) {
+      for (var ei = 0; ei < events.length; ei++) if (events[ei].type === 'sing') {
+        playedFirst = true;
+        queue(when, function () { setCaption(TEACH.rhythm, 5200, true); });
+        break;
+      }
+    }
     // caption change on night 1, about the 15 second mark
-    if (level.id === 1 && capPhase === 0 && started && sim.base !== null && sim.t >= sim.base + 12) {
+    if (level.id === 1 && capPhase === 0 && started && sim.base !== null && sim.t >= sim.base + 12 && captionFree()) {
       capPhase = 1; setCaption(CAPTION[1][1]);
+    }
+    // every slug is dealt with but the goal is not met yet
+    if (capPhase < 2 && level.goal && sim.base !== null && !sim.over && sim.spawned >= level.wave.length && sim.enemies.length === 0 && !P.goalProgress(level, sim.placements).met) {
+      capPhase = 2; setCaption(TEACH.done, 0, true);
     }
     // lamps
     var lamps = sim.placements.map(function (p, k) { return P.inRange(sim, k); });
@@ -225,7 +252,12 @@
   }
 
   // ----- DOM: sequencer
-  function setCaption(t) { el.caption.textContent = t || ''; }
+  function setCaption(t, holdMs, big) {
+    el.caption.textContent = t || '';
+    el.caption.classList.toggle('coach', !!big);
+    capHold = holdMs ? performance.now() + holdMs : 0;
+  }
+  function captionFree() { return performance.now() >= capHold; }
 
   function buildRows() {
     var gridEl = el.grid;
@@ -292,6 +324,7 @@
 
   function tapPad(r, s) {
     if (screen !== 'play' || !sim || !sim.placements[r]) return;
+    if (demo) endDemo();
     var pl = sim.placements[r];
     selected = r;
     if (!pl.pattern[s]) {
@@ -305,6 +338,11 @@
     if (!started) {
       started = true;
       if (level.wave.length) P.arm(sim);   // the countdown to the first slug starts here
+      if (level.id === 1 && pl.pattern[s]) {
+        heardFirst = true; setCaption(TEACH.first, 4200, true);
+        var tb = rows[r].pads[s]; tb.classList.remove('first'); void tb.offsetWidth; tb.classList.add('first');
+        setTimeout(function () { tb.classList.remove('first'); }, 2600);
+      }
     }
     renderPads();
   }
@@ -349,6 +387,27 @@
     }
   });
 
+  // ----- demo: before night 1 the frog sings a two-croak pattern for a few loops, then hands over
+  function startDemo() {
+    demo = true; demoSteps = 0;
+    sim.placements[0].pattern = DEMO_PATTERN.slice();
+    el.panel.classList.add('demoing');
+    setCaption(TEACH.demo, 0, true);
+    renderPads();
+  }
+  function endDemo() {
+    if (!demo) return;
+    demo = false;
+    el.panel.classList.remove('demoing');
+    sim.placements[0].pattern = [0, 0, 0, 0, 0, 0, 0, 0];
+    pending = [];
+    el.playhead.classList.remove('live');
+    for (var r = 0; r < rows.length; r++) for (var s = 0; s < 8; s++) rows[r].pads[s].classList.remove('now');
+    setCaption(CAPTION[1][0], 0, true);
+    renderPads();
+  }
+  el.btnSkip.addEventListener('click', function (e) { endDemo(); if (e.detail > 0) el.btnSkip.blur(); });
+
   // ----- levels
   function loadLevel(lv, keep) {
     var old = sim ? sim.placements : null;
@@ -357,16 +416,18 @@
       return { perch: f.perch, type: f.type, pattern: keep && old && old[i] && old[i].type === f.type ? old[i].pattern.slice() : [0, 0, 0, 0, 0, 0, 0, 0] };
     });
     sim = P.create(lv, pls);
-    hints = lv.id === 1 || lv.id === 2 ? P.hints(lv) : null;
+    hints = lv.id <= 2 ? P.hints(lv) : null;
     vis = {}; pv = []; rings = []; pending = [];
     lilyShown = P.LILIES; lilyWiltT = [0, 0, 0, 0, 0];
     started = false; capPhase = 0; finished = false; paused = false;
+    demo = false; heardFirst = false; playedFirst = false; capHold = 0;
+    el.panel.classList.remove('demoing');
     selected = 0;
     el.btnPlay.textContent = 'Pause';
     el.playhead.classList.remove('live');
     el.playhead.style.height = (sim.placements.length * 44 + 4) + 'px';
     var cap = CAPTION[lv.id];
-    setCaption(cap ? cap[0] : lv.lesson);
+    setCaption(cap ? cap[0] : lv.lesson, 0, lv.id === 1);
     buildRows();
   }
 
@@ -381,6 +442,7 @@
     mode = { kind: 'night', idx: idx };
     loadLevel(LEVELS[idx], false);
     showPlay(); startDrive();
+    if (idx === 0) startDemo();
   }
   function startJam() {
     mode = { kind: 'jam' };
@@ -538,6 +600,30 @@
       ctx.shadowColor = 'rgba(8,14,26,.9)'; ctx.shadowBlur = 8;
       ctx.fillText(level.id === 'jam' ? 'Just Jam' : 'Night ' + level.id + ' · ' + level.name, W / 2, 40);
       ctx.restore();
+      if (level.goal && sim && !demo) drawGoal(ctx);
+    }
+    ctx.restore();
+  }
+
+  // "Goal: 1 / 2 croaks" under the title. A met part turns green with a tick.
+  function drawGoal(ctx) {
+    var gp = P.goalProgress(level, sim.placements), segs = [], i, total = 0;
+    for (i = 0; i < gp.parts.length; i++) {
+      var pt = gp.parts[i], nm = VOICE[pt.key] || [pt.key, pt.key + 's'];
+      var done = pt.have >= pt.need;
+      segs.push({ text: (done ? '\u2713 ' : '') + Math.min(pt.have, pt.need) + ' / ' + pt.need + ' ' + nm[pt.need === 1 ? 0 : 1], done: done });
+    }
+    ctx.save();
+    ctx.font = '600 20px Fredoka, system-ui, sans-serif'; ctx.textAlign = 'left';
+    var head = 'Goal:  ', sep = '   ', hw = ctx.measureText(head).width, sw = ctx.measureText(sep).width;
+    for (i = 0; i < segs.length; i++) { segs[i].w = ctx.measureText(segs[i].text).width; total += segs[i].w + (i ? sw : 0); }
+    var x = W / 2 - (hw + total) / 2, y = 76;
+    ctx.fillStyle = 'rgba(11,18,32,.62)';
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - 16, y - 24, hw + total + 32, 34, 17) : ctx.rect(x - 16, y - 24, hw + total + 32, 34); ctx.fill();
+    ctx.fillStyle = '#aab6cf'; ctx.fillText(head, x, y); x += hw;
+    for (i = 0; i < segs.length; i++) {
+      if (i) x += sw;
+      ctx.fillStyle = segs[i].done ? '#8fe3a0' : '#f6e7bd'; ctx.fillText(segs[i].text, x, y); x += segs[i].w;
     }
     ctx.restore();
   }
