@@ -17,6 +17,11 @@
   <p id="caption" class="caption"></p>
   <div class="controls-row">
     <div class="hush" id="hush"><span class="hush-dots" id="hushDots"></span><span class="hush-label">Hush</span></div>
+    <div class="songbox" id="songbox">
+      <input type="text" id="codeIn" placeholder="Paste a song code" aria-label="Song code" autocomplete="off" spellcheck="false">
+      <button type="button" id="btnLoad" class="small tiny">Load</button>
+      <button type="button" id="btnCopy" class="small tiny">Copy code</button>
+    </div>
     <div class="btns">
       <button type="button" id="btnSkip" class="small skip">Skip demo</button>
       <button type="button" id="btnPlay" class="small">Pause</button>
@@ -33,14 +38,27 @@
     <div class="deco frogwrap"><i class="ring r1"></i><i class="ring r2"></i><i class="ring r3"></i><img src="assets/frog-sing.png" alt="" onerror="this.style.display='none'"></div>
   </div>
   <h1>Pond Chorus</h1>
-  <p class="goal">Tap pads to make a rhythm the pond plays on a loop. Keep the slugs off the lilies.</p>
+  <p class="goal">Tap pads to make a rhythm the pond plays on a loop. A good groove hits harder.</p>
   <p class="controls">Tap or click a pad to switch a note. Space plays and pauses.</p>
   <div class="title-buttons">
     <button id="start" type="button" class="big">Start</button>
     <button id="jam" type="button" class="big alt">Just jam</button>
   </div>
   <div class="night-chips" id="chips"></div>
-  <p class="nightof" id="nightof">Night 1 of 6</p>
+  <p class="nightof" id="nightof">Night 1 of 9</p>
+</div>
+
+<div id="intro" class="overlay intro hidden" role="dialog" aria-live="polite">
+  <div class="card">
+    <img id="introImg" class="intro-img" src="" alt="">
+    <h2 id="introName"></h2>
+    <p id="introRole" class="intro-role"></p>
+    <p id="introLine" class="resline"></p>
+    <div class="res-buttons">
+      <button type="button" id="introHear" class="big alt">Hear it</button>
+      <button type="button" id="introGo" class="big">Got it</button>
+    </div>
+  </div>
 </div>
 
 <div id="results" class="overlay results hidden" role="dialog" aria-live="polite">
@@ -48,9 +66,11 @@
     <h2 id="resTitle"></h2>
     <p id="resStars" class="stars"></p>
     <p id="resLine" class="resline"></p>
+    <p id="resGroove" class="groove-line"></p>
     <p id="resQuiet" class="quiet"></p>
     <div class="res-buttons">
       <button type="button" id="resNext" class="big"></button>
+      <button type="button" id="resCode" class="big alt">Copy song code</button>
       <button type="button" id="resAgain" class="big alt">Try again</button>
       <button type="button" id="resTitleBtn" class="big alt">Title</button>
     </div>
@@ -58,6 +78,7 @@
 </div>
 
 <script src="../kit/kit.js"></script>
+<script src="../kit/rig.js"></script>
 <script src="assets/manifest.js"></script>
 <script src="sim.js"></script>
 <script src="levels.js"></script>

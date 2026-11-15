@@ -4,15 +4,19 @@ var PondSim = (function () {
   'use strict';
 
   var STEPS = 8;
+  var GLOW_STEPS = 3;   // a jar note lights its range for this many steps
   var STONES = 22;
   var LILIES = 5;
   var RULES = {
     range: { frog: 105, cricket: 130, owl: 230, jar: 170 },
+    jarArmor: 2,   // enemies in a jar's light lose this much armor
+    // groove: score thresholds for Steady and Groovy, and the power multiplier of each tier (Rough, Steady, Groovy)
+    groove: { steady: 0.45, groovy: 0.72, mult: [1, 1.4, 2] },
     enemy: {
       slug: { hp: 2, armor: 0, every: 2 },
       slugling: { hp: 1, armor: 0, every: 1 },
       snail: { hp: 4, armor: 2, every: 4 },
-      shellback: { hp: 14, armor: 3, every: 4 }
+      shellback: { hp: 14, armor: 6, every: 4 }
     }
   };
   var PERCH_STONE = [3, 6, 9, 12, 15, 18];
@@ -50,9 +54,89 @@ var PondSim = (function () {
     return Math.min(p, 4);
   }
 
-  function create(level, placements) {
+  // ---------- groove: how good a pattern sounds ----------
+  // Scored over the whole song (every row together), 0..1, from five musical rules:
+  //   beat    notes on strong steps (0 and 4 count 1, 2 and 6 count 0.7, odd steps 0.25)
+  //   pulse   even spacing between sounding steps (a steady pulse)
+  //   rest    each note is preceded by a rest in its own row (two rests count full)
+  //   call    different voices answer each other: alternating solo notes between creature types
+  //   harmony different creature types sounding on one step
+  // With only one creature type on the pond, call and harmony cannot happen, so beat, pulse and rest share the weight.
+  var BEAT_W = [1, 0.25, 0.7, 0.25, 1, 0.25, 0.7, 0.25];
+  var TIER_NAMES = ['Rough', 'Steady', 'Groovy'];
+
+  function groove(placements) {
+    var i, s, types = {}, nvoices = 0, out;
+    for (i = 0; i < placements.length; i++) if (!types[placements[i].type]) { types[placements[i].type] = 1; nvoices++; }
+    var union = [], tcount = [], solo = [];
+    for (s = 0; s < STEPS; s++) {
+      var seen = {}, c = 0, last = null;
+      for (i = 0; i < placements.length; i++) if (placements[i].pattern[s] && !seen[placements[i].type]) { seen[placements[i].type] = 1; c++; last = placements[i].type; }
+      tcount.push(c);
+      if (c) union.push(s);
+      if (c === 1) solo.push({ step: s, type: last });
+    }
+    var parts = { beat: 0, pulse: 0, rest: 0, call: 0, harmony: 0 };
+    if (!union.length) return { score: 0, tier: 0, name: TIER_NAMES[0], mult: 1, parts: parts, notes: 0, voices: nvoices };
+    var b = 0;
+    for (i = 0; i < union.length; i++) b += BEAT_W[union[i]];
+    parts.beat = b / union.length;
+    if (union.length === 1) parts.pulse = 0.6;
+    else {
+      var mn = 99, mx = 0;
+      for (i = 0; i < union.length; i++) {
+        var gap = ((union[(i + 1) % union.length] - union[i]) + STEPS) % STEPS || STEPS;
+        if (gap < mn) mn = gap; if (gap > mx) mx = gap;
+      }
+      parts.pulse = Math.sqrt(mn / mx);
+    }
+    var rsum = 0, rn = 0;
+    for (i = 0; i < placements.length; i++) {
+      for (s = 0; s < STEPS; s++) {
+        if (!placements[i].pattern[s]) continue;
+        var rests = 0;
+        for (var j = 1; j <= 2; j++) { if (placements[i].pattern[(s - j + STEPS * 2) % STEPS]) break; rests++; }
+        rsum += rests / 2; rn++;
+      }
+    }
+    parts.rest = rn ? rsum / rn : 0;
+    var H = 0;
+    for (s = 0; s < STEPS; s++) if (tcount[s] >= 2) H++;
+    parts.harmony = Math.min(1, H / 2);
+    var sw = 0;
+    if (solo.length >= 2) for (i = 0; i < solo.length; i++) if (solo[i].type !== solo[(i + 1) % solo.length].type) sw++;
+    parts.call = Math.min(1, sw / 2);
+    var sc = nvoices >= 2
+      ? 0.26 * parts.beat + 0.18 * parts.pulse + 0.26 * parts.rest + 0.15 * parts.call + 0.15 * parts.harmony
+      : 0.40 * parts.beat + 0.20 * parts.pulse + 0.40 * parts.rest;
+    var G = RULES.groove, tier = sc >= G.groovy ? 2 : sc >= G.steady ? 1 : 0;
+    out = { score: sc, tier: tier, name: TIER_NAMES[tier], mult: G.mult[tier], parts: parts, notes: union.length, voices: nvoices };
+    return out;
+  }
+
+  function perchDist(a, b) {
+    var g = geometry(); return Math.hypot(g.perches[a].x - g.perches[b].x, g.perches[a].y - g.perches[b].y);
+  }
+
+  // Static power of the note at (row, step) for the pad rings: rests, harmony, and a jar singing on the same step.
+  function padPower(placements, row, step) {
+    var pl = placements[row];
+    if (!pl || !pl.pattern[step]) return 0;
+    if (pl.type === 'jar') return 1;
+    var types = {}, n = 0, lit = false, i, j;
+    for (i = 0; i < placements.length; i++) {
+      var q = placements[i];
+      if (q.type === 'jar') {
+        for (j = 0; j < GLOW_STEPS; j++) if (q.pattern[(step - j + STEPS * 2) % STEPS] && perchDist(q.perch, pl.perch) <= RULES.range.jar) lit = true;
+      } else if (q.pattern[step] && !types[q.type]) { types[q.type] = 1; n++; }
+    }
+    return power(pl.pattern, step, n >= 2, lit);
+  }
+
+  function create(level, placements, opts) {
     return {
       level: level,
+      noGroove: !!(opts && opts.noGroove),
       placements: placements.map(function (p) {
         return { perch: p.perch, type: p.type, pattern: p.pattern.slice() };
       }),
@@ -61,6 +145,8 @@ var PondSim = (function () {
       enemies: [],
       nextId: 1,
       spawned: 0,
+      dealt: 0,       // total damage dealt, for searches
+      glow: {},       // jar placement index -> last step its light shines
       lilies: LILIES,
       over: null      // 'win' | 'lose'
     };
@@ -93,10 +179,14 @@ var PondSim = (function () {
     return best;
   }
 
-  function hurt(e, dmg, events, pi, power) {
-    e.hp -= Math.max(dmg, 0);
-    events.push({ type: 'hit', enemy: e.id, dmg: Math.max(dmg, 0), placement: pi, power: power, armored: dmg <= 0 });
+  function hurt(state, e, dmg, events, pi, pw) {
+    var d = Math.max(dmg, 0);
+    state.dealt += Math.min(d, Math.max(e.hp, 0));
+    e.hp -= d;
+    events.push({ type: 'hit', enemy: e.id, dmg: d, placement: pi, power: pw, armored: d <= 0 });
   }
+
+  function armorOf(e) { return Math.max(0, e.armor - (e.lit ? RULES.jarArmor : 0)); }
 
   function step(state) {
     var events = [];
@@ -109,43 +199,76 @@ var PondSim = (function () {
       for (i = 0; i < lv.wave.length; i++) {
         if (lv.wave[i].step === rel) {
           var spec = RULES.enemy[lv.wave[i].type];
-          e = { id: state.nextId++, type: lv.wave[i].type, stone: 0, hp: spec.hp, armor: spec.armor, every: spec.every, cd: Math.max(0, spec.every - 2), stun: false, hitT: 0 };
+          e = { id: state.nextId++, type: lv.wave[i].type, stone: 0, hp: spec.hp, armor: spec.armor, every: spec.every, cd: Math.max(0, spec.every - 2), stun: 0, lit: false, hitT: 0 };
           state.enemies.push(e);
           state.spawned++;
           events.push({ type: 'spawn', enemy: e.id, kind: e.type });
         }
       }
     }
-    // move
+    // move (a stunned enemy skips the move)
     for (i = 0; i < state.enemies.length; i++) {
       e = state.enemies[i];
-      if (e.stun) { e.stun = false; continue; }
+      if (e.stun > 0) { e.stun--; continue; }
       if (e.cd > 0) { e.cd--; continue; }
       e.stone++;
       e.cd = e.every - 1;
       events.push({ type: 'move', enemy: e.id, stone: e.stone });
     }
-    // notes: harmony counts creature types singing this step
-    var singing = [], types = {}, ntypes = 0;
+    // who sings this step: harmony counts creature types (not jars) singing together
+    var singing = [], types = {}, ntypes = 0, jars = [];
     for (i = 0; i < state.placements.length; i++) {
       var pl = state.placements[i];
-      if (pl.pattern[loopStep] && pl.type !== 'jar') {
+      if (pl.pattern[loopStep]) {
+        if (pl.type === 'jar') { jars.push(i); continue; }
         singing.push(i);
         if (!types[pl.type]) { types[pl.type] = 1; ntypes++; }
       }
     }
-    for (var si = 0; si < singing.length; si++) {
-      var pi = singing[si], p = state.placements[pi];
-      var pw = power(p.pattern, loopStep, ntypes >= 2, false);
-      events.push({ type: 'sing', placement: pi, perch: p.perch, kind: p.type, power: pw });
-      var list = enemiesInRange(state, p);
-      if (p.type === 'frog') {
-        var f = furthest(list);
-        if (f) hurt(f, pw + 1 - f.armor, events, pi, pw);
-      } else if (p.type === 'cricket') {
-        for (var j = 0; j < list.length; j++) hurt(list[j], pw - list[j].armor, events, pi, pw);
+    var gv = state.noGroove ? { tier: 0, mult: 1, score: 0, name: TIER_NAMES[0] } : groove(state.placements);
+    if (state.placements.length) events.push({ type: 'groove', tier: gv.tier, score: gv.score, mult: gv.mult });
+    // fireflies glow first: a jar note lights its range for 3 steps (this one and the next two).
+    // Creatures in the light sing +1 power, enemies in the light lose 1 armor.
+    var boost = {}, ji, k;
+    for (ji = 0; ji < jars.length; ji++) {
+      var jn = state.placements[jars[ji]], litNow = 0, jlist = enemiesInRange(state, jn);
+      for (k = 0; k < jlist.length; k++) litNow++;
+      state.glow[jars[ji]] = t + GLOW_STEPS - 1;
+      events.push({ type: 'sing', placement: jars[ji], perch: jn.perch, kind: 'jar', power: 1, mult: gv.mult, lit: litNow, reasons: {} });
+    }
+    for (var gj in state.glow) {
+      if (state.glow[gj] < t) continue;
+      var jp = state.placements[gj], gl = enemiesInRange(state, jp);
+      for (k = 0; k < gl.length; k++) { if (!gl[k].lit) events.push({ type: 'lit', enemy: gl[k].id }); gl[k].lit = true; }
+      for (k = 0; k < state.placements.length; k++) {
+        if (state.placements[k].type !== 'jar' && perchDist(jp.perch, state.placements[k].perch) <= RULES.range.jar) boost[k] = true;
       }
     }
+    for (var si = 0; si < singing.length; si++) {
+      var pi = singing[si], p = state.placements[pi];
+      var pw = power(p.pattern, loopStep, ntypes >= 2, !!boost[pi]);
+      var ep = pw * gv.mult;
+      var rest = pw > 1 && ((p.pattern[(loopStep + STEPS - 1) % STEPS] ? 0 : 1) === 1);
+      events.push({
+        type: 'sing', placement: pi, perch: p.perch, kind: p.type, power: pw, mult: gv.mult, tier: gv.tier,
+        reasons: { rest: rest, harmony: ntypes >= 2, firefly: !!boost[pi], beat: gv.mult > 1 && loopStep % 4 === 0 }
+      });
+      var list = enemiesInRange(state, p), j;
+      if (p.type === 'frog') {
+        var f = furthest(list);
+        if (f) hurt(state, f, ep + 1 - armorOf(f), events, pi, pw);
+      } else if (p.type === 'cricket') {
+        for (j = 0; j < list.length; j++) hurt(state, list[j], ep - armorOf(list[j]), events, pi, pw);
+      } else if (p.type === 'owl') {
+        // the owl does no damage: everything in its wide range loses its next move (two moves on a strong note)
+        var dur = ep >= 2.5 ? 2 : 1;
+        for (j = 0; j < list.length; j++) {
+          if (list[j].stun < dur) list[j].stun = dur;
+          events.push({ type: 'stun', enemy: list[j].id, steps: dur, placement: pi });
+        }
+      }
+    }
+    for (i = 0; i < state.enemies.length; i++) state.enemies[i].lit = false;
     // remove beaten
     var keep = [];
     for (i = 0; i < state.enemies.length; i++) {
@@ -198,16 +321,47 @@ var PondSim = (function () {
       parts.push({ key: key, have: have[key] || 0, need: goal.voices[key] });
     }
     if (goal.harmony) parts.push({ key: 'harmony', have: harm, need: goal.harmony });
+    if (goal.groove) parts.push({ key: 'groove', have: groove(placements).tier, need: goal.groove });
     for (i = 0; i < parts.length; i++) if (parts[i].have < parts[i].need) met = false;
     return { met: met, parts: parts };
   }
 
-  function run(level, placements) {
-    var st = create(level, placements);
+  // opts: {noGroove: true} plays every note at Rough strength (for proving a night needs groove).
+  function run(level, placements, opts) {
+    var st = create(level, placements, opts);
     arm(st);
     var cap = 8 * 400;
     while (!st.over && st.t < cap) step(st);
-    return { won: st.over === 'win', lilies: st.lilies, steps: st.t };
+    return { won: st.over === 'win', lilies: st.lilies, steps: st.t, dealt: st.dealt };
+  }
+
+  // ---------- song codes ----------
+  // PC1-F1a-C44-O80-J01 : one chunk per row, a type letter then the pattern as two hex digits (step 0 is the low bit).
+  var LETTER = { frog: 'F', cricket: 'C', owl: 'O', jar: 'J' };
+  var TYPE_OF = { F: 'frog', C: 'cricket', O: 'owl', J: 'jar' };
+  function encode(placements) {
+    var out = ['PC1'];
+    for (var i = 0; i < placements.length; i++) {
+      var bits = 0;
+      for (var s = 0; s < STEPS; s++) if (placements[i].pattern[s]) bits |= 1 << s;
+      out.push(LETTER[placements[i].type] + (bits < 16 ? '0' : '') + bits.toString(16));
+    }
+    return out.join('-');
+  }
+  // Returns [{type, pattern}] or null when the text is not a song code.
+  function decode(text) {
+    if (typeof text !== 'string') return null;
+    var parts = text.trim().split('-');
+    if (parts[0] !== 'PC1' || parts.length < 2 || parts.length > 7) return null;
+    var out = [];
+    for (var i = 1; i < parts.length; i++) {
+      var m = /^([FCOJ])([0-9a-fA-F]{2})$/.exec(parts[i]);
+      if (!m) return null;
+      var bits = parseInt(m[2], 16), pat = [];
+      for (var s = 0; s < STEPS; s++) pat.push((bits >> s) & 1);
+      out.push({ type: TYPE_OF[m[1]], pattern: pat });
+    }
+    return out;
   }
 
   // Loop steps (0..7) where an enemy of an empty-handed run is in range of each fixed creature.
@@ -227,7 +381,8 @@ var PondSim = (function () {
 
   return {
     STEPS: STEPS, STONES: STONES, LILIES: LILIES, RULES: RULES,
-    power: power, geometry: geometry, create: create, arm: arm, step: step,
+    power: power, groove: groove, padPower: padPower, perchDist: perchDist, encode: encode, decode: decode, TIERS: TIER_NAMES,
+    geometry: geometry, create: create, arm: arm, step: step,
     inRange: inRange, goalProgress: goalProgress, enemiesInRange: enemiesInRange, run: run, hints: hints, notes: notes, stars: stars
   };
 })();
