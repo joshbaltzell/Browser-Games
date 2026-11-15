@@ -51,7 +51,7 @@
   var HOP_MS = 900, PUFF_MS = 450, CROAK_MS = 1200;
   var frogDeform = D.combine(
     D.breathe(function () { return st.tune.breathe; }, 0.35),
-    D.bulge(0.58, 0.5, 0.32, function () { return st.puff * st.tune.bulge; }),
+    D.bulge(0.6, 0.62, 0.48, function () { return st.puff * st.tune.bulge; }),
     D.squash(function () { return st.sx; }, function () { return st.sy; }),
     D.wobble(function () { return st.tune.wobble * (st.croakT >= 0 ? 1 : 0); }, 7, 0)
   );
@@ -145,7 +145,7 @@
     slug: 'rig-demo', world: { w: 1280, h: 720 }, assets: manifest,
     tune: {
       breathe: { v: 0.03, min: 0, max: 0.1, step: 0.005 },
-      bulge: { v: 0.45, min: 0, max: 1, step: 0.05 },
+      bulge: { v: 1.0, min: 0, max: 2, step: 0.05 },
       squash: { v: 0.25, min: 0, max: 0.5, step: 0.01 },
       wobble: { v: 0.012, min: 0, max: 0.05, step: 0.002 },
       sway: { v: 0.08, min: 0, max: 0.25, step: 0.01 },
@@ -157,7 +157,7 @@
       // mirror the live tune values into small range inputs (same object Kit.tune panel edits)
       var box = document.getElementById('sliders');
       Object.keys(game.tune).forEach(function (k) {
-        var def = { breathe: [0, 0.1, 0.005], bulge: [0, 1, 0.05], squash: [0, 0.5, 0.01], wobble: [0, 0.05, 0.002], sway: [0, 0.25, 0.01], figBreath: [0, 0.08, 0.002], figWobble: [0, 0.2, 0.005] }[k];
+        var def = { breathe: [0, 0.1, 0.005], bulge: [0, 2, 0.05], squash: [0, 0.5, 0.01], wobble: [0, 0.05, 0.002], sway: [0, 0.25, 0.01], figBreath: [0, 0.08, 0.002], figWobble: [0, 0.2, 0.005] }[k];
         if (!def) return;
         var lab = document.createElement('label'), sp = document.createElement('span'), inp = document.createElement('input');
         sp.textContent = k; inp.type = 'range'; inp.min = def[0]; inp.max = def[1]; inp.step = def[2]; inp.value = game.tune[k];
