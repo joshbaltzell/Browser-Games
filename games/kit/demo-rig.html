@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kit rig demo</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #101a1e; color: #eee; font-family: system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; position: fixed; inset: 0; touch-action: none; }
+  #hint { position: fixed; left: 8px; top: 8px; z-index: 5; font-size: 14px; background: rgba(0,0,0,.55); padding: 6px 10px; border-radius: 6px; }
+  #panel { position: fixed; right: 8px; bottom: 8px; width: 300px; padding: 10px; z-index: 5; background: rgba(10, 14, 18, .88); border-radius: 8px; }
+  #panel h2 { margin: 8px 0 6px; font-size: 14px; }
+  #panel h2:first-child { margin-top: 0; }
+  #panel button { min-height: 44px; min-width: 88px; margin: 0 6px 6px 0; font: inherit; cursor: pointer; }
+  #panel label { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 2px 0; }
+  #panel label span { width: 96px; }
+  #panel input[type=range] { flex: 1; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hint">Click the frog to hop and puff. Click the figure to wave. Backtick opens the tuning panel.</div>
+<div id="panel">
+  <h2>Frog (Kit.mesh)</h2>
+  <button id="b-hop" type="button">Hop</button>
+  <button id="b-croak" type="button">Croak</button>
+  <h2>Figure (Kit.rig)</h2>
+  <button id="b-idle" type="button">Idle</button>
+  <button id="b-wave" type="button">Wave</button>
+  <h2>Deformer amounts</h2>
+  <div id="sliders"></div>
+</div>
+<script src="kit.js"></script>
+<script src="rig.js"></script>
+<script src="../pond-chorus/assets/manifest.js"></script>
+<script>
+(function () {
+  'use strict';
+  // Manifest paths are relative to the game folder, so point them at pond-chorus from here.
+  var manifest = {};
+  ['bg-pond', 'frog-idle', 'frog-sing', 'lily-bloom'].forEach(function (n) {
+    var a = ASSETS[n];
+    manifest[n] = { src: '../pond-chorus/' + a.src, w: a.w, h: a.h, fallback: a.fallback };
+  });
+
+  // ---------- frog: one mesh, deformers read this state ----------
+  var D = Kit.deform;
+  var frogMesh = Kit.mesh('frog-idle', { cols: 10, rows: 10 });
+  var lilyMesh = Kit.mesh('lily-bloom', { cols: 6, rows: 8 });
+  var st = { hopT: -1, puffT: -1, croakT: -1, sx: 1, sy: 1, hopY: 0, puff: 0, tune: null };
+  var HOP_MS = 900, PUFF_MS = 450, CROAK_MS = 1200;
+  var frogDeform = D.combine(
+    D.breathe(function () { return st.tune.breathe; }, 0.35),
+    D.bulge(0.58, 0.5, 0.32, function () { return st.puff * st.tune.bulge; }),
+    D.squash(function () { return st.sx; }, function () { return st.sy; }),
+    D.wobble(function () { return st.tune.wobble * (st.croakT >= 0 ? 1 : 0); }, 7, 0)
+  );
+  var lilyDeform = D.sway(function () { return st.tune.sway; }, 0.3);
+
+  function hop() { st.hopT = 0; st.puffT = 0; }
+  function croak() { st.croakT = 0; }
+
+  function stepFrog(dt, T) {
+    var p, c, a, l;
+    if (st.hopT >= 0) {
+      st.hopT += dt; p = st.hopT / HOP_MS;
+      if (p >= 1) { st.hopT = -1; st.sx = st.sy = 1; st.hopY = 0; }
+      else if (p < 0.2) { c = Kit.ease.inOutSine(p / 0.2); st.hopY = 0; st.sx = 1 + T.squash * c; st.sy = 1 - T.squash * c; }
+      else if (p < 0.75) { a = (p - 0.2) / 0.55; st.hopY = -4 * 130 * a * (1 - a); st.sx = 1 - T.squash * 0.4; st.sy = 1 + T.squash * 0.5; }
+      else { l = Kit.ease.outElastic((p - 0.75) / 0.25); st.hopY = 0; st.sx = 1 + T.squash * (1 - l); st.sy = 1 - T.squash * (1 - l); }
+    }
+    st.puff = 0;
+    if (st.puffT >= 0) {
+      st.puffT += dt;
+      if (st.puffT >= PUFF_MS) st.puffT = -1; else st.puff = Math.sin(Math.PI * st.puffT / PUFF_MS);
+    }
+    if (st.croakT >= 0) {
+      st.croakT += dt;
+      if (st.croakT >= CROAK_MS) st.croakT = -1;
+      else { var s = Math.sin(Math.PI * 3 * st.croakT / CROAK_MS); st.puff = Math.max(st.puff, s * s); }
+    }
+  }
+
+  // ---------- synthetic rig: coloured rounded rectangles, no art ----------
+  function rrect(ctx, w, h, r, fill) {
+    ctx.beginPath();
+    ctx.moveTo(r, 0); ctx.arcTo(w, 0, w, h, r); ctx.arcTo(w, h, 0, h, r); ctx.arcTo(0, h, 0, 0, r); ctx.arcTo(0, 0, w, 0, r);
+    ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+  }
+  function box(color, r) { return function (ctx, w, h) { rrect(ctx, w, h, r, color); }; }
+  var figure = Kit.rig({
+    parts: {
+      legL: { parent: 'body', x: -17, y: -6, w: 26, h: 72, ay: 0.08, z: -2, draw: box('#3f5f8f', 10) },
+      legR: { parent: 'body', x: 17, y: -6, w: 26, h: 72, ay: 0.08, z: -2, draw: box('#3f5f8f', 10) },
+      armL: { parent: 'body', x: -41, y: -78, w: 20, h: 68, ay: 0.12, rot: 0.08, z: -1, draw: box('#e0a44a', 9) },
+      body: { x: 0, y: 0, w: 74, h: 92, ax: 0.5, ay: 1, draw: box('#d8604a', 18) },
+      armR: { parent: 'body', x: 41, y: -78, w: 20, h: 68, ay: 0.12, rot: 0.08, z: 1, draw: box('#e0a44a', 9) },
+      head: {
+        parent: 'body', x: 0, y: -88, w: 66, h: 58, ay: 1, z: 2,
+        draw: function (ctx, w, h) {
+          rrect(ctx, w, h, 20, '#f2cf9a');
+          ctx.fillStyle = '#2a2230';
+          ctx.beginPath(); ctx.arc(w * 0.32, h * 0.45, 5, 0, 6.283); ctx.arc(w * 0.68, h * 0.45, 5, 0, 6.283); ctx.fill();
+        }
+      }
+    },
+    clips: {
+      idle: {
+        dur: 2400, loop: true,
+        tracks: {
+          body: { y: [[0, 0, 'inOutSine'], [1200, -4, 'inOutSine'], [2400, 0]] },
+          head: { rot: [[0, -0.05, 'inOutSine'], [1200, 0.05, 'inOutSine'], [2400, -0.05]] },
+          armL: { rot: [[0, 0.04, 'inOutSine'], [1200, 0.14, 'inOutSine'], [2400, 0.04]] },
+          armR: { rot: [[0, -0.04, 'inOutSine'], [1200, 0.06, 'inOutSine'], [2400, -0.04]] }
+        }
+      },
+      wave: {
+        dur: 1700, loop: false,
+        events: [{ t: 350, name: 'hello' }],
+        tracks: {
+          armR: { rot: [[0, 0, 'outQuad'], [350, -2.6, 'inOutSine'], [575, -2.0, 'inOutSine'], [800, -2.8, 'inOutSine'],
+            [1025, -2.0, 'inOutSine'], [1250, -2.8, 'inOutSine'], [1450, -2.6, 'inOutSine'], [1700, 0]] },
+          head: { rot: [[0, 0, 'inOutSine'], [350, 0.16, 'inOutSine'], [1450, 0.16, 'inOutSine'], [1700, 0]] },
+          body: { rot: [[0, 0, 'inOutSine'], [350, -0.05, 'inOutSine'], [1450, -0.05, 'inOutSine'], [1700, 0]],
+                  y: [[0, 0, 'outQuad'], [175, -10, 'inOutSine'], [350, 0]] },
+          armL: { rot: [[0, 0.1], [1700, 0.1]] }
+        }
+      }
+    }
+  });
+  figure.play('idle', { blend: 0 });
+  var waves = 0, lastEvent = '-';
+  figure.on('hello', function () { waves++; lastEvent = 'hello'; });
+  figure.on('end', function (n, clip) { lastEvent = 'end ' + clip; });
+  function wave() { figure.play('wave', { blend: 150, next: 'idle', nextBlend: 250 }); }
+
+  // ---------- panel ----------
+  var clicks = 0, fpsMs = 16.7;
+  document.getElementById('b-hop').onclick = function () { hop(); };
+  document.getElementById('b-croak').onclick = function () { croak(); };
+  document.getElementById('b-idle').onclick = function () { figure.play('idle', { blend: 200 }); };
+  document.getElementById('b-wave').onclick = wave;
+
+  var g = Kit.boot({
+    slug: 'rig-demo', world: { w: 1280, h: 720 }, assets: manifest,
+    tune: {
+      breathe: { v: 0.03, min: 0, max: 0.1, step: 0.005 },
+      bulge: { v: 0.45, min: 0, max: 1, step: 0.05 },
+      squash: { v: 0.25, min: 0, max: 0.5, step: 0.01 },
+      wobble: { v: 0.012, min: 0, max: 0.05, step: 0.002 },
+      sway: { v: 0.08, min: 0, max: 0.25, step: 0.01 },
+      figBreath: { v: 0.02, min: 0, max: 0.08, step: 0.002 },
+      figWobble: { v: 0.03, min: 0, max: 0.2, step: 0.005 }
+    },
+    onStart: function (game) {
+      st.tune = game.tune;
+      // mirror the live tune values into small range inputs (same object Kit.tune panel edits)
+      var box = document.getElementById('sliders');
+      Object.keys(game.tune).forEach(function (k) {
+        var def = { breathe: [0, 0.1, 0.005], bulge: [0, 1, 0.05], squash: [0, 0.5, 0.01], wobble: [0, 0.05, 0.002], sway: [0, 0.25, 0.01], figBreath: [0, 0.08, 0.002], figWobble: [0, 0.2, 0.005] }[k];
+        if (!def) return;
+        var lab = document.createElement('label'), sp = document.createElement('span'), inp = document.createElement('input');
+        sp.textContent = k; inp.type = 'range'; inp.min = def[0]; inp.max = def[1]; inp.step = def[2]; inp.value = game.tune[k];
+        inp.oninput = function () { game.tune[k] = parseFloat(inp.value); };
+        lab.appendChild(sp); lab.appendChild(inp); box.appendChild(lab);
+      });
+    },
+    onFrame: function (dt, game) {
+      var ctx = game.ctx, T = game.tune, t = performance.now();
+      st.tune = T;
+      fpsMs += (dt - fpsMs) * 0.05;
+      stepFrog(dt, T);
+      figure.layer('breath', { part: 'body', prop: 'sy', amp: T.figBreath, hz: 0.6 });
+      figure.layer('wobble', { part: 'head', prop: 'rot', amp: T.figWobble, hz: 1.7 });
+      figure.update(dt);
+
+      Kit.draw(ctx, 'bg-pond', 640, 720, { w: 1280, h: 720 });
+      lilyMesh.draw(ctx, 130, 620, { h: 150, deform: lilyDeform, t: t });
+      var sing = st.croakT >= 0;
+      frogMesh.draw(ctx, 380, 600 + st.hopY, { h: 280, name: sing ? 'frog-sing' : 'frog-idle', deform: frogDeform, t: t });
+      figure.draw(ctx, 930, 600, { scale: 1.8 });
+
+      ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(16, 650, 520, 58);
+      ctx.fillStyle = '#fff'; ctx.font = '16px system-ui, sans-serif';
+      ctx.fillText('frame ' + fpsMs.toFixed(1) + ' ms (' + Math.round(1000 / fpsMs) + ' fps)   clicks ' + clicks, 28, 674);
+      ctx.fillText('rig clip ' + figure.states[figure.states.length - 1].clip + '   hello events ' + waves + '   last: ' + lastEvent, 28, 698);
+    }
+  });
+  Kit.pointer(g.canvas, {
+    down: function (x) {
+      clicks++;
+      if (x < 640) { hop(); } else { wave(); }
+    }
+  });
+  window.__demo = { game: g, st: st, figure: figure, hop: hop, croak: croak, wave: wave };
+})();
+</script>
+</body>
+</html>
