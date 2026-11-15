@@ -19,7 +19,7 @@
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="hint">Click the frog to hop and puff. Click the figure to wave. Backtick opens the tuning panel.</div>
+<div id="hint">Click the frog to croak (open mouth and chest puff). Use the Hop button to hop. Click the figure to wave. Backtick opens the tuning panel.</div>
 <div id="panel">
   <h2>Frog (Kit.mesh)</h2>
   <button id="b-hop" type="button">Hop</button>
@@ -189,7 +189,7 @@
   Kit.pointer(g.canvas, {
     down: function (x) {
       clicks++;
-      if (x < 640) { hop(); } else { wave(); }
+      if (x < 640) { croak(); } else { wave(); }
     }
   });
   window.__demo = { game: g, st: st, figure: figure, hop: hop, croak: croak, wave: wave };
