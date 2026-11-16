@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Look Alive</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=Special+Elite&display=swap" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="topbar">
+  <a class="back" href="../../index.html">&larr; Back to games</a>
+  <div class="brand">LOOK ALIVE <span id="dishTitle"></span></div>
+  <nav id="nav">
+    <button type="button" data-go="list">Dishes</button>
+    <button type="button" data-go="scout">Scout</button>
+    <button type="button" data-go="build">Build</button>
+    <button type="button" data-go="run" id="navRun">Replay</button>
+  </nav>
+</header>
+
+<main id="app">
+
+  <section class="screen" id="screen-list">
+    <div class="listwrap">
+      <h1>Pass as a native.</h1>
+      <p class="lede">Your colony has landed on Acidica. The natives are sour, small and untidy. The immune system is watching. Build a colony that looks like it belongs, and stay between 5% and 15% of the dish.</p>
+      <div id="dishList"></div>
+      <div class="listfoot"><button type="button" class="ghost" id="unlockAll">Unlock all dishes</button><button type="button" class="ghost" id="resetProgress">Clear saved progress</button></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-scout">
+    <div class="scoutgrid">
+      <div class="panel dishpanel">
+        <div class="ptitle">Natives alone <span class="dim" id="scoutTick"></span></div>
+        <canvas id="scoutDish" class="dishcanvas"></canvas>
+        <div class="legend"><i class="sw vio"></i> natives <i class="sw amb"></i> waste <i class="sw food"></i> food</div>
+      </div>
+      <div class="scoutright">
+        <div class="panel"><div class="ptitle">Population, relative to the start</div><canvas id="scoutG1" class="graph short"></canvas></div>
+        <div class="panel"><div class="ptitle">Division rate per cell per tick, with the normal range</div><canvas id="scoutG2" class="graph short"></canvas></div>
+        <div class="panel"><div class="ptitle">Normal ranges <span class="dim">pin one to keep it on the build screen</span></div><div id="readouts" class="readouts"></div></div>
+        <div class="scoutbtns"><button type="button" class="big" id="toBuild">Go to the build screen</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-build">
+    <div class="pinbar" id="pinbarB"></div>
+    <div class="buildgrid" id="buildGrid">
+      <div class="colL">
+        <div class="panel portrait"><canvas id="portrait"></canvas><div class="ptag" id="portraitTag"></div></div>
+        <div class="panel slots">
+          <div class="ptitle">Slots <span class="dim">click a filled slot to empty it</span></div>
+          <div id="slotMet" class="slot"></div>
+          <div id="slotParts"></div>
+          <div id="slotReflex" class="slot"></div>
+          <div class="energy"><span class="elabel">Energy</span><div id="energyBar"></div><span id="energyNum"></span></div>
+        </div>
+        <div class="panel dials" id="dials"></div>
+      </div>
+      <div class="colC">
+        <div class="tabs" id="buildTabs"><button type="button" data-tab="parts" class="on">Parts</button><button type="button" data-tab="reflex" id="tabReflex">Reflex</button></div>
+        <div id="tabParts" class="shelves">
+          <div class="shelf bioShelf"><div class="shelfhead"><b>BIOLOGY</b><span>Safe from suspicion</span></div><div class="shelflist" id="shelfBio"></div></div>
+          <div class="shelf machShelf"><div class="shelfhead"><b>MACHINE</b><span>Powerful. Raises Regularity</span></div><div class="shelflist" id="shelfMach"></div></div>
+        </div>
+        <div id="tabReflexBody" class="reflexbody" hidden>
+          <div class="shelf bioShelf"><div class="shelfhead"><b>BIOLOGY REFLEXES</b><span>Fixed sentences, noisy senses, no suspicion</span></div><div class="shelflist" id="shelfReflex"></div></div>
+          <div class="shelf machShelf"><div class="shelfhead"><b>MACHINE RULE</b><span>Exact readings. Raises Regularity</span></div><div class="shelflist" id="ruleBox"></div></div>
+        </div>
+        <div class="matchbox" id="matchBox" hidden>
+          <div class="ptitle">Match the ghost</div>
+          <p class="instr">Turn the Pace dial until your division rate (pink) lies on the natives' rate (the violet ghost line).</p>
+          <canvas id="matchGraph" class="graph tall"></canvas>
+          <div class="matchnote" id="matchNote"></div>
+        </div>
+      </div>
+      <div class="colR">
+        <div class="panel predict">
+          <div class="ptitle">Prediction <span class="dim">no simulation yet</span></div>
+          <ul id="predList"></ul>
+          <div id="problems"></div>
+        </div>
+        <div class="panel tools">
+          <div class="toolrow"><button type="button" id="undo">Undo</button><button type="button" id="reset">Reset</button></div>
+          <div class="ptitle small">Build snapshots</div>
+          <div id="snapSlots"></div>
+        </div>
+        <button type="button" id="runBtn" class="runbtn">RUN</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-run">
+    <div class="pinbar" id="pinbarR"></div>
+    <div class="rungrid">
+      <div class="runL">
+        <div class="panel dishpanel">
+          <canvas id="runDish" class="dishcanvas"></canvas>
+          <div class="legend"><i class="sw vio"></i> natives <i class="sw pink"></i> you <i class="sw amb"></i> waste <i class="sw grn"></i> immune activity</div>
+        </div>
+        <div class="controls panel">
+          <div class="crow">
+            <button type="button" id="playBtn" class="pbtn">Pause</button>
+            <div class="speeds" id="speeds"><button type="button" data-sp="1" class="on">1x</button><button type="button" data-sp="4">4x</button><button type="button" data-sp="16">16x</button></div>
+            <button type="button" id="skipBtn">Skip to trouble</button>
+            <button type="button" id="resultBtn">Result</button>
+          </div>
+          <div class="crow"><input type="range" id="scrub" min="0" max="300" value="0" step="1"><span id="tickNum" class="mono"></span></div>
+        </div>
+        <div class="cardstrip" id="cardStrip"></div>
+      </div>
+      <div class="runR">
+        <div class="panel"><canvas id="instruments"></canvas></div>
+        <div class="immune panel" id="immune"></div>
+        <div class="panel"><div class="ptitle small">Share of the dish <span class="dim">band and event marked, dashed line is your previous run</span></div><canvas id="gShare" class="graph"></canvas><canvas id="ribbon"></canvas><div class="ribbonkey" id="ribbonKey"></div></div>
+        <div class="panel"><div class="ptitle small">Suspicion total <span class="dim">stage lines at 1.5, 4.5 and 8</span></div><canvas id="gSusp" class="graph low"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <div id="overlay" hidden></div>
+  <div id="pop" hidden></div>
+</main>
+
+<script src="cards.js"></script>
+<script src="levels.js"></script>
+<script src="sim.js"></script>
+<script src="draw.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
