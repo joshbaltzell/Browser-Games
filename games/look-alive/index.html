@@ -78,16 +78,16 @@
       </div>
       <div class="colC">
         <div class="panel optpanel" id="optPanel">
-          <div class="opthead"><div class="optname" id="optName"></div><div class="optblurb" id="optBlurb"></div></div>
+          <div class="opthead"><div class="optnamerow"><div class="optname" id="optName"></div><label class="realtog"><input type="checkbox" id="realTog"> Real biology</label></div><div class="optblurb" id="optBlurb"></div></div>
           <div id="layerRows" class="layerrows"></div>
           <div id="optList" class="optlist"></div>
         </div>
       </div>
       <div class="colR">
-        <div class="panel predict">
-          <div class="ptitle">What will happen <span class="dim">before you run</span></div>
-          <div id="acidLine" class="acidline"></div>
-          <ul id="predList"></ul>
+        <div class="panel forecast">
+          <div class="ptitle">Forecast <span class="dim">test run</span></div>
+          <div id="statBars" class="statbars"></div>
+          <div id="fixLine" class="fixline" aria-live="polite"></div>
           <div id="problems"></div>
         </div>
         <div class="panel tipbox">
@@ -122,7 +122,7 @@
       </div>
       <div class="runR">
         <div class="panel verdict"><div id="verdictText"></div><button type="button" id="verdictBtn" class="big">Adapt your cell</button></div>
-        <div class="panel" id="instBox"><canvas id="instruments"></canvas></div>
+        <div class="panel" id="instBox"><div class="ptitle small" id="liveTitle">Live stats</div><div id="liveBars" class="statbars two"></div></div>
         <div class="immune panel" id="immune"></div>
         <div class="panel"><div class="ptitle small" id="g1Title"></div><canvas id="gShare" class="graph"></canvas><canvas id="ribbon"></canvas><div class="ribbonkey" id="ribbonKey"></div></div>
         <div class="panel" id="g2Box"><div class="ptitle small" id="g2Title"></div><canvas id="gSusp" class="graph low"></canvas></div>

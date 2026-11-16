@@ -47,6 +47,34 @@ Motor never opens on Acidica, and the Flagellum is not in any `allowed` list. **
 
 **Other changes in this pass.** Radio mesh Regularity 0.5 to 0.8: with one Division part per build, the all-Machine stacks lost the clock + copier piles that made Regularity the leading cause, and E2 fell to 77.8% (needs 80%); the dishes where Regularity is on (4 and 5) are the only ones affected. The bots (`dev/bots.js`) enumerate slot-legal builds: the Factory parts in locked slots plus any choice from the open slots within energy.
 
+## Stat bars (gameplay pass 4, GAMEPLAY-V2 section 13)
+
+Five stats, each read off a **forecast run**: `LookAlive.play` of the real model on a 16 by 16 grid (about 2.7 ms), cached by dish and build, so a bar cannot disagree with the result. `dish.stats` lists the stats a dish shows, in order: dish 1 `acid`; dish 2 adds `growth`; dish 3 `smell`; dish 4 `natural`; dish 5 `crash`.
+
+| API | returns |
+| --- | --- |
+| `stats(dish, build)` | `[{ id, name, value 0..1, safe [lo, hi], state 'low'|'safe'|'high', verdict }]`, only the stats the dish shows |
+| `liveStats(run, t)` | the same stats read off a finished run at tick t (the replay's live readouts; `value` is null for Crash survival before the crash) |
+| `statDiff(dish, a, b)` | per stat `{ id, name, from, to, fromState, toState, better: true | false | null, delta, health }` |
+| `cardEffects(dish, build, cardId)` | `{ helps: [{ stat, name, steps 1|2, dir +1|-1 }], costs: [...], energy, used, fits, fitted, current, build }`: the card fitted into the build the way the slot rules require (swap in a one-option slot, free or outer Envelope layer, the Sealed shell clears the Envelope; energy is not checked, `fits` says whether it is within the limit). A card already fitted is measured against the build without it (`current: true`). Listed as Helps when its stat gets safer or, inside the zone, healthier; as Costs when it gets worse. Growth health is closeness to the centre of the band, so "Growth slower" can be a Help. 2 steps when health moves 0.15 or more |
+| `statFixers(dish, build, statId)` | slots and dials that fix the stat: `{ kind: 'slot', slot, name, options, remove, full }` or `{ kind: 'dial', dial, to, full }`. `full: true` means that one change makes the stat safe and breaks nothing that was safe (found by trying every offered option, emptying each slot, and each dial value). If no single change does, the entries that make it better come back with `full: false` |
+| `diffWords(dish, a, b)` | the preview line pieces: `["Acid defence: safe", "Growth: a little slower", "Energy 2 of 4"]` |
+| `dissolved(dish, build)` | true when the colony is dissolved by the acid. Then Growth, Smell, Naturalness and Crash are meaningless (nothing is left to measure), so `cardEffects` and `diffWords` report only Acid defence |
+
+**Mappings** (constants in `ST` in `sim.js`). All are monotonic in the quantity they read. Value 1 is the right end of the bar.
+
+| stat | read from the forecast | value | safe zone | states |
+| --- | --- | --- | --- | --- |
+| Acid defence | mean fraction of the colony the acid dissolves per tick over ticks 1 to 10 (`H.acid`) | `1 - loss / 0.25`, clamped | `[0.76, 1]`: loss under 6% a tick | low: "Too low: you will dissolve". Tight membrane is 0.79 on dishes 1 to 4 and 0.70 on dish 5 (acid 0.5), so it is safe on 1 to 4 and not on 5 |
+| Growth | the share of the dish. High test: the median of ticks 30 to 300 above the band ceiling (15%), or, on a dish with an event, the 65th percentile after the event ends. Low test: the 30th percentile of the ticks before the event (all ticks if none) below the floor (5%), or after the event ends when the crash itself was survived | share on a log scale, `ln(share / 1.25%) / ln(48)`; safe markers use the geometric mean of the low-side and high-side quantiles | the band: `[0.358, 0.623]` (5% to 15%), centre of the band at 0.5 | high "Too fast: you will take over", low "Too slow: you will fade out" |
+| Smell | peak weighted Waste suspicion over the run | `1 - peak / 10` | `[0.25, 1]`: peak under 7.5 (stage 3 is at 8) | low: "They can smell you" |
+| Naturalness | peak weighted Regularity suspicion | `1 - peak / 10`, higher is better | `[0.25, 1]`: peak under 7.5 | low: "Too perfect: you look like a machine" |
+| Crash survival | the lowest share from the start of the crash to the end | `ln(min / 1%) / ln(15)` | `[0.51, 1]`: lowest share 4% or more (the band floor less a fifth) | low: "The crash will wipe you out" |
+
+The stage-3 line (8) is the real limit for the suspicion channels, so Smell and Naturalness are safe up to just under it. Both stay safe on builds that only wear one channel; a build that wears two near their limits can still reach stage 3 (the check below counts those). Growth's high test uses the median, not the 70% rule the win test uses, because the carried dish 3 build sits over the band for 38% of the run (the lab is already closing in on its waste): with the stricter test its Growth bar would be red on dish 3, and the check "the carried build fails exactly the dish's new stat" would not hold.
+
+**Autopsy additions.** `autopsy(run).stat` is `acid`, `growth`, `smell`, `natural` or `crash`, and `.headline` starts with the stat in plain words ("Acid defence was too low. You dissolved by tick 12."). Mapping: `acid` to acid; `exposed:casualties`, `overgrew`, `below`, `starved`, `band`, `exposed:growth` to growth (`.high` says which way); `exposed:waste` to smell; `exposed:regularity` to natural; `bust`, `bloom` to crash. Two tie-breaks use the forecast: an acid loss whose acid stat is safe (a Tight membrane colony too slow to replace what the acid took) is blamed on growth, and a `below`/`starved` loss on dish 5 whose growth bar is safe and crash bar is not is blamed on the crash.
+
 ## One tick, for every cell (periodic edges)
 
 1. **Reflexes and rules.** Work out this cell's multipliers (below).
@@ -180,6 +208,17 @@ The build that starts each dish is the simplest intended winner of the one befor
 | SOS response | 0.012 / x0.25 | 0.0115 / x0.07 | same |
 | bust | tick 150, depth 0.9, 80 ticks, 7.5% | tick 50, depth 0.945, 85 ticks, 7% | failure visible before tick 100; reflex-free builds still lose |
 | Tight membrane | n/a | blocks 85% | colony shrinks to 43% on dish 1: survives with visible losses |
+
+## Results (stat-bar pass)
+
+Full run of `node games/look-alive/dev/check.js` (321 s): **31 of 33 lines pass.** The two failures are the same two known ones (P7 on dish 2: 57 of 287 winners break the 5 point rule; E6: dish 5 is 23 of 24). New lines (the sample is slot-legal sweep builds, with no dial the dish lacks):
+
+- **SB1** all shown bars safe means a win: 99.5% (425 of 427; dish 1 100%, 2 100%, 3 100%, 4 99.6% of 261, 5 98.6% of 70). Two disagreements: dish 4 pace 8 slop 3 fermentation + pump + naps (overgrew) and dish 5 pace 8 slop 4 fermentation + pump + wall + a pause rule (exposed by Regularity).
+- **SB2** a loss has the autopsy's stat outside its zone: 99.7% (8393 of 8420); an unsafe bar of any kind in 100.0%. The misses are dish 2 builds with Radio mesh and no acid card at Pace 6 to 8 (the acid kills them first and the autopsy says "taking over"; Acid defence is the unsafe bar), and a few dish 4 and 5 builds at Pace 8 where the autopsy names Regularity and Growth is the bar that is unsafe.
+- **SB3** the carried build on each dish has exactly its new stat unsafe: dish 1 acid 0.00; dish 2 growth 1.00 (high); dish 3 smell 0.00 with acid and growth safe (growth 0.60); dish 4 natural 0.00 (growth 0.42); dish 5 crash 0.00 (natural 0.49 is safe, growth 0.49 is safe).
+- **SB4** 166 listed fixes (the carried builds and sampled losses): all 166 leave the stat safe, 84 also win the dish (the others still have another problem, for example a build with Growth also red).
+- **SB5** `stats()` uncached: mean 1.84 ms, worst 3.94 ms over 200 builds never seen; cached 0.0005 ms.
+- **SB6** every offered card on every dish has computed Helps and Costs, and every listed fix lists the dish's new stat under Helps.
 
 ## Results (body-slot pass)
 

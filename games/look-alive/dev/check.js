@@ -516,6 +516,121 @@ const minShare = (r, a, b) => { let m = 1; for (let t = a; t <= b; t++) if (r.H.
   result(bad.length === 0, 'S5 FIT, UNFIT AND THE SLOT CONVERSION', n + ' operations on random slot-legal builds: every fit or unfit gave a slot-legal build or a plain reason; toSlots/fromSlots round-trips; Power cannot be emptied' + (bad.length ? '. BAD: ' + bad.slice(0, 5).join(' | ') : ''));
 }
 
-const total = 27;
+// ------------------------------------------------------------------ SB1 to SB6. stat bars (GAMEPLAY-V2 section 13)
+const legalDials = (D, b) => (D.dials.indexOf('pace') >= 0 || b.pace === 4) && (D.dials.indexOf('slop') >= 0 || b.slop === 0);
+const NEWSTAT = { 1: 'acid', 2: 'growth', 3: 'smell', 4: 'natural', 5: 'crash' };
+const shown = id => Lv.dish(id).stats;
+const sbSample = {};
+DISH_IDS.forEach(id => {   // a broad sample of the sweep builds that are legal on the dish (no dial the dish does not have)
+  const D = Lv.dish(id), pool = data[id].all.filter(r => legalDials(D, r.build) && Sim.validate(D, r.build).ok), want = QUICK ? 300 : 3500, step = Math.max(1, Math.floor(pool.length / want));
+  sbSample[id] = pool.filter((_, i) => i % step === 0).map(r => r.build);
+});
+{
+  const lines = []; let ok = true, tot = 0, agree = 0; const dis = [];
+  DISH_IDS.forEach(id => {
+    const D = Lv.dish(id); let safeAll = 0, safeWin = 0, wins = 0;
+    sbSample[id].forEach(b => {
+      const st = Sim.stats(D, b), r = play(id, b, SN), win = r.v.win; if (win) wins++;
+      if (st.every(s => s.state === 'safe')) { safeAll++; if (win) safeWin++; else dis.push('dish ' + id + ' ' + B.label(b) + ' (' + (Sim.autopsy(r) || {}).cause + ')'); }
+    });
+    tot += safeAll; agree += safeWin;
+    lines.push('dish ' + id + ': ' + sbSample[id].length + ' builds, ' + wins + ' win, ' + safeAll + ' show all safe, ' + safeWin + ' of those win (' + (safeAll ? pc(safeWin / safeAll) : '-') + ')');
+  });
+  ok = tot > 0 && agree / tot >= 0.95;
+  result(ok, 'SB1 ALL BARS SAFE MEANS A WIN', pc(agree / tot) + ' agreement overall (' + agree + ' of ' + tot + ', target 95%). ' + lines.join(' ; ') + (dis.length ? '. DISAGREEING: ' + dis.join(' | ') : '. No disagreeing builds.'));
+}
+{
+  const lines = []; let tot = 0, anyOk = 0, matchOk = 0; const miss = [];
+  DISH_IDS.forEach(id => {
+    const D = Lv.dish(id); let n = 0, a = 0, m = 0;
+    sbSample[id].forEach(b => {
+      const r = play(id, b, SN); if (r.v.win) return;
+      const au = Sim.autopsy(r), st = Sim.stats(D, b), bad = st.filter(s => s.state !== 'safe'); n++;
+      if (bad.length) a++;
+      if (bad.some(s => s.id === au.stat)) m++; else miss.push('dish ' + id + ' ' + B.label(b) + ' (' + au.cause + ' -> ' + au.stat + ', unsafe: ' + (bad.map(s => s.id).join('/') || 'none') + ')');
+    });
+    tot += n; anyOk += a; matchOk += m;
+    lines.push('dish ' + id + ': ' + n + ' losses, ' + a + ' with an unsafe bar, ' + m + ' with the autopsy stat unsafe (' + (n ? pc(m / n) : '-') + ')');
+  });
+  result(tot > 0 && matchOk / tot >= 0.9, 'SB2 A LOSS HAS THE AUTOPSY STAT OUTSIDE ITS SAFE ZONE', pc(matchOk / tot) + ' match overall (' + matchOk + ' of ' + tot + ', target 90%); an unsafe bar of any kind in ' + pc(anyOk / tot) + '. ' + lines.join(' ; ') + (miss.length ? '. FIRST MISSES: ' + miss.slice(0, 6).join(' | ') : ''));
+}
+{
+  const lines = []; let ok = true;
+  DISH_IDS.forEach(id => {
+    const D = Lv.dish(id), st = Sim.stats(D, carryOf(id)), ids = st.map(s => s.id), want = NEWSTAT[id];
+    const unsafe = st.filter(s => s.state !== 'safe').map(s => s.id);
+    const good = JSON.stringify(ids) === JSON.stringify(D.stats) && unsafe.length === 1 && unsafe[0] === want;
+    if (!good) ok = false;
+    lines.push('dish ' + id + ' [' + st.map(s => s.id + ' ' + s.value.toFixed(2) + ' ' + s.state).join(', ') + ']' + (good ? '' : ' WRONG'));
+  });
+  result(ok, 'SB3 THE CARRIED BUILD FAILS EXACTLY THE DISH\'S NEW STAT', lines.join(' ; '));
+}
+{
+  const lines = []; let ok = true, nfix = 0, nwin = 0, ntest = 0; const bad = [];
+  const apply = (D, b, f, opt) => {
+    if (f.kind === 'dial') { const nb = JSON.parse(JSON.stringify(b)); nb[f.dial] = f.to; return nb; }
+    if (opt === null) { const u = Sim.unfit(D, b, f.slot); return u.ok ? u.build : null; }
+    let r = Sim.fit(D, b, opt); if (!r.ok && f.slot === 'envelope') r = Sim.fit(D, b, opt, 0);
+    if (!r.ok && f.slot === 'envelope') { const u = Sim.unfit(D, b, 'envelope'); if (u.ok) r = Sim.fit(D, u.build, opt); }
+    return r.ok ? r.build : null;
+  };
+  const test = (id, b, stat, tag) => {
+    const D = Lv.dish(id), fx = Sim.statFixers(D, b, stat); let wins = 0, n = 0;
+    if (!fx.length) { bad.push(tag + ': no fixer listed for ' + stat); return 0; }
+    fx.forEach(f => {
+      if (!f.full) { bad.push(tag + ': ' + f.name + ' only partly fixes ' + stat); return; }
+      const opts = f.kind === 'dial' ? [null] : (f.options.length ? f.options : []).concat(f.remove ? [null] : []);
+      opts.forEach(o => {
+        const nb = apply(D, b, f, o); ntest++; n++;
+        if (!nb || Sim.validate(D, nb).ok === false) { bad.push(tag + ': ' + f.name + ' ' + o + ' does not apply'); return; }
+        const s = Sim.stats(D, nb).filter(x => x.id === stat)[0];
+        if (s.state !== 'safe') bad.push(tag + ': ' + f.name + ' ' + o + ' leaves ' + stat + ' ' + s.state);
+        else if (play(id, nb, SN).v.win) wins++;
+      });
+    });
+    nfix += n; nwin += wins;
+    return fx.map(f => f.kind === 'dial' ? f.name + ' to ' + f.to : f.name + (f.options.length ? ' (' + f.options.join('/') + ')' : '') + (f.remove ? ' (or empty)' : '')).join(', ');
+  };
+  DISH_IDS.forEach(id => { const r = test(id, carryOf(id), NEWSTAT[id], 'carried ' + id); lines.push('dish ' + id + ' fixes ' + NEWSTAT[id] + ': ' + r); });
+  // failing builds from the sweep: whatever the autopsy blames, the listed fixers must move that stat into the safe zone
+  DISH_IDS.forEach(id => {
+    const D = Lv.dish(id); let c = 0;
+    for (const b of sbSample[id]) {
+      if (c >= (QUICK ? 15 : 40)) break;
+      const r = play(id, b, SN); if (r.v.win) continue;
+      const st = Sim.stats(D, b).filter(s => s.state !== 'safe')[0]; if (!st) continue;
+      c++; const fx = Sim.statFixers(D, b, st.id); if (!fx.length || !fx.some(f => f.full)) continue;   // some losses need two changes: reported below, not a failure of the fixers
+      test(id, b, st.id, 'sample ' + id + ' ' + B.label(b));
+    }
+  });
+  const partialOnly = bad.filter(x => /only partly|no fixer/.test(x));
+  const real = bad.filter(x => !/only partly|no fixer/.test(x));
+  result(real.length === 0 && !bad.some(x => /^carried/.test(x)), 'SB4 EVERY LISTED FIX MOVES THE STAT INTO ITS SAFE ZONE', ntest + ' listed fixes applied (carried builds and sampled losses); ' + (ntest - real.length) + ' leave the stat safe, ' + nwin + ' also win the dish. ' + lines.join(' ; ') + (real.length ? '. BAD: ' + real.slice(0, 6).join(' | ') : '') + (partialOnly.length ? '. Notes: ' + partialOnly.length + ' cases where no single change fixes the stat' : ''));
+}
+{
+  const fresh = []; const R = B.rng(77);
+  DISH_IDS.forEach(id => { const D = Lv.dish(id); for (let i = 0; i < 40; i++) { const b = B.randomBuild(D, R); b.slop = D.dials.indexOf('slop') >= 0 ? (b.slop + 1) % 9 : 0; if (D.dials.indexOf('pace') < 0) b.pace = 4; fresh.push([id, b]); } });
+  const ts = []; fresh.forEach(([id, b]) => { const t = process.hrtime.bigint(); Sim.stats(Lv.dish(id), b); ts.push(Number(process.hrtime.bigint() - t) / 1e6); });
+  const tc = []; for (let k = 0; k < 5; k++) fresh.forEach(([id, b]) => { const t = process.hrtime.bigint(); Sim.stats(Lv.dish(id), b); tc.push(Number(process.hrtime.bigint() - t) / 1e6); });
+  const mean = a => a.reduce((x, y) => x + y, 0) / a.length, worst = a => Math.max.apply(null, a);
+  result(mean(ts) < 15 && worst(ts) < 50, 'SB5 STATS() IS FAST ENOUGH TO CALL ON HOVER', 'uncached (a build never seen): mean ' + f(mean(ts), 2) + ' ms, worst ' + f(worst(ts), 2) + ' ms over ' + ts.length + ' calls (target under 15 ms); cached: mean ' + f(mean(tc), 4) + ' ms, worst ' + f(worst(tc), 3) + ' ms over ' + tc.length + ' calls');
+}
+{
+  const lines = []; let ok = true;
+  DISH_IDS.forEach(id => {
+    const D = Lv.dish(id), c = carryOf(id), want = NEWSTAT[id], parts = [];
+    Cards.SLOTS.forEach(sl => Sim.offered(D, sl.id).forEach(cd => {
+      const e = Sim.cardEffects(D, c, cd.id), nm = st => st.map(x => x.name + ' ' + (x.dir > 0 ? '+' : '-').repeat(x.steps));
+      parts.push(cd.id + ' [helps: ' + (nm(e.helps).join(', ') || 'none') + '; costs: ' + (nm(e.costs).join(', ') || 'none') + ', energy ' + e.energy + (e.fits ? '' : ', over the limit') + ']');
+      const tipped = (D.tipFixes && Object.keys(D.tipFixes).some(k => D.tipFixes[k].indexOf(cd.id) >= 0)) || D.fixes.some(fx => fx.changes && (fx.changes.add || []).indexOf(cd.id) >= 0 && fx.changes.add.length === 1 && !fx.changes.remove);
+      if (!e.fitted) { ok = false; parts.push('(' + cd.id + ' did not fit for preview)'); }
+      if (tipped && e.fits && !e.helps.some(h => h.stat === want)) { ok = false; parts.push('(' + cd.id + ' is a listed fix but does not list ' + want + ' under Helps)'); }
+    }));
+    lines.push('dish ' + id + ': ' + parts.join(' ; '));
+  });
+  result(ok, 'SB6 CARD EFFECTS ARE COMPUTED AND INCLUDE THE LISTED FIXES', '\n       ' + lines.join('\n       '));
+}
+
+const total = 33;
 console.log('\n' + (total - fails) + ' of ' + total + ' lines pass, ' + fails + ' fail. Total ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s.');
 process.exit(fails ? 1 : 0);

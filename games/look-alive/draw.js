@@ -4,10 +4,10 @@ var LAD = (function () {
   var VIO = '#a78bfa', PINK = '#ff6b95', AMB = '#f5a524', GRN = '#2dd4a7', CY = '#5fd0ff', RED = '#ff5d6c';
   // Four suspicion channels: each has its own colour AND pattern, so they never rely on colour alone.
   var CH = [
-    { id: 'growth', name: 'Growth', color: PINK, pat: 'stripes' },
-    { id: 'waste', name: 'Waste', color: AMB, pat: 'dots' },
-    { id: 'casualties', name: 'Casualties', color: VIO, pat: 'cross' },
-    { id: 'regularity', name: 'Regularity', color: CY, pat: 'zigzag' }
+    { id: 'growth', name: 'Growth (speed)', color: PINK, pat: 'stripes' },
+    { id: 'waste', name: 'Smell', color: AMB, pat: 'dots' },
+    { id: 'casualties', name: 'Growth (share)', color: VIO, pat: 'cross' },
+    { id: 'regularity', name: 'Naturalness', color: CY, pat: 'zigzag' }
   ];
   var dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
   var pats = {};
@@ -184,54 +184,6 @@ var LAD = (function () {
     }
   }
 
-  // ---------------------------------------------------------------- COVER gauge and the four channel needles
-  function coverX(h) { // 0..1 along the gauge: 0 Too Alien, 0.5 safe, 1 Too Perfect
-    var alien = h.growth + h.waste + h.casualties, reg = h.regularity;
-    var x = 0.5 + 0.5 * Math.max(-1, Math.min(1, (reg - alien) / 9));
-    return x;  // Too Alien on the left: more alien suspicion moves the needle left, Regularity moves it right
-  }
-  function instruments(c, vals, on) {
-    var v = fit(c); if (!v) return;
-    var ctx = v.ctx, W = v.w, H = v.h; ctx.clearRect(0, 0, W, H);
-    var gx = 8, gw = W - 16, gy = 30, gh = 18;
-    ctx.font = '600 11px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = '#8a90a8'; ctx.textAlign = 'center'; ctx.fillText('COVER', W / 2, 12);
-    ctx.textAlign = 'left'; ctx.fillStyle = '#ff9ab5'; ctx.fillText('TOO ALIEN', gx, 12);
-    ctx.textAlign = 'right'; ctx.fillStyle = '#8fd8f5'; ctx.fillText('TOO PERFECT', gx + gw, 12);
-    // zones: danger | warning | safe | warning | danger. Safe width = 1.5 of 9 each side of centre.
-    var half = gw / 2, safe = half * (1.5 / 9), warn = half * (4.5 / 9);
-    function zone(x0, x1, col) { ctx.fillStyle = col; ctx.fillRect(x0, gy, x1 - x0, gh); }
-    var cx = gx + half;
-    zone(gx, cx - warn, '#4a1a28'); zone(cx - warn, cx - safe, '#3a2a22'); zone(cx - safe, cx + safe, '#1d2f3a'); zone(cx + safe, cx + warn, '#223038'); zone(cx + warn, gx + gw, '#16384a');
-    ctx.strokeStyle = '#cfe3ff'; ctx.lineWidth = 1.5; ctx.strokeRect(cx - safe + .5, gy + .5, safe * 2 - 1, gh - 1);
-    ctx.fillStyle = '#cfe3ff'; ctx.textAlign = 'center'; ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.fillText('SAFE', cx, gy + gh + 11);
-    ctx.strokeStyle = '#2a2f42'; ctx.lineWidth = 1; ctx.strokeRect(gx + .5, gy + .5, gw - 1, gh - 1);
-    var px = gx + gw * coverX(vals);
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(px, gy - 2); ctx.lineTo(px - 6, gy - 11); ctx.lineTo(px + 6, gy - 11); ctx.closePath(); ctx.fill();
-    ctx.fillRect(px - 1, gy - 2, 2, gh + 4);
-    // four needles
-    var lst = []; for (var kk = 0; kk < 4; kk++) if (!on || on[CH[kk].id]) lst.push(kk);
-    var top = gy + gh + 22, cw = W / Math.max(1, lst.length), R = Math.min(cw / 2 - 12, (H - top - 30), 60);
-    for (var li = 0; li < lst.length; li++) {
-      var k = lst[li], ch = CH[k], val = vals[ch.id], frac = Math.max(0, Math.min(1, val / 8));
-      var cxk = cw * li + cw / 2, cyk = top + R + 4;
-      ctx.lineWidth = 9; ctx.lineCap = 'butt';
-      ctx.strokeStyle = '#161a27'; ctx.beginPath(); ctx.arc(cxk, cyk, R, Math.PI, 2 * Math.PI); ctx.stroke();
-      if (frac > 0.005) { ctx.strokeStyle = pattern(ctx, ch.pat, ch.color); ctx.beginPath(); ctx.arc(cxk, cyk, R, Math.PI, Math.PI + Math.PI * frac); ctx.stroke(); }
-      ctx.lineWidth = 1.5; ctx.strokeStyle = ch.color; ctx.beginPath(); ctx.arc(cxk, cyk, R + 5.5, Math.PI, Math.PI + Math.PI * frac); ctx.stroke();
-      // stage ticks at 1.5, 4.5, 8 of 8
-      ctx.strokeStyle = '#444b63'; ctx.lineWidth = 1;
-      [1.5, 4.5].forEach(function (s) { var a = Math.PI + Math.PI * s / 8; ctx.beginPath(); ctx.moveTo(cxk + Math.cos(a) * (R - 7), cyk + Math.sin(a) * (R - 7)); ctx.lineTo(cxk + Math.cos(a) * (R + 7), cyk + Math.sin(a) * (R + 7)); ctx.stroke(); });
-      var a2 = Math.PI + Math.PI * frac;
-      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cxk, cyk); ctx.lineTo(cxk + Math.cos(a2) * (R - 3), cyk + Math.sin(a2) * (R - 3)); ctx.stroke();
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cxk, cyk, 3.5, 0, 7); ctx.fill();
-      ctx.fillStyle = pattern(ctx, ch.pat, ch.color); ctx.fillRect(cxk - 46, cyk + 9, 12, 10);
-      ctx.strokeStyle = ch.color; ctx.lineWidth = 1; ctx.strokeRect(cxk - 45.5, cyk + 9.5, 11, 9);
-      ctx.fillStyle = '#e6e9f4'; ctx.font = '11px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(ch.name, cxk - 31, cyk + 18);
-      ctx.fillStyle = '#8a90a8'; ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textAlign = 'right'; ctx.fillText(val.toFixed(1), cxk + 46, cyk + 18);
-    }
-  }
-
   // ---------------------------------------------------------------- colony portrait
   function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; var t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -388,7 +340,7 @@ var LAD = (function () {
   function cellArt(slots, o) {
     o = o || {}; var st = o.state || {}, nw = o.nw || [];
     function g(k, art) {
-      var s = (o.ghost === k && o.ghostSlots) ? o.ghostSlots : slots, cls = 'slotg s-' + k + (o.sel === k ? ' sel' : '') + (nw.indexOf(k) >= 0 ? ' new' : '') + (st[k] === 'factory' ? ' factory' : st[k] === 'locked' ? ' locked' : '') + (o.ghost === k ? ' ghost' : '');
+      var s = (o.ghost === k && o.ghostSlots) ? o.ghostSlots : slots, cls = 'slotg s-' + k + (o.sel === k ? ' sel' : '') + (nw.indexOf(k) >= 0 ? ' new' : '') + (st[k] === 'factory' ? ' factory' : st[k] === 'locked' ? ' locked' : '') + (o.ghost === k ? ' ghost' : '') + (o.fix && o.fix.indexOf(k) >= 0 ? ' fix' : '');
       return '<g class="' + cls + '" data-slot="' + k + '">' + HL[k]() + '<g class="art">' + art(s) + '</g></g>';
     }
     return '<defs><radialGradient id="coreGlow"><stop offset="0" stop-color="#ff6b95" stop-opacity=".55"/><stop offset="1" stop-color="#ff6b95" stop-opacity="0"/></radialGradient></defs>' +
@@ -396,5 +348,5 @@ var LAD = (function () {
       g('envelope', function (s) { return envelopeArt(s.envelope); }) + g('signal', function (s) { return signalArt(s.signal); }) + g('motor', function (s) { return motorArt(s.motor); }) + g('reflex', function (s) { return reflexArt(s.reflex); });
   }
 
-  return { cellArt: cellArt, ANCHOR: ANCHOR, CG: CG, VIO: VIO, PINK: PINK, AMB: AMB, GRN: GRN, CY: CY, RED: RED, CH: CH, MACH: MACH, fit: fit, pattern: pattern, drawCells: drawCells, chart: chart, ribbon: ribbon, instruments: instruments, portrait: portrait, hash: hash };
+  return { cellArt: cellArt, ANCHOR: ANCHOR, CG: CG, VIO: VIO, PINK: PINK, AMB: AMB, GRN: GRN, CY: CY, RED: RED, CH: CH, MACH: MACH, fit: fit, pattern: pattern, drawCells: drawCells, chart: chart, ribbon: ribbon, portrait: portrait, hash: hash };
 })();

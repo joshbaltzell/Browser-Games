@@ -16,7 +16,7 @@
   var SLOP_NAMES = ['Spreadsheet', 'Ledger', 'Tidy', 'Careful', 'Casual', 'Relaxed', 'Messy', 'Chaotic', 'Teenager'];
   var STAMPS = ['SUFFICIENTLY BACTERIAL', 'PASSES AS NATIVE', 'NOTHING TO SEE HERE', 'APPROVED BY THE IMMUNE SYSTEM', 'UNREMARKABLE', 'CLEARED FOR COLONISATION'];
   var STAGE_NAMES = ['Calm', 'Curiosity', 'Inspection', 'Response'];
-  var CAUSE_WORDS = { acid: 'Dissolved by the acid', 'exposed:growth': 'Cover blown: Growth', 'exposed:waste': 'Cover blown: Waste', 'exposed:casualties': 'Cover blown: Casualties', 'exposed:regularity': 'Cover blown: Regularity',
+  var CAUSE_WORDS = { acid: 'Dissolved by the acid', 'exposed:growth': 'Cover blown: Growth (speed)', 'exposed:waste': 'Cover blown: Smell', 'exposed:casualties': 'Cover blown: Growth (share)', 'exposed:regularity': 'Cover blown: Naturalness',
     overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band' };
 
   // ---------------------------------------------------------------- storage (every access guarded)
@@ -40,7 +40,7 @@
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
     t: 0, playing: false, speed: 4, resultShown: false, overlayOpen: false, runCount: 0, troubleTick: -1, cardEls: [], shownDish: -1, chipCache: {},
-    lastAutopsy: null, lastRunLost: false, tipLevel: 0, dialKeys: [], vcache: ''
+    lastAutopsy: null, lastRunLost: false, tipLevel: 0, dialKeys: [], vcache: '', fail: null, real: false, liveKey: ''
   };
 
   function dishObj() { return S.dish == null ? null : Lv.dish(S.dish); }
@@ -70,6 +70,7 @@
   function sameReflex(a, b) { return JSON.stringify(a || null) === JSON.stringify(b || null); }
 
   // ---------------------------------------------------------------- step bar and handler line
+  function failSentence(a) { return a && a.headline ? a.headline.split('. ')[0].replace(/\.$/, '') : ''; }
   function refresh() {
     var step = 0, text = '', d = dishObj(), a = S.lastAutopsy;
     var sc = S.screen;
@@ -78,8 +79,8 @@
     else if (sc === 'brief') { step = 1; text = 'Read the problem and your goal, then press Continue to watch your cell try it.'; }
     else if (sc === 'adapt') {
       step = 3;
-      if (S.pointed && d && NEW_SLOT_HINT[d.id]) text = NEW_SLOT_HINT[d.id] + (a ? ' (Your last cell failed: ' + (CAUSE_WORDS[a.cause] || a.cause).toLowerCase() + '.)' : '');
-      else text = a ? (S.lastRunLost ? 'That did not work (' : 'Your cell failed (') + (CAUSE_WORDS[a.cause] || a.cause).toLowerCase() + '). Change your cell, then press Run. Stuck? Press Tip.' : 'Change your cell, then press Run.';
+      if (S.pointed && d && NEW_SLOT_HINT[d.id]) text = NEW_SLOT_HINT[d.id] + (a ? ' (Your last cell failed: ' + failSentence(a).toLowerCase() + '.)' : '');
+      else text = a ? (S.lastRunLost ? 'That did not work: ' : 'Your cell failed: ') + failSentence(a).toLowerCase() + '. Fix the red bar, then press Run. Stuck? Press Tip.' : 'Change your cell, then press Run.';
     } else if (sc === 'run' && S.run) {
       if (S.overlayOpen) { step = 5; text = S.run && S.run.v.win ? 'Dish cleared. Read the notebook page, then press Next dish.' : 'Your cell failed. Read the memo, press Tip if you want help, then go back to Adapt.'; }
       else if (S.mode === 'watch') {
@@ -134,7 +135,7 @@
   }
   function selectDish(id) {
     S.dish = id; S.carried = carriedFor(id); S.build = copy(S.carried); S.undo = []; S.rule = { sensor: null, cmp: null, value: null, action: null };
-    S.slot = Lv.dish(id).opens[0]; S.layer = 0; S.pointed = true; S.preview = null; S.run = null; S.ghost = null; S.shownDish = -1; S.lastAutopsy = null; S.lastRunLost = false; S.tipLevel = 0; S.runCount = 0; S.overlayOpen = false;
+    S.slot = Lv.dish(id).opens[0]; S.layer = 0; S.pointed = true; S.preview = null; S.run = null; S.ghost = null; S.shownDish = -1; S.lastAutopsy = null; S.lastRunLost = false; S.tipLevel = 0; S.runCount = 0; S.overlayOpen = false; S.fail = null;
     closeOverlay();
     if (id === 1 && !S.seenWorld) { S.worldBack = 'brief'; show('world'); } else show('brief');
   }
@@ -185,11 +186,20 @@
     var d = dishObj(); if (!d) return;
     var run = simulate(S.carried);
     S.mode = 'watch'; S.run = run; S.ghost = null; S.stopAt = watchStop(run); S.watchDone = false; S.runFinished = false;
-    S.lastAutopsy = run.autopsy; S.lastRunLost = false; S.tipLevel = 0;
+    S.lastAutopsy = run.autopsy; S.lastRunLost = false; S.tipLevel = 0; setFail(run, S.carried);
     S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = 4; setSpeedUI();
     closeOverlay(); show('run');
   }
   function watchFinished() { S.watchDone = true; S.playing = false; setPlayLabel(); renderVerdict(); refresh(); }
+  // The failing stat of a run, and what can change it on this dish (worked out from the build that failed).
+  function setFail(run, build) {
+    var a = run.autopsy, d = dishObj();
+    if (!a || !a.stat) { S.fail = null; return; }
+    var fx = Sim.statFixers(d, build, a.stat), sl = [];
+    fx.forEach(function (f) { if (f.kind === 'slot') sl.push(f.slot); });
+    S.fail = { stat: a.stat, build: copy(build), fixers: fx, slots: sl };
+  }
+  function failOpen() { var d = dishObj(); if (!S.fail || !d || !S.build) return false; var st = Sim.stats(d, S.build).filter(function (x) { return x.id === S.fail.stat; })[0]; return !!st && st.state !== 'safe'; }
   function winCarried() {  // the carried cell already wins: take it as the win
     var d = dishObj(); S.cleared[d.id] = true; S.wins[d.id] = copy(S.carried); save('cleared2', S.cleared); save('wins2', S.wins);
     showResult();
@@ -270,10 +280,18 @@
     else r = Sim.fit(d, S.build, id, layerArg(k));
     if (!r.ok) { S.preview = null; showPreviewText(r.reason, true); renderCell(); return; }
     S.preview = { slot: k, build: r.build };
-    showPreviewText((id === null || fitted ? 'Take off ' + (id === null ? 'what is fitted' : name) : 'Fit ' + name) + ': ' + Sim.diff(d, S.build, r.build).join('. ') + '.', false);
-    renderCell();
+    showPreviewText((id === null || fitted ? 'Take off ' + (id === null ? 'what is fitted' : name) : 'Fit ' + name) + ' \u2192 ' + Sim.diffWords(d, S.build, r.build).join('. ') + '.', false);
+    renderCell(); renderBars();
   }
-  function clearPreview() { if (!S.preview && $('pvT').className === 'pv-t' && $('pvT').textContent === PV_HINT) return; S.preview = null; showPreviewText(PV_HINT, false); renderCell(); Array.prototype.forEach.call(document.querySelectorAll('.opt.pv'), function (e) { e.classList.remove('pv'); }); }
+  // Hovering a dial step previews it the same way; clicking it applies it.
+  function previewDial(key, v) {
+    var d = dishObj(); if (!d || S.build[key] === v) { clearPreview(); return; }
+    var nb = copy(S.build); nb[key] = v;
+    S.preview = { slot: null, build: nb };
+    showPreviewText((key === 'pace' ? 'Pace ' : 'Sloppiness ') + v + ' \u2192 ' + Sim.diffWords(d, S.build, nb).join('. ') + '.', false);
+    renderCell(); renderBars();
+  }
+  function clearPreview() { if (!S.preview && $('pvT').className === 'pv-t' && $('pvT').textContent === PV_HINT) return; S.preview = null; showPreviewText(PV_HINT, false); renderCell(); renderBars(); Array.prototype.forEach.call(document.querySelectorAll('.opt.pv'), function (e) { e.classList.remove('pv'); }); }
 
   // ---- the cell diagram and its tags
   function figHtml(build, state) {
@@ -290,7 +308,8 @@
       var p = TAGPOS[k], a = D.ANCHOR[k], x = p[0] === 'L' ? TAG_W + 2 : 600 - TAG_W - 2, y = p[1] + TAG_H / 2;
       lead += '<line class="leader' + (S.slot === k ? ' sel' : '') + '" x1="' + x + '" y1="' + y + '" x2="' + Math.round(a[0]) + '" y2="' + Math.round(a[1]) + '"/><circle cx="' + Math.round(a[0]) + '" cy="' + Math.round(a[1]) + '" r="2.5" fill="' + (S.slot === k ? '#5fd0ff' : '#8a90a8') + '"/>';
     });
-    $('cellSvg').innerHTML = D.cellArt(sl, { state: state, sel: S.slot, nw: nw, ghost: gh ? gh.slot : null, ghostSlots: gh ? Sim.toSlots(gh.build) : null }) + lead;
+    var fixSlots = failOpen() ? S.fail.slots : [];
+    $('cellSvg').innerHTML = D.cellArt(sl, { state: state, sel: S.slot, nw: nw, fix: fixSlots, ghost: gh && gh.slot ? gh.slot : null, ghostSlots: gh && gh.slot ? Sim.toSlots(gh.build) : null }) + lead;
     var box = $('tagLayer'), carried = S.carried;
     if (!box.firstChild) {
       SLOT_ORDER.forEach(function (k) {
@@ -303,9 +322,10 @@
     Array.prototype.forEach.call(box.children, function (b) {
       var k = b.getAttribute('data-slot'), st = state[k], info = Cards.slotInfo(k), ch = st === 'open' ? slotChange(k) : '', txt = slotText(k, sl), status = '';
       if (st !== 'open') status = Sim.lockedReason(d, k);
+      else if (fixSlots.indexOf(k) >= 0) status = '<span class="pill fx">can fix ' + esc(Sim.STAT_INFO[S.fail.stat].name) + '</span>';
       else if (S.pointed && d.opens.indexOf(k) >= 0) status = '<span class="pill pt">new slot</span>';
       else if (ch) status = '<span class="pill ' + ch + '">' + ch + '</span>';
-      b.className = 'tag' + (S.slot === k && st === 'open' ? ' sel' : '') + (st === 'factory' ? ' factory' : st === 'locked' ? ' locked' : '') + (S.pointed && d.opens.indexOf(k) >= 0 ? ' new' : '');
+      b.className = 'tag' + (fixSlots.indexOf(k) >= 0 ? ' fixhl' : '') + (S.slot === k && st === 'open' ? ' sel' : '') + (st === 'factory' ? ' factory' : st === 'locked' ? ' locked' : '') + (S.pointed && d.opens.indexOf(k) >= 0 ? ' new' : '');
       b.innerHTML = '<span class="tn">' + (st !== 'open' ? LOCK_SVG : '') + esc(info.name) + '</span><span class="tv">' + esc(txt) + '</span><span class="ts">' + status + '</span>';
       b.setAttribute('aria-disabled', st === 'open' ? 'false' : 'true');
       b.setAttribute('aria-label', info.name + ': ' + txt + (st !== 'open' ? '. ' + Sim.lockedReason(d, k) : ''));
@@ -323,19 +343,24 @@
     img.onerror = function () { var d2 = el('div', cls + ' noimg', esc((cardOrBio(id) ? cardOrBio(id).name : '?').charAt(0))); if (img.parentNode) img.parentNode.replaceChild(d2, img); };
     return img;
   }
+  function effLabel(x) { return x.stat === 'growth' ? (x.dir > 0 ? 'Growth faster' : 'Growth slower') : x.name; }
+  function effArrows(x) { var a = x.dir > 0 ? '\u25B2' : '\u25BC', o = ''; for (var i = 0; i < x.steps; i++) o += a; return o; }
   function optionEl(k, c) {
     var mach = c.shelf === 'machine', fitted = fittedIds(k).indexOf(c.id) >= 0, w = el('div', 'opt ' + (mach ? 'mach' : 'bio')), r = null, why = '';
     w.setAttribute('data-id', c.id); w.setAttribute('role', 'button'); w.tabIndex = 0;
     if (!fitted) { r = Sim.fit(dishObj(), S.build, c.id, layerArg(k)); if (!r.ok) why = r.reason; }
     w.setAttribute('aria-pressed', fitted ? 'true' : 'false');
     if (fitted) w.classList.add('fitted'); if (why) w.classList.add('blocked');
-    var cost = c.kind === 'metabolism' || c.kind === 'part' ? 'Energy ' + c.energy : 'No energy';
-    var real = c.real, game = c.game || c.sentence;
+    var real = c.real, game = c.game || c.sentence, ef = Sim.cardEffects(dishObj(), S.build, c.id);
     var inn = el('div', 'in'), tb = el('div', 'thumbbox'), tx = el('div', 'otxt');
     tb.appendChild(thumbEl(c.id, 'thumb')); tb.appendChild(el('div', 'fittag', 'Fitted'));
-    var layers = Cards.layersOf(c) > 1 ? ' <span class="cost">takes both layers</span>' : '';
-    tx.innerHTML = '<div class="oh"><b>' + esc(c.name) + '</b><span class="shelf ' + (mach ? 'mach' : 'bio') + '">' + (mach ? 'Machine' : 'Biology') + '</span><span class="cost">' + cost + '</span></div>' +
-      '<p class="real" title="' + esc(real) + '"><i>Real</i>' + esc(real) + '</p><p class="game" title="' + esc(game) + '"><i>' + (c.sentence && !c.game ? 'Rule' : 'Game') + '</i>' + esc(game) + '</p>' +
+    var eList = function (arr) { return arr.map(function (x) { return '<span class="ef">' + esc(effLabel(x)) + ' <b>' + effArrows(x) + '</b></span>'; }).join(''); };
+    var en = c.kind === 'metabolism' || c.kind === 'part' ? (c.energy ? 'Energy ' + c.energy : 'No energy') : 'No energy';
+    w.title = game + (c.layers > 1 ? ' Takes both Envelope layers.' : '');
+    tx.innerHTML = '<div class="oh"><b>' + esc(c.name) + '</b><span class="shelf ' + (mach ? 'mach' : 'bio') + '">' + (mach ? 'Machine' : 'Biology') + '</span></div>' +
+      '<div class="eff helps"><i>Helps</i><span>' + (ef.helps.length ? eList(ef.helps) : '<em>nothing here</em>') + '</span></div>' +
+      '<div class="eff costs"><i>Costs</i><span>' + (ef.costs.length ? eList(ef.costs) + '<span class="ef"> </span>' : '') + '<span class="ef en">' + en + '</span></span></div>' +
+      '<p class="real" title="' + esc(real) + '"><i>Real</i>' + esc(real) + '</p>' +
       '<div class="why">' + (why ? esc(why) : (c.layers > 1 ? 'Takes both Envelope layers.' : '')) + '</div>';
     inn.appendChild(tb); inn.appendChild(tx); w.appendChild(inn);
     w.addEventListener('click', function () { toggleOption(k, c.id); });
@@ -378,7 +403,9 @@
     var tk = w.querySelector('.ticks');
     for (var i = 0; i <= 8; i++) {
       (function (i) { var b = el('button', '', String(i)); b.type = 'button'; b.setAttribute('data-dial', key + i); b.title = names[i];
-        b.addEventListener('click', function () { if (S.build[key] !== i) mutate(function (bb) { bb[key] = i; }); }); tk.appendChild(b); })(i);
+        b.addEventListener('click', function () { if (S.build[key] !== i) mutate(function (bb) { bb[key] = i; }); });
+        b.addEventListener('mouseenter', function () { previewDial(key, i); }); b.addEventListener('focus', function () { previewDial(key, i); });
+        b.addEventListener('mouseleave', clearPreview); b.addEventListener('blur', clearPreview); tk.appendChild(b); })(i);
     }
     return w;
   }
@@ -403,6 +430,7 @@
       var tn = el('div', 'tune'); tn.id = 'slopBox'; tn.innerHTML = '<div class="ptitle">Tuning <span class="dim">how messy the timing is</span></div>'; tn.appendChild(dialEl('slop'));
       list.appendChild(tn);
     }
+    list.classList.toggle('showreal', !!S.real);
     list.scrollTop = S.lastOptSlot === k ? keepTop : 0; S.lastOptSlot = k;
     if (S.focusId) { var ft = list.querySelector('[data-id="' + S.focusId + '"]'); S.focusId = null; if (ft) ft.focus({ preventScroll: true }); }
   }
@@ -488,32 +516,79 @@
     box.innerHTML = html; $('runBtn').disabled = !v.ok;
     return v;
   }
-  function renderPredict(d, pr) {
-    var ul = $('predList'); ul.innerHTML = '';
-    var acid = $('acidLine'), lines = pr.totals.slice();
-    if (pr.acid) {
-      var at = lines.filter(function (t) { return /^Acid:/.test(t); })[0] || pr.acid.text;
-      lines = lines.filter(function (t) { return !/^Acid:/.test(t); });
-      acid.className = 'acidline ' + (pr.acid.state === 'none' ? 'bad' : pr.acid.state); acid.textContent = at;
-    } else { acid.className = 'acidline off'; acid.textContent = ''; }
-    lines.forEach(function (t) { ul.appendChild(el('li', /Growth suspicion|Factory|Slower|Machine parts|Waste: none|Reads something|Waste differs/.test(t) ? 'warn' : '', esc(t))); });
+  // ---- the stat bars (Forecast). One row per stat, fixed height; ghost marker and arrow sit in reserved spots.
+  var STAT_ORDER = Sim.STAT_ORDER;
+  function buildBars(box, ids) {
+    box.innerHTML = ''; box.setAttribute('data-ids', ids.join(','));
+    ids.forEach(function (id) {
+      var row = el('div', 'sb');
+      row.setAttribute('data-stat', id);
+      row.innerHTML = '<div class="sb-top"><span class="sb-name">' + esc(Sim.STAT_INFO[id].name) + '</span><span class="sb-tag"></span><span class="sb-arrow"></span></div>' +
+        '<div class="sb-track"><i class="sb-zone"></i><i class="sb-ghost"></i><i class="sb-mark"></i></div><div class="sb-verdict"></div>';
+      box.appendChild(row);
+    });
+  }
+  function pos(v) { return (Math.max(0, Math.min(1, v)) * 100).toFixed(1) + '%'; }
+  // s: the stat now. o: { ghost: stat to show as a ghost marker, diff: statDiff entry (for the arrow), fail: show the failed tag, ghostVerdict: bool }
+  function setBar(row, s, o) {
+    o = o || {};
+    var z = row.querySelector('.sb-zone'), m = row.querySelector('.sb-mark'), g = row.querySelector('.sb-ghost'), v = row.querySelector('.sb-verdict'), ar = row.querySelector('.sb-arrow'), tg = row.querySelector('.sb-tag');
+    z.style.left = pos(s.safe[0]); z.style.width = ((s.safe[1] - s.safe[0]) * 100).toFixed(1) + '%';
+    var ok = s.state === 'safe';
+    if (s.value == null) m.style.display = 'none'; else { m.style.display = ''; m.style.left = pos(s.value); }
+    m.className = 'sb-mark ' + (ok ? 'ok' : 'bad');
+    var gh = o.ghost, showG = gh && gh.value != null && (s.value == null || Math.abs(gh.value - s.value) >= 0.004 || gh.state !== s.state);
+    if (o.forecast) { showG = o.forecast.value != null && (s.value == null || Math.abs(o.forecast.value - s.value) >= 0.004); gh = o.forecast; }
+    g.style.display = showG ? '' : 'none';
+    if (showG) { g.style.left = pos(gh.value); g.className = 'sb-ghost' + (o.forecast ? ' fc' : gh.state === 'safe' ? ' ok' : ' bad'); }
+    var txt = s.verdict, cls = ok ? 'ok' : 'bad';
+    if (o.ghost && showG) { txt = '\u2192 ' + gh.verdict; cls = (gh.state === 'safe' ? 'ok' : 'bad') + ' pv'; }
+    if (v.textContent !== txt) v.textContent = txt;
+    v.className = 'sb-verdict ' + cls;
+    var arrow = '', acl = '';
+    if (o.ghost && o.diff && showG) {
+      var up = o.diff.delta >= 0; arrow = Math.abs(o.diff.delta) < 0.004 ? '' : up ? '\u25B2' : '\u25BC';
+      acl = o.diff.better === true ? 'good' : o.diff.better === false ? 'badc' : 'flat';
+    }
+    ar.textContent = arrow; ar.className = 'sb-arrow ' + acl;
+    tg.textContent = o.fail ? 'this is what failed' : ''; tg.className = 'sb-tag' + (o.fail ? ' on' : '');
+    row.classList.toggle('failed', !!o.fail);
+  }
+  function renderBars() {
+    var d = dishObj(), box = $('statBars'); if (!d || !S.build) return;
+    if (box.getAttribute('data-ids') !== d.stats.join(',')) buildBars(box, d.stats);
+    var cur = Sim.stats(d, S.build), gh = S.preview ? Sim.stats(d, S.preview.build) : null, df = S.preview ? Sim.statDiff(d, S.build, S.preview.build) : null, open = failOpen();
+    var dis = S.preview && Sim.dissolved(d, S.preview.build);
+    Array.prototype.forEach.call(box.children, function (row, i) {
+      var s = cur[i], hide = dis && s.id !== 'acid';
+      setBar(row, s, { ghost: gh && !hide ? gh[i] : null, diff: df && !hide ? df[i] : null, fail: open && S.fail.stat === s.id });
+    });
+    renderFixLine(d, cur);
+  }
+  function fixWords(fx) {
+    return fx.map(function (f) { return f.kind === 'slot' ? f.name + ' slot' : f.name; }).join(', ');
+  }
+  function renderFixLine(d, cur) {
+    var e = $('fixLine'), t = '', cls = 'fixline';
+    if (S.fail) {
+      var nm = Sim.STAT_INFO[S.fail.stat].name;
+      if (failOpen()) { if (S.fail.fixers.length) { t = (S.fail.fixers[0].full ? 'Changes ' : 'Helps a little: ') + nm + ': ' + fixWords(S.fail.fixers); cls += ' on'; } }
+      else { t = nm + ' is safe now. Press Run.'; cls += ' done'; }
+    }
+    if (e.textContent !== t) e.textContent = t; e.className = cls;
   }
   function renderTips() {
     var d = dishObj(), a = S.lastAutopsy, txt = '', btn = $('tipBtn');
-    if (a) {
-      var t = Lv.tip(d, a.cause);
-      if (S.tipLevel >= 1) txt = '<div><b>Level 1.</b> ' + esc(t[0]) + '</div>';
-      if (S.tipLevel >= 2) txt += '<div><b>Level 2.</b> ' + esc(t[1]) + '</div>';
-    }
-    btn.disabled = !a; btn.textContent = !a ? 'Tip' : S.tipLevel === 0 ? 'Tip' : S.tipLevel === 1 ? 'More help' : 'Tip (all shown)';
-    $('tipHint').textContent = !a ? 'Tips appear after your cell fails.' : S.tipLevel === 0 ? 'Free. Press for a hint.' : S.tipLevel === 1 ? 'Free. Press again for the card or control.' : '';
+    if (a && S.tipLevel >= 1) txt = '<div>' + esc(Lv.tip(d, a.cause)[1]) + '</div>';
+    btn.disabled = !a; btn.textContent = 'Tip';
+    $('tipHint').textContent = !a ? 'Tips appear after your cell fails.' : S.tipLevel === 0 ? 'Free. Names one part to try.' : '';
     $('tipText').innerHTML = txt;
     var mt = $('memoTip'); if (mt) mt.innerHTML = txt;
     var mb = $('memoTipBtn'); if (mb) mb.textContent = btn.textContent;
   }
   function pressTip() {
     if (!S.lastAutopsy) return;
-    S.tipLevel = Math.min(2, S.tipLevel + 1); renderTips();
+    S.tipLevel = 1; renderTips();
   }
   function renderAdapt(full) {
     var d = dishObj(); if (!d) return;
@@ -525,10 +600,10 @@
       showPreviewText(PV_HINT, false);
     }
     var pr = Sim.predict(d, S.build);
-    renderCell(); renderOptions(); renderEnergy(d, pr);
+    renderCell(); renderOptions(); renderEnergy(d, pr); renderBars();
     if (d.dials.indexOf('pace') >= 0) updateDial($('paceBox').firstChild, 'pace', pr);
     if ($('slopBox')) updateDial($('slopBox').querySelector('.dialrow'), 'slop', pr);
-    renderPredict(d, pr); renderProblems(); renderTips();
+    renderProblems(); renderTips();
     $('undo').disabled = !S.undo.length;
     $('reset').disabled = JSON.stringify(S.build) === JSON.stringify(S.carried);
     refresh();
@@ -554,7 +629,7 @@
     S.mode = 'run'; S.run = run; S.runCount++; S.prev[d.id] = { share: run.H.share, total: run.H.total };
     S.stopAt = null; S.runFinished = false; S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = 2; setSpeedUI();
     if (run.v.win) { S.cleared[d.id] = true; S.wins[d.id] = copy(S.build); save('cleared2', S.cleared); save('wins2', S.wins); S.lastRunLost = false; }
-    else { S.lastAutopsy = run.autopsy; S.lastRunLost = true; S.tipLevel = 0; }
+    else { S.lastAutopsy = run.autopsy; S.lastRunLost = true; S.tipLevel = 0; setFail(run, S.build); }
     closeOverlay(); show('run');
     return run;
   }
@@ -588,7 +663,7 @@
       keyHtml += '<span><i style="background:' + bg + ';border:1px solid ' + c.color + '"></i>' + c.name + '</span>';
     });
     $('ribbonKey').innerHTML = any ? keyHtml + '<span style="margin-left:auto">leading suspicion each tick</span>' : '';
-    $('instBox').style.display = any ? '' : 'none';
+    buildBars($('liveBars'), d.stats); S.liveKey = '';
     $('immune').style.display = any ? '' : 'none';
     $('ribbon').style.display = any ? '' : 'none';
     $('ribbonKey').style.display = any ? '' : 'none';
@@ -610,10 +685,10 @@
     if (S.mode === 'watch') {
       if (!S.watchDone) text = 'Watching your cell as it is...';
       else if (run.v.win) { text = 'Your carried cell already survives this dish.'; btn = 'Continue'; }
-      else { text = run.autopsy.text; btn = 'Adapt your cell'; }
+      else { text = run.autopsy.headline + ' ' + run.autopsy.text; btn = 'Adapt your cell'; }
     } else if (!S.runFinished) text = 'Running your changed cell...';
     else if (run.v.win) { text = 'Your cell made it. The lab did not notice.'; btn = 'See result'; }
-    else { text = run.autopsy.text; btn = 'Back to Adapt'; }
+    else { text = run.autopsy.headline + ' ' + run.autopsy.text; btn = 'Back to Adapt'; }
     var key = text + '|' + btn; if (key === S.vcache) return; S.vcache = key;
     $('verdictText').textContent = text;
     var b = $('verdictBtn'); b.textContent = btn || 'Adapt your cell'; b.style.visibility = btn ? 'visible' : 'hidden';
@@ -659,6 +734,18 @@
       default: return false;
     }
   }
+  // The live stat readouts: the same stats, order and colours as the Forecast bars. The outline marker is the forecast for this build.
+  function updateLive(run, ti) {
+    var d = run.dish, box = $('liveBars'), final = S.mode === 'watch' && S.watchDone, lost = !run.v.win && run.autopsy;
+    var showFail = lost && (S.mode === 'watch' ? S.watchDone : S.resultShown || S.runFinished);
+    var key = (final ? 'F' : ti) + '|' + (showFail ? 1 : 0) + '|' + S.mode + run.build.pace;
+    if (key === S.liveKey) return; S.liveKey = key;
+    var fc = Sim.stats(d, run.build), live = final ? fc : Sim.liveStats(run, ti);
+    $('liveTitle').innerHTML = final ? 'Forecast for your cell <span class="dim">the failing bar is marked</span>' : 'Live stats <span class="dim">outline marker = the forecast</span>';
+    Array.prototype.forEach.call(box.children, function (row, i) {
+      setBar(row, live[i], { forecast: final ? null : fc[i], fail: showFail && run.autopsy.stat === live[i].id });
+    });
+  }
   function drawRun(ts) {
     var run = S.run; if (!run) return;
     var H = run.H, T = run.T, ti = Math.min(T, Math.floor(S.t)), d = run.dish, any = anyChannel(run);
@@ -673,9 +760,8 @@
     if (E.tick > 0) { marks.push({ t: E.announce, color: '#8a6a20', dash: [3, 3], label: 'warning' }); marks.push({ t: E.tick, color: D.AMB, label: 'food crash' }); }
     var pin = S.resultShown && run.autopsy && S.mode === 'run' ? { from: run.autopsy.from, to: run.autopsy.to } : null;
     var g = S.ghost, t;
+    updateLive(run, ti);
     if (any) {
-      var vals = { growth: H.susp.growth[ti], waste: H.susp.waste[ti], casualties: H.susp.casualties[ti], regularity: H.susp.regularity[ti] };
-      D.instruments($('instruments'), vals, run.channels);
       var stg = H.stage[ti];
       if (stg !== S.lastStage) {
         S.lastStage = stg;
@@ -727,6 +813,10 @@
     var h = D.hash(JSON.stringify(b)), sp = epi[h % epi.length];
     return '<i>' + genus + ' ' + sp + '</i>';
   }
+  function failStatLine(run) {
+    var a = run.autopsy, st = Sim.stats(dishObj(), run.build).filter(function (x) { return x.id === a.stat; })[0];
+    return Sim.STAT_INFO[a.stat].name + (st ? ': ' + st.verdict : '') + ' (' + (CAUSE_WORDS[a.cause] || a.cause) + ')';
+  }
   function recordRow(run, d) {
     var v = run.v;
     if (d.aliveOnly) return '<div class="row"><b>Record</b><span>Colony at the end: ' + Math.round(run.H.rob[run.T] / run.H.rob[0] * 100) + '% of where it started.</span></div>';
@@ -746,8 +836,8 @@
     } else {
       var a = run.autopsy;
       html = '<div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span>Office of the Immune Coroner</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
-        '<div class="row"><b>Finding</b><span class="head">' + esc(a.text) + '</span></div>' +
-        '<div class="row"><b>Cause</b><span>' + esc(CAUSE_WORDS[a.cause] || a.cause) + '</span></div>' +
+        '<div class="row"><b>Finding</b><span class="head"><strong>' + esc(a.headline) + '</strong> ' + esc(a.text) + '</span></div>' +
+        '<div class="row"><b>Stat that failed</b><span>' + esc(failStatLine(run)) + '</span></div>' +
         '<div class="row"><b>Also</b><span class="sec">' + (a.second ? esc(a.second.text) : 'No second cause of note.') + '</span></div>' +
         recordRow(run, d) +
         '<div class="row"><b>Tip</b><span class="tipspan"><button type="button" data-act="tip" id="memoTipBtn">Tip</button><span id="memoTip"></span></span></div>' +
@@ -805,6 +895,8 @@
   $('skipBtn').addEventListener('click', skip);
   $('verdictBtn').addEventListener('click', verdictAction);
   $('resultBtn').addEventListener('click', function () { if (S.run && S.mode === 'run') { S.runFinished = true; renderVerdict(); showResult(); } });
+  $('realTog').addEventListener('change', function () { S.real = this.checked; $('optList').classList.toggle('showreal', S.real); });
+  $('realTog').addEventListener('change', function () { S.real = this.checked; $('optList').classList.toggle('showreal', S.real); });
   $('scrub').addEventListener('input', function () { S.playing = false; setPlayLabel(); S.t = +this.value; });
   Array.prototype.forEach.call(document.querySelectorAll('#speeds button'), function (b) { b.addEventListener('click', function () { S.speed = +b.getAttribute('data-sp'); setSpeedUI(); }); });
   document.addEventListener('keydown', function (e) {
@@ -835,7 +927,11 @@
     options: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt, #optList .optempty'), function (o) { var w = o.querySelector('.why'); return { id: o.getAttribute('data-id'), fitted: /fitted/.test(o.className), blocked: /blocked/.test(o.className), why: w ? w.textContent : '', img: (o.querySelector('img') || {}).complete ? o.querySelector('img').naturalWidth : null }; }); },
     fix: function (id) { var d = dishObj(), f = d.fixes.filter(function (x) { return x.id === id; })[0]; S.undo.push(copy(S.build)); S.build = Lv.applyFix(S.build, f); syncRuleFromBuild(); renderAdapt(false); return S.build; },
     setBuild: function (b) { S.undo.push(copy(S.build)); S.build = copy(b); syncRuleFromBuild(); renderAdapt(false); },
-    ruleChoose: ruleChoose, installRule: installRule,
+    ruleChoose: ruleChoose, installRule: installRule, previewDial: previewDial,
+    bars: function () { return Array.prototype.map.call(document.querySelectorAll('#statBars .sb'), function (r) { return { stat: r.getAttribute('data-stat'), verdict: r.querySelector('.sb-verdict').textContent, vcls: r.querySelector('.sb-verdict').className, mark: r.querySelector('.sb-mark').style.left, markCls: r.querySelector('.sb-mark').className, ghost: r.querySelector('.sb-ghost').style.display === 'none' ? null : r.querySelector('.sb-ghost').style.left, ghostCls: r.querySelector('.sb-ghost').className, arrow: r.querySelector('.sb-arrow').textContent, arrowCls: r.querySelector('.sb-arrow').className, tag: r.querySelector('.sb-tag').textContent, failed: r.classList.contains('failed') }; }); },
+    liveBars: function () { return Array.prototype.map.call(document.querySelectorAll('#liveBars .sb'), function (r) { return { stat: r.getAttribute('data-stat'), verdict: r.querySelector('.sb-verdict').textContent, mark: r.querySelector('.sb-mark').style.left, tag: r.querySelector('.sb-tag').textContent }; }); },
+    fixLine: function () { return $('fixLine').textContent; }, previewText: function () { return $('pvT').textContent; }, fail: function () { return S.fail; },
+    cards: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt'), function (o) { return { id: o.getAttribute('data-id'), helps: o.querySelector('.helps span').textContent, costs: o.querySelector('.costs span').textContent }; }); },
     info: function () {
       var r = S.run;
       return { screen: S.screen, mode: S.mode, dish: S.dish, build: S.build, slots: S.build && Sim.toSlots(S.build), slot: S.slot, layer: S.layer, pointed: S.pointed, carried: S.carried, t: S.t, stopAt: S.stopAt, playing: S.playing, watchDone: S.watchDone, runFinished: S.runFinished,

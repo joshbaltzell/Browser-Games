@@ -224,9 +224,9 @@ var LookAlive = (function () {
 
   // Fit a card (or a reflex) into its slot. Returns { ok: true, build } or { ok: false, reason }.
   // `layer` (0 or 1) picks the Envelope layer. A card already in another spot of the same slot is swapped out; the energy limit is checked on the result.
-  function check(D, nb) {
+  function check(D, nb, loose) {
     var v = validate(D, nb);
-    for (var i = 0; i < v.problems.length; i++) if (!/^Pace|^Sloppiness/.test(v.problems[i])) return v.problems[i];
+    for (var i = 0; i < v.problems.length; i++) if (!/^Pace|^Sloppiness/.test(v.problems[i]) && !(loose && /^Energy/.test(v.problems[i]))) return v.problems[i];
     return null;
   }
   function lockedReason(D, slotId) {
@@ -235,7 +235,7 @@ var LookAlive = (function () {
     var f = factoryOf(D, slotId), on = opensOn(slotId);
     return f ? 'Factory fitted. Opens on dish ' + on + '.' : 'Opens on dish ' + on + '.';
   }
-  function fit(D, build, card, layer) {
+  function fit(D, build, card, layer, loose) {
     var b = cp(normalize(build)), sl = toSlots(b), id, slotId, c;
     if (card && typeof card === 'object') { slotId = 'reflex'; sl.reflex = cp(card); }
     else {
@@ -264,7 +264,7 @@ var LookAlive = (function () {
         sl[slotId] = id;
       }
     }
-    var nb = fromSlots(sl, b), why = check(D, nb);
+    var nb = fromSlots(sl, b), why = check(D, nb, loose);
     return why ? { ok: false, reason: why } : { ok: true, build: nb };
   }
   // Clear a slot (for the Envelope, the layer holding `cardId`). Power cannot be emptied.
@@ -695,7 +695,7 @@ var LookAlive = (function () {
     return best;
   }
 
-  function autopsy(run) {
+  function autopsyBase(run) {
     var v = run.v || verdict(run), H = run.H, T = run.T, D = run.dish, band = D.band, bp = run.bp, b = run.build, t, k;
     if (v.win) return null;
     var res = { cause: '', channel: -1, from: 0, to: 0, text: '', second: null, dominance: 1, card: null };
@@ -808,6 +808,38 @@ var LookAlive = (function () {
     return res;
   }
 
+  // Which of the five stats a loss is about, and a headline that starts with the stat in plain words.
+  var CAUSE_STAT = { acid: 'acid', 'exposed:growth': 'growth', 'exposed:casualties': 'growth', overgrew: 'growth', below: 'growth', starved: 'growth', band: 'growth',
+    'exposed:waste': 'smell', 'exposed:regularity': 'natural', bust: 'crash', bloom: 'crash' };
+  function autopsy(run) {
+    var a = autopsyBase(run);
+    if (!a) return a;
+    var D = run.dish, st = CAUSE_STAT[a.cause] || 'growth', sn = (D.stats || []);
+    if (sn.length && sn.indexOf(st) < 0) st = sn[sn.length - 1] === 'acid' || a.cause === 'starved' ? 'acid' : sn[0];
+    if (a.cause === 'acid' && st === 'acid' && sn.indexOf('growth') >= 0) {   // some acid kept out, but the colony was too slow to replace what got in
+      var as = stats(D, run.build).filter(function (x) { return x.id === 'acid'; })[0];
+      if (as && as.state === 'safe') st = 'growth';
+    }
+    if (st === 'growth' && (a.cause === 'below' || a.cause === 'starved') && sn.indexOf('crash') >= 0) {   // sitting below the band after the crash is the crash's doing
+      var cs = stats(D, run.build);
+      var gs = cs.filter(function (x) { return x.id === 'growth'; })[0], cr = cs.filter(function (x) { return x.id === 'crash'; })[0];
+      if (gs && cr && gs.state === 'safe' && cr.state !== 'safe') st = 'crash';
+    }
+    a.stat = st;
+    var name = STAT_INFO[st].name, t = a.to;
+    var high = a.cause === 'overgrew' || a.cause === 'exposed:casualties' || (a.cause === 'exposed:growth' && /faster/.test(a.text));
+    var tail = {
+      acid: 'You dissolved by tick ' + t + '.',
+      growth: a.cause === 'acid' ? 'The acid took more than you could replace, and you died out by tick ' + t + '.' : high ? 'You took over the dish' + (a.cause === 'overgrew' ? ' by tick ' + a.from : ' and the lab noticed by tick ' + t) + '.' : 'You faded out of the band by tick ' + a.from + '.',
+      smell: 'The locals smelled you by tick ' + t + '.',
+      natural: 'You looked like a machine, and were caught by tick ' + t + '.',
+      crash: 'The food crash wiped you out' + (a.from ? ' (below the band from tick ' + a.from + ')' : '') + '.'
+    }[st];
+    var verb = st === 'smell' ? 'was too different' : st === 'growth' ? (high ? 'was too fast' : 'was too slow') : st === 'natural' ? 'was too low' : 'was too low';
+    a.headline = name + ' ' + verb + '. ' + tail;
+    a.high = high;
+    return a;
+  }
 
   // Plain-words change from one build to another on a dish: ["Births -15%", "Keeps the acid out", "Energy 2 of 4"].
   function diff(D, before, after, P) {
@@ -913,7 +945,217 @@ var LookAlive = (function () {
     return out;
   }
 
-  return { CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
-    channelsOn: channelsOn, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { newState: newState, step: step, HK: HK } };
+  // ================================================================ stat bars (GAMEPLAY-V2 section 13)
+  // Five stats read off a forecast run of the real model on a 16 by 16 grid (cached by dish and build). Mappings are in RULES.md.
+  var STAT_INFO = {
+    acid:    { id: 'acid',    name: 'Acid defence',   ups: 'stronger', downs: 'weaker' },
+    growth:  { id: 'growth',  name: 'Growth',         ups: 'faster', downs: 'slower' },
+    smell:   { id: 'smell',   name: 'Smell',          ups: 'closer to the locals', downs: 'further from the locals' },
+    natural: { id: 'natural', name: 'Naturalness',    ups: 'more natural', downs: 'less natural' },
+    crash:   { id: 'crash',   name: 'Crash survival', ups: 'better', downs: 'worse' }
+  };
+  var STAT_ORDER = ['acid', 'growth', 'smell', 'natural', 'crash'];
+  var ST = {
+    acidScale: 0.25, acidSafeLoss: 0.06,        // value = 1 - loss/0.25; safe while the colony loses under 6% a tick to the acid
+    shareLo: 0.0125, shareHi: 0.6,              // growth bar: log scale of the share from 1.25% to 60%
+    peakLine: 10, peakSafe: 7.5,                // smell and naturalness: value = 1 - peak/10; safe while the weighted channel peak is under 7.5 (stage 3 is at 8)
+    highQ: 0.5,                                 // growth is too fast when this share quantile of ticks 30..300 is above the band ceiling
+    crashLo: 0.01, crashHi: 0.15, crashSafe: 0.04   // crash bar: log scale of the lowest share after the bust, 1% to 15%; safe from 4% (the band floor less a fifth)
+  };
+  var fcCache = {}, fcCount = 0;
+  function qtile(a, p) { var s = a.slice().sort(function (x, y) { return x - y; }); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; }
+  // The forecast: a 16 by 16 run of the real simulation, and the few numbers the five stats read from it.
+  function forecast(D, build) {
+    var b = normalize(build), key = D.id + '|' + JSON.stringify(b);
+    if (fcCache[key]) return fcCache[key];
+    var P = Lv().PLANET, run = play(P, D, b, { n: 16 }), H = run.H, T = run.T, band = D.band, t;
+    var ev = D.event && D.event.tick > 0 ? D.event.tick : 0;
+    var all = [], low = [], post = [], loss = 0, mx = { waste: 0, regularity: 0 }, mn = 1;
+    var evEnd = ev ? ev + (D.event.dur || 0) + (Lv().PLANET.event.ramp || 10) : 0;
+    for (t = band.warm; t <= T; t++) { all.push(H.share[t]); if (!ev || t <= ev) low.push(H.share[t]); if (ev && t > evEnd) post.push(H.share[t]); }
+    for (t = 1; t <= 10; t++) loss += H.acid[t] || 0;
+    for (t = 1; t <= T; t++) { if (H.susp.waste[t] > mx.waste) mx.waste = H.susp.waste[t]; if (H.susp.regularity[t] > mx.regularity) mx.regularity = H.susp.regularity[t]; }
+    if (ev) for (t = ev; t <= T; t++) if (H.share[t] < mn) mn = H.share[t];
+    var f = { acidLoss: loss / 10, p70: Math.max(qtile(all, ST.highQ), post.length ? qtile(post, 0.65) : 0), l70: qtile(low, ST.highQ), p30: qtile(low, 0.3), alive: run.v.alive, waste: mx.waste, reg: mx.regularity, crashMin: mn, pl30: post.length ? qtile(post, 0.3) : 1, win: run.v.win };
+    if (fcCount > 3000) { fcCache = {}; fcCount = 0; }
+    fcCache[key] = f; fcCount++;
+    return f;
+  }
+  function shareVal(s) { return clamp(Math.log(Math.max(s, 1e-4) / ST.shareLo) / Math.log(ST.shareHi / ST.shareLo), 0, 1); }
+  function crashVal(s) { return clamp(Math.log(Math.max(s, 1e-4) / ST.crashLo) / Math.log(ST.crashHi / ST.crashLo), 0, 1); }
+  function r3(x) { return Math.round(x * 1000) / 1000; }
+  function statZone(D, id) {
+    if (id === 'acid') return [r3(1 - ST.acidSafeLoss / ST.acidScale), 1];
+    if (id === 'growth') return [r3(shareVal(D.band.lo)), r3(shareVal(D.band.hi))];
+    if (id === 'crash') return [r3(crashVal(ST.crashSafe)), 1];
+    return [r3(1 - ST.peakSafe / ST.peakLine), 1];
+  }
+  function statEval(D, id, f) {
+    var z = statZone(D, id), v, state = 'safe', verdict = 'Safe';
+    if (id === 'acid') {
+      v = clamp(1 - f.acidLoss / ST.acidScale, 0, 1);
+      if (v < z[0]) { state = 'low'; verdict = 'Too low: you will dissolve'; }
+    } else if (id === 'growth') {
+      if (f.p70 > D.band.hi) { v = shareVal(f.p70); state = 'high'; verdict = 'Too fast: you will take over'; }
+      else if (f.p30 < D.band.lo || (f.crashMin >= ST.crashSafe && f.pl30 < D.band.lo)) { v = shareVal(Math.min(f.p30, f.pl30)); state = 'low'; verdict = 'Too slow: you will fade out'; }
+      else v = shareVal(Math.sqrt(Math.max(f.p30, 1e-4) * Math.max(f.l70, 1e-4)));
+    } else if (id === 'smell') {
+      v = clamp(1 - f.waste / ST.peakLine, 0, 1);
+      if (v < z[0]) { state = 'low'; verdict = 'They can smell you'; }
+    } else if (id === 'natural') {
+      v = clamp(1 - f.reg / ST.peakLine, 0, 1);
+      if (v < z[0]) { state = 'low'; verdict = 'Too perfect: you look like a machine'; }
+    } else {
+      v = crashVal(f.crashMin);
+      if (v < z[0]) { state = 'low'; verdict = 'The crash will wipe you out'; }
+    }
+    return { id: id, name: STAT_INFO[id].name, value: r3(v), safe: z, state: state, verdict: verdict };
+  }
+  // The stats this dish shows, in order, for a build. Each: { id, name, value 0..1, safe [lo, hi], state low|safe|high, verdict }.
+  function stats(D, build) {
+    var f = forecast(D, build);
+    return (D.stats || []).map(function (id) { return statEval(D, id, f); });
+  }
+  // A colony the acid dissolves has no meaningful Growth, Smell, Naturalness or Crash numbers (nothing is left to measure): only Acid defence counts then.
+  function dissolved(D, b) { var f = forecast(D, b); return !f.alive && f.acidLoss > ST.acidSafeLoss; }
+  function statDist(s) { return s.value < s.safe[0] ? s.safe[0] - s.value : s.value > s.safe[1] ? s.value - s.safe[1] : 0; }
+  function statHealth(s) { return s.id === 'growth' ? -Math.abs(s.value - (s.safe[0] + s.safe[1]) / 2) : s.value; }
+  // Per stat: { id, name, from, to, fromState, toState, better: true | false | null, delta (change in value), health (change in health) }.
+  function statDiff(D, a, b) {
+    var sa = stats(D, a), sb = stats(D, b);
+    return sa.map(function (x, i) {
+      var y = sb[i], da = statDist(x), db = statDist(y), dh = statHealth(y) - statHealth(x), better = null;
+      if (db < da - 0.004) better = true; else if (db > da + 0.004) better = false;
+      else if (da === 0 && db === 0) better = dh > 0.01 ? true : dh < -0.01 ? false : null;
+      return { id: x.id, name: x.name, from: x.value, to: y.value, fromState: x.state, toState: y.state, better: better, delta: r3(y.value - x.value), health: r3(dh) };
+    });
+  }
+  function buildEnergy(b) {
+    var e = 0, m = Cards.part(b.metabolism); if (m) e += m.energy;
+    (b.parts || []).forEach(function (id) { var c = Cards.part(id); if (c) e += c.energy; });
+    return e;
+  }
+  // The build with a card fitted the way the slot rules require (a swap in a one-option slot, a free Envelope layer or the outer one, the Sealed shell
+  // taking the whole Envelope). Energy is not checked: the page shows what the card would do, and the energy meter says whether it fits. null if the slot is locked.
+  function fitForPreview(D, build, cardId) {
+    var r = fit(D, build, cardId, null, true);
+    if (r.ok) return r.build;
+    var c = Cards.part(Cards.canon(cardId));
+    if (c && c.slot === 'envelope' && !/already fitted|locked/.test(r.reason)) {
+      var cleared = unfit(D, build, 'envelope');
+      if (cleared.ok && (Cards.layersOf(c) > 1 || /Sealed shell/.test(r.reason))) { r = fit(D, cleared.build, cardId, null, true); if (r.ok) return r.build; }
+      r = fit(D, build, cardId, 0, true); if (r.ok) return r.build;
+    }
+    return null;
+  }
+  // What a card does for this cell on this dish: { helps: [{ stat, name, steps, dir }], costs: [...], energy, fits, build }.
+  // dir is +1 when the stat value goes up, -1 when it goes down (so Growth can say faster or slower).
+  function cardEffects(D, build, cardId) {
+    var id = Cards.canon(cardId), c = Cards.part(id) || Cards.bio(id), base = build, nb = null, out = { helps: [], costs: [], energy: c && c.energy ? c.energy : 0, used: 0, fits: false, fitted: false, current: false };
+    var sl0 = toSlots(build), now = c && c.slot === 'envelope' ? sl0.envelope.indexOf(id) >= 0 : c && c.slot && c.slot !== 'reflex' ? sl0[c.slot] === id : !!(sl0.reflex && sl0.reflex.kind === 'bio' && sl0.reflex.id === id);
+    if (now) {   // already fitted: show what it does for this cell, measured against the cell without it
+      out.current = true; out.fitted = true; out.build = normalize(build); out.used = buildEnergy(out.build); out.fits = true;
+      if (!c || c.slot === 'power') return out;
+      var un = unfit(D, build, c.slot === undefined ? 'reflex' : c.slot, id);
+      if (!un.ok) return out;
+      base = un.build; nb = normalize(build);
+    } else nb = fitForPreview(D, build, cardId);
+    if (!nb) return out;
+    if (!out.current) { out.build = nb; out.fitted = true; out.used = buildEnergy(normalize(nb)); out.fits = out.used <= D.energy; }
+    var dn = dissolved(D, nb), db0 = dissolved(D, base);
+    statDiff(D, base, nb).forEach(function (d) {
+      if (d.id !== 'acid' && (dn || db0)) return;
+      var steps = Math.abs(d.health) >= 0.15 ? 2 : 1;
+      if (d.better === true || (d.better === null && d.health > 0.03)) out.helps.push({ stat: d.id, name: d.name, steps: steps, dir: d.delta >= 0 ? 1 : -1, delta: d.delta });
+      else if (d.better === false) out.costs.push({ stat: d.id, name: d.name, steps: steps, dir: d.delta >= 0 ? 1 : -1, delta: d.delta });
+    });
+    return out;
+  }
+  // The slots and dials on this dish that can move a stat. full: true entries move it into the safe zone with one change; if no single change does,
+  // the entries that make it better are returned with full: false. Slot entries: { kind: 'slot', slot, name, options: [card ids], full }, dial entries: { kind: 'dial', dial, to, full }.
+  function statFixers(D, build, statId) {
+    var b = normalize(build), base = stats(D, b), cur = null, k, i;
+    base.forEach(function (s) { if (s.id === statId) cur = s; });
+    if (!cur) return [];
+    var full = [], part = [];
+    function judge(nb) {   // 2: the stat becomes safe and nothing that was safe breaks; 1: it gets better; 0: no use
+      var s = null, broke = false, now = stats(D, nb);
+      now.forEach(function (x, i) { if (x.id === statId) s = x; else if (base[i].state === 'safe' && x.state !== 'safe') broke = true; });
+      if (broke) return 0;
+      if (s.state === 'safe') return 2;
+      return statDist(s) < statDist(cur) - 0.02 ? 1 : 0;
+    }
+    SLOT_ORDER.forEach(function (slot) {
+      if (!isOpen(D, slot)) return;
+      var ok2 = [], ok1 = [], opts = offered(D, slot);
+      opts.forEach(function (c) {
+        var nb = fit(D, b, c.id).ok ? fit(D, b, c.id).build : null;
+        if (!nb && slot === 'envelope') { var r = fit(D, b, c.id, 0); nb = r.ok ? r.build : null; }
+        if (!nb && slot === 'envelope') { var cl = unfit(D, b, 'envelope'); var r2 = cl.ok ? fit(D, cl.build, c.id) : { ok: false }; nb = r2.ok ? r2.build : null; }
+        if (!nb) return;
+        var j = judge(nb); if (j === 2) ok2.push(c.id); else if (j === 1) ok1.push(c.id);
+      });
+      if (slot === 'reflex' && D.allowed.bio.length === 0) return;
+      var sl0 = toSlots(b), has = slot === 'envelope' ? sl0.envelope.length > 0 : !!sl0[slot], rem = false;
+      if (slot !== 'power' && has) { var u = unfit(D, b, slot); if (u.ok && judge(u.build) === 2) rem = true; }
+      if (ok2.length) full.push({ kind: 'slot', slot: slot, name: slotName(slot), options: ok2, remove: rem, full: true });
+      else if (rem) full.push({ kind: 'slot', slot: slot, name: slotName(slot), options: [], remove: true, full: true });
+      else if (ok1.length) part.push({ kind: 'slot', slot: slot, name: slotName(slot), options: ok1, remove: false, full: false });
+    });
+    (D.dials || []).forEach(function (d) {
+      var best = null, bestJ = 0;
+      for (var v = 0; v <= 8; v++) {
+        if (v === b[d]) continue;
+        var nb = cp(b); nb[d] = v;
+        var j = judge(nb);
+        if (j > bestJ || (j === bestJ && j > 0 && best !== null && Math.abs(v - b[d]) < Math.abs(best - b[d]))) { bestJ = j; best = v; }
+      }
+      if (bestJ === 2) full.push({ kind: 'dial', dial: d, name: d === 'pace' ? 'Pace dial' : 'Sloppiness dial', to: best, full: true });
+      else if (bestJ === 1) part.push({ kind: 'dial', dial: d, name: d === 'pace' ? 'Pace dial' : 'Sloppiness dial', to: best, full: false });
+    });
+    return full.length ? full : part;
+  }
+  // The same stats read live off a finished run at tick t (for the replay). value is null when the stat has nothing to show yet (Crash survival before the crash).
+  function liveStats(run, t) {
+    var D = run.dish, H = run.H, ev = D.event && D.event.tick > 0 ? D.event.tick : 0, i, tt = Math.max(1, Math.min(run.T, Math.floor(t)));
+    return (D.stats || []).map(function (id) {
+      var z = statZone(D, id), v = null, state = 'safe', verdict = 'Safe';
+      if (id === 'acid') {
+        var a = 0, c = 0; for (i = Math.max(1, tt - 2); i <= tt; i++) { a += H.acid[i] || 0; c++; }
+        v = clamp(1 - a / c / ST.acidScale, 0, 1); if (v < z[0]) { state = 'low'; verdict = 'Too low: you will dissolve'; }
+      } else if (id === 'growth') {
+        var sh = H.share[tt]; v = shareVal(sh);
+        if (sh > D.band.hi) { state = 'high'; verdict = 'Too fast: you will take over'; } else if (sh < D.band.lo) { state = 'low'; verdict = 'Too slow: you will fade out'; }
+      } else if (id === 'smell') {
+        v = clamp(1 - H.susp.waste[tt] / ST.peakLine, 0, 1); if (v < z[0]) { state = 'low'; verdict = 'They can smell you'; }
+      } else if (id === 'natural') {
+        v = clamp(1 - H.susp.regularity[tt] / ST.peakLine, 0, 1); if (v < z[0]) { state = 'low'; verdict = 'Too perfect: you look like a machine'; }
+      } else {
+        if (ev && tt >= ev) { var mn = 1; for (i = ev; i <= tt; i++) if (H.share[i] < mn) mn = H.share[i]; v = crashVal(mn); if (v < z[0]) { state = 'low'; verdict = 'The crash will wipe you out'; } }
+        else verdict = 'Waiting for the crash';
+      }
+      return { id: id, name: STAT_INFO[id].name, value: v == null ? null : r3(v), safe: z, state: state, verdict: verdict };
+    });
+  }
+  // The preview sentence pieces for moving from build a to build b: ["Acid defence: safe", "Growth: a little slower", "Energy 2 of 4"].
+  function diffWords(D, a, b) {
+    var out = [];
+    var dis = dissolved(D, b);
+    statDiff(D, a, b).forEach(function (d) {
+      if (dis && d.id !== 'acid') return;
+      var info = STAT_INFO[d.id], mag = Math.abs(d.delta);
+      if (d.toState !== d.fromState) {
+        var ev = stats(D, b).filter(function (s) { return s.id === d.id; })[0];
+        out.push(info.name + ': ' + (ev.state === 'safe' ? 'safe' : ev.verdict.charAt(0).toLowerCase() + ev.verdict.slice(1).replace(': ', ', ')));
+      } else if (mag >= 0.02) {
+        out.push(info.name + ': ' + (mag < 0.08 ? 'a little ' : mag > 0.25 ? 'much ' : '') + (d.delta > 0 ? info.ups : info.downs));
+      }
+    });
+    out.push('Energy ' + buildEnergy(normalize(b)) + ' of ' + D.energy);
+    return out;
+  }
+
+  return { dissolved: dissolved, stats: stats, liveStats: liveStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
+    channelsOn: channelsOn, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { ST: ST, newState: newState, step: step, HK: HK } };
 })();
 if (typeof module !== 'undefined') module.exports = LookAlive;

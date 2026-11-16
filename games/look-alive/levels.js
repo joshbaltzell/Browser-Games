@@ -65,7 +65,7 @@ var LookAliveLevels = (function () {
   // Fix = { id, label, changes: { set: {pace, slop, metabolism}, add: [part ids], remove: [part ids], reflex: {...} }, heavy? }.
   // `heavy` marks a route that needs more than two changes.
   var DISHES = [
-    { id: 1, title: "Don't Dissolve", energy: 4, slots: ['envelope', 'insides'], opens: ['envelope', 'insides'], reflexSlot: false, dials: [],
+    { id: 1, title: "Don't Dissolve", energy: 4, slots: ['envelope', 'insides'], opens: ['envelope', 'insides'], reflexSlot: false, dials: [], stats: ['acid'],
       ticks: 300, acid: 0.35, aliveOnly: true, suspicion: false, channels: [],
       problem: 'The water is acid. A cell with nothing to keep the acid out dissolves.',
       goal: 'Be alive at the end of the run.',
@@ -85,7 +85,7 @@ var LookAliveLevels = (function () {
         { id: 'acidproof', label: 'Add Acid-proof insides (it takes 3 energy)', changes: { add: ['acidproof'] } }
       ],
       notebook: 'Picrophilus torridus is an archaeon that grows best in acid roughly as strong as battery acid, and can still grow at around pH 0. Most acid-loving microbes keep their insides near neutral by pumping acid back out, which costs energy all the time, but Picrophilus lets its insides go acidic too and builds every protein to cope, inside a membrane that lets almost no acid through. On Acidica the water dissolves anything unprotected, and a sealed ceramic shell would keep it out completely, while a real cell can never be sealed: even a diatom\'s glass shell is full of pores so life can pass through.' },
-    { id: 2, title: "Don't Take Over", energy: 5, slots: ['envelope', 'insides', 'signal'], opens: ['signal'], reflexSlot: false, dials: ['pace'],
+    { id: 2, title: "Don't Take Over", energy: 5, slots: ['envelope', 'insides', 'signal'], opens: ['signal'], reflexSlot: false, dials: ['pace'], stats: ['acid', 'growth'],
       ticks: 300, acid: 0.18, abundance: { food: 13, crowd: 2.8, death: 0.03, cross: 6, run: 15, runFrom: 0.8 }, suspicion: true, channels: ['casualties'],
       problem: 'Food is everywhere and nothing eats you, so a cell that divides at its usual pace floods the dish.',
       goal: BAND_GOAL,
@@ -106,7 +106,7 @@ var LookAliveLevels = (function () {
         { id: 'radio', label: 'Add the Radio mesh (Machine answer)', changes: { add: ['radio'] } }
       ],
       notebook: 'Aliivibrio fischeri bacteria live packed inside the light organ of the bobtail squid, and every dawn the squid vents about 90% of them and lets the survivors regrow. Each bacterium leaks a small molecule and listens for it, so once enough of them are crowded together they all switch on their lights at the same moment. A colony never grows without limit: in the squid something always resets it. On Acidica the locals keep their own numbers down and nothing keeps yours down, so you have to do it yourself.' },
-    { id: 3, title: 'Smell Right', energy: 5, slots: ['power', 'envelope', 'insides', 'signal'], opens: ['power'], reflexSlot: false, dials: ['pace'],
+    { id: 3, title: 'Smell Right', energy: 5, slots: ['power', 'envelope', 'insides', 'signal'], opens: ['power'], reflexSlot: false, dials: ['pace'], stats: ['acid', 'growth', 'smell'],
       ticks: 300, acid: 0.35, suspicion: true, channels: ['casualties', 'waste'],
       problem: 'Everyone on Acidica leaves the same sour trail. Your cell leaves a different one.',
       goal: BAND_GOAL,
@@ -124,7 +124,7 @@ var LookAliveLevels = (function () {
         { id: 'ferment', label: 'Swap Respiration for Fermentation', changes: { set: { metabolism: 'fermentation' } } }
       ],
       notebook: 'Lactic acid bacteria ferment sugar without oxygen, which is fast and gets little energy out of it, and they leave lactic acid behind. Cells that use oxygen break sugar down completely and get far more energy from the same meal. The waste a cell leaves is a chemical fingerprint of how it makes its energy. On Acidica the locals ferment, so everyone leaves the same sour trail, and a cell that respires leaves a different one.' },
-    { id: 4, title: 'Be Messy', energy: 6, slots: ['power', 'envelope', 'insides', 'division', 'signal'], opens: ['division'], reflexSlot: false, dials: ['pace', 'slop'],
+    { id: 4, title: 'Be Messy', energy: 6, slots: ['power', 'envelope', 'insides', 'division', 'signal'], opens: ['division'], reflexSlot: false, dials: ['pace', 'slop'], stats: ['acid', 'growth', 'smell', 'natural'],
       ticks: 300, acid: 0.35, suspicion: true, channels: ['casualties', 'waste', 'regularity'],
       problem: 'Machine parts make every cell divide on the same schedule. Real cells are messier.',
       goal: BAND_GOAL,
@@ -144,7 +144,7 @@ var LookAliveLevels = (function () {
         { id: 'slop', label: 'Raise Sloppiness to 4', changes: { set: { slop: 4 } } }
       ],
       notebook: 'In a growing colony of Escherichia coli, a small fraction of cells at random stop growing for a while. Those sleepers survive drugs that attack growing cells, and when the drug is washed away they wake and rebuild the colony. This variety is not genetic: once they wake, the sleepers are as drug-sensitive as their parents. On Acidica anything perfectly regular stands out, so a machine has to learn to be messy.' },
-    { id: 5, title: 'When Things Change', energy: 6, slots: ['power', 'envelope', 'insides', 'division', 'signal', 'reflex'], opens: ['reflex'], reflexSlot: true, dials: ['pace', 'slop'],
+    { id: 5, title: 'When Things Change', energy: 6, slots: ['power', 'envelope', 'insides', 'division', 'signal', 'reflex'], opens: ['reflex'], reflexSlot: true, dials: ['pace', 'slop'], stats: ['acid', 'growth', 'smell', 'natural', 'crash'],
       ticks: 300, acid: 0.5, suspicion: true, channels: ['growth', 'waste', 'casualties', 'regularity'],
       problem: 'Partway through the run the food crashes.',
       goal: 'Stay in the band through the food crash.',
