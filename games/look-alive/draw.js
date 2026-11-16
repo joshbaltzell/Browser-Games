@@ -288,5 +288,113 @@ var LAD = (function () {
     }
   }
 
-  return { VIO: VIO, PINK: PINK, AMB: AMB, GRN: GRN, CY: CY, RED: RED, CH: CH, MACH: MACH, fit: fit, pattern: pattern, drawCells: drawCells, chart: chart, ribbon: ribbon, instruments: instruments, portrait: portrait, hash: hash };
+
+  // ---------------------------------------------------------------- the cell diagram (SVG markup, flat shapes)
+  // viewBox 0 0 600 410. Each body slot is one <g class="slotg s-<slot>"> so the page can select, dim and pulse it.
+  var CG = { cx: 300, cy: 205, r1: 120, r2: 106, rf: 97, rc: 26 };
+  function pol(r, deg) { var a = deg * Math.PI / 180; return [CG.cx + Math.cos(a) * r, CG.cy + Math.sin(a) * r]; }
+  function n1(x) { return Math.round(x * 10) / 10; }
+  function hexPts(cx, cy, r, rot) { var o = []; for (var i = 0; i < 6; i++) { var a = rot + i * Math.PI / 3; o.push(n1(cx + Math.cos(a) * r) + ',' + n1(cy + Math.sin(a) * r)); } return o.join(' '); }
+  var ANCHOR = { reflex: pol(CG.r1, -135), envelope: pol((CG.r1 + CG.r2) / 2, -150), division: [CG.cx - CG.r1 - 2, CG.cy], motor: pol(CG.r1 + 34, 140), signal: pol(CG.r1 + 28, -45), insides: pol(70, -20), power: [CG.cx + CG.rc + 3, CG.cy] };
+  var DOTS = [[-78, 18], [-70, 34], [-62, 16], [-56, 30], [-48, 14], [-42, 28], [-34, 18], [-28, 34], [-20, 16], [-66, 46]];   // signal dots: angle, extra distance
+  var FLUID = [[-40, 20], [30, 50], [150, 40], [200, 30], [260, 55], [320, 35], [100, 60], [350, 62], [60, 30], [230, 62], [290, 22], [10, 70]];
+
+  function ringArt(r, id, idx) {
+    var o = '';
+    if (!id) return '<circle class="emptyring" cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '"/>';
+    if (id === 'lipids') return '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="' + PINK + '" stroke-width="10"/><circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + (r + 3) + '" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>';
+    if (id === 'wall') return '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="#ffb0c8" stroke-width="8" stroke-dasharray="11 4"/><circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + (r + 5) + '" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="1"/>';
+    o += '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="' + PINK + '" stroke-width="4"/>';   // pump: little pumps in the skin, each throwing acid out
+    for (var i = 0; i < 10; i++) {
+      var a = i * 36 + idx * 18, p = pol(r, a), q = pol(r + 9, a), t = pol(r + 17, a);
+      o += '<line x1="' + n1(p[0]) + '" y1="' + n1(p[1]) + '" x2="' + n1(q[0]) + '" y2="' + n1(q[1]) + '" stroke="' + AMB + '" stroke-width="2"/><circle cx="' + n1(t[0]) + '" cy="' + n1(t[1]) + '" r="3" fill="' + AMB + '"/>' +
+        '<circle cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="5.5" fill="#ff9fbb" stroke="#fff" stroke-width="1.2"/>';
+    }
+    return o;
+  }
+  function envelopeArt(env) {
+    if (env.length && env[0] === 'shell') {
+      var o = '<polygon points="' + hexPts(CG.cx, CG.cy, CG.r1 + 6, 0) + '" fill="rgba(95,208,255,.08)" stroke="' + CY + '" stroke-width="6" stroke-linejoin="round"/><polygon points="' + hexPts(CG.cx, CG.cy, CG.r2 - 2, 0) + '" fill="none" stroke="' + CY + '" stroke-width="2" stroke-opacity=".8"/>';
+      for (var i = 0; i < 6; i++) { var a = i * Math.PI / 3, x1 = CG.cx + Math.cos(a) * (CG.r2 - 2), y1 = CG.cy + Math.sin(a) * (CG.r2 - 2), x2 = CG.cx + Math.cos(a) * (CG.r1 + 6), y2 = CG.cy + Math.sin(a) * (CG.r1 + 6); o += '<line x1="' + n1(x1) + '" y1="' + n1(y1) + '" x2="' + n1(x2) + '" y2="' + n1(y2) + '" stroke="' + CY + '" stroke-width="2"/>'; }
+      return o;
+    }
+    return ringArt(CG.r1, env[0], 0) + ringArt(CG.r2, env[1], 1);
+  }
+  function insidesArt(id) {
+    var fill = id === 'acidproof' ? 'rgba(245,165,36,.34)' : 'rgba(255,107,149,.14)', o = '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + CG.rf + '" fill="' + fill + '"/>';
+    if (id === 'acidproof') FLUID.forEach(function (d) { var p = pol(d[1] + 20, d[0]); o += '<circle cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="3.2" fill="' + AMB + '" opacity=".85"/>'; });
+    else if (id === 'repair') {
+      FLUID.slice(0, 7).forEach(function (d, k) { var p = pol(d[1] + 22, d[0]); o += '<polygon points="' + hexPts(p[0], p[1], 7, k) + '" fill="none" stroke="' + CY + '" stroke-width="1.4" stroke-opacity=".85"/>'; });
+    } else o += '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + CG.rf + '" fill="none" stroke="#fff" stroke-opacity=".12" stroke-dasharray="2 5"/>';
+    return o;
+  }
+  function powerArt(id) {
+    var cx = CG.cx, cy = CG.cy, o = '<circle cx="' + cx + '" cy="' + cy + '" r="44" fill="url(#coreGlow)"/>';
+    if (id === 'fuelcell') return o + '<polygon points="' + hexPts(cx, cy, 30, Math.PI / 6) + '" fill="#0a1f2b" stroke="' + CY + '" stroke-width="3"/><polygon points="' + hexPts(cx, cy, 16, Math.PI / 6) + '" fill="' + CY + '" fill-opacity=".85"/>';
+    if (id === 'fermentation') {
+      o += '<circle cx="' + cx + '" cy="' + cy + '" r="24" fill="#ffb347" stroke="#fff" stroke-width="2"/>';
+      [[-30, -6, 5], [30, 6, 4], [-22, 22, 3.5], [24, -20, 3.5], [0, -34, 3]].forEach(function (b) { o += '<circle cx="' + (cx + b[0]) + '" cy="' + (cy + b[1]) + '" r="' + b[2] + '" fill="none" stroke="' + AMB + '" stroke-width="1.6"/>'; });
+      return o;
+    }
+    return o + '<circle cx="' + cx + '" cy="' + cy + '" r="' + CG.rc + '" fill="#ff9fbb" stroke="#fff" stroke-width="2"/><circle cx="' + cx + '" cy="' + cy + '" r="11" fill="#fff" fill-opacity=".85"/><circle cx="' + cx + '" cy="' + cy + '" r="34" fill="none" stroke="#fff" stroke-opacity=".35" stroke-dasharray="3 5"/>';
+  }
+  function divisionArt(id) {
+    var cx = CG.cx, cy = CG.cy, x0 = cx - CG.r1 - 6, x1 = cx + CG.r1 + 6, o = '';
+    var pinch = '<path d="M' + (x0 - 2) + ' ' + (cy - 12) + ' L' + (x0 + 14) + ' ' + cy + ' L' + (x0 - 2) + ' ' + (cy + 12) + ' Z M' + (x1 + 2) + ' ' + (cy - 12) + ' L' + (x1 - 14) + ' ' + cy + ' L' + (x1 + 2) + ' ' + (cy + 12) + ' Z" fill="#04050a" stroke="#fff" stroke-opacity=".5"/>';
+    if (!id) return '<line class="emptyline" x1="' + x0 + '" y1="' + cy + '" x2="' + x1 + '" y2="' + cy + '"/>' + pinch;
+    if (id === 'clock') {
+      o += '<line x1="' + x0 + '" y1="' + cy + '" x2="' + x1 + '" y2="' + cy + '" stroke="' + CY + '" stroke-opacity=".5"/>';
+      for (var i = 0; i < 9; i++) o += '<polygon points="' + hexPts(x0 + 18 + i * ((x1 - x0 - 36) / 8), cy, 8, 0) + '" fill="#0a1f2b" stroke="' + CY + '" stroke-width="1.6"/>';
+      return o + pinch;
+    }
+    if (id === 'copier') return '<line x1="' + x0 + '" y1="' + (cy - 4) + '" x2="' + x1 + '" y2="' + (cy - 4) + '" stroke="' + CY + '" stroke-width="2"/><line x1="' + x0 + '" y1="' + (cy + 4) + '" x2="' + x1 + '" y2="' + (cy + 4) + '" stroke="' + CY + '" stroke-width="2"/>' + pinch;
+    o += '<line x1="' + x0 + '" y1="' + cy + '" x2="' + x1 + '" y2="' + cy + '" stroke="' + PINK + '" stroke-width="2.5" stroke-dasharray="3 9" stroke-linecap="round"/>';   // naps: a dotted, sleepy line
+    [[-60, -9], [-20, 10], [34, -9], [70, 9]].forEach(function (z) { o += '<text x="' + (cx + z[0]) + '" y="' + (cy + z[1]) + '" fill="#ffd0dc" font-size="12" font-family="monospace">z</text>'; });
+    return o + pinch;
+  }
+  function signalArt(id) {
+    var o = '';
+    if (!id) { for (var k = 0; k < 4; k++) { var q = pol(CG.r1 + 22 + k * 8, -62 + k * 14); o += '<circle class="emptydot" cx="' + n1(q[0]) + '" cy="' + n1(q[1]) + '" r="3"/>'; } return o; }
+    if (id === 'radio') {
+      var c = pol(CG.r1 + 2, -45);
+      [24, 40, 56].forEach(function (rr, i) { var a0 = pol(CG.r1 + 2 + rr, -80 + i * 3), a1 = pol(CG.r1 + 2 + rr, -10 - i * 3); o += '<path d="M' + n1(a0[0]) + ' ' + n1(a0[1]) + ' A' + (CG.r1 + 2 + rr) + ' ' + (CG.r1 + 2 + rr) + ' 0 0 1 ' + n1(a1[0]) + ' ' + n1(a1[1]) + '" fill="none" stroke="' + CY + '" stroke-width="2" stroke-dasharray="2 6" stroke-linecap="round"/>'; });
+      return o + '<polygon points="' + hexPts(c[0], c[1], 7, 0) + '" fill="#0a1f2b" stroke="' + CY + '" stroke-width="1.8"/>';
+    }
+    DOTS.forEach(function (d) { var p = pol(CG.r1 + 8 + d[1], d[0]); o += '<circle cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="3.4" fill="' + AMB + '"/>'; });
+    return o;
+  }
+  function motorArt(id) {
+    var a = pol(CG.r1, 140), t = pol(CG.r1 + 36, 140), o = '';
+    if (!id) return '<circle class="emptydot" cx="' + n1(pol(CG.r1 + 4, 140)[0]) + '" cy="' + n1(pol(CG.r1 + 4, 140)[1]) + '" r="6"/>';
+    o += '<path d="M' + n1(a[0]) + ' ' + n1(a[1]) + ' Q' + n1((a[0] + t[0]) / 2 - 12) + ' ' + n1((a[1] + t[1]) / 2 + 12) + ' ' + n1(t[0] - 14) + ' ' + n1(t[1] + 6) + ' T' + n1(t[0] - 40) + ' ' + n1(t[1] + 18) + '" fill="none" stroke="' + AMB + '" stroke-width="3" stroke-linecap="round"/>';
+    return o;
+  }
+  function reflexArt(rf) {
+    var p = pol(CG.r1, -135), o = '', rot = -45;
+    if (!rf) return '<ellipse class="emptyring" cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" rx="15" ry="8" transform="rotate(' + rot + ' ' + n1(p[0]) + ' ' + n1(p[1]) + ')"/>';
+    if (rf.kind === 'machine') return '<polygon points="' + hexPts(p[0], p[1], 14, 0) + '" fill="#0a1f2b" stroke="' + CY + '" stroke-width="2.4"/><circle cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="4.5" fill="' + CY + '"/>';
+    return '<ellipse cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" rx="16" ry="9" fill="#12372e" stroke="' + GRN + '" stroke-width="2.4" transform="rotate(' + rot + ' ' + n1(p[0]) + ' ' + n1(p[1]) + ')"/><circle cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="3.6" fill="' + GRN + '"/>';
+  }
+  var HL = {
+    insides: function () { return '<circle class="hl" cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + CG.rf + '"/>'; },
+    division: function () { return '<rect class="hl" x="' + (CG.cx - CG.r1 - 12) + '" y="' + (CG.cy - 11) + '" width="' + (2 * CG.r1 + 24) + '" height="22" rx="11"/>'; },
+    power: function () { return '<circle class="hl" cx="' + CG.cx + '" cy="' + CG.cy + '" r="40"/>'; },
+    envelope: function () { return '<circle class="hl ring" cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + ((CG.r1 + CG.r2) / 2) + '" stroke-width="' + (CG.r1 - CG.r2 + 22) + '"/>'; },
+    signal: function () { var p = ANCHOR.signal; return '<ellipse class="hl" cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" rx="48" ry="34" transform="rotate(45 ' + n1(p[0]) + ' ' + n1(p[1]) + ')"/>'; },
+    motor: function () { var p = ANCHOR.motor; return '<circle class="hl" cx="' + n1(p[0] - 8) + '" cy="' + n1(p[1] + 6) + '" r="30"/>'; },
+    reflex: function () { var p = ANCHOR.reflex; return '<circle class="hl" cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="24"/>'; }
+  };
+  // slots: LookAlive.toSlots(build). o: { state: {slot: 'open'|'factory'|'locked'}, sel: slotId, nw: [slotIds], ghost: slotId, ghostSlots: toSlots(preview) }.
+  function cellArt(slots, o) {
+    o = o || {}; var st = o.state || {}, nw = o.nw || [];
+    function g(k, art) {
+      var s = (o.ghost === k && o.ghostSlots) ? o.ghostSlots : slots, cls = 'slotg s-' + k + (o.sel === k ? ' sel' : '') + (nw.indexOf(k) >= 0 ? ' new' : '') + (st[k] === 'factory' ? ' factory' : st[k] === 'locked' ? ' locked' : '') + (o.ghost === k ? ' ghost' : '');
+      return '<g class="' + cls + '" data-slot="' + k + '">' + HL[k]() + '<g class="art">' + art(s) + '</g></g>';
+    }
+    return '<defs><radialGradient id="coreGlow"><stop offset="0" stop-color="#ff6b95" stop-opacity=".55"/><stop offset="1" stop-color="#ff6b95" stop-opacity="0"/></radialGradient></defs>' +
+      g('insides', function (s) { return insidesArt(s.insides); }) + g('division', function (s) { return divisionArt(s.division); }) + g('power', function (s) { return powerArt(s.power); }) +
+      g('envelope', function (s) { return envelopeArt(s.envelope); }) + g('signal', function (s) { return signalArt(s.signal); }) + g('motor', function (s) { return motorArt(s.motor); }) + g('reflex', function (s) { return reflexArt(s.reflex); });
+  }
+
+  return { cellArt: cellArt, ANCHOR: ANCHOR, CG: CG, VIO: VIO, PINK: PINK, AMB: AMB, GRN: GRN, CY: CY, RED: RED, CH: CH, MACH: MACH, fit: fit, pattern: pattern, drawCells: drawCells, chart: chart, ribbon: ribbon, instruments: instruments, portrait: portrait, hash: hash };
 })();

@@ -42,6 +42,7 @@
     <div class="briefwrap">
       <div class="kicker">The world</div>
       <h1 id="worldName"></h1>
+      <img class="worldimg" id="worldImg" src="assets/cards/world-acidica.jpg" alt="Your pink cell among purple native bacteria drifting in the sour, amber-streaked water of Acidica" onerror="this.style.display='none'">
       <div class="facts" id="worldFacts"></div>
       <p class="badge" id="worldBadge"></p>
       <p class="mission" id="worldMission"></p>
@@ -55,7 +56,7 @@
       <h1 id="briefTitle"></h1>
       <div class="briefrow"><b>The problem</b><span id="briefProblem"></span></div>
       <div class="briefrow"><b>Your goal</b><span id="briefGoal"></span></div>
-      <div class="briefrow"><b>Your cell</b><span id="briefCell"></span></div>
+      <div class="briefrow"><b>Your cell</b><span class="briefcell"><span class="cellfig" id="briefFig"></span><span id="briefCell"></span></span></div>
       <button type="button" class="big" id="briefGo">Continue</button>
     </div>
   </section>
@@ -63,21 +64,23 @@
   <section class="screen" id="screen-adapt">
     <div class="adaptgrid">
       <div class="colL">
-        <div class="panel portrait"><canvas id="portrait"></canvas><div class="ptag" id="portraitTag"></div></div>
-        <div class="panel slots">
-          <div class="ptitle">Your cell <span class="dim">click a filled slot to empty it</span></div>
-          <div id="slotMet" class="slot"></div>
-          <div id="slotParts"></div>
-          <div id="slotReflex" class="slot"></div>
-          <div class="energy"><span class="elabel">Energy</span><div id="energyBar"></div><span id="energyNum"></span></div>
+        <div class="panel cellpanel">
+          <div class="cellwrap" id="cellWrap">
+            <svg id="cellSvg" viewBox="0 0 600 410" role="img" aria-label="Diagram of your cell with its body slots"></svg>
+            <div id="tagLayer"></div>
+          </div>
         </div>
-        <div class="panel dials" id="dials"></div>
+        <div class="previewbar" id="previewBar" aria-live="polite"><span class="pv-k" id="pvK">Preview</span><span class="pv-t" id="pvT"></span></div>
+        <div class="panel tuning">
+          <div class="energy"><span class="elabel">Energy</span><div id="energyBar"></div><span id="energyNum"></span></div>
+          <div id="paceBox" class="dialrow"></div>
+        </div>
       </div>
       <div class="colC">
-        <div class="shelfbar"><span>Click a card to add it to your cell. Click it again to take it out.</span><button type="button" id="realBtn" class="ghost">Real biology</button></div>
-        <div id="shelves" class="shelves">
-          <div class="shelf bioShelf"><div class="shelfhead"><b>BIOLOGY</b><span>What real cells do</span></div><div class="shelflist" id="shelfBio"></div></div>
-          <div class="shelf machShelf" id="machShelfBox"><div class="shelfhead"><b>MACHINE</b><span>Powerful, but not how cells work</span></div><div class="shelflist" id="shelfMach"></div></div>
+        <div class="panel optpanel" id="optPanel">
+          <div class="opthead"><div class="optname" id="optName"></div><div class="optblurb" id="optBlurb"></div></div>
+          <div id="layerRows" class="layerrows"></div>
+          <div id="optList" class="optlist"></div>
         </div>
       </div>
       <div class="colR">
@@ -101,6 +104,7 @@
     <div class="rungrid">
       <div class="runL">
         <div class="panel dishpanel">
+          <div class="yourcell" id="yourCell"><span class="cellfig" id="runFig"></span><small>Your cell</small></div>
           <canvas id="runDish" class="dishcanvas"></canvas>
           <div class="legend"><i class="sw vio"></i> natives <i class="sw pink"></i> you <i class="sw amb"></i> waste <span id="legGrn"><i class="sw grn"></i> immune activity</span></div>
           <div class="readline" id="readLine"></div>

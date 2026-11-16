@@ -35,7 +35,8 @@
 
   var S = {
     screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null },
-    cleared: load('cleared2', {}), wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), unlocked: load('unlocked2', false), realOpen: load('real2', null),
+    cleared: load('cleared2', {}), wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), unlocked: load('unlocked2', false),
+    slot: null, layer: 0, preview: null, pointed: false,
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
     t: 0, playing: false, speed: 4, resultShown: false, overlayOpen: false, runCount: 0, troubleTick: -1, cardEls: [], shownDish: -1, chipCache: {},
@@ -47,7 +48,7 @@
   // ---------------------------------------------------------------- build helpers
   function carriedFor(id) {
     var w = id > 1 ? S.wins[id - 1] : null, d = Lv.dish(id);
-    if (w && Sim.validate(d, w).ok) return copy(w);
+    if (w) { var c = Sim.conform(d, w); if (Sim.validate(d, c).ok) return copy(c); }   // old saved builds: factory parts back in locked slots
     return Lv.carry(id);
   }
   function cardName(id) { var c = Cards.part(id); return c ? c.name : id; }
@@ -77,7 +78,8 @@
     else if (sc === 'brief') { step = 1; text = 'Read the problem and your goal, then press Continue to watch your cell try it.'; }
     else if (sc === 'adapt') {
       step = 3;
-      text = a ? (S.lastRunLost ? 'That did not work (' : 'Your cell failed (') + (CAUSE_WORDS[a.cause] || a.cause).toLowerCase() + '). Change your cell, then press Run. Stuck? Press Tip.' : 'Change your cell, then press Run.';
+      if (S.pointed && d && NEW_SLOT_HINT[d.id]) text = NEW_SLOT_HINT[d.id] + (a ? ' (Your last cell failed: ' + (CAUSE_WORDS[a.cause] || a.cause).toLowerCase() + '.)' : '');
+      else text = a ? (S.lastRunLost ? 'That did not work (' : 'Your cell failed (') + (CAUSE_WORDS[a.cause] || a.cause).toLowerCase() + '). Change your cell, then press Run. Stuck? Press Tip.' : 'Change your cell, then press Run.';
     } else if (sc === 'run' && S.run) {
       if (S.overlayOpen) { step = 5; text = S.run && S.run.v.win ? 'Dish cleared. Read the notebook page, then press Next dish.' : 'Your cell failed. Read the memo, press Tip if you want help, then go back to Adapt.'; }
       else if (S.mode === 'watch') {
@@ -132,7 +134,7 @@
   }
   function selectDish(id) {
     S.dish = id; S.carried = carriedFor(id); S.build = copy(S.carried); S.undo = []; S.rule = { sensor: null, cmp: null, value: null, action: null };
-    S.run = null; S.ghost = null; S.shownDish = -1; S.lastAutopsy = null; S.lastRunLost = false; S.tipLevel = 0; S.runCount = 0; S.overlayOpen = false;
+    S.slot = Lv.dish(id).opens[0]; S.layer = 0; S.pointed = true; S.preview = null; S.run = null; S.ghost = null; S.shownDish = -1; S.lastAutopsy = null; S.lastRunLost = false; S.tipLevel = 0; S.runCount = 0; S.overlayOpen = false;
     closeOverlay();
     if (id === 1 && !S.seenWorld) { S.worldBack = 'brief'; show('world'); } else show('brief');
   }
@@ -154,6 +156,7 @@
     $('briefKicker').textContent = 'Dish ' + d.id + ' of ' + ORDER.length;
     $('briefTitle').textContent = d.title;
     $('briefProblem').textContent = d.problem; $('briefGoal').textContent = d.goal;
+    $('briefFig').innerHTML = figHtml(S.carried);
     $('briefCell').textContent = buildWords(S.carried) + (S.dish > 1 && S.wins[S.dish - 1] ? ' (the cell that won the last dish)' : '') + '. It goes in unchanged.';
   }
 
@@ -192,75 +195,219 @@
     showResult();
   }
 
-  // ---------------------------------------------------------------- Adapt: data helpers
+  // ---------------------------------------------------------------- Adapt: body-slot loadout
+  var SLOT_ORDER = Sim.SLOT_ORDER;
+  var NEW_SLOT_HINT = { 1: 'New slots: Envelope and Insides. Pick what keeps the acid out.', 2: 'New slot: Signal. Pick how your cells hold their own numbers down.',
+    3: 'New slot: Power. Your waste depends on how you make energy.', 4: 'New slot: Division. Dividing in step is the tell.', 5: 'New slot: Reflex. Pick how your cell reacts to the crash.' };
+  // Tag positions on the 600 x 410 diagram: side, top.
+  var TAGPOS = { reflex: ['L', 14], envelope: ['L', 92], division: ['L', 174], motor: ['L', 330], signal: ['R', 14], insides: ['R', 92], power: ['R', 174] };
+  var TAG_W = 160, TAG_H = 62;
+  var LOCK_SVG = '<svg class="lockico" viewBox="0 0 9 10" aria-hidden="true"><rect x="0.5" y="4" width="8" height="5.5" rx="1" fill="currentColor"/><path d="M2.3 4V3a2.2 2.2 0 0 1 4.4 0v1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
   function mutate(fn) {
     S.undo.push(copy(S.build)); if (S.undo.length > 60) S.undo.shift();
-    fn(S.build); renderAdapt(false);
+    fn(S.build); S.pointed = false; S.preview = null; renderAdapt(false);
   }
-  function setNote(msg) { S.note = msg; S.noteUntil = performance.now() + 3000; renderProblems(); }
-  function chipsFor(d, id) {  // effect chips for a card on its own, straight from predict()
-    var key = d.id + ':' + id;
-    if (!S.chipCache[key]) {
-      var c = Cards.part(id), b = { pace: 4, slop: 0, metabolism: c.kind === 'metabolism' ? id : 'respiration', parts: c.kind === 'part' ? [id] : [], reflex: null };
-      var pr = Sim.predict(d, b), out = [];
-      pr.cards.forEach(function (cc) { if (cc.id === id) out = cc.chips; });
-      S.chipCache[key] = out;
+  function commit(nb) {
+    S.undo.push(copy(S.build)); if (S.undo.length > 60) S.undo.shift();
+    S.build = copy(nb); S.pointed = false; S.preview = null; showPreviewText(PV_HINT, false); syncRuleFromBuild(); renderAdapt(false);
+  }
+  function setNote(msg) { S.note = msg; S.noteUntil = performance.now() + 3500; renderProblems(); }
+  function slotsNow() { return Sim.toSlots(S.build); }
+  function cardOrBio(id) { return Cards.part(id) || Cards.bio(id); }
+  function fittedIds(k, sl) {
+    sl = sl || slotsNow(); var v = sl[k];
+    if (k === 'envelope') return v.slice();
+    if (k === 'reflex') return v && v.kind === 'bio' ? [v.id] : [];
+    return v ? [v] : [];
+  }
+  function layerArg(k) { return k === 'envelope' ? S.layer : undefined; }
+  function slotText(k, sl) {  // what the tag shows as fitted
+    var d = dishObj(), ids = fittedIds(k, sl), v = sl[k];
+    if (k === 'envelope') {
+      if (!ids.length) return 'Empty';
+      if (Cards.layersOf(Cards.part(ids[0])) > 1) return cardName(ids[0]) + ' (both layers)';
+      return cardName(ids[0]) + ' + ' + (ids[1] ? cardName(ids[1]) : 'empty');
     }
-    return S.chipCache[key];
+    if (k === 'reflex') return !v ? 'Empty' : v.kind === 'bio' ? Cards.bio(v.id).name : 'Machine rule';
+    var t = v ? cardName(v) : 'Empty';
+    if (k === 'division' && d && d.dials.indexOf('slop') >= 0) t += ' · Sloppiness ' + S.build.slop;
+    return t;
   }
-  function chipClass(t) {
-    if (/Regularity up|No waste|suspicion up|Waste differs|tell/i.test(t)) return 'up';
-    if (/Keeps the acid|Blocks most acid|Toughness|Waste matches|Regularity down|No suspicion|Almost nothing dies/i.test(t)) return 'good';
-    return '';
+  function slotChange(k) {  // new, swapped or removed against the carried cell
+    var a = slotsNow()[k], b = Sim.toSlots(S.carried)[k], ja = JSON.stringify(a), jb = JSON.stringify(b);
+    if (ja === jb) return '';
+    var ea = k === 'envelope' ? !a.length : !a, eb = k === 'envelope' ? !b.length : !b;
+    return eb ? 'new' : ea ? 'removed' : 'swapped';
   }
-  function realOn(d) { return S.realOpen == null ? d.id === 1 : S.realOpen; }
-
-  function cardEl(c, d) {
-    var mach = c.shelf === 'machine';
-    var w = el('div', 'card ' + (mach ? 'mach' : 'bio')); w.setAttribute('data-id', c.id); w.setAttribute('role', 'button'); w.tabIndex = 0;
-    var chips = chipsFor(d, c.id).map(function (t) { return '<span class="chip ' + chipClass(t) + '" title="' + esc(t) + '">' + esc(t) + '</span>'; }).join('');
-    w.innerHTML = '<div class="in"><div class="c-head"><b>' + esc(c.name) + '</b><span class="inbadge">in your cell</span><span class="cost">Energy ' + c.energy + '</span></div>' +
-      '<p class="real"><i>Real</i>' + esc(c.real) + '</p><p class="game"><i>Game</i>' + esc(c.game) + '</p><div class="chips">' + chips + '</div></div>';
-    w.addEventListener('click', function () { pickCard(c.id); });
-    w.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); pickCard(c.id); } });
-    return w;
-  }
-  function reflexCardEl(id) {
-    var c = Cards.bio(id), w = el('div', 'card bio'); w.setAttribute('data-id', id); w.setAttribute('role', 'button'); w.tabIndex = 0;
-    w.innerHTML = '<div class="in"><div class="c-head"><b>' + esc(c.name) + '</b><span class="inbadge">in your cell</span><span class="cost">Reflex slot</span></div>' +
-      '<p class="real"><i>Real</i>' + esc(c.real) + '</p><p class="game"><i>Rule</i>' + esc(c.sentence) + '</p><div class="chips">' + (id === 'sporulate' ? '<span class="chip good">Spores do not eat, divide or die</span><span class="chip">Slow to wake once food returns</span>' : '<span class="chip good">Senses locally, a few ticks late</span>') + '<span class="chip good">No suspicion</span></div></div>';
-    w.addEventListener('click', function () { pickReflex(id); });
-    w.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); pickReflex(id); } });
-    return w;
-  }
-  function pickReflex(id) {
-    var on = S.build.reflex && S.build.reflex.kind === 'bio' && S.build.reflex.id === id;
-    mutate(function (b) { b.reflex = on ? null : { kind: 'bio', id: id }; });
-  }
-  function pickCard(id) {
-    var d = dishObj(), c = Cards.part(id);
-    if (c.kind === 'metabolism') { if (S.build.metabolism !== id) mutate(function (b) { b.metabolism = id; }); return; }
-    var has = S.build.parts.indexOf(id) >= 0;
-    if (has) mutate(function (b) { b.parts.splice(b.parts.indexOf(id), 1); });
-    else if (S.build.parts.length >= d.show.partSlots) setNote('All ' + d.show.partSlots + ' part slots are full. Click a filled slot to empty it.');
-    else mutate(function (b) { b.parts.push(id); });
-  }
-  function emptySlot(i) {  // click on part slot i: empties it if filled
-    var b = S.build; if (i < 0 || i >= b.parts.length) return false;
-    mutate(function (bb) { bb.parts.splice(i, 1); }); return true;
-  }
-  function renderShelves() {
-    var d = dishObj(), bio = $('shelfBio'), mach = $('shelfMach'); bio.innerHTML = ''; mach.innerHTML = '';
-    d.show.shelves.biology.forEach(function (id) { bio.appendChild(cardEl(Cards.part(id), d)); });
-    d.show.shelves.machine.forEach(function (id) { mach.appendChild(cardEl(Cards.part(id), d)); });
-    var rf = d.show.reflex;
-    if (rf && rf.bio) rf.bio.forEach(function (id) { bio.appendChild(reflexCardEl(id)); });
-    if (rf && rf.rule) { var rb = el('div', 'rulewrap'); rb.id = 'ruleBox'; mach.appendChild(rb); renderRuleBox(); }
-    $('shelves').classList.toggle('showReal', realOn(d));
-    $('realBtn').classList.toggle('on', realOn(d));
+  function slotStateOf(k) { return Sim.slotState(dishObj(), k); }
+  function selectable(k) { return slotStateOf(k) === 'open'; }
+  function selectSlot(k) {
+    if (!selectable(k)) { var lr = Sim.lockedReason(dishObj(), k); setNote(Cards.slotInfo(k).name + ': ' + (lr || 'locked') + (slotStateOf(k) === 'factory' ? ' It cannot be changed yet.' : '')); return false; }
+    S.slot = k; S.preview = null; renderAdapt(false); return true;
   }
 
-  // ---------------------------------------------------------------- machine rule: tap-to-fill sentence
+  // ---- fitting and clearing, always through LookAlive.fit / unfit
+  function doFit(k, id) {
+    var d = dishObj(), r = Sim.fit(d, S.build, id, layerArg(k));
+    if (!r.ok) { setNote(r.reason); showPreviewText(r.reason, true); return r; }
+    commit(r.build); return r;
+  }
+  function doUnfit(k, id) {
+    var d = dishObj(), r = Sim.unfit(d, S.build, k, id);
+    if (!r.ok) { setNote(r.reason); showPreviewText(r.reason, true); return r; }
+    commit(r.build); return r;
+  }
+  function toggleOption(k, id) { return fittedIds(k).indexOf(id) >= 0 ? doUnfit(k, id) : doFit(k, id); }
+
+  // ---- preview: a plain-words diff, and the option drawn ghosted in place
+  function showPreviewText(t, bad) { var e = $('pvT'); e.textContent = t; e.className = 'pv-t' + (bad ? ' bad' : ''); }
+  var PV_HINT = 'Hover or focus an option to preview it here. Click to fit it; click the fitted option again to take it off.';
+  function previewOption(k, id) {
+    var d = dishObj(), fitted = id && fittedIds(k).indexOf(id) >= 0, r, name = id ? cardName(id) || (Cards.bio(id) || {}).name : 'nothing';
+    if (id && Cards.bio(id)) name = Cards.bio(id).name;
+    if (id === null) { r = Sim.unfit(d, S.build, k, k === 'envelope' ? slotsNow().envelope[S.layer] : undefined); name = 'this slot'; }
+    else if (fitted) r = Sim.unfit(d, S.build, k, id);
+    else r = Sim.fit(d, S.build, id, layerArg(k));
+    if (!r.ok) { S.preview = null; showPreviewText(r.reason, true); renderCell(); return; }
+    S.preview = { slot: k, build: r.build };
+    showPreviewText((id === null || fitted ? 'Take off ' + (id === null ? 'what is fitted' : name) : 'Fit ' + name) + ': ' + Sim.diff(d, S.build, r.build).join('. ') + '.', false);
+    renderCell();
+  }
+  function clearPreview() { if (!S.preview && $('pvT').className === 'pv-t' && $('pvT').textContent === PV_HINT) return; S.preview = null; showPreviewText(PV_HINT, false); renderCell(); Array.prototype.forEach.call(document.querySelectorAll('.opt.pv'), function (e) { e.classList.remove('pv'); }); }
+
+  // ---- the cell diagram and its tags
+  function figHtml(build, state) {
+    if (Sim.isDefault(Sim.normalize(build))) return '<img src="assets/cards/card-factory.jpg" alt="The Factory unit" onerror="this.outerHTML=window.__laFig(0)">';
+    return '<svg viewBox="150 50 300 300" aria-hidden="true">' + D.cellArt(Sim.toSlots(build), { state: state || {} }) + '</svg>';
+  }
+  window.__laFig = function () { return '<svg viewBox="150 50 300 300" aria-hidden="true">' + D.cellArt(Sim.toSlots(S.carried || Sim.DEFAULT_BUILD), {}) + '</svg>'; };
+  function renderCell() {
+    var d = dishObj(); if (!d || !S.build) return;
+    var sl = slotsNow(), state = {}, gh = S.preview;
+    SLOT_ORDER.forEach(function (k) { state[k] = slotStateOf(k); });
+    var nw = S.pointed ? d.opens : [], lead = '';
+    SLOT_ORDER.forEach(function (k) {
+      var p = TAGPOS[k], a = D.ANCHOR[k], x = p[0] === 'L' ? TAG_W + 2 : 600 - TAG_W - 2, y = p[1] + TAG_H / 2;
+      lead += '<line class="leader' + (S.slot === k ? ' sel' : '') + '" x1="' + x + '" y1="' + y + '" x2="' + Math.round(a[0]) + '" y2="' + Math.round(a[1]) + '"/><circle cx="' + Math.round(a[0]) + '" cy="' + Math.round(a[1]) + '" r="2.5" fill="' + (S.slot === k ? '#5fd0ff' : '#8a90a8') + '"/>';
+    });
+    $('cellSvg').innerHTML = D.cellArt(sl, { state: state, sel: S.slot, nw: nw, ghost: gh ? gh.slot : null, ghostSlots: gh ? Sim.toSlots(gh.build) : null }) + lead;
+    var box = $('tagLayer'), carried = S.carried;
+    if (!box.firstChild) {
+      SLOT_ORDER.forEach(function (k) {
+        var p = TAGPOS[k], b = el('button', 'tag'); b.type = 'button'; b.setAttribute('data-slot', k);
+        b.style.left = (p[0] === 'L' ? 2 / 6 : (600 - TAG_W - 2) / 6) + '%'; b.style.top = (p[1] / 4.1) + '%';
+        b.addEventListener('click', function () { selectSlot(k); });
+        box.appendChild(b);
+      });
+    }
+    Array.prototype.forEach.call(box.children, function (b) {
+      var k = b.getAttribute('data-slot'), st = state[k], info = Cards.slotInfo(k), ch = st === 'open' ? slotChange(k) : '', txt = slotText(k, sl), status = '';
+      if (st !== 'open') status = Sim.lockedReason(d, k);
+      else if (S.pointed && d.opens.indexOf(k) >= 0) status = '<span class="pill pt">new slot</span>';
+      else if (ch) status = '<span class="pill ' + ch + '">' + ch + '</span>';
+      b.className = 'tag' + (S.slot === k && st === 'open' ? ' sel' : '') + (st === 'factory' ? ' factory' : st === 'locked' ? ' locked' : '') + (S.pointed && d.opens.indexOf(k) >= 0 ? ' new' : '');
+      b.innerHTML = '<span class="tn">' + (st !== 'open' ? LOCK_SVG : '') + esc(info.name) + '</span><span class="tv">' + esc(txt) + '</span><span class="ts">' + status + '</span>';
+      b.setAttribute('aria-disabled', st === 'open' ? 'false' : 'true');
+      b.setAttribute('aria-label', info.name + ': ' + txt + (st !== 'open' ? '. ' + Sim.lockedReason(d, k) : ''));
+      b.title = info.name + ' (' + info.where + '). ' + txt + (st !== 'open' ? '. ' + Sim.lockedReason(d, k) : '');
+    });
+  }
+  $('cellSvg').addEventListener('click', function (e) {
+    var g = e.target.closest ? e.target.closest('.slotg') : null; if (!g || !e.target.classList.contains('hl')) return;
+    selectSlot(g.getAttribute('data-slot'));
+  });
+
+  // ---- the options panel
+  function thumbEl(id, cls) {
+    var img = document.createElement('img'); img.className = cls; img.alt = ''; img.src = 'assets/cards/card-' + id + '.jpg';
+    img.onerror = function () { var d2 = el('div', cls + ' noimg', esc((cardOrBio(id) ? cardOrBio(id).name : '?').charAt(0))); if (img.parentNode) img.parentNode.replaceChild(d2, img); };
+    return img;
+  }
+  function optionEl(k, c) {
+    var mach = c.shelf === 'machine', fitted = fittedIds(k).indexOf(c.id) >= 0, w = el('div', 'opt ' + (mach ? 'mach' : 'bio')), r = null, why = '';
+    w.setAttribute('data-id', c.id); w.setAttribute('role', 'button'); w.tabIndex = 0;
+    if (!fitted) { r = Sim.fit(dishObj(), S.build, c.id, layerArg(k)); if (!r.ok) why = r.reason; }
+    w.setAttribute('aria-pressed', fitted ? 'true' : 'false');
+    if (fitted) w.classList.add('fitted'); if (why) w.classList.add('blocked');
+    var cost = c.kind === 'metabolism' || c.kind === 'part' ? 'Energy ' + c.energy : 'No energy';
+    var real = c.real, game = c.game || c.sentence;
+    var inn = el('div', 'in'), tb = el('div', 'thumbbox'), tx = el('div', 'otxt');
+    tb.appendChild(thumbEl(c.id, 'thumb')); tb.appendChild(el('div', 'fittag', 'Fitted'));
+    var layers = Cards.layersOf(c) > 1 ? ' <span class="cost">takes both layers</span>' : '';
+    tx.innerHTML = '<div class="oh"><b>' + esc(c.name) + '</b><span class="shelf ' + (mach ? 'mach' : 'bio') + '">' + (mach ? 'Machine' : 'Biology') + '</span><span class="cost">' + cost + '</span></div>' +
+      '<p class="real" title="' + esc(real) + '"><i>Real</i>' + esc(real) + '</p><p class="game" title="' + esc(game) + '"><i>' + (c.sentence && !c.game ? 'Rule' : 'Game') + '</i>' + esc(game) + '</p>' +
+      '<div class="why">' + (why ? esc(why) : (c.layers > 1 ? 'Takes both Envelope layers.' : '')) + '</div>';
+    inn.appendChild(tb); inn.appendChild(tx); w.appendChild(inn);
+    w.addEventListener('click', function () { toggleOption(k, c.id); });
+    w.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); S.focusId = c.id; toggleOption(k, c.id); } });
+    w.addEventListener('mouseenter', function () { previewOption(k, c.id); w.classList.add('pv'); });
+    w.addEventListener('focus', function () { previewOption(k, c.id); w.classList.add('pv'); });
+    w.addEventListener('mouseleave', function () { w.classList.remove('pv'); clearPreview(); });
+    w.addEventListener('blur', function () { w.classList.remove('pv'); clearPreview(); });
+    return w;
+  }
+  function emptyOptionEl(k) {
+    var sl = slotsNow(), isEmpty = fittedIds(k).length === 0, w = el('div', 'optempty' + (isEmpty ? ' fitted' : ''));
+    w.setAttribute('role', 'button'); w.tabIndex = 0; w.setAttribute('data-id', 'empty'); w.setAttribute('aria-pressed', isEmpty ? 'true' : 'false');
+    var target = k === 'envelope' ? sl.envelope[S.layer] : undefined;
+    w.innerHTML = '<span>Empty' + (k === 'envelope' ? ' (this layer)' : '') + '</span><span>' + (isEmpty ? 'Fitted' : 'take it off') + '</span>';
+    function go() { if (isEmpty || (k === 'envelope' && !target)) { showPreviewText('This slot is already empty.', false); return; } doUnfit(k, target); }
+    w.addEventListener('click', go); w.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); S.focusId = 'empty'; go(); } });
+    w.addEventListener('mouseenter', function () { if (!isEmpty && !(k === 'envelope' && !target)) previewOption(k, null); });
+    w.addEventListener('focus', function () { if (!isEmpty && !(k === 'envelope' && !target)) previewOption(k, null); });
+    w.addEventListener('mouseleave', clearPreview); w.addEventListener('blur', clearPreview);
+    return w;
+  }
+  function renderLayers(k) {
+    var box = $('layerRows'); box.innerHTML = '';
+    if (k !== 'envelope') return;
+    var env = slotsNow().envelope, shell = env.length && Cards.layersOf(Cards.part(env[0])) > 1;
+    S.layer = Math.min(S.layer, shell ? 0 : Math.min(1, env.length));
+    for (var i = 0; i < 2; i++) {
+      (function (i) {
+        var b = el('button', 'lr' + (S.layer === i ? ' on' : '')); b.type = 'button'; b.setAttribute('data-layer', i);
+        b.innerHTML = '<small>Layer ' + (i + 1) + (i === 0 ? ' (outer)' : ' (inner)') + '</small><span>' + (shell ? esc(cardName(env[0])) + ': both layers' : env[i] ? esc(cardName(env[i])) : 'Empty') + '</span>';
+        b.addEventListener('click', function () { S.layer = i; S.preview = null; renderOptions(); showPreviewText(PV_HINT, false); });
+        box.appendChild(b);
+      })(i);
+    }
+  }
+  function dialEl(key, compact) {
+    var w = el('div', 'dialrow'), names = key === 'pace' ? PACE_NAMES : SLOP_NAMES;
+    w.innerHTML = '<span class="dl">' + (key === 'pace' ? 'Pace' : 'Sloppy') + '</span><div class="ticks ' + key + '"></div><div class="dtext"><b></b><span></span></div>';
+    var tk = w.querySelector('.ticks');
+    for (var i = 0; i <= 8; i++) {
+      (function (i) { var b = el('button', '', String(i)); b.type = 'button'; b.setAttribute('data-dial', key + i); b.title = names[i];
+        b.addEventListener('click', function () { if (S.build[key] !== i) mutate(function (bb) { bb[key] = i; }); }); tk.appendChild(b); })(i);
+    }
+    return w;
+  }
+  function updateDial(w, key, pr) {
+    var v = S.build[key], names = key === 'pace' ? PACE_NAMES : SLOP_NAMES;
+    Array.prototype.forEach.call(w.querySelectorAll('button'), function (b, i) { b.classList.toggle('on', i === v); });
+    w.querySelector('.dtext b').textContent = v + ': ' + names[v] + (S.carried && S.carried[key] !== v ? ' (changed)' : '');
+    w.querySelector('.dtext span').textContent = (key === 'pace' ? pr.pace : pr.slop).join(' · ');
+  }
+  function renderOptions() {
+    var d = dishObj(), k = S.slot, info = Cards.slotInfo(k), list = $('optList');
+    if (!selectable(k)) { k = S.slot = d.slots[0]; info = Cards.slotInfo(k); }
+    $('optName').innerHTML = esc(info.name) + (S.pointed && d.opens.indexOf(k) >= 0 ? ' <span class="pill pt">new slot</span>' : '');
+    $('optBlurb').textContent = info.blurb + ' On the cell: ' + info.where + '.';
+    renderLayers(k);
+    var keepTop = list.scrollTop;
+    list.innerHTML = '';
+    Sim.offered(d, k).forEach(function (c) { list.appendChild(optionEl(k, c)); });
+    if (info.empty) list.appendChild(emptyOptionEl(k));
+    if (k === 'reflex' && d.allowed.sensors.length) { var rb = el('div', 'rulebox'); rb.id = 'ruleBox'; list.appendChild(rb); renderRuleBox(); }
+    if (k === 'division' && d.dials.indexOf('slop') >= 0) {
+      var tn = el('div', 'tune'); tn.id = 'slopBox'; tn.innerHTML = '<div class="ptitle">Tuning <span class="dim">how messy the timing is</span></div>'; tn.appendChild(dialEl('slop'));
+      list.appendChild(tn);
+    }
+    list.scrollTop = S.lastOptSlot === k ? keepTop : 0; S.lastOptSlot = k;
+    if (S.focusId) { var ft = list.querySelector('[data-id="' + S.focusId + '"]'); S.focusId = null; if (ft) ft.focus({ preventScroll: true }); }
+  }
+
+  // ---------------------------------------------------------------- machine rule: tap-to-fill sentence (the Reflex slot's Machine option)
   function ruleComplete() { var r = S.rule; return r.sensor && r.cmp && r.value != null && r.action; }
   function ruleBlank(kind, text, filled) { return '<button type="button" class="blank' + (filled ? '' : ' empty') + '" data-rule="' + kind + '">' + esc(text) + '</button>'; }
   function renderRuleBox() {
@@ -270,16 +417,16 @@
     var sent = 'When ' + ruleBlank('sensor', sn ? sn.name : 'sensor', !!sn) + ' is ' + ruleBlank('cmp', r.cmp ? (r.cmp === 'lt' ? 'less than' : 'more than') : 'more / less', !!r.cmp) + ' ' +
       ruleBlank('value', r.value != null ? r.value + (sn && sn.unit ? ' ' + sn.unit : '') : 'value', r.value != null) + ', then ' + ruleBlank('action', ac ? ac.name : 'action', !!ac) + '.';
     var note = (sn ? sn.note + ' ' : '') + (ac ? ac.note : '');
-    box.innerHTML = '<div class="card mach rulecardwrap' + (inst ? ' sel' : '') + '"><div class="in rulecard">' +
-      '<div class="c-head"><b>Machine rule</b><span class="inbadge">in your cell</span><span class="cost">Reflex slot</span></div>' +
+    box.className = 'rulebox' + (inst ? ' sel' : '');
+    box.innerHTML = '<div class="rulecard"><div class="c-head"><b>Machine rule</b><span class="shelf mach">Machine</span><span class="cost">No energy</span></div>' +
       '<div class="rulesent">' + sent + '</div>' +
       '<div class="rulenote">' + esc(note || 'Tap each blank to fill in the sentence. Readings are exact and instant: no real cell can do that.') + '</div>' +
-      '<div class="rulebtns"><button type="button" id="ruleUse"' + (ruleComplete() && !inst ? '' : ' disabled') + '>Use this rule</button><button type="button" id="ruleClear"' + (inst ? '' : ' disabled') + '>Remove rule</button></div></div></div>';
+      '<div class="rulebtns"><button type="button" id="ruleUse"' + (ruleComplete() && !inst ? '' : ' disabled') + '>Use this rule</button><button type="button" id="ruleClear"' + (inst ? '' : ' disabled') + '>Remove rule</button></div></div>';
     Array.prototype.forEach.call(box.querySelectorAll('[data-rule]'), function (b) {
       b.addEventListener('click', function (e) { e.stopPropagation(); openRulePop(b, b.getAttribute('data-rule')); });
     });
     $('ruleUse').addEventListener('click', installRule);
-    $('ruleClear').addEventListener('click', function () { mutate(function (b) { b.reflex = null; }); });
+    $('ruleClear').addEventListener('click', function () { doUnfit('reflex'); });
   }
   function ruleChoose(kind, val) {
     var r = S.rule;
@@ -291,8 +438,9 @@
   }
   function installRule() {
     if (!ruleComplete()) return;
-    var r = S.rule;
-    mutate(function (b) { b.reflex = { kind: 'machine', sensor: r.sensor, cmp: r.cmp, value: r.value, action: r.action }; });
+    var r = S.rule, res = Sim.fit(dishObj(), S.build, { kind: 'machine', sensor: r.sensor, cmp: r.cmp, value: r.value, action: r.action });
+    if (!res.ok) { setNote(res.reason); return; }
+    commit(res.build);
   }
   function openRulePop(btn, kind) {
     var d = dishObj(), items = [], r = S.rule;
@@ -324,73 +472,11 @@
   });
 
   // ---------------------------------------------------------------- Adapt: render
-  function renderDials(d) {
-    var box = $('dials'); box.innerHTML = ''; S.dialKeys = [];
-    if (d.show.pace) S.dialKeys.push('pace');
-    if (d.show.slop) S.dialKeys.push('slop');
-    box.style.display = S.dialKeys.length ? '' : 'none';
-    S.dialKeys.forEach(function (k) {
-      var w = el('div', 'dial'), names = k === 'pace' ? PACE_NAMES : SLOP_NAMES;
-      w.innerHTML = '<div class="dh"><span>' + (k === 'pace' ? 'Pace' : 'Sloppiness') + '</span><span>' + (k === 'pace' ? 'slow to fast' : 'Spreadsheet to Teenager') + '</span></div><div class="ticks ' + k + '"></div><div class="dn"></div><div class="de"></div>';
-      var tk = w.querySelector('.ticks');
-      for (var i = 0; i <= 8; i++) {
-        (function (i) { var b = el('button', '', String(i)); b.type = 'button'; b.setAttribute('data-dial', k + i); b.title = names[i];
-          b.addEventListener('click', function () { if (S.build[k] !== i) mutate(function (bb) { bb[k] = i; }); }); tk.appendChild(b); })(i);
-      }
-      box.appendChild(w);
-    });
-  }
-  function updateDials(pr) {
-    Array.prototype.forEach.call($('dials').querySelectorAll('.dial'), function (w, idx) {
-      var k = S.dialKeys[idx], v = S.build[k], names = k === 'pace' ? PACE_NAMES : SLOP_NAMES;
-      Array.prototype.forEach.call(w.querySelectorAll('button'), function (b, i) { b.classList.toggle('on', i === v); });
-      w.querySelector('.dn').textContent = v + ': ' + names[v] + (S.carried && S.carried[k] !== v ? '  (changed)' : '');
-      w.querySelector('.de').textContent = (k === 'pace' ? pr.pace : pr.slop).join(' · ');
-    });
-  }
-  // What differs from the carried cell, as tags.
-  function diffTags() {
-    var b = S.build, c = S.carried, bp = b.parts, cp = c.parts;
-    var added = bp.filter(function (id) { return cp.indexOf(id) < 0; }), removed = cp.filter(function (id) { return bp.indexOf(id) < 0; });
-    var tags = {}; added.forEach(function (id, i) { tags[id] = i < removed.length ? { t: 'swapped', from: removed[i] } : { t: 'new' }; });
-    return { part: tags, gone: removed.slice(added.length),
-      met: b.metabolism !== c.metabolism ? 'swapped' : '',
-      reflex: sameReflex(b.reflex, c.reflex) ? '' : !c.reflex ? 'new' : !b.reflex ? 'removed' : 'swapped' };
-  }
-  function slotHtml(k, v, tag, cst, title) {
-    return '<span class="k">' + k + '</span><span class="v"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + v + '</span><span class="tag ' + (tag || '') + '">' + (tag || '') + '</span>' + (cst != null ? '<span class="cst">E' + cst + '</span>' : '');
-  }
-  function renderSlots(d) {
-    var b = S.build, tg = diffTags(), mc = Cards.part(b.metabolism), sm = $('slotMet');
-    sm.style.display = d.show.metabolism ? '' : 'none';
-    sm.className = 'slot' + (mc ? ' full ' + (mc.shelf === 'machine' ? 'mach' : 'bio') : '');
-    sm.innerHTML = slotHtml('Metabolism', mc ? esc(mc.name) : 'Pick one', tg.met, mc ? mc.energy : null);
-    sm.onclick = null;
-    var sp = $('slotParts'); sp.innerHTML = '';
-    for (var i = 0; i < d.show.partSlots; i++) {
-      var id = b.parts[i], c = id ? Cards.part(id) : null, s = el('div', 'slot' + (c ? ' full ' + (c.shelf === 'machine' ? 'mach' : 'bio') : ''));
-      s.setAttribute('data-slot', i);
-      if (c) { var t = tg.part[id]; s.innerHTML = slotHtml('Part ' + (i + 1), esc(c.name), t ? t.t : '', c.energy, t && t.from ? 'instead of ' + cardName(t.from) : ''); }
-      else { var gi = i - b.parts.length, gone = tg.gone[gi]; s.innerHTML = slotHtml('Part ' + (i + 1), gone ? '<s>' + esc(cardName(gone)) + '</s>' : 'Empty', gone ? 'removed' : ''); }
-      if (c) (function (i) { s.addEventListener('click', function () { emptySlot(i); }); })(i);
-      sp.appendChild(s);
-    }
-    var sr = $('slotReflex'), rf = b.reflex;
-    sr.style.display = d.show.reflex ? '' : 'none';
-    if (d.show.reflex) {
-      if (!rf) { sr.className = 'slot'; sr.innerHTML = slotHtml('Reflex', 'Empty', tg.reflex === 'removed' ? 'removed' : ''); sr.onclick = null; }
-      else {
-        var txt = rf.kind === 'bio' ? Cards.bio(rf.id).name + ': ' + Cards.bio(rf.id).sentence : Cards.ruleText(rf);
-        sr.className = 'slot full ' + (rf.kind === 'bio' ? 'bio' : 'mach');
-        sr.innerHTML = slotHtml('Reflex', esc(txt), tg.reflex, null, txt);
-        sr.onclick = function () { mutate(function (bb) { bb.reflex = null; }); };
-      }
-    }
-  }
   function renderEnergy(d, pr) {
     var bar = $('energyBar'); bar.innerHTML = '';
-    var used = pr.energy.used, max = d.energy;
-    for (var i = 0; i < Math.max(max, used); i++) bar.appendChild(el('i', i < used ? (i >= max ? 'over' : 'used') : ''));
+    var used = pr.energy.used, max = d.energy, fac = 0;
+    SLOT_ORDER.forEach(function (k) { if (slotStateOf(k) !== 'open') { var f = Lv.FACTORY[k], c = f && Cards.part(f); if (c) fac += c.energy; } });
+    for (var i = 0; i < Math.max(max, used); i++) { var u = el('i', i < fac ? 'fac' : i < used ? (i >= max ? 'over' : 'used') : ''); if (i < fac) u.title = 'Factory fitted'; bar.appendChild(u); }
     $('energyNum').textContent = used + '/' + max;
   }
   function renderProblems() {
@@ -431,18 +517,32 @@
   }
   function renderAdapt(full) {
     var d = dishObj(); if (!d) return;
-    if (full || S.shownDish !== d.id) { S.shownDish = d.id; renderDials(d); renderShelves(); }
+    if (full || S.shownDish !== d.id) {
+      S.shownDish = d.id; $('tagLayer').innerHTML = '';
+      var pb = $('paceBox'); pb.innerHTML = ''; pb.style.display = d.dials.indexOf('pace') >= 0 ? '' : 'none';
+      if (d.dials.indexOf('pace') >= 0) pb.appendChild(dialEl('pace'));
+      if (!selectable(S.slot)) S.slot = d.opens[0] || d.slots[0];
+      showPreviewText(PV_HINT, false);
+    }
     var pr = Sim.predict(d, S.build);
-    renderSlots(d); renderEnergy(d, pr); updateDials(pr); renderPredict(d, pr); renderProblems(); renderTips();
-    Array.prototype.forEach.call(document.querySelectorAll('#screen-adapt .card[data-id]'), function (e) {
-      var id = e.getAttribute('data-id'), b = S.build, on = b.metabolism === id || b.parts.indexOf(id) >= 0 || (b.reflex && b.reflex.kind === 'bio' && b.reflex.id === id);
-      e.classList.toggle('sel', !!on);
-    });
-    var rc = document.querySelector('#ruleBox .card'); if (rc) { var inst = S.build.reflex && S.build.reflex.kind === 'machine'; rc.classList.toggle('sel', !!inst); }
+    renderCell(); renderOptions(); renderEnergy(d, pr);
+    if (d.dials.indexOf('pace') >= 0) updateDial($('paceBox').firstChild, 'pace', pr);
+    if ($('slopBox')) updateDial($('slopBox').querySelector('.dialrow'), 'slop', pr);
+    renderPredict(d, pr); renderProblems(); renderTips();
     $('undo').disabled = !S.undo.length;
     $('reset').disabled = JSON.stringify(S.build) === JSON.stringify(S.carried);
-    var mc = machineCount(S.build); $('portraitTag').textContent = mc ? mc + ' Machine seam' + (mc > 1 ? 's' : '') : 'Looks organic';
     refresh();
+  }
+  // Apply a level fix through the slot functions (the same calls the page's clicks make). Returns the list of steps taken.
+  function fixViaSlots(id) {
+    var d = dishObj(), f = d.fixes.filter(function (x) { return x.id === id; })[0], c = f.changes, steps = [];
+    function note(what, r) { steps.push(what + ': ' + (r.ok ? 'ok' : r.reason)); return r; }
+    (c.remove || []).forEach(function (cid) { var k = Cards.part(cid).slot; var r = Sim.unfit(d, S.build, k, cid); if (r.ok) commit(r.build); note('remove ' + cid, r); });
+    (c.add || []).forEach(function (cid) { var k = Cards.part(cid).slot; S.slot = k; var r = Sim.fit(d, S.build, cid, k === 'envelope' ? S.layer : undefined); if (r.ok) commit(r.build); note('fit ' + cid, r); });
+    if (c.set) { if (c.set.metabolism) { var r1 = Sim.fit(d, S.build, c.set.metabolism); if (r1.ok) commit(r1.build); note('power ' + c.set.metabolism, r1); }
+      ['pace', 'slop'].forEach(function (k) { if (c.set[k] != null) { mutate(function (bb) { bb[k] = c.set[k]; }); steps.push(k + ' ' + c.set[k]); } }); }
+    if (c.reflex) { var rr = Sim.fit(d, S.build, c.reflex.kind === 'bio' ? c.reflex.id : c.reflex); if (rr.ok) commit(rr.build); note('reflex', rr); }
+    return steps;
   }
 
   // ---------------------------------------------------------------- Run: start
@@ -463,19 +563,22 @@
   function stripCards(run) {
     var box = $('cardStrip'); box.innerHTML = ''; S.cardEls = [];
     var b = run.build;
-    function add(id, name, mach, tag, kind) { var e = el('div', 'scard' + (mach ? ' mach' : ''), esc(name) + '<small>' + tag + '</small>'); box.appendChild(e); S.cardEls.push({ id: id, e: e, kind: kind, tag: tag }); }
+    function add(id, name, mach, tag, kind, imgId) {
+      var e = el('div', 'scard' + (mach ? ' mach' : '')), st = el('div', 'st', esc(name) + '<small>' + tag + '</small>');
+      e.appendChild(thumbEl(imgId || id, 'sthumb')); e.appendChild(st); box.appendChild(e); S.cardEls.push({ id: id, e: e, kind: kind, tag: tag, small: st.querySelector('small') });
+    }
     var mc = Cards.part(b.metabolism); add(mc.id, mc.name, mc.shelf === 'machine', 'always on', 'const');
     b.parts.forEach(function (id) {
       var c = Cards.part(id), tag = { quorum: 'acts when crowded', radio: 'acts to hold share', wall: 'acts in trouble', repair: 'acts in trouble' }[id] || 'always on';
       add(id, c.name, c.shelf === 'machine', tag, { quorum: 'q', radio: 'r', wall: 't', repair: 't' }[id] || 'const');
     });
-    if (b.reflex) add('reflex', reflexName(b.reflex), b.reflex.kind === 'machine', 'armed', 'fire');
+    if (b.reflex) add('reflex', reflexName(b.reflex), b.reflex.kind === 'machine', 'armed', 'fire', b.reflex.kind === 'bio' ? b.reflex.id : 'machinerule');
     if (b.reflex) { var mx = 0; for (var t = 0; t <= run.T; t++) if (run.H.fires[t] > mx) mx = run.H.fires[t]; run.fired = mx >= 0.03; }
   }
   function anyChannel(run) { return D.CH.some(function (c) { return run.channels[c.id]; }); }
   function enterRun() {
     var run = S.run, d = dishObj(); if (!run) return;
-    $('scrub').max = run.T; stripCards(run);
+    $('scrub').max = run.T; stripCards(run); $('runFig').innerHTML = figHtml(S.mode === 'watch' ? S.carried : run.build);
     var any = anyChannel(run), keyHtml = '';
     D.CH.forEach(function (c) {
       if (!run.channels[c.id]) return;
@@ -604,7 +707,7 @@
       c.e.classList.toggle('flash', on);
       if (c.kind === 'fire') {
         var never = S.t >= T - 0.5 && !run.fired, tag = never ? 'never triggered' : on ? 'FIRING' : (S.t >= T - 0.5 ? 'fired ' + (function () { var n = 0; for (var q = 0; q <= T; q++) if (H.fires[q] > 0.03) n++; return n; })() + ' ticks' : 'armed');
-        c.e.classList.toggle('never', never); if (c.e.lastChild.textContent !== tag) c.e.lastChild.textContent = tag;
+        c.e.classList.toggle('never', never); if (c.small.textContent !== tag) c.small.textContent = tag;
       }
     });
     $('scrub').value = S.t; $('tickNum').textContent = 'tick ' + ti + '/' + T;
@@ -670,7 +773,6 @@
     var dt = Math.min(0.1, (ts - last) / 1000); last = ts;
     try {
       if (S.screen === 'adapt') {
-        D.portrait($('portrait'), S.build, reduced ? 0 : ts / 1000, machineCount(S.build));
         if (S.note && performance.now() > S.noteUntil) { S.note = ''; renderProblems(); }
       } else if (S.screen === 'run' && S.run) { advance(dt); drawRun(ts); }
     } catch (err) { if (window.console) console.error(err && err.stack || err); }
@@ -684,18 +786,18 @@
   $('briefGo').addEventListener('click', enterWatch);
   $('unlockAll').addEventListener('click', function () { S.unlocked = true; save('unlocked2', true); renderList(); });
   $('resetProgress').addEventListener('click', function () {
-    S.cleared = {}; S.wins = {}; S.unlocked = false; S.seenWorld = false; S.realOpen = null;
-    save('cleared2', {}); save('wins2', {}); save('unlocked2', false); save('world2', false); save('real2', null); renderList();
+    S.cleared = {}; S.wins = {}; S.unlocked = false; S.seenWorld = false;
+    save('cleared2', {}); save('wins2', {}); save('unlocked2', false); save('world2', false); renderList();
   });
-  $('realBtn').addEventListener('click', function () { var d = dishObj(); S.realOpen = !realOn(d); save('real2', S.realOpen); $('shelves').classList.toggle('showReal', S.realOpen); $('realBtn').classList.toggle('on', S.realOpen); });
-  $('undo').addEventListener('click', function () { if (!S.undo.length) return; S.build = S.undo.pop(); syncRuleFromBuild(); renderAdapt(false); });
+  $('undo').addEventListener('click', function () { if (!S.undo.length) return; S.build = S.undo.pop(); S.preview = null; syncRuleFromBuild(); renderAdapt(false); });
   $('reset').addEventListener('click', function () {
     mutate(function (b) { var n = copy(S.carried); b.pace = n.pace; b.slop = n.slop; b.metabolism = n.metabolism; b.parts = n.parts; b.reflex = n.reflex; });
+    S.layer = 0;
     S.rule = { sensor: null, cmp: null, value: null, action: null }; syncRuleFromBuild();
   });
   function syncRuleFromBuild() {
     var rf = S.build.reflex; if (rf && rf.kind === 'machine') S.rule = { sensor: rf.sensor, cmp: rf.cmp, value: rf.value, action: rf.action };
-    renderRuleBox();
+    if ($('ruleBox')) renderRuleBox();
   }
   $('tipBtn').addEventListener('click', pressTip);
   $('runBtn').addEventListener('click', doRun);
@@ -726,13 +828,17 @@
   // ---------------------------------------------------------------- debug hook
   window.__la = {
     S: S, show: show, selectDish: selectDish, enterWatch: enterWatch, run: doRun, seek: seek, skip: skip, showResult: showResult, advance: advance,
-    worldContinue: worldContinue, verdictAction: verdictAction, pressTip: pressTip, pickCard: pickCard, emptySlot: emptySlot, pickReflex: pickReflex,
+    worldContinue: worldContinue, verdictAction: verdictAction, pressTip: pressTip,
+    selectSlot: selectSlot, fit: function (id, layer) { var k = (Cards.part(id) || Cards.bio(id)).slot; if (layer != null) S.layer = layer; if (!selectable(k)) return { ok: false, reason: Sim.lockedReason(dishObj(), k) }; S.slot = k; return doFit(k, id); },
+    unfit: function (k, id) { return doUnfit(k, id); }, preview: previewOption, clearPreview: clearPreview, fixViaSlots: fixViaSlots,
+    tags: function () { return Array.prototype.map.call(document.querySelectorAll('#tagLayer .tag'), function (b) { return { slot: b.getAttribute('data-slot'), text: b.textContent, selectable: b.getAttribute('aria-disabled') === 'false', cls: b.className }; }); },
+    options: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt, #optList .optempty'), function (o) { var w = o.querySelector('.why'); return { id: o.getAttribute('data-id'), fitted: /fitted/.test(o.className), blocked: /blocked/.test(o.className), why: w ? w.textContent : '', img: (o.querySelector('img') || {}).complete ? o.querySelector('img').naturalWidth : null }; }); },
     fix: function (id) { var d = dishObj(), f = d.fixes.filter(function (x) { return x.id === id; })[0]; S.undo.push(copy(S.build)); S.build = Lv.applyFix(S.build, f); syncRuleFromBuild(); renderAdapt(false); return S.build; },
     setBuild: function (b) { S.undo.push(copy(S.build)); S.build = copy(b); syncRuleFromBuild(); renderAdapt(false); },
     ruleChoose: ruleChoose, installRule: installRule,
     info: function () {
       var r = S.run;
-      return { screen: S.screen, mode: S.mode, dish: S.dish, build: S.build, carried: S.carried, t: S.t, stopAt: S.stopAt, playing: S.playing, watchDone: S.watchDone, runFinished: S.runFinished,
+      return { screen: S.screen, mode: S.mode, dish: S.dish, build: S.build, slots: S.build && Sim.toSlots(S.build), slot: S.slot, layer: S.layer, pointed: S.pointed, carried: S.carried, t: S.t, stopAt: S.stopAt, playing: S.playing, watchDone: S.watchDone, runFinished: S.runFinished,
         overlay: S.overlayOpen, verdict: r && r.v, autopsy: r && r.autopsy, trouble: S.troubleTick, cleared: S.cleared, wins: S.wins, tipLevel: S.tipLevel,
         handler: $('handler').textContent, step: (document.querySelector('#stepbar li.on') || {}).textContent || '' };
     }

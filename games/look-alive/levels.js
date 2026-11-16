@@ -42,10 +42,14 @@ var LookAliveLevels = (function () {
   var NONE = { type: 'none', tick: -1, announce: -1, rMult: 0, aMult: 0, depth: 0, dur: 0, bustDeath: 0 };
   var BAND = { lo: 0.05, hi: 0.15, need: 0.7, warm: 30 };
   var BAND_GOAL = 'Stay between 5% and 15% of the dish, without the lab noticing you.';
-  var ALL_PARTS = ['wall', 'quorum', 'naps', 'flagellum', 'clock', 'radio', 'copier', 'repair', 'pump', 'lipids', 'acidproof', 'shell'];
+  var ALL_PARTS = ['wall', 'quorum', 'naps', 'clock', 'radio', 'copier', 'repair', 'pump', 'lipids', 'acidproof', 'shell'];
+  // The Motor slot is locked on this planet, so the Flagellum is not offered. Offered cards = this list, intersected with the open slots.
   var BIO_REFLEX = ['stringent', 'sporulate', 'sos'];
   var SENSORS = ['food', 'density', 'native', 'share', 'susp_growth', 'susp_waste', 'ttev'];
   var ACTIONS = ['pause', 'fast', 'sloppy', 'toward', 'away'];
+  // The Factory unit comes with Respiration in Power and the Sync pulse in Division. A slot that is not open yet is locked with its factory part fitted.
+  var FACTORY = { power: 'respiration', division: 'clock' };
+  var SLOT_ORDER = ['power', 'envelope', 'insides', 'division', 'signal', 'motor', 'reflex'];
 
   var WORLD = {
     name: 'Acidica',
@@ -61,16 +65,16 @@ var LookAliveLevels = (function () {
   // Fix = { id, label, changes: { set: {pace, slop, metabolism}, add: [part ids], remove: [part ids], reflex: {...} }, heavy? }.
   // `heavy` marks a route that needs more than two changes.
   var DISHES = [
-    { id: 1, title: "Don't Dissolve", energy: 3, partSlots: 2, reflexSlot: false, dials: [],
+    { id: 1, title: "Don't Dissolve", energy: 4, slots: ['envelope', 'insides'], opens: ['envelope', 'insides'], reflexSlot: false, dials: [],
       ticks: 300, acid: 0.35, aliveOnly: true, suspicion: false, channels: [],
       problem: 'The water is acid. A cell with nothing to keep the acid out dissolves.',
       goal: 'Be alive at the end of the run.',
-      show: { partSlots: 2, pace: false, slop: false, metabolism: false, reflex: false, channels: [],
+      show: { pace: false, slop: false, metabolism: false, reflex: false, channels: [],
         shelves: { biology: ['pump', 'lipids', 'acidproof'], machine: ['clock', 'shell'] } },
       allowed: { metabolism: ['respiration'], parts: ['clock', 'pump', 'lipids', 'acidproof', 'shell'], bio: [], sensors: [], actions: [] },
       band: { lo: 0.05, hi: 0.15, need: 0, warm: 30 }, event: NONE,
       tips: {
-        acid: ['The acid is getting in. Nothing in your cell keeps it out.', 'Try the Proton pump on the Biology shelf. The Tight membrane and the Sealed shell also help, and so does Acid-proof insides if you take off the Sync pulse to make room for it.'],
+        acid: ['The acid is getting in. Nothing in your cell keeps it out.', 'Try the Proton pump in the Envelope slot. The Tight membrane and the Sealed shell also fit there, and Acid-proof insides goes in the Insides slot.'],
         other: ['Your colony is too small to last.', 'Keep a full acid defence, the Proton pump or the Sealed shell, and keep the Pace at 4.']
       },
       tipFixes: { acid: ['pump', 'lipids', 'shell', 'acidproof'] },
@@ -78,14 +82,14 @@ var LookAliveLevels = (function () {
         { id: 'pump', label: 'Add the Proton pump', changes: { add: ['pump'] } },
         { id: 'lipids', label: 'Add the Tight membrane (barely enough)', changes: { add: ['lipids'] } },
         { id: 'shell', label: 'Add the Sealed shell', changes: { add: ['shell'] } },
-        { id: 'acidproof', label: 'Swap the Sync pulse for Acid-proof insides (it takes all 3 energy)', changes: { remove: ['clock'], add: ['acidproof'] } }
+        { id: 'acidproof', label: 'Add Acid-proof insides (it takes 3 energy)', changes: { add: ['acidproof'] } }
       ],
       notebook: 'Picrophilus torridus is an archaeon that grows best in acid roughly as strong as battery acid, and can still grow at around pH 0. Most acid-loving microbes keep their insides near neutral by pumping acid back out, which costs energy all the time, but Picrophilus lets its insides go acidic too and builds every protein to cope, inside a membrane that lets almost no acid through. On Acidica the water dissolves anything unprotected, and a sealed ceramic shell would keep it out completely, while a real cell can never be sealed: even a diatom\'s glass shell is full of pores so life can pass through.' },
-    { id: 2, title: "Don't Take Over", energy: 5, partSlots: 3, reflexSlot: false, dials: ['pace'],
+    { id: 2, title: "Don't Take Over", energy: 5, slots: ['envelope', 'insides', 'signal'], opens: ['signal'], reflexSlot: false, dials: ['pace'],
       ticks: 300, acid: 0.18, abundance: { food: 13, crowd: 2.8, death: 0.03, cross: 6, run: 15, runFrom: 0.8 }, suspicion: true, channels: ['casualties'],
       problem: 'Food is everywhere and nothing eats you, so a cell that divides at its usual pace floods the dish.',
       goal: BAND_GOAL,
-      show: { partSlots: 3, pace: true, slop: false, metabolism: false, reflex: false, channels: ['casualties'],
+      show: { pace: true, slop: false, metabolism: false, reflex: false, channels: ['casualties'],
         shelves: { biology: ['pump', 'lipids', 'acidproof', 'quorum'], machine: ['clock', 'shell', 'radio'] } },
       allowed: { metabolism: ['respiration'], parts: ['clock', 'pump', 'lipids', 'acidproof', 'shell', 'quorum', 'radio'], bio: [], sensors: [], actions: [] },
       band: BAND, event: NONE,
@@ -102,16 +106,16 @@ var LookAliveLevels = (function () {
         { id: 'radio', label: 'Add the Radio mesh (Machine answer)', changes: { add: ['radio'] } }
       ],
       notebook: 'Aliivibrio fischeri bacteria live packed inside the light organ of the bobtail squid, and every dawn the squid vents about 90% of them and lets the survivors regrow. Each bacterium leaks a small molecule and listens for it, so once enough of them are crowded together they all switch on their lights at the same moment. A colony never grows without limit: in the squid something always resets it. On Acidica the locals keep their own numbers down and nothing keeps yours down, so you have to do it yourself.' },
-    { id: 3, title: 'Smell Right', energy: 5, partSlots: 3, reflexSlot: false, dials: ['pace'],
+    { id: 3, title: 'Smell Right', energy: 5, slots: ['power', 'envelope', 'insides', 'signal'], opens: ['power'], reflexSlot: false, dials: ['pace'],
       ticks: 300, acid: 0.35, suspicion: true, channels: ['casualties', 'waste'],
       problem: 'Everyone on Acidica leaves the same sour trail. Your cell leaves a different one.',
       goal: BAND_GOAL,
-      show: { partSlots: 3, pace: true, slop: false, metabolism: true, reflex: false, channels: ['casualties', 'waste'],
+      show: { pace: true, slop: false, metabolism: true, reflex: false, channels: ['casualties', 'waste'],
         shelves: { biology: ['respiration', 'fermentation', 'pump', 'lipids', 'acidproof', 'quorum'], machine: ['fuelcell', 'clock', 'shell', 'radio'] } },
       allowed: { metabolism: ['respiration', 'fermentation', 'fuelcell'], parts: ['clock', 'pump', 'lipids', 'acidproof', 'shell', 'quorum', 'radio'], bio: [], sensors: [], actions: [] },
       band: BAND, event: NONE,
       tips: {
-        'exposed:waste': ['Your waste trail is wrong for Acidica. The locals smell it.', 'Swap Respiration for Fermentation in the Metabolism slot: its waste matches the natives\'.'],
+        'exposed:waste': ['Your waste trail is wrong for Acidica. The locals smell it.', 'Swap Respiration for Fermentation in the Power slot: its waste matches the natives\'.'],
         below: ['Your colony is too small to stay in the band.', 'Turn the Pace up a little.'],
         other: ['Something else is out of balance.', 'Open the autopsy: it names the card or control behind the problem.']
       },
@@ -120,32 +124,32 @@ var LookAliveLevels = (function () {
         { id: 'ferment', label: 'Swap Respiration for Fermentation', changes: { set: { metabolism: 'fermentation' } } }
       ],
       notebook: 'Lactic acid bacteria ferment sugar without oxygen, which is fast and gets little energy out of it, and they leave lactic acid behind. Cells that use oxygen break sugar down completely and get far more energy from the same meal. The waste a cell leaves is a chemical fingerprint of how it makes its energy. On Acidica the locals ferment, so everyone leaves the same sour trail, and a cell that respires leaves a different one.' },
-    { id: 4, title: 'Be Messy', energy: 6, partSlots: 3, reflexSlot: false, dials: ['pace', 'slop'],
+    { id: 4, title: 'Be Messy', energy: 6, slots: ['power', 'envelope', 'insides', 'division', 'signal'], opens: ['division'], reflexSlot: false, dials: ['pace', 'slop'],
       ticks: 300, acid: 0.35, suspicion: true, channels: ['casualties', 'waste', 'regularity'],
       problem: 'Machine parts make every cell divide on the same schedule. Real cells are messier.',
       goal: BAND_GOAL,
-      show: { partSlots: 3, pace: true, slop: true, metabolism: true, reflex: false, channels: ['casualties', 'waste', 'regularity'],
-        shelves: { biology: ['respiration', 'fermentation', 'pump', 'lipids', 'acidproof', 'quorum', 'naps', 'wall', 'flagellum'], machine: ['fuelcell', 'clock', 'shell', 'radio', 'copier', 'repair'] } },
+      show: { pace: true, slop: true, metabolism: true, reflex: false, channels: ['casualties', 'waste', 'regularity'],
+        shelves: { biology: ['respiration', 'fermentation', 'pump', 'lipids', 'acidproof', 'quorum', 'naps', 'wall'], machine: ['fuelcell', 'clock', 'shell', 'radio', 'copier', 'repair'] } },
       allowed: { metabolism: ['respiration', 'fermentation', 'fuelcell'], parts: ALL_PARTS, bio: [], sensors: [], actions: [] },
       band: BAND, event: NONE,
       tips: {
-        'exposed:regularity': ['Your cells divide in perfect step. Nothing natural does that.', 'Take off the Sync pulse, or add Random naps, or raise Sloppiness to 4 or more.'],
+        'exposed:regularity': ['Your cells divide in perfect step. Nothing natural does that.', 'Take off the Sync pulse, or swap it for Random naps, or raise Sloppiness to 4 or more.'],
         below: ['Your colony is too small to stay in the band.', 'Turn the Pace up a little, or take a slow part off.'],
         other: ['Something else is out of balance.', 'Open the autopsy: it names the card or control behind the problem.']
       },
       tipFixes: { 'exposed:regularity': ['noclock', 'naps', 'slop'] },
       fixes: [
         { id: 'noclock', label: 'Remove the Sync pulse', changes: { remove: ['clock'] } },
-        { id: 'naps', label: 'Add Random naps', changes: { add: ['naps'] } },
+        { id: 'naps', label: 'Swap the Sync pulse for Random naps (one Division part fits)', changes: { remove: ['clock'], add: ['naps'] } },
         { id: 'slop', label: 'Raise Sloppiness to 4', changes: { set: { slop: 4 } } }
       ],
       notebook: 'In a growing colony of Escherichia coli, a small fraction of cells at random stop growing for a while. Those sleepers survive drugs that attack growing cells, and when the drug is washed away they wake and rebuild the colony. This variety is not genetic: once they wake, the sleepers are as drug-sensitive as their parents. On Acidica anything perfectly regular stands out, so a machine has to learn to be messy.' },
-    { id: 5, title: 'When Things Change', energy: 6, partSlots: 3, reflexSlot: true, dials: ['pace', 'slop'],
+    { id: 5, title: 'When Things Change', energy: 6, slots: ['power', 'envelope', 'insides', 'division', 'signal', 'reflex'], opens: ['reflex'], reflexSlot: true, dials: ['pace', 'slop'],
       ticks: 300, acid: 0.5, suspicion: true, channels: ['growth', 'waste', 'casualties', 'regularity'],
       problem: 'Partway through the run the food crashes.',
       goal: 'Stay in the band through the food crash.',
-      show: { partSlots: 3, pace: true, slop: true, metabolism: true, reflex: { bio: BIO_REFLEX, rule: true }, channels: ['growth', 'waste', 'casualties', 'regularity'],
-        shelves: { biology: ['respiration', 'fermentation', 'pump', 'lipids', 'acidproof', 'quorum', 'naps', 'wall', 'flagellum'], machine: ['fuelcell', 'clock', 'shell', 'radio', 'copier', 'repair'] } },
+      show: { pace: true, slop: true, metabolism: true, reflex: { bio: BIO_REFLEX, rule: true }, channels: ['growth', 'waste', 'casualties', 'regularity'],
+        shelves: { biology: ['respiration', 'fermentation', 'pump', 'lipids', 'acidproof', 'quorum', 'naps', 'wall'], machine: ['fuelcell', 'clock', 'shell', 'radio', 'copier', 'repair'] } },
       allowed: { metabolism: ['respiration', 'fermentation', 'fuelcell'], parts: ALL_PARTS, bio: BIO_REFLEX, sensors: SENSORS, actions: ACTIONS },
       band: BAND, event: { type: 'bust', tick: 50, announce: 30, rMult: 0, aMult: 0, depth: 0.945, dur: 85, bustDeath: 0.07 },
       tips: {
@@ -187,6 +191,6 @@ var LookAliveLevels = (function () {
   // Tip for a loss cause (the cause string from LookAlive.autopsy): exact match, then 'other'. Returns [level1, level2].
   function tip(dishObj, cause) { var t = dishObj.tips; return t[cause] || t.other; }
 
-  return { PLANET: PLANET, WORLD: WORLD, DISHES: DISHES, dish: dish, carry: carry, applyFix: applyFix, tip: tip };
+  return { PLANET: PLANET, WORLD: WORLD, FACTORY: FACTORY, SLOT_ORDER: SLOT_ORDER, DISHES: DISHES, dish: dish, carry: carry, applyFix: applyFix, tip: tip };
 })();
 if (typeof module !== 'undefined') module.exports = LookAliveLevels;

@@ -75,7 +75,7 @@ var LookAlive = (function () {
   function channelsOn(D) { var l = channelList(D), o = {}; CHAN.forEach(function (c) { o[c] = l.indexOf(c) >= 0; }); return o; }
 
   function params(P, D, build) {
-    var Pr = P.robot, Pn = P.native, b = build;
+    var Pr = P.robot, Pn = P.native, b = normalize(build);
     var met = Cards.part(b.metabolism) || Cards.part('respiration');
     var p = {
       pace: b.pace, slop: b.slop, metabolism: met.id,
@@ -113,28 +113,103 @@ var LookAlive = (function () {
     return p;
   }
 
-  // ---------------------------------------------------------------- validation
+  // ---------------------------------------------------------------- body slots (GAMEPLAY-V2 section 12)
+  // The simulation keeps the flat build { pace, slop, metabolism, parts, reflex }. The slot shape is
+  // { power, envelope: [id, id?], insides, division, signal, motor, reflex } and converts both ways.
+  var SLOT_ORDER = ['power', 'envelope', 'insides', 'division', 'signal', 'motor', 'reflex'];
+  function slotName(id) { var i = Cards.slotInfo(id); return i ? i.name : id; }
+  function cardNm(id) { var c = Cards.part(id) || Cards.bio(id); return c ? c.name : id; }
+  function cp(o) { return JSON.parse(JSON.stringify(o)); }
+  function slotOfId(id) { var c = Cards.part(id); return c ? c.slot : null; }
+  // Accepts a flat build or one with a `slots` object; returns a new flat build.
+  function normalize(build) {
+    var b = build || {};
+    if (!b.slots) return b;
+    var sl = b.slots, parts = [];
+    var env = sl.envelope ? (Array.isArray(sl.envelope) ? sl.envelope : [sl.envelope]) : [];
+    env.forEach(function (id) { if (id) parts.push(id); });
+    ['insides', 'division', 'signal', 'motor'].forEach(function (k) { if (sl[k]) parts.push(sl[k]); });
+    return { pace: b.pace, slop: b.slop, metabolism: sl.power || null, parts: parts, reflex: sl.reflex ? cp(sl.reflex) : null };
+  }
+  function toSlots(build) {
+    var b = normalize(build), o = { power: b.metabolism || null, envelope: [], insides: null, division: null, signal: null, motor: null, reflex: b.reflex ? cp(b.reflex) : null };
+    (b.parts || []).forEach(function (id) {
+      var c = Cards.part(id); if (!c) return;
+      if (c.slot === 'envelope') o.envelope.push(id); else if (o[c.slot] === null) o[c.slot] = id;
+    });
+    return o;
+  }
+  function fromSlots(slots, dials) {
+    dials = dials || {};
+    return normalize({ pace: dials.pace != null ? dials.pace : 4, slop: dials.slop != null ? dials.slop : 0, slots: slots });
+  }
+  function factoryOf(D, slotId) { var f = Lv().FACTORY; return f && f[slotId] || null; }
+  function Lv() { return typeof LookAliveLevels !== 'undefined' ? LookAliveLevels : require('./levels.js'); }
+  function isOpen(D, slotId) { return (D.slots || []).indexOf(slotId) >= 0; }
+  // 'open' | 'factory' (locked, factory part fitted) | 'locked'
+  function slotState(D, slotId) { return isOpen(D, slotId) ? 'open' : (factoryOf(D, slotId) ? 'factory' : 'locked'); }
+  function opensOn(slotId) { var ds = Lv().DISHES; for (var i = 0; i < ds.length; i++) if (ds[i].slots.indexOf(slotId) >= 0) return ds[i].id; return null; }
+  // Cards a dish offers for a slot: the dish's allowed list intersected with the slot, only if the slot is open.
+  function offered(D, slotId) {
+    if (!isOpen(D, slotId)) return [];
+    var A = D.allowed;
+    if (slotId === 'reflex') return Cards.bySlot('reflex').filter(function (c) { return A.bio.indexOf(c.id) >= 0; });
+    return Cards.bySlot(slotId).filter(function (c) { return c.kind === 'metabolism' ? A.metabolism.indexOf(c.id) >= 0 : A.parts.indexOf(c.id) >= 0; });
+  }
+  // Put the Factory parts back in locked slots and drop anything else that sits in a locked slot (old saved builds).
+  function conform(D, build) {
+    var b = cp(normalize(build)), sl = toSlots(b);
+    SLOT_ORDER.forEach(function (k) {
+      if (isOpen(D, k)) return;
+      var f = factoryOf(D, k);
+      if (k === 'envelope') sl.envelope = [];
+      else if (k === 'reflex') sl.reflex = null;
+      else sl[k] = f || null;
+    });
+    var out = fromSlots(sl, b);
+    return out;
+  }
+
   function validate(D, build) {
-    var pr = [], b = build || {}, A = D.allowed;
+    var pr = [], b = normalize(build) || {}, A = D.allowed;
     function int08(v) { return typeof v === 'number' && isFinite(v) && v === Math.floor(v) && v >= 0 && v <= 8; }
     if (!int08(b.pace)) pr.push('Pace must be a whole number from 0 to 8.');
     if (!int08(b.slop)) pr.push('Sloppiness must be a whole number from 0 to 8.');
-    var mids = A.metabolism;
-    if (mids.indexOf(b.metabolism) < 0) pr.push('Pick a metabolism: ' + mids.join(', ') + '.');
-    var parts = b.parts || [], seen = {}, energy = 0, met = Cards.part(b.metabolism);
-    if (met) energy += met.energy;
-    if (parts.length > D.partSlots) pr.push('This dish has ' + D.partSlots + ' part slots; you used ' + parts.length + '.');
+    var met = Cards.part(b.metabolism), energy = 0;
+    if (!b.metabolism) pr.push('Power cannot be empty.');
+    else if (!met || met.slot !== 'power' || A.metabolism.indexOf(b.metabolism) < 0) pr.push('Pick a Power option: ' + A.metabolism.map(cardNm).join(', ') + '.');
+    else {
+      energy += met.energy;
+      if (!isOpen(D, 'power') && b.metabolism !== factoryOf(D, 'power')) pr.push('The Power slot is locked on this dish. ' + cardNm(factoryOf(D, 'power')) + ' stays fitted.');
+    }
+    var parts = b.parts || [], bySlot = {}, seen = {}, shellIn = false, layers = 0;
     parts.forEach(function (id) {
       var c = Cards.part(id);
       if (!c || c.kind !== 'part') { pr.push('Unknown part "' + id + '".'); return; }
-      if (A.parts.indexOf(id) < 0) pr.push(c.name + ' is not available on this dish.');
-      if (seen[id]) pr.push(c.name + ' is used twice.');
+      if (seen[id]) { pr.push(c.slot === 'envelope' ? 'The Envelope already has ' + c.name + '. Use two different layers.' : c.name + ' is used twice.'); return; }
       seen[id] = true; energy += c.energy;
+      if (A.parts.indexOf(id) < 0) pr.push(c.name + ' is not available on this dish.');
+      var fac = factoryOf(D, c.slot) === id;
+      if (!isOpen(D, c.slot) && !fac) pr.push(c.slot === 'motor' ? 'The Motor slot is locked on this planet.' : 'The ' + slotName(c.slot) + ' slot is locked on this dish.');
+      (bySlot[c.slot] = bySlot[c.slot] || []).push(c);
+      if (c.slot === 'envelope') { layers += Cards.layersOf(c); if (Cards.layersOf(c) > 1) shellIn = true; }
+    });
+    SLOT_ORDER.forEach(function (k) {
+      var list = bySlot[k] || [], info = Cards.slotInfo(k);
+      if (k === 'envelope') {
+        if (shellIn && list.length > 1) pr.push('The Sealed shell fills both Envelope layers, so nothing else fits there.');
+        else if (layers > 2) pr.push('The Envelope already has two layers.');
+      } else if (list.length > 1) pr.push('Only one ' + info.name + ' part fits.');
+    });
+    SLOT_ORDER.forEach(function (k) {   // a locked slot keeps its Factory part
+      if (isOpen(D, k)) return;
+      var f = factoryOf(D, k);
+      if (f && k !== 'power' && !seen[f]) pr.push('The ' + slotName(k) + ' slot is locked on this dish. ' + cardNm(f) + ' stays fitted.');
     });
     if (energy > D.energy) pr.push('Energy ' + energy + ' is over this dish\'s limit of ' + D.energy + '.');
     var rf = b.reflex;
     if (rf) {
-      if (!D.reflexSlot) pr.push('This dish has no reflex slot.');
+      if (!isOpen(D, 'reflex')) pr.push('This dish has no reflex slot.');
       else if (rf.kind === 'bio') { if (A.bio.indexOf(rf.id) < 0) pr.push('Unknown or unavailable reflex "' + rf.id + '".'); }
       else if (rf.kind === 'machine') {
         var sn = Cards.sensor(rf.sensor), ac = Cards.action(rf.action);
@@ -145,6 +220,65 @@ var LookAlive = (function () {
       } else pr.push('Reflex kind must be bio or machine.');
     }
     return { ok: pr.length === 0, problems: pr };
+  }
+
+  // Fit a card (or a reflex) into its slot. Returns { ok: true, build } or { ok: false, reason }.
+  // `layer` (0 or 1) picks the Envelope layer. A card already in another spot of the same slot is swapped out; the energy limit is checked on the result.
+  function check(D, nb) {
+    var v = validate(D, nb);
+    for (var i = 0; i < v.problems.length; i++) if (!/^Pace|^Sloppiness/.test(v.problems[i])) return v.problems[i];
+    return null;
+  }
+  function lockedReason(D, slotId) {
+    if (isOpen(D, slotId)) return null;
+    if (slotId === 'motor') return 'The Motor slot is locked on this planet.';
+    var f = factoryOf(D, slotId), on = opensOn(slotId);
+    return f ? 'Factory fitted. Opens on dish ' + on + '.' : 'Opens on dish ' + on + '.';
+  }
+  function fit(D, build, card, layer) {
+    var b = cp(normalize(build)), sl = toSlots(b), id, slotId, c;
+    if (card && typeof card === 'object') { slotId = 'reflex'; sl.reflex = cp(card); }
+    else {
+      id = Cards.canon(card); c = Cards.part(id); var bc = Cards.bio(id);
+      if (!c && bc) { slotId = 'reflex'; c = null; } else if (c) slotId = c.slot; else return { ok: false, reason: 'Unknown option.' };
+      var lr = lockedReason(D, slotId); if (lr) return { ok: false, reason: lr };
+      if (slotId === 'reflex') sl.reflex = { kind: 'bio', id: id };
+      else if (slotId === 'power') { if (sl.power === id) return { ok: false, reason: cardNm(id) + ' is already fitted.' }; sl.power = id; }
+      else if (slotId === 'envelope') {
+        var env = sl.envelope.slice(), L = Cards.layersOf(c);
+        if (env.indexOf(id) >= 0) return { ok: false, reason: (layer == null || env[layer] === id) ? c.name + ' is already fitted.' : 'The Envelope already has ' + c.name + '. Use two different layers.' };
+        if (L > 1) {
+          if (env.length) return { ok: false, reason: 'The Sealed shell fills both Envelope layers, so nothing else fits there. Take the other layer off first.' };
+          env = [id];
+        } else {
+          if (env.length && Cards.layersOf(Cards.part(env[0])) > 1) return { ok: false, reason: 'The Sealed shell fills both Envelope layers, so nothing else fits there. Take it off first.' };
+          if (layer != null && layer >= 0 && layer <= 1) {
+            if (layer === 1 && !env.length) env = [id]; else env[layer] = id;
+            env = env.filter(Boolean);
+          } else if (env.length >= 2) return { ok: false, reason: 'The Envelope already has two layers.' };
+          else env.push(id);
+        }
+        sl.envelope = env;
+      } else {
+        if (sl[slotId] === id) return { ok: false, reason: c.name + ' is already fitted.' };
+        sl[slotId] = id;
+      }
+    }
+    var nb = fromSlots(sl, b), why = check(D, nb);
+    return why ? { ok: false, reason: why } : { ok: true, build: nb };
+  }
+  // Clear a slot (for the Envelope, the layer holding `cardId`). Power cannot be emptied.
+  function unfit(D, build, slotId, cardId) {
+    var b = cp(normalize(build)), sl = toSlots(b);
+    var lr = lockedReason(D, slotId); if (lr) return { ok: false, reason: lr };
+    if (slotId === 'power') return { ok: false, reason: 'Power cannot be empty.' };
+    if (slotId === 'envelope') {
+      if (!sl.envelope.length) return { ok: false, reason: 'The Envelope is already empty.' };
+      sl.envelope = cardId ? sl.envelope.filter(function (x) { return x !== cardId; }) : [];
+    } else if (slotId === 'reflex') sl.reflex = null;
+    else sl[slotId] = null;
+    var nb = fromSlots(sl, b);
+    return { ok: true, build: nb };
   }
 
   // ---------------------------------------------------------------- state
@@ -473,7 +607,7 @@ var LookAlive = (function () {
 
   // ---------------------------------------------------------------- public API
   function play(P, D, build, opts) {
-    opts = opts || {};
+    opts = opts || {}; build = normalize(build);
     var s = newState(P, D, build, opts, baseState(P, opts.n || 64));
     if (s.snapEvery) s.snaps.push(snapshot(s));
     return finish(s);
@@ -674,6 +808,39 @@ var LookAlive = (function () {
     return res;
   }
 
+
+  // Plain-words change from one build to another on a dish: ["Births -15%", "Keeps the acid out", "Energy 2 of 4"].
+  function diff(D, before, after, P) {
+    P = P || Lv().PLANET;
+    var b0 = normalize(before), b1 = normalize(after), p0 = params(P, D, b0), p1 = params(P, D, b1), ch = channelsOn(D), out = [];
+    var r = p1.births / p0.births - 1;
+    if (Math.abs(r) >= 0.005) out.push('Births ' + sgn(r));
+    var a0 = p0.acidBlock >= 0.999 ? 2 : p0.acidBlock > 0.05 ? 1 : 0, a1 = p1.acidBlock >= 0.999 ? 2 : p1.acidBlock > 0.05 ? 1 : 0;
+    if (D.acid > 0 && a1 !== a0) out.push(['Nothing keeps the acid out', 'Blocks most acid', 'Keeps the acid out'][a1]);
+    if (p1.tough !== p0.tough) out.push('Toughness ' + (p1.tough > p0.tough ? '+' : '-') + Math.abs(p1.tough - p0.tough));
+    if (ch.waste && (p1.wasteAmt === 0) !== (p0.wasteAmt === 0)) out.push(p1.wasteAmt === 0 ? 'No waste: Waste up strongly' : 'Waste is back');
+    else if (ch.waste && Math.abs(p1.wasteGap - p0.wasteGap) > 0.05) out.push(p1.wasteGap < 0.01 ? 'Waste matches natives' : 'Waste differs from natives');
+    if (!p0.quorum && p1.quorum) out.push('Births fall where crowded'); if (p0.quorum && !p1.quorum) out.push('No more crowd signal');
+    if (!p0.radio && p1.radio) out.push('Holds share near ' + pct(0.10)); if (p0.radio && !p1.radio) out.push('No more share control');
+    if (!p0.nap && p1.nap) out.push('Some cells nap through a food crash');
+    if (p1.deathMult < 0.5 && p0.deathMult >= 0.5) out.push('Almost nothing dies');
+    if (ch.regularity) {
+      var g = p1.regMachine - p0.regMachine;
+      if (g > 0.05) out.push('Regularity up'); else if (g < -0.05) out.push('Regularity down');
+      if (p1.sigma - p0.sigma > 0.002) out.push('Timing noisier'); else if (p0.sigma - p1.sigma > 0.002) out.push('Timing tighter');
+    }
+    if (JSON.stringify(b0.reflex || null) !== JSON.stringify(b1.reflex || null)) {
+      if (!b1.reflex) out.push('No reflex');
+      else if (b1.reflex.kind === 'bio') { var rb = Cards.bio(b1.reflex.id); out.push(rb ? rb.sentence.replace(/\.$/, '') : 'Reacts when things change'); }
+      else out.push(Cards.ruleText(b1.reflex).replace(/\.$/, ''));
+    }
+    var e = 0;
+    (function () { var m = Cards.part(b1.metabolism); if (m) e += m.energy; (b1.parts || []).forEach(function (id) { var c = Cards.part(id); if (c) e += c.energy; }); })();
+    if (!out.length) out.push('No change to the numbers');
+    out.push('Energy ' + e + ' of ' + D.energy);
+    return out;
+  }
+
   // ================================================================ predict (chips)
   function sgn(x) { return (x >= 0 ? '+' : '-') + Math.abs(Math.round(x * 100)) + '%'; }
   function regWord(r) { return r >= 1.2 ? 'Regularity up strongly' : r >= 0.6 ? 'Regularity up' : 'Regularity up a little'; }
@@ -697,6 +864,7 @@ var LookAlive = (function () {
   }
   function predict(D, build, P) {
     P = P || (typeof LookAliveLevels !== 'undefined' ? LookAliveLevels.PLANET : require('./levels.js').PLANET);
+    build = normalize(build);
     var bp = params(P, D, build), Pr = P.robot, cards = [], ch = channelsOn(D);
     var out = { runaway: false, energy: { used: 0, max: D.energy }, pace: [], slop: [], cards: cards, totals: [], chips: [], channels: ch, acid: null };
     function add(src, label, chips) { chips.forEach(function (c) { out.chips.push({ source: src, text: c }); }); cards.push({ id: src, label: label, chips: chips }); }
@@ -745,7 +913,7 @@ var LookAlive = (function () {
     return out;
   }
 
-  return { CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
+  return { CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
     channelsOn: channelsOn, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { newState: newState, step: step, HK: HK } };
 })();
 if (typeof module !== 'undefined') module.exports = LookAlive;

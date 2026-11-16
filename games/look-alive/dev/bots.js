@@ -32,24 +32,34 @@ var LookAliveBots = (function () {
   }
   function isBioBuild(b) { return !isMachineBuild(b); }
 
-  // Every legal (metabolism, parts) card set for a dish.
+  // The Factory parts that stay fitted in slots this dish has not opened yet (Sync pulse in Division on dishes 1 to 3).
+  function factoryParts(D) {
+    return Object.keys(Lv.FACTORY).filter(function (k) { return k !== 'power' && D.slots.indexOf(k) < 0; }).map(function (k) { return Lv.FACTORY[k]; });
+  }
+  function offeredIds(D) {
+    var ids = []; D.slots.forEach(function (k) { if (k !== 'power' && k !== 'reflex') Sim.offered(D, k).forEach(function (c) { ids.push(c.id); }); });
+    return ids;
+  }
+  function metabolisms(D) { return D.slots.indexOf('power') >= 0 ? D.allowed.metabolism.slice() : [Lv.FACTORY.power]; }
+
+  // Every slot-legal (metabolism, parts) card set for a dish: the Factory parts in locked slots plus any choice from the open slots, within energy.
   function configs(D) {
-    var out = [], A = D.allowed, parts = A.parts, k = D.partSlots;
-    function rec(i, chosen, energy) {
-      if (i === parts.length) {
-        A.metabolism.forEach(function (m) {
-          var e = energy + Cards.part(m).energy;
-          if (e <= D.energy) out.push({ metabolism: m, parts: chosen.slice() });
+    var out = [], pool = offeredIds(D), fixed = factoryParts(D);
+    function rec(i, chosen) {
+      if (i === pool.length) {
+        metabolisms(D).forEach(function (m) {
+          var parts = fixed.concat(chosen);
+          if (Sim.validate(D, { pace: 4, slop: 0, metabolism: m, parts: parts, reflex: null }).ok) out.push({ metabolism: m, parts: parts });
         });
         return;
       }
-      rec(i + 1, chosen, energy);
-      if (chosen.length < k) {
-        var c = Cards.part(parts[i]);
-        chosen.push(parts[i]); rec(i + 1, chosen, energy + c.energy); chosen.pop();
-      }
+      rec(i + 1, chosen);
+      chosen.push(pool[i]);
+      var e = chosen.reduce(function (a, id) { return a + Cards.part(id).energy; }, 0) + fixed.reduce(function (a, id) { return a + Cards.part(id).energy; }, 0);
+      if (e <= D.energy) rec(i + 1, chosen);
+      chosen.pop();
     }
-    rec(0, [], 0);
+    rec(0, []);
     return out;
   }
 
@@ -78,9 +88,12 @@ var LookAliveBots = (function () {
   function randomBuild(D, R) {
     var A = D.allowed, ints = function (n) { return Math.floor(R() * n); };
     for (var tries = 0; tries < 50; tries++) {
-      var parts = [], pool = A.parts.slice(), want = ints(D.partSlots + 1);
-      while (parts.length < want && pool.length) parts.push(pool.splice(ints(pool.length), 1)[0]);
-      var b = build(ints(9), ints(9), A.metabolism[ints(A.metabolism.length)], parts, null);
+      var pool = offeredIds(D), want = ints(5), mets = metabolisms(D);
+      var b = build(ints(9), ints(9), mets[ints(mets.length)], factoryParts(D), null);
+      while (want-- > 0 && pool.length) {
+        var id = pool.splice(ints(pool.length), 1)[0];
+        if (Sim.validate(D, Object.assign({}, b, { parts: b.parts.concat([id]) })).ok) b.parts = b.parts.concat([id]);
+      }
       if (D.reflexSlot && R() < 0.7) {
         if (R() < 0.4) b.reflex = bioRef(A.bio[ints(A.bio.length)]);
         else {
@@ -140,7 +153,7 @@ var LookAliveBots = (function () {
   }
 
   return { rng: rng, build: build, dflt: dflt, machineRule: machineRule, bioRef: bioRef, label: label, key: key, shelfOf: shelfOf, isMachineBuild: isMachineBuild,
-    isBioBuild: isBioBuild, configs: configs, sampleRules: sampleRules, allRules: allRules, randomBuild: randomBuild, play: play, sum: sum, dialSweep: dialSweep,
+    isBioBuild: isBioBuild, configs: configs, factoryParts: factoryParts, offeredIds: offeredIds, sampleRules: sampleRules, allRules: allRules, randomBuild: randomBuild, play: play, sum: sum, dialSweep: dialSweep,
     sameCards: sameCards, neighbours: neighbours, fixed: fixed, failTick: failTick };
 })();
 if (typeof module !== 'undefined') module.exports = LookAliveBots;

@@ -242,7 +242,8 @@ const d5 = data[5];
   });
   const times = []; let worst = 0, sum = 0, worstAt = '';
   DISH_IDS.forEach(id => { Sim.play(P, Lv.dish(id), carryOf(id), { n: 64, history: false }); });   // settle the 64x64 natives once
-  const bs = [['carry', id => carryOf(id)], ['rich', id => B.build(6, 6, 'fermentation', ['pump', 'quorum', 'naps'], id === 5 ? B.bioRef('sos') : null)]];
+  const richOf = id => { const D = Lv.dish(id), b = B.build(6, 6, D.slots.indexOf('power') >= 0 ? 'fermentation' : 'respiration', B.factoryParts(D), id === 5 ? B.bioRef('sos') : null); ['pump', 'quorum', 'naps'].forEach(x => { const t = Object.assign({}, b, { parts: b.parts.concat([x]) }); if (Sim.validate(D, t).ok) b.parts = t.parts; }); return b; };
+  const bs = [['carry', id => carryOf(id)], ['rich', richOf]];
   let cold = 0;
   DISH_IDS.forEach(id => bs.forEach(([nm, mk]) => { for (let k = 0; k < 4; k++) {
     const b = mk(id), a = process.hrtime.bigint(); Sim.play(P, Lv.dish(id), b, { n: 64, snapEvery: 10 });
@@ -273,10 +274,12 @@ const d5 = data[5];
   const parts = []; let ok = true;
   [4, 5].forEach(id => {
     const D = Lv.dish(id), mach = D.allowed.parts.filter(x => B.shelfOf(x) === 'machine'), met = D.allowed.metabolism.filter(x => B.shelfOf(x) === 'machine')[0];
-    const k = Math.min(D.partSlots, mach.length), stacks = [];
+    const pool = mach.filter(x => B.offeredIds(D).indexOf(x) >= 0), stacks = [];
+    const legal = ch => Sim.validate(D, { pace: 4, slop: 0, metabolism: met, parts: ch, reflex: null }).ok;
+    // maximal slot-legal all-Machine stacks: no other Machine part can still be added
     (function rec(i, ch) {
-      if (ch.length === k) { const e = ch.reduce((a, x) => a + Cards.part(x).energy, Cards.part(met).energy); if (e <= D.energy) stacks.push(ch.slice()); return; }
-      for (let j = i; j < mach.length; j++) { ch.push(mach[j]); rec(j + 1, ch); ch.pop(); }
+      if (i === pool.length) { if (legal(ch) && !pool.some(x => ch.indexOf(x) < 0 && legal(ch.concat([x])))) stacks.push(ch.slice()); return; }
+      rec(i + 1, ch); ch.push(pool[i]); if (legal(ch)) rec(i + 1, ch); ch.pop();
     })(0, []);
     let n = 0, wins = 0, exposed = 0, regLead = 0, regCard = 0;
     stacks.forEach(st => {
@@ -392,14 +395,15 @@ const d5 = data[5];
 // ------------------------------------------------------------------ N1 to N4. the biology pass (GAMEPLAY-V2 section 11)
 const minShare = (r, a, b) => { let m = 1; for (let t = a; t <= b; t++) if (r.H.share[t] < m) m = r.H.share[t]; return m; };
 {
-  const D = Lv.dish(1), solo = B.build(4, 0, 'respiration', ['acidproof']), carry = carryOf(1);
-  const fx = D.fixes.find(x => x.id === 'acidproof'), swapped = B.fixed(carry, fx);
-  const rows = [['Acid-proof insides alone', solo], ['carried cell with the clock swapped for it', swapped]].map(([nm, b]) => ({ nm, ok: Sim.validate(D, b).ok, r16: play(1, b, SN), r64: play(1, b, 64) }));
-  const withClock = Sim.validate(D, B.build(4, 0, 'respiration', ['clock', 'acidproof']));
+  const D = Lv.dish(1), solo = B.build(4, 0, 'respiration', ['clock', 'acidproof']), carry = carryOf(1);
+  const fx = D.fixes.find(x => x.id === 'acidproof'), added = B.fixed(carry, fx);
+  const rows = [['Acid-proof insides with the factory Sync pulse still locked in', solo], ['carried cell + the dish 1 fix', added]].map(([nm, b]) => ({ nm, ok: Sim.validate(D, b).ok, r16: play(1, b, SN), r64: play(1, b, 64) }));
+  const noClock = Sim.validate(D, B.build(4, 0, 'respiration', ['acidproof']));
   const energies = Cards.parts.filter(c => c.fx.acid).map(c => c.name + ' ' + c.energy), top = Cards.parts.filter(c => c.fx.acid).every(c => c.id === 'acidproof' || c.energy < Cards.part('acidproof').energy);
   const noBirthCost = !Cards.part('acidproof').fx.births;
-  const good = rows.every(x => x.ok && x.r16.v.win && x.r64.v.win) && !withClock.ok && top && noBirthCost && Cards.part('acidproof').fx.acid === 1;
-  result(good, 'N1 DISH 1: ACID-PROOF INSIDES ALONE WINS', rows.map(x => x.nm + ': ' + (x.ok ? 'legal' : 'ILLEGAL') + ', 16x16 ' + (x.r16.v.win ? 'win' : 'LOSE') + ' (colony ' + f(x.r16.H.rob[300] / x.r16.H.rob[0], 2) + ' of start), 64x64 ' + (x.r64.v.win ? 'win' : 'LOSE')).join('; ') + '. Energy of the acid cards: ' + energies.join(', ') + ' (Acid-proof insides highest: ' + top + '; no births cost: ' + noBirthCost + '). With the clock kept it does not fit the dish (energy limit ' + D.energy + '): ' + (withClock.ok ? 'FITS' : 'does not fit'));
+  const withPump = Sim.validate(D, B.build(4, 0, 'respiration', ['clock', 'acidproof', 'pump']));
+  const good = rows.every(x => x.ok && x.r16.v.win && x.r64.v.win) && !noClock.ok && !withPump.ok && top && noBirthCost && Cards.part('acidproof').fx.acid === 1;
+  result(good, 'N1 DISH 1: ACID-PROOF INSIDES WINS WITH THE LOCKED SYNC PULSE', rows.map(x => x.nm + ': ' + (x.ok ? 'legal' : 'ILLEGAL') + ', 16x16 ' + (x.r16.v.win ? 'win' : 'LOSE') + ' (colony ' + f(x.r16.H.rob[300] / x.r16.H.rob[0], 2) + ' of start), 64x64 ' + (x.r64.v.win ? 'win' : 'LOSE')).join('; ') + '. Energy of the acid cards: ' + energies.join(', ') + ' (Acid-proof insides highest: ' + top + '; no births cost: ' + noBirthCost + '). The Sync pulse is factory fitted and cannot be removed on dish 1 (without it: ' + (noClock.ok ? 'LEGAL' : 'illegal') + '); dish 1 energy limit ' + D.energy + ' counts the Sync pulse (1), so Acid-proof insides (3) fills it exactly and a second acid card does not fit (' + (withPump.ok ? 'FITS' : 'does not fit') + ')');
 }
 {
   const c4 = carryOf(4), c5 = carryOf(5), D4 = Lv.dish(4), D5 = Lv.dish(5);
@@ -446,9 +450,72 @@ const minShare = (r, a, b) => { let m = 1; for (let t = a; t <= b; t++) if (r.H.
     if (ft > latest) latest = ft;
   });
   const fac = play(2, carryOf(1), SN), facA = Sim.autopsy(fac);
-  result(winners.length > 0 && flood === winners.length, 'N5 EVERY DISH 1 WINNER FLOODS DISH 2 UNCHANGED', winners.length + ' builds win dish 1 at Pace 4 (every legal card set of one or two parts within energy ' + D1.energy + '; the Factory unit on its own does not, it dissolves); carried unchanged into dish 2 (acid ' + D2.acid + '): ' + flood + ' flood it (lose by taking over, peak share at least 30% at both grid sizes). Smallest peak ' + pc(worstPeak) + ' (' + worstAt + '), latest visible tick ' + latest + ' (limit 60).' + (bad.length ? ' NOT FLOODING: ' + bad.join('; ') : '') + ' The Factory unit itself on dish 2: ' + (facA ? facA.cause : 'won'));
+  result(winners.length > 0 && flood === winners.length, 'N5 EVERY DISH 1 WINNER FLOODS DISH 2 UNCHANGED', winners.length + ' builds win dish 1 at Pace 4 (every slot-legal card set within energy ' + D1.energy + '; the Factory unit on its own does not, it dissolves); carried unchanged into dish 2 (acid ' + D2.acid + '): ' + flood + ' flood it (lose by taking over, peak share at least 30% at both grid sizes). Smallest peak ' + pc(worstPeak) + ' (' + worstAt + '), latest visible tick ' + latest + ' (limit 60).' + (bad.length ? ' NOT FLOODING: ' + bad.join('; ') : '') + ' The Factory unit itself on dish 2: ' + (facA ? facA.cause : 'won'));
 }
 
-const total = 22;
+// ------------------------------------------------------------------ S1 to S5. body slots (GAMEPLAY-V2 section 12)
+{
+  const bad = []; let n = 0;
+  DISH_IDS.forEach(id => {
+    const D = Lv.dish(id), c = carryOf(id);
+    n++; { const v = Sim.validate(D, c); if (!v.ok) bad.push('carry ' + id + ': ' + v.problems.join(' ')); }
+    D.fixes.forEach(fx => { n++; const v = Sim.validate(D, B.fixed(c, fx)); if (!v.ok) bad.push('dish ' + id + ' fix ' + fx.id + ': ' + v.problems.join(' ')); });
+  });
+  result(bad.length === 0, 'S1 EVERY CARRIED BUILD AND LISTED FIX IS SLOT-LEGAL', n + ' builds checked (5 carried builds + every fix applied to its carried build)' + (bad.length ? ': ' + bad.join(' | ') : ''));
+}
+{
+  const bad = [], lines = []; let n = 0;
+  DISH_IDS.forEach(id => {
+    const D = Lv.dish(id), names = [];
+    Cards.SLOTS.forEach(sl => {
+      const off = Sim.offered(D, sl.id);
+      if (D.slots.indexOf(sl.id) < 0 && off.length) bad.push('dish ' + id + ' offers ' + off.map(c => c.id) + ' in locked ' + sl.id);
+      off.forEach(c => { n++; if (c.slot !== sl.id) bad.push(c.id + ' offered in ' + sl.id); });
+      if (off.length) names.push(sl.id + ': ' + off.map(c => c.id).join('/'));
+    });
+    // everything the dish lists in allowed.parts that is not offered must be in a locked slot (and is then only the factory part)
+    D.allowed.parts.forEach(pid => { const c = Cards.part(pid); if (D.slots.indexOf(c.slot) < 0 && Lv.FACTORY[c.slot] !== pid) bad.push('dish ' + id + ' lists ' + pid + ' in locked slot ' + c.slot); });
+    const hasFl = Sim.offered(D, 'motor').length; if (hasFl) bad.push('dish ' + id + ' offers a Motor card');
+    lines.push('dish ' + id + ' [' + D.slots.join(', ') + ']: ' + names.join('; '));
+  });
+  result(bad.length === 0, 'S2 NO DISH OFFERS A CARD WHOSE SLOT IS LOCKED', n + ' offered cards, Motor offered nowhere' + (bad.length ? '; BAD: ' + bad.join(' | ') : '') + '\n       ' + lines.join('\n       '));
+}
+{
+  const D = Lv.dish(5), base = B.build(4, 0, 'respiration', [], null);
+  const ok = parts => Sim.validate(D, Object.assign({}, base, { parts })).ok;
+  const t = [['two different layers (pump + lipids)', ok(['pump', 'lipids']), true], ['pump + wall', ok(['pump', 'wall']), true], ['two of the same (pump, pump)', ok(['pump', 'pump']), false], ['three layers (pump, lipids, wall)', ok(['pump', 'lipids', 'wall']), false],
+    ['Sealed shell alone', ok(['shell']), true], ['Sealed shell + pump', ok(['shell', 'pump']), false], ['pump + Sealed shell', ok(['pump', 'shell']), false],
+    ['two Insides parts', ok(['acidproof', 'repair']), false], ['two Division parts', ok(['clock', 'naps']), false], ['two Signal parts', ok(['quorum', 'radio']), false],
+    ['two Envelope layers + Division + Signal (energy 6)', ok(['lipids', 'wall', 'naps', 'quorum']), true], ['Flagellum (Motor locked)', ok(['flagellum']), false]];
+  const msgs = [Sim.validate(D, Object.assign({}, base, { parts: ['pump', 'pump'] })), Sim.validate(D, Object.assign({}, base, { parts: ['shell', 'pump'] })), Sim.validate(D, Object.assign({}, base, { parts: ['pump', 'lipids', 'wall'] })), Sim.validate(D, Object.assign({}, base, { parts: ['clock', 'naps'] }))].map(v => v.problems[0]);
+  result(t.every(x => x[1] === x[2]), 'S3 ENVELOPE LAYERS AND ONE-OPTION SLOTS', t.map(x => x[0] + ': ' + (x[1] ? 'legal' : 'refused') + (x[1] === x[2] ? '' : ' (WRONG)')).join('; ') + '. Messages: ' + msgs.join(' / '));
+}
+{
+  const D = Lv.dish(4), c = carryOf(4), sh = Sim.fit(D, Object.assign({}, c, { parts: ['clock'] }), 'shell');
+  const withShell = sh.build, other = Sim.fit(D, withShell, 'pump'), other2 = Sim.fit(D, withShell, 'lipids', 1);
+  const pumpFirst = Sim.fit(D, Object.assign({}, c, { parts: ['clock', 'pump'] }), 'shell');
+  const sl = Sim.toSlots(withShell);
+  const ok = sh.ok && sl.envelope.length === 1 && sl.envelope[0] === 'shell' && !other.ok && !other2.ok && !pumpFirst.ok && Cards.part('shell').layers === 2;
+  result(ok, 'S4 THE SEALED SHELL TAKES BOTH LAYERS', 'fit shell into an empty Envelope: ' + (sh.ok ? 'ok' : 'REFUSED') + '; add pump beside it: "' + (other.reason || 'ALLOWED') + '"; add lipids to layer 2: "' + (other2.reason || 'ALLOWED') + '"; fit shell beside a pump: "' + (pumpFirst.reason || 'ALLOWED') + '"');
+}
+{
+  let n = 0; const bad = [];
+  DISH_IDS.forEach(id => {
+    const D = Lv.dish(id), R = B.rng(500 + id);
+    for (let i = 0; i < 30; i++) {
+      const b = B.randomBuild(D, R), s2 = Sim.toSlots(b), back = Sim.fromSlots(s2, b);
+      n++; if (!Sim.validate(D, back).ok || cardKey(back) !== cardKey(b) || back.pace !== b.pace || back.slop !== b.slop) bad.push('round trip dish ' + id + ' ' + B.label(b));
+      // every fit and unfit the page can make from this build returns a legal build or a reason
+      Cards.SLOTS.forEach(sl => {
+        Sim.offered(D, sl.id).forEach(cd => { const r = Sim.fit(D, b, cd.id); n++; if (r.ok ? !Sim.validate(D, r.build).ok : !r.reason) bad.push('fit ' + cd.id + ' dish ' + id); });
+        const u = Sim.unfit(D, b, sl.id); n++; if (u.ok ? !Sim.validate(D, u.build).ok && sl.id !== 'power' : !u.reason) bad.push('unfit ' + sl.id + ' dish ' + id);
+      });
+    }
+    const p3 = Sim.unfit(D, carryOf(id), 'power'); n++; if (p3.ok) bad.push('Power emptied on dish ' + id);
+  });
+  result(bad.length === 0, 'S5 FIT, UNFIT AND THE SLOT CONVERSION', n + ' operations on random slot-legal builds: every fit or unfit gave a slot-legal build or a plain reason; toSlots/fromSlots round-trips; Power cannot be emptied' + (bad.length ? '. BAD: ' + bad.slice(0, 5).join(' | ') : ''));
+}
+
+const total = 27;
 console.log('\n' + (total - fails) + ' of ' + total + ' lines pass, ' + fails + ' fail. Total ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s.');
 process.exit(fails ? 1 : 0);

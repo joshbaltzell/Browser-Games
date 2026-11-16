@@ -19,6 +19,34 @@ A square grid (64 by 64 by default; the size is a parameter, sweeps use 16 by 16
 
 Scalars: tick, the seeded RNG state, four suspicion channels (fast and slow memory each), the immune total S and stage, smoothed rates, a ring of the last 20 share changes. The only randomness is two bounded draws per tick (one colony-wide native pulse, one robot pulse, `mulberry32`, seed 12345) plus per-cell sensing noise for Biology reflexes, which is a hash of (cell, tick). A run is `dish.ticks` ticks (300). `snapEvery` copies every array and scalar, so a snapshot resumes to a byte-identical end state.
 
+## Body slots (gameplay pass 3, GAMEPLAY-V2 section 12)
+
+Every card has a `slot` (cards.js): **power** (Respiration, Fermentation, Fuel cell), **envelope** (Cell wall, Proton pump, Tight membrane, Sealed shell), **insides** (Acid-proof insides, Self-repair), **division** (Random naps, Sync pulse, Perfect copier), **signal** (Head count, Radio mesh), **motor** (Flagellum), **reflex** (Stringent, SOS, Sporulate, or a Machine rule). `Cards.SLOTS` lists them with a name, where they sit on the cell and a one-line job; `Cards.bySlot(slotId)` returns the cards of one slot (Biology first); `card.layers` is 2 for the Sealed shell and 1 otherwise.
+
+The simulation keeps the flat build `{ pace, slop, metabolism, parts, reflex }` (`parts` holds the Envelope, Insides, Division, Signal and Motor cards). The slot shape `{ power, envelope: [id, id?], insides, division, signal, motor, reflex }` converts both ways: `LookAlive.toSlots(build)`, `LookAlive.fromSlots(slots, dials)`, and `LookAlive.normalize(build)` (takes either shape, returns the flat one; `play`, `params`, `predict` and `validate` all call it). Old saved builds were already flat; `LookAlive.conform(dish, build)` puts the Factory parts back into locked slots and drops anything else sitting in a locked slot (the page calls it on load and on carry-over).
+
+**Slot rules in `validate`** (plain-English problems): Power exactly one and never empty ("Power cannot be empty."); Envelope up to two different layers ("The Envelope already has two layers.", "The Envelope already has Proton pump. Use two different layers."), and the Sealed shell takes both layers so nothing shares with it ("The Sealed shell fills both Envelope layers, so nothing else fits there."); Insides, Division, Signal and Motor hold one each ("Only one Division part fits."); Reflex holds one. A card in a slot the dish has not opened is refused ("The Motor slot is locked on this planet.", "The Signal slot is locked on this dish.") unless it is the Factory part of that slot. The energy limit is unchanged. `partSlots` no longer exists.
+
+**Which slots are open** (`dish.slots`, in the order Power, Envelope, Insides, Division, Signal, Reflex; `dish.opens` is the slot or slots that open on that dish):
+
+| dish | open slots | opens on this dish | dials |
+| --- | --- | --- | --- |
+| 1 | Envelope, Insides | Envelope, Insides | none |
+| 2 | Envelope, Insides, Signal | Signal | Pace |
+| 3 | Power, Envelope, Insides, Signal | Power | Pace |
+| 4 | Power, Envelope, Insides, Division, Signal | Division | Pace, Sloppiness |
+| 5 | Power, Envelope, Insides, Division, Signal, Reflex | Reflex | Pace, Sloppiness |
+
+Motor never opens on Acidica, and the Flagellum is not in any `allowed` list. **Cards a dish offers for a slot** = `LookAlive.offered(dish, slotId)` = the dish's existing `allowed` lists intersected with the slot, empty if the slot is locked (S2 checks this).
+
+**The Factory unit in locked slots.** `LookAliveLevels.FACTORY = { power: 'respiration', division: 'clock' }`. On a dish where a slot is not open, its Factory part stays fitted and cannot be changed: on dishes 1 and 2 Power shows Respiration ("Factory fitted. Opens on dish 3."), on dishes 1 to 3 Division shows the Sync pulse ("Factory fitted. Opens on dish 4."). `validate` requires the Factory part to still be there. `LookAlive.slotState(dish, slot)` is `open`, `factory` or `locked`; `LookAlive.lockedReason(dish, slot)` is the sentence for the page.
+
+**Dish 1 energy (decision).** Factory parts count toward energy like any other card, and **dish 1's energy limit goes from 3 to 4** to pay for the locked Sync pulse (cost 1). The player's budget on dish 1 is exactly what it was (3), so Acid-proof insides (3) still fits, but now next to the Sync pulse instead of instead of it. Dishes 2 to 5 keep their limits (5, 5, 6, 6), which already included the Sync pulse. Consequences: on dish 1 any one of Proton pump, Tight membrane, Sealed shell or Acid-proof insides wins (P2); Proton pump + Tight membrane (2 layers, energy 1+2+1 = 4) fits; Acid-proof insides leaves no room for a second acid card (N1); the dish 1 fix "Swap the Sync pulse for Acid-proof insides" became "Add Acid-proof insides". Dish 4's fix "Add Random naps" became "Swap the Sync pulse for Random naps": Division holds one part, so the Sync pulse and Random naps can no longer sit together.
+
+**Functions the page uses.** `LookAlive.fit(dish, build, cardId, layer?)` returns `{ ok: true, build }` or `{ ok: false, reason }`. A card in a one-option slot swaps with what is there; in the Envelope, `layer` (0 outer, 1 inner) picks the layer, no layer means the first free one; a Machine rule is passed as an object `{ kind: 'machine', ... }`. The result is checked with `validate` (energy included). `LookAlive.unfit(dish, build, slotId, cardId?)` clears a slot (for the Envelope, the layer holding `cardId`); Power refuses ("Power cannot be empty."), locked slots refuse. `LookAlive.diff(dish, before, after)` returns the plain-words change ("Births -15%", "Keeps the acid out", "Energy 2 of 4") from the same `params` that `predict` uses.
+
+**Other changes in this pass.** Radio mesh Regularity 0.5 to 0.8: with one Division part per build, the all-Machine stacks lost the clock + copier piles that made Regularity the leading cause, and E2 fell to 77.8% (needs 80%); the dishes where Regularity is on (4 and 5) are the only ones affected. The bots (`dev/bots.js`) enumerate slot-legal builds: the Factory parts in locked slots plus any choice from the open slots within energy.
+
 ## One tick, for every cell (periodic edges)
 
 1. **Reflexes and rules.** Work out this cell's multipliers (below).
@@ -36,7 +64,7 @@ Scalars: tick, the seeded RNG state, four suspicion channels (fast and slow memo
 
 `predict()` and the simulation both call this one function, so the chips cannot drift from the model.
 
-**The default build is the Factory unit:** `{ pace: 4, slop: 0, metabolism: 'respiration', parts: ['clock'], reflex: null }` (`LookAlive.DEFAULT_BUILD`). `isDefault` is true only for exactly this build. (The Factory unit's part is the Sync pulse, card id `clock`.)
+**The default build is the Factory unit:** `{ pace: 4, slop: 0, metabolism: 'respiration', parts: ['clock'], reflex: null }` (Respiration in Power, Sync pulse in Division) (`LookAlive.DEFAULT_BUILD`). `isDefault` is true only for exactly this build. (The Factory unit's part is the Sync pulse, card id `clock`.)
 
 | input | effect |
 | --- | --- |
@@ -49,10 +77,10 @@ Scalars: tick, the seeded RNG state, four suspicion channels (fast and slow memo
 | Cell wall | births x0.94, toughness +2 |
 | Head count (quorum signal; id `quorum`) | the field above (the Biology answer to overgrowth) |
 | Random naps (id `naps`, energy 1; replaces Copying errors, id `errors`, which saved builds map to `naps`) | timing sd +0.03, births x0.97, and a nap flow (below) |
-| Acid-proof insides (id `acidproof`, Biology, energy 3) | acid protection 100%, no births cost. The highest energy of the acid cards, so on dish 1 (energy 3) it fills the whole budget and the Sync pulse must go |
-| Flagellum | births x0.96, 6% of units drift toward food each tick |
+| Acid-proof insides (id `acidproof`, Biology, energy 3) | acid protection 100%, no births cost. The highest energy of the acid cards: on dish 1 (limit 4, the Sync pulse is locked in and costs 1) it fills the rest of the budget |
+| Flagellum (Motor slot, locked on this planet, not offered) | births x0.96, 6% of units drift toward food each tick |
 | Sync pulse (id `clock`; was Crystal clock) | births x1.15, Regularity +0.8 (was 1.0) |
-| Radio mesh | births x `clamp(1 + 6 (0.10 - exactShare), 0.3, 1.2)` using the exact global share. Regularity +0.5 (the Machine answer to overgrowth) |
+| Radio mesh | births x `clamp(1 + 6 (0.10 - exactShare), 0.3, 1.2)` using the exact global share. Regularity +0.8 (the Machine answer to overgrowth; was 0.5) |
 | Perfect copier | base death x0.1, Regularity +1.6 |
 | Self-repair | toughness +4, Regularity +0.8 |
 | Fuel cell | Regularity +0.5 (it is a Machine card) |
@@ -152,6 +180,15 @@ The build that starts each dish is the simplest intended winner of the one befor
 | SOS response | 0.012 / x0.25 | 0.0115 / x0.07 | same |
 | bust | tick 150, depth 0.9, 80 ticks, 7.5% | tick 50, depth 0.945, 85 ticks, 7% | failure visible before tick 100; reflex-free builds still lose |
 | Tight membrane | n/a | blocks 85% | colony shrinks to 43% on dish 1: survives with visible losses |
+
+## Results (body-slot pass)
+
+Full run of `node games/look-alive/dev/check.js` (235 s): **25 of 27 lines pass** (22 earlier lines plus S1 to S5). The two failures are the two known ones.
+
+- **P7 fails on dish 2 only** (dishes 1, 3, 4, 5 pass: worst share step 3.1 / 2.3 / 2.1 / 3.0 points). Dish 2: 287 winners, 57 break the 5 point rule (was 201 of a larger set), 90 steps into the runaway flood excluded; worst win-to-win step 11.2 points (was 8.5). The failure is the same threshold and was not fixed. The count is lower mostly because the locked Sync pulse and the slot rules leave fewer card sets, not because the threshold moved.
+- **E6 fails by one sample**: dishes 1 to 4 are 24 of 24, dish 5 is 23 of 24 (the one that is not borderline). It used to fail on dishes 4 and 5 through Flagellum builds; with the Flagellum gone the failure is smaller but not removed.
+- New and changed lines all pass: S1 (every carried build and every fix applies slot-legally: 20 builds), S2 (50 offered cards, none in a locked slot, Motor offered nowhere), S3 (two different layers legal, two of the same refused, three refused, shell alone legal, shell plus anything refused, two Insides, Division or Signal parts refused, two layers + Division + Signal at energy 6 legal), S4 (the Sealed shell fills both layers and refuses to share, both orders), S5 (2705 fit, unfit and conversion operations on random builds, Power never emptied). N1 now reads "Acid-proof insides wins with the locked Sync pulse" (dish 1 energy 4 counts the Sync pulse); N5: 5 builds win dish 1 at Pace 4 (the Factory unit plus Tight membrane, Proton pump, Sealed shell, Acid-proof insides, or pump + Tight membrane), all flood dish 2, smallest peak 80.7%. E2 passes after Radio mesh Regularity went to 0.8 (it was 77.8% with 0.5). P9 worst 64x64 time 79 ms (limit 100; the first full run read 125 ms while the machine was busy with another job).
+- P2: 13 of 13 fixes still win, with the changed dish 1 and dish 4 fixes (see "Body slots").
 
 ## Results (biology pass and dish 2 runaway)
 
