@@ -145,3 +145,56 @@ Reviewed against `biology-100.md` on 17 Nov. Entry numbers refer to that file.
 ### Saved for later planets
 
 Coat swap (entry 5) as the first mimicry skill. Spring-loaded spear (9). Built-in compass (51). Gas-filled floats (45). Stolen solar panels (35). Viral mugshot memory (1). Shared iron grabbers and cheats (79).
+
+## 12. Body slots (Josh, 17 Nov)
+
+The cell you adapt shows where each improvement goes, like customising a weapon: each body slot takes options of its own kind only. You can swap the option in a slot, but you cannot fit two in a one-option slot. Energy is the overall limit.
+
+### The slots
+
+| Slot | Where on the cell | Holds | Options |
+|---|---|---|---|
+| **Power** | The glowing core | Exactly one, never empty | Respiration, Fermentation, Fuel cell (Machine) |
+| **Envelope** | The outer skin, two layers | Up to two different layers | Tight membrane, Proton pump, Cell wall, Sealed shell (Machine, takes both layers) |
+| **Insides** | The fluid inside | One | Acid-proof insides, Self-repair (Machine) |
+| **Division** | The pinch at the middle | One, plus the Pace and Sloppiness dials | Random naps, Sync pulse (Machine), Perfect copier (Machine) |
+| **Signal** | Dots leaking from the surface | One | Head count (quorum signal), Radio mesh (Machine) |
+| **Motor** | The tail | One | Flagellum |
+| **Reflex** | A sensor patch on the skin | One | Stringent response, SOS response, Sporulate, Machine rule |
+
+- A second Envelope layer costs its full energy, so it crowds out something else.
+- The Factory unit starts with Respiration in Power and Sync pulse in Division.
+- Later planets add options to existing slots, and rarely a new slot.
+
+### One slot opens per dish
+
+| Dish | Slot that opens | Why |
+|---|---|---|
+| 1. Don't Dissolve | Envelope and Insides | Three real answers to acid: pump it out, keep it out, or stop caring |
+| 2. Don't Take Over | Signal, and the Pace dial | Hold your own numbers down |
+| 3. Smell Right | Power | Your waste depends on how you make energy |
+| 4. Be Messy | Division, and the Sloppiness dial | Dividing in step is the tell |
+| 5. When Things Change | Reflex | React to the crash |
+
+Motor opens on a later planet. Slots that are not open yet are drawn dim and labelled "Locked".
+
+### The screen
+
+- A large picture of your cell with each slot marked where it sits on the body.
+- Click a slot. Its options appear beside it as cards with their picture, Real line, Game line and energy.
+- Hover or select an option to preview the change in plain words before you fit it ("Births -15%. Keeps the acid out. Energy 2 of 3.").
+- Click an option to fit it. Click the fitted option again, or "Empty", to clear the slot. Power cannot be emptied.
+- The slot that opened on this dish is highlighted, and the handler line points at it.
+- Card pictures are in `docs/superpowers/plans/2026-11-16-look-alive/refs/cards/`.
+
+### Data and rules
+
+```js
+card.slot            // 'power' | 'envelope' | 'insides' | 'division' | 'signal' | 'motor' | 'reflex'
+card.layers          // envelope only: 1, or 2 for the Sealed shell
+dish.slots           // which slots are open on this dish, in order
+build.slots = { power: id, envelope: [id, id?], insides: id|null, division: id|null,
+                signal: id|null, motor: id|null, reflex: null | {...} }
+```
+
+`validate` enforces the slot rules and the energy limit. Old saved builds with a flat `parts` list are converted.
