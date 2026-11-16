@@ -10,8 +10,10 @@
   function copy(o) { return JSON.parse(JSON.stringify(o)); }
   var reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  var ORDER = [1, 2, 3, 4, 5];
-  var NB_TITLE = { 1: 'How acid-loving microbes keep acid out', 2: 'The growth curve and carrying capacity', 3: 'Fermentation and respiration', 4: 'Variation between cells', 5: 'Sensing and response' };
+  var ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  var GRADE_RANK = { Passable: 1, Convincing: 2, Benign: 3 };
+  var GRADE_NEXT = { Passable: 'Convincing needs the lab never to reach Inspection.', Convincing: 'Benign needs every stat inside its zone the whole run, with 1 energy spare.', Benign: 'That is the best grade. Nothing more to earn here.' };
+  var NB_TITLE = { 1: 'How acid-loving microbes keep acid out', 2: 'The growth curve and carrying capacity', 3: 'Fermentation and respiration', 4: 'Variation between cells', 5: 'Sensing and response', 6: 'How acid-lovers trade energy for safety', 7: 'Why real cells cannot have everything', 8: 'Bet-hedging: sleepers and spores', 9: 'Why variation is normal in living things', 10: 'A summary page from the lab' };
   var PACE_NAMES = ['Glacial', 'Sluggish', 'Slow', 'Unhurried', 'Native rate', 'Brisk', 'Quick', 'Eager', 'Frantic'];
   var SLOP_NAMES = ['Spreadsheet', 'Ledger', 'Tidy', 'Careful', 'Casual', 'Relaxed', 'Messy', 'Chaotic', 'Teenager'];
   var STAMPS = ['SUFFICIENTLY BACTERIAL', 'PASSES AS NATIVE', 'NOTHING TO SEE HERE', 'APPROVED BY THE IMMUNE SYSTEM', 'UNREMARKABLE', 'CLEARED FOR COLONISATION'];
@@ -35,7 +37,7 @@
 
   var S = {
     screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null },
-    cleared: load('cleared2', {}), wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), unlocked: load('unlocked2', false),
+    cleared: load('cleared2', {}), grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), unlocked: load('unlocked2', false),
     slot: null, layer: 0, preview: null, pointed: false,
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
@@ -44,6 +46,8 @@
   };
 
   function dishObj() { return S.dish == null ? null : Lv.dish(S.dish); }
+  function isExam(d) { return !!(d && d.exam); }
+  function eventsOf(d) { return d.events && d.events.length ? d.events : (d.event && d.event.tick > 0 ? [d.event] : []); }
 
   // ---------------------------------------------------------------- build helpers
   function carriedFor(id) {
@@ -79,10 +83,11 @@
     else if (sc === 'brief') { step = 1; text = 'Read the problem and your goal, then press Continue to watch your cell try it.'; }
     else if (sc === 'adapt') {
       step = 3;
-      if (S.pointed && d && NEW_SLOT_HINT[d.id]) text = NEW_SLOT_HINT[d.id] + (a ? ' (Your last cell failed: ' + failSentence(a).toLowerCase() + '.)' : '');
+      if (isExam(d)) text = a ? (S.lastRunLost ? 'That did not work: ' : 'Your cell failed: ') + failSentence(a).toLowerCase() + '. Exam: no tips. Press "What changes this?", change your cell, then Run.' : 'Exam dish: no answer tips, and several different cells can pass. Change your cell, then press Run.';
+      else if (S.pointed && d && NEW_SLOT_HINT[d.id]) text = NEW_SLOT_HINT[d.id] + (a ? ' (Your last cell failed: ' + failSentence(a).toLowerCase() + '.)' : '');
       else text = a ? (S.lastRunLost ? 'That did not work: ' : 'Your cell failed: ') + failSentence(a).toLowerCase() + '. Fix the red bar, then press Run. Stuck? Press Tip.' : 'Change your cell, then press Run.';
     } else if (sc === 'run' && S.run) {
-      if (S.overlayOpen) { step = 5; text = S.run && S.run.v.win ? 'Dish cleared. Read the notebook page, then press Next dish.' : 'Your cell failed. Read the memo, press Tip if you want help, then go back to Adapt.'; }
+      if (S.overlayOpen) { step = 5; text = S.run && S.run.v.win ? 'Dish cleared. Read the notebook page, then press Next dish.' : 'Your cell failed. Read the memo, press ' + (isExam(dishObj()) ? '"What changes this?"' : 'Tip if you want help') + ', then go back to Adapt.'; }
       else if (S.mode === 'watch') {
         step = 2;
         if (!S.watchDone) text = 'Watch what happens to your cell as it is.';
@@ -123,10 +128,13 @@
   function renderList() {
     var box = $('dishList'); box.innerHTML = '';
     ORDER.forEach(function (id) {
-      var d = Lv.dish(id), locked = isLocked(id), cleared = !!S.cleared[id];
+      var d = Lv.dish(id), locked = isLocked(id), cleared = !!S.cleared[id], gr = S.grades[id];
+      if (id === 1) box.appendChild(el('div', 'grouph', 'Learning the cell <span class="dim">dishes 1 to 5: one new problem each</span>'));
+      if (id === 6) box.appendChild(el('div', 'grouph', 'Exams <span class="dim">dishes 6 to 10: no answer tips, several cells can pass</span>'));
       var row = el('div', 'dishrow' + (locked ? ' locked' : '') + (cleared ? ' cleared' : ''));
+      var st = locked ? 'Locked' : cleared ? (d.exam && gr ? gr : 'Cleared') : 'Open';
       row.innerHTML = '<div class="num">' + id + '</div><div class="mid"><div class="t">' + esc(d.title) + '</div><div class="g">' + esc(d.problem) + '</div>' +
-        '<div class="c">You start with: ' + esc(buildWords(carriedFor(id))) + '</div></div><div class="st">' + (locked ? 'Locked' : cleared ? 'Cleared' : 'Open') + '</div>';
+        '<div class="c">You start with: ' + esc(buildWords(carriedFor(id))) + '</div></div><div class="st' + (gr ? ' g-' + gr.toLowerCase() : '') + '">' + st + '</div>';
       var b = el('button', 'big', locked ? 'Locked' : cleared ? 'Again' : 'Start');
       b.disabled = locked; b.setAttribute('data-dish', id);
       b.addEventListener('click', function () { selectDish(id); });
@@ -135,7 +143,7 @@
   }
   function selectDish(id) {
     S.dish = id; S.carried = carriedFor(id); S.build = copy(S.carried); S.undo = []; S.rule = { sensor: null, cmp: null, value: null, action: null };
-    S.slot = Lv.dish(id).opens[0]; S.layer = 0; S.pointed = true; S.preview = null; S.run = null; S.ghost = null; S.shownDish = -1; S.lastAutopsy = null; S.lastRunLost = false; S.tipLevel = 0; S.runCount = 0; S.overlayOpen = false; S.fail = null;
+    S.slot = Lv.dish(id).opens[0] || Lv.dish(id).slots[0]; S.layer = 0; S.pointed = Lv.dish(id).opens.length > 0; S.whyOpen = false; S.runGrade = null; S.note = ''; S.preview = null; S.run = null; S.ghost = null; S.shownDish = -1; S.lastAutopsy = null; S.lastRunLost = false; S.tipLevel = 0; S.runCount = 0; S.overlayOpen = false; S.fail = null;
     closeOverlay();
     if (id === 1 && !S.seenWorld) { S.worldBack = 'brief'; show('world'); } else show('brief');
   }
@@ -157,6 +165,7 @@
     $('briefKicker').textContent = 'Dish ' + d.id + ' of ' + ORDER.length;
     $('briefTitle').textContent = d.title;
     $('briefProblem').textContent = d.problem; $('briefGoal').textContent = d.goal;
+    $('briefExam').style.display = d.exam ? '' : 'none';
     $('briefFig').innerHTML = figHtml(S.carried);
     $('briefCell').textContent = buildWords(S.carried) + (S.dish > 1 && S.wins[S.dish - 1] ? ' (the cell that won the last dish)' : '') + '. It goes in unchanged.';
   }
@@ -199,9 +208,41 @@
     fx.forEach(function (f) { if (f.kind === 'slot') sl.push(f.slot); });
     S.fail = { stat: a.stat, build: copy(build), fixers: fx, slots: sl };
   }
-  function failOpen() { var d = dishObj(); if (!S.fail || !d || !S.build) return false; var st = Sim.stats(d, S.build).filter(function (x) { return x.id === S.fail.stat; })[0]; return !!st && st.state !== 'safe'; }
+  function failOpen() { var d = dishObj(); if (!S.fail || !d || !S.build) return false; var st = Sim.stats(d, S.build).filter(function (x) { return x.id === S.fail.stat; })[0]; return !!st && st.state !== 'safe' && st.state !== 'unchecked'; }
+  // Which slots and dials can move the stat(s) the player should look at. Tutorial dishes: the failing stat after a failure. Exam dishes (when
+  // "What changes this?" is open): the failing stat, or every checked stat that is not safe in the forecast. Unranked.
+  function whyList() {
+    var d = dishObj(), open = failOpen(), key = d.id + '|' + JSON.stringify(S.build) + '|' + (open ? S.fail.stat : '');
+    if (S.whyCache && S.whyCache.key === key) return S.whyCache.v;
+    var st = Sim.stats(d, S.build), ids;
+    if (open) ids = [S.fail.stat];
+    else ids = st.filter(function (x) { return x.checked && x.state !== 'safe'; }).map(function (x) { return x.id; });
+    if (!open && Sim.dissolved(d, S.build)) ids = ['acid'];
+    var v = ids.map(function (id) {
+      var fx = Sim.statFixers(d, S.build, id), sl = [], dl = [];
+      fx.forEach(function (f) { if (f.kind === 'slot') sl.push(f.slot); else dl.push(f.dial); });
+      return { stat: id, fixers: fx, slots: sl, dials: dl, state: st.filter(function (x) { return x.id === id; })[0] };
+    });
+    S.whyCache = { key: key, v: v }; return v;
+  }
+  function fixInfo() {
+    var d = dishObj(), out = { slots: [], by: {} };
+    if (!d) return out;
+    if (isExam(d)) {
+      if (!S.whyOpen) return out;
+      whyList().forEach(function (w) { w.slots.forEach(function (k) { if (out.slots.indexOf(k) < 0) out.slots.push(k); (out.by[k] = out.by[k] || []).push(Sim.STAT_INFO[w.stat].name); }); });
+    } else if (failOpen()) {
+      S.fail.slots.forEach(function (k) { out.slots.push(k); out.by[k] = [Sim.STAT_INFO[S.fail.stat].name]; });
+    }
+    return out;
+  }
+  function recordGrade(run, d, build) {
+    S.runGrade = isExam(d) ? Sim.grade(run, d, build) : null;
+    if (S.runGrade && (!S.grades[d.id] || GRADE_RANK[S.runGrade] > GRADE_RANK[S.grades[d.id]])) { S.grades[d.id] = S.runGrade; save('grades2', S.grades); }
+  }
   function winCarried() {  // the carried cell already wins: take it as the win
     var d = dishObj(); S.cleared[d.id] = true; S.wins[d.id] = copy(S.carried); save('cleared2', S.cleared); save('wins2', S.wins);
+    recordGrade(S.run, d, S.carried);
     showResult();
   }
 
@@ -270,7 +311,8 @@
   function toggleOption(k, id) { return fittedIds(k).indexOf(id) >= 0 ? doUnfit(k, id) : doFit(k, id); }
 
   // ---- preview: a plain-words diff, and the option drawn ghosted in place
-  function showPreviewText(t, bad) { var e = $('pvT'); e.textContent = t; e.className = 'pv-t' + (bad ? ' bad' : ''); }
+  function showPreviewText(t, bad, html) { var e = $('pvT'); if (html != null) e.innerHTML = html; else e.textContent = t; e.className = 'pv-t' + (bad ? ' bad' : ''); }
+  function pvHtml(prefix, list, d, b) { return esc(prefix) + ' \u2192 ' + (list.length ? changesHtml(list) : '<span class="ef t-neutral">No effect on this cell</span>') + '<span class="ef en">Energy ' + Sim.energyOf(Sim.normalize(b)) + ' of ' + d.energy + '</span>'; }
   var PV_HINT = 'Hover or focus an option to preview it here. Click to fit it; click the fitted option again to take it off.';
   function previewOption(k, id) {
     var d = dishObj(), fitted = id && fittedIds(k).indexOf(id) >= 0, r, name = id ? cardName(id) || (Cards.bio(id) || {}).name : 'nothing';
@@ -280,7 +322,8 @@
     else r = Sim.fit(d, S.build, id, layerArg(k));
     if (!r.ok) { S.preview = null; showPreviewText(r.reason, true); renderCell(); return; }
     S.preview = { slot: k, build: r.build };
-    showPreviewText((id === null || fitted ? 'Take off ' + (id === null ? 'what is fitted' : name) : 'Fit ' + name) + ' \u2192 ' + Sim.diffWords(d, S.build, r.build).join('. ') + '.', false);
+    var list = (id === null || fitted) ? changesBetween(d, S.build, r.build) : effectsFor(d, Cards.part(id) || Cards.bio(id), false).changes;
+    showPreviewText('', false, pvHtml(id === null || fitted ? 'Take off ' + (id === null ? 'what is fitted' : name) : 'Fit ' + name, list, d, r.build));
     renderCell(); renderBars();
   }
   // Hovering a dial step previews it the same way; clicking it applies it.
@@ -288,7 +331,7 @@
     var d = dishObj(); if (!d || S.build[key] === v) { clearPreview(); return; }
     var nb = copy(S.build); nb[key] = v;
     S.preview = { slot: null, build: nb };
-    showPreviewText((key === 'pace' ? 'Pace ' : 'Sloppiness ') + v + ' \u2192 ' + Sim.diffWords(d, S.build, nb).join('. ') + '.', false);
+    showPreviewText('', false, pvHtml((key === 'pace' ? 'Pace ' : 'Sloppiness ') + v, changesBetween(d, S.build, nb), d, nb));
     renderCell(); renderBars();
   }
   function clearPreview() { if (!S.preview && $('pvT').className === 'pv-t' && $('pvT').textContent === PV_HINT) return; S.preview = null; showPreviewText(PV_HINT, false); renderCell(); renderBars(); Array.prototype.forEach.call(document.querySelectorAll('.opt.pv'), function (e) { e.classList.remove('pv'); }); }
@@ -308,7 +351,7 @@
       var p = TAGPOS[k], a = D.ANCHOR[k], x = p[0] === 'L' ? TAG_W + 2 : 600 - TAG_W - 2, y = p[1] + TAG_H / 2;
       lead += '<line class="leader' + (S.slot === k ? ' sel' : '') + '" x1="' + x + '" y1="' + y + '" x2="' + Math.round(a[0]) + '" y2="' + Math.round(a[1]) + '"/><circle cx="' + Math.round(a[0]) + '" cy="' + Math.round(a[1]) + '" r="2.5" fill="' + (S.slot === k ? '#5fd0ff' : '#8a90a8') + '"/>';
     });
-    var fixSlots = failOpen() ? S.fail.slots : [];
+    var fi = fixInfo(), fixSlots = fi.slots;
     $('cellSvg').innerHTML = D.cellArt(sl, { state: state, sel: S.slot, nw: nw, fix: fixSlots, ghost: gh && gh.slot ? gh.slot : null, ghostSlots: gh && gh.slot ? Sim.toSlots(gh.build) : null }) + lead;
     var box = $('tagLayer'), carried = S.carried;
     if (!box.firstChild) {
@@ -322,7 +365,7 @@
     Array.prototype.forEach.call(box.children, function (b) {
       var k = b.getAttribute('data-slot'), st = state[k], info = Cards.slotInfo(k), ch = st === 'open' ? slotChange(k) : '', txt = slotText(k, sl), status = '';
       if (st !== 'open') status = Sim.lockedReason(d, k);
-      else if (fixSlots.indexOf(k) >= 0) status = '<span class="pill fx">can fix ' + esc(Sim.STAT_INFO[S.fail.stat].name) + '</span>';
+      else if (fixSlots.indexOf(k) >= 0) status = '<span class="pill fx">changes ' + esc(fi.by[k].join(', ')) + '</span>';
       else if (S.pointed && d.opens.indexOf(k) >= 0) status = '<span class="pill pt">new slot</span>';
       else if (ch) status = '<span class="pill ' + ch + '">' + ch + '</span>';
       b.className = 'tag' + (fixSlots.indexOf(k) >= 0 ? ' fixhl' : '') + (S.slot === k && st === 'open' ? ' sel' : '') + (st === 'factory' ? ' factory' : st === 'locked' ? ' locked' : '') + (S.pointed && d.opens.indexOf(k) >= 0 ? ' new' : '');
@@ -343,23 +386,59 @@
     img.onerror = function () { var d2 = el('div', cls + ' noimg', esc((cardOrBio(id) ? cardOrBio(id).name : '?').charAt(0))); if (img.parentNode) img.parentNode.replaceChild(d2, img); };
     return img;
   }
-  function effLabel(x) { return x.stat === 'growth' ? (x.dir > 0 ? 'Growth faster' : 'Growth slower') : x.name; }
-  function effArrows(x) { var a = x.dir > 0 ? '\u25B2' : '\u25BC', o = ''; for (var i = 0; i < x.steps; i++) o += a; return o; }
+  // The one wording for a stat change, used on cards, in the preview line and for the ghost markers: { stat, words, direction, steps, tone, checked }.
+  var STAT_WORDS = { acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'], natural: ['Naturalness up', 'Naturalness down'], crash: ['Crash survival up', 'Crash survival down'] };
+  function effArrows(x) { var a = x.direction === 'up' ? '\u25B2' : '\u25BC', o = ''; for (var i = 0; i < x.steps; i++) o += a; return o; }
+  function changesHtml(list) { return list.map(function (x) { return '<span class="ef t-' + x.tone + '">' + esc(x.words) + ' <b>' + effArrows(x) + '</b></span>'; }).join(''); }
+  function changesText(list) { return list.map(function (x) { return x.words + ' ' + effArrows(x); }).join(', '); }
+  // The same list worked out from two builds (for taking a part off, or a dial step), with the same tones as cardEffects.
+  function changesBetween(d, a, b) {
+    var out = [], dis = Sim.dissolved(d, b);
+    Sim.statDiff(d, a, b).forEach(function (x) {
+      if (x.id !== 'acid' && (dis || Sim.dissolved(d, a))) return;
+      var moved = x.better !== null || Math.abs(x.delta) >= 0.04 || x.fromState !== x.toState; if (!moved) return;
+      var up = x.delta > 0 || (x.delta === 0 && x.health > 0);
+      out.push({ stat: x.id, direction: up ? 'up' : 'down', steps: Math.abs(x.health) >= 0.15 ? 2 : 1, words: STAT_WORDS[x.id][up ? 0 : 1], tone: !x.checked ? 'neutral' : x.better === true ? 'good' : x.better === false ? 'bad' : 'neutral', checked: x.checked });
+    });
+    return out;
+  }
+  // Workaround for a simulation gap: when the cell without the card is dissolved by the acid (dish 1), cardEffects leaves out every non-acid stat because
+  // nothing is left to measure. The page adds the Growth change against the same cell on an acid-free copy of the dish (the cost the card puts on births).
+  var d0cache = {};
+  function acidFree(d) {
+    if (!d0cache[d.id]) { var x = copy(d); x.id = 'af' + d.id; delete x.acid; x.aliveOnly = false; x.band = { lo: 0.05, hi: 0.15, need: 0.7, warm: 30 }; x.suspicion = true; x.channels = ['casualties']; d0cache[d.id] = x; }
+    return d0cache[d.id];
+  }
+  function effectsFor(d, c, fitted) {
+    var ef = Sim.cardEffects(d, S.build, c.id);
+    if (!d.aliveOnly || !ef.preview || !ef.build) return ef;
+    var base = fitted ? Sim.unfit(d, S.build, c.slot, c.id) : { ok: true, build: S.build }, nb = fitted ? S.build : ef.build;
+    if (!base.ok || !Sim.dissolved(d, base.build) || Sim.dissolved(d, nb)) return ef;
+    var ref = Sim.stats(acidFree(d), base.build), now = Sim.stats(d, nb);
+    now.forEach(function (x, i) {
+      if (x.id === 'acid') return;
+      var dl = x.value - ref[i].value; if (Math.abs(dl) < 0.03) return;
+      var up = dl > 0;
+      ef.changes.push({ stat: x.id, name: x.name, direction: up ? 'up' : 'down', steps: Math.abs(dl) >= 0.15 ? 2 : 1, words: STAT_WORDS[x.id][up ? 0 : 1], tone: !x.checked ? 'neutral' : x.state === 'safe' ? 'good' : 'bad', checked: x.checked });
+    });
+    return ef;
+  }
   function optionEl(k, c) {
     var mach = c.shelf === 'machine', fitted = fittedIds(k).indexOf(c.id) >= 0, w = el('div', 'opt ' + (mach ? 'mach' : 'bio')), r = null, why = '';
     w.setAttribute('data-id', c.id); w.setAttribute('role', 'button'); w.tabIndex = 0;
     if (!fitted) { r = Sim.fit(dishObj(), S.build, c.id, layerArg(k)); if (!r.ok) why = r.reason; }
     w.setAttribute('aria-pressed', fitted ? 'true' : 'false');
     if (fitted) w.classList.add('fitted'); if (why) w.classList.add('blocked');
-    var real = c.real, game = c.game || c.sentence, ef = Sim.cardEffects(dishObj(), S.build, c.id);
+    var real = c.real, game = c.game || c.sentence, ef = effectsFor(dishObj(), c, fitted);
     var inn = el('div', 'in'), tb = el('div', 'thumbbox'), tx = el('div', 'otxt');
     tb.appendChild(thumbEl(c.id, 'thumb')); tb.appendChild(el('div', 'fittag', 'Fitted'));
-    var eList = function (arr) { return arr.map(function (x) { return '<span class="ef">' + esc(effLabel(x)) + ' <b>' + effArrows(x) + '</b></span>'; }).join(''); };
     var en = c.kind === 'metabolism' || c.kind === 'part' ? (c.energy ? 'Energy ' + c.energy : 'No energy') : 'No energy';
+    var chg = ef.changes.length ? changesHtml(ef.changes) : '<span class="ef t-neutral">No effect on this cell</span>';
+    var lead = fitted ? '<span class="ef lead">Fitted. Doing:</span>' : '';
+    var chgTxt = (fitted ? 'Fitted. Doing: ' : 'Changes: ') + (ef.changes.length ? changesText(ef.changes) : 'No effect on this cell') + ' \u00B7 ' + en;
     w.title = game + (c.layers > 1 ? ' Takes both Envelope layers.' : '');
     tx.innerHTML = '<div class="oh"><b>' + esc(c.name) + '</b><span class="shelf ' + (mach ? 'mach' : 'bio') + '">' + (mach ? 'Machine' : 'Biology') + '</span></div>' +
-      '<div class="eff helps"><i>Helps</i><span>' + (ef.helps.length ? eList(ef.helps) : '<em>nothing here</em>') + '</span></div>' +
-      '<div class="eff costs"><i>Costs</i><span>' + (ef.costs.length ? eList(ef.costs) + '<span class="ef"> </span>' : '') + '<span class="ef en">' + en + '</span></span></div>' +
+      '<div class="eff chg" title="' + esc(chgTxt) + '">' + (fitted ? lead : '<i>Changes:</i>') + '<span>' + chg + '<span class="ef en">' + en + '</span></span></div>' +
       '<p class="real" title="' + esc(real) + '"><i>Real</i>' + esc(real) + '</p>' +
       '<div class="why">' + (why ? esc(why) : (c.layers > 1 ? 'Takes both Envelope layers.' : '')) + '</div>';
     inn.appendChild(tb); inn.appendChild(tx); w.appendChild(inn);
@@ -533,16 +612,21 @@
   function setBar(row, s, o) {
     o = o || {};
     var z = row.querySelector('.sb-zone'), m = row.querySelector('.sb-mark'), g = row.querySelector('.sb-ghost'), v = row.querySelector('.sb-verdict'), ar = row.querySelector('.sb-arrow'), tg = row.querySelector('.sb-tag');
+    var unc = s.state === 'unchecked';   // not checked on this dish: greyed, no safe zone, never red
+    z.style.display = unc ? 'none' : '';
     z.style.left = pos(s.safe[0]); z.style.width = ((s.safe[1] - s.safe[0]) * 100).toFixed(1) + '%';
-    var ok = s.state === 'safe';
+    var ok = s.state === 'safe', edge = s.state === 'edge';
     if (s.value == null) m.style.display = 'none'; else { m.style.display = ''; m.style.left = pos(s.value); }
-    m.className = 'sb-mark ' + (ok ? 'ok' : 'bad');
+    m.className = 'sb-mark ' + (unc ? 'neu' : ok ? 'ok' : edge ? 'amb' : 'bad');
     var gh = o.ghost, showG = gh && gh.value != null && (s.value == null || Math.abs(gh.value - s.value) >= 0.004 || gh.state !== s.state);
     if (o.forecast) { showG = o.forecast.value != null && (s.value == null || Math.abs(o.forecast.value - s.value) >= 0.004); gh = o.forecast; }
     g.style.display = showG ? '' : 'none';
-    if (showG) { g.style.left = pos(gh.value); g.className = 'sb-ghost' + (o.forecast ? ' fc' : gh.state === 'safe' ? ' ok' : ' bad'); }
-    var txt = s.verdict, cls = ok ? 'ok' : 'bad';
-    if (o.ghost && showG) { txt = '\u2192 ' + gh.verdict; cls = (gh.state === 'safe' ? 'ok' : 'bad') + ' pv'; }
+    // ghost colour = the tone of the change (the same tone as the card's words)
+    var gtone = 'bad';
+    if (showG && o.ghost) gtone = unc ? 'neu' : (o.diff && o.diff.better === true) ? 'ok' : (o.diff && o.diff.better === false) ? 'bad' : gh.state === 'safe' ? 'ok' : gh.state === 'edge' ? 'amb' : 'bad';
+    if (showG) { g.style.left = pos(gh.value); g.className = 'sb-ghost' + (o.forecast ? ' fc' : ' ' + gtone); }
+    var txt = s.verdict, cls = unc ? 'neu' : ok ? 'ok' : edge ? 'amb' : 'bad';
+    if (o.ghost && showG) { txt = '\u2192 ' + gh.verdict; cls = gtone + ' pv'; }
     if (v.textContent !== txt) v.textContent = txt;
     v.className = 'sb-verdict ' + cls;
     var arrow = '', acl = '';
@@ -551,8 +635,9 @@
       acl = o.diff.better === true ? 'good' : o.diff.better === false ? 'badc' : 'flat';
     }
     ar.textContent = arrow; ar.className = 'sb-arrow ' + acl;
-    tg.textContent = o.fail ? 'this is what failed' : ''; tg.className = 'sb-tag' + (o.fail ? ' on' : '');
-    row.classList.toggle('failed', !!o.fail);
+    var failed = !!o.fail && !unc;
+    tg.textContent = failed ? 'this is what failed' : ''; tg.className = 'sb-tag' + (failed ? ' on' : '');
+    row.classList.toggle('failed', failed); row.classList.toggle('unchecked', unc);
   }
   function renderBars() {
     var d = dishObj(), box = $('statBars'); if (!d || !S.build) return;
@@ -560,7 +645,7 @@
     var cur = Sim.stats(d, S.build), gh = S.preview ? Sim.stats(d, S.preview.build) : null, df = S.preview ? Sim.statDiff(d, S.build, S.preview.build) : null, open = failOpen();
     var dis = S.preview && Sim.dissolved(d, S.preview.build);
     Array.prototype.forEach.call(box.children, function (row, i) {
-      var s = cur[i], hide = dis && s.id !== 'acid';
+      var s = cur[i], hide = (dis || Sim.dissolved(d, S.build)) && s.id !== 'acid';
       setBar(row, s, { ghost: gh && !hide ? gh[i] : null, diff: df && !hide ? df[i] : null, fail: open && S.fail.stat === s.id });
     });
     renderFixLine(d, cur);
@@ -570,15 +655,34 @@
   }
   function renderFixLine(d, cur) {
     var e = $('fixLine'), t = '', cls = 'fixline';
-    if (S.fail) {
+    if (S.fail && !isExam(d)) {
       var nm = Sim.STAT_INFO[S.fail.stat].name;
       if (failOpen()) { if (S.fail.fixers.length) { t = (S.fail.fixers[0].full ? 'Changes ' : 'Helps a little: ') + nm + ': ' + fixWords(S.fail.fixers); cls += ' on'; } }
       else { t = nm + ' is safe now. Press Run.'; cls += ' done'; }
     }
     if (e.textContent !== t) e.textContent = t; e.className = cls;
   }
+  // Exam dishes: "What changes this?" lists the slots and dials that move the stat (statFixers), unranked.
+  function whyHtml() {
+    var d = dishObj(), l = whyList(), h = '';
+    if (!l.length) return '<div class="okline">Every checked stat is inside its zone. Press Run.</div>';
+    l.forEach(function (w) {
+      var nm = Sim.STAT_INFO[w.stat].name, names = w.fixers.map(function (f) { return f.kind === 'slot' ? f.name + ' slot' : f.name; });
+      h += '<div><b>' + esc(nm) + '</b> <span class="dim2">(' + esc(w.state ? w.state.verdict : '') + ')</span>: ' + (names.length ? (w.fixers[0].full ? '' : 'a little, with ') + esc(names.join(', ')) : 'no single slot or dial fixes it alone; try two changes') + '</div>';
+    });
+    return h;
+  }
   function renderTips() {
-    var d = dishObj(), a = S.lastAutopsy, txt = '', btn = $('tipBtn');
+    var d = dishObj(), a = S.lastAutopsy, txt = '', btn = $('tipBtn'), ex = isExam(d);
+    if (ex) {
+      if (S.whyOpen) txt = whyHtml();
+      btn.disabled = false; btn.textContent = S.whyOpen ? 'Hide: what changes this?' : 'What changes this?';
+      $('tipHint').textContent = S.whyOpen ? '' : 'Exam: no answer tips. Lists what moves a stat, unranked.';
+      $('tipText').innerHTML = txt;
+      var mt0 = $('memoTip'); if (mt0) mt0.innerHTML = txt;
+      var mb0 = $('memoTipBtn'); if (mb0) mb0.textContent = S.whyOpen ? 'Hide' : 'What changes this?';
+      return;
+    }
     if (a && S.tipLevel >= 1) txt = '<div>' + esc(Lv.tip(d, a.cause)[1]) + '</div>';
     btn.disabled = !a; btn.textContent = 'Tip';
     $('tipHint').textContent = !a ? 'Tips appear after your cell fails.' : S.tipLevel === 0 ? 'Free. Names one part to try.' : '';
@@ -587,8 +691,16 @@
     var mb = $('memoTipBtn'); if (mb) mb.textContent = btn.textContent;
   }
   function pressTip() {
+    var d = dishObj();
+    if (isExam(d)) { S.whyOpen = !S.whyOpen; if (S.screen === 'adapt') renderAdapt(false); else renderTips(); return; }
     if (!S.lastAutopsy) return;
     S.tipLevel = 1; renderTips();
+  }
+  function startStandard() {
+    var d = dishObj(); if (!isExam(d)) return;
+    var c = Lv.standard(d.id); if (!c) return;
+    S.layer = 0; S.rule = { sensor: null, cmp: null, value: null, action: null };
+    commit(Sim.conform(d, c));
   }
   function renderAdapt(full) {
     var d = dishObj(); if (!d) return;
@@ -597,6 +709,7 @@
       var pb = $('paceBox'); pb.innerHTML = ''; pb.style.display = d.dials.indexOf('pace') >= 0 ? '' : 'none';
       if (d.dials.indexOf('pace') >= 0) pb.appendChild(dialEl('pace'));
       if (!selectable(S.slot)) S.slot = d.opens[0] || d.slots[0];
+      var ex = isExam(d); $('stdBtn').style.display = ex ? '' : 'none'; $('tipBtn').textContent = ex ? 'What changes this?' : 'Tip'; $('tipbox').classList.toggle('exam', ex);
       showPreviewText(PV_HINT, false);
     }
     var pr = Sim.predict(d, S.build);
@@ -628,7 +741,7 @@
     var run = simulate(S.build);
     S.mode = 'run'; S.run = run; S.runCount++; S.prev[d.id] = { share: run.H.share, total: run.H.total };
     S.stopAt = null; S.runFinished = false; S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = 2; setSpeedUI();
-    if (run.v.win) { S.cleared[d.id] = true; S.wins[d.id] = copy(S.build); save('cleared2', S.cleared); save('wins2', S.wins); S.lastRunLost = false; }
+    if (run.v.win) { S.cleared[d.id] = true; S.wins[d.id] = copy(S.build); save('cleared2', S.cleared); save('wins2', S.wins); S.lastRunLost = false; recordGrade(run, d, S.build); }
     else { S.lastAutopsy = run.autopsy; S.lastRunLost = true; S.tipLevel = 0; setFail(run, S.build); }
     closeOverlay(); show('run');
     return run;
@@ -729,7 +842,7 @@
     switch (card.kind) {
       case 'q': return H.qsig[ti] > 0.02;
       case 'r': return Math.abs(H.radioMult[ti] - 1) > 0.02;
-      case 't': return (E.tick > 0 && ti >= E.tick && ti <= E.tick + Math.max(E.dur, 20)) || H.kill[ti] > 0.002;
+      case 't': return eventsOf(run.dish).some(function (e) { return ti >= e.tick && ti <= e.tick + Math.max(e.dur, 20); }) || H.kill[ti] > 0.002;
       case 'fire': return H.fires[ti] > 0.03;
       default: return false;
     }
@@ -755,9 +868,15 @@
     D.drawCells($('runDish'), A, B, f, { n: run.n, nativeRef: H.nat[0], stage: any ? H.stage[ti] : 0, kill: any ? H.kill[ti] : 0, time: tm, stress: d.acid ? Math.min(1, acidNow * 3) : 0, acid: !!d.acid });
     var rl = d.aliveOnly ? 'Colony alive: ' + Math.round(H.rob[ti] / H.rob[0] * 100) + '%   Lost to acid: ' + (acidNow * 100).toFixed(0) + '% per tick'
       : 'Your share of the dish: ' + (H.share[ti] * 100).toFixed(1) + '%' + (acidNow > 0.005 ? '   Lost to acid: ' + (acidNow * 100).toFixed(0) + '% per tick' : '');
+    var marks = [], evs = eventsOf(d), crashNow = false;
+    evs.forEach(function (E, i) {
+      marks.push({ t: E.announce, color: '#8a6a20', dash: [3, 3], label: evs.length > 1 ? 'warning ' + (i + 1) : 'warning' });
+      marks.push({ t: E.tick, color: D.AMB, label: evs.length > 1 ? 'food crash ' + (i + 1) : 'food crash', crash: true });
+      if (ti >= E.tick && ti <= E.tick + E.dur) crashNow = true;
+    });
+    S.marks = marks;
+    if (crashNow) rl += '   FOOD CRASH';
     if ($('readLine').textContent !== rl) $('readLine').textContent = rl;
-    var marks = [], E = d.event;
-    if (E.tick > 0) { marks.push({ t: E.announce, color: '#8a6a20', dash: [3, 3], label: 'warning' }); marks.push({ t: E.tick, color: D.AMB, label: 'food crash' }); }
     var pin = S.resultShown && run.autopsy && S.mode === 'run' ? { from: run.autopsy.from, to: run.autopsy.to } : null;
     var g = S.ghost, t;
     updateLive(run, ti);
@@ -779,7 +898,7 @@
       var sy = 10; for (t = 0; t <= T; t++) if (H.total[t] > sy) sy = Math.ceil(H.total[t]);
       var ser2 = [{ data: function (i) { return H.total[i]; }, n: T + 1, color: D.GRN, dimTail: true, upTo: S.t, width: 2 }];
       if (g) ser2.unshift({ data: function (i) { return g.total[i]; }, n: T + 1, color: D.GRN, dash: [4, 4], alpha: 0.45, width: 1.2 });
-      D.chart($('gSusp'), { T: T, y0: 0, y1: sy, yTicks: [0, 4, 8], hlines: [{ y: 1.5, color: '#3f9d86', label: 'Curiosity' }, { y: 4.5, color: '#d9a13a', label: 'Inspection' }, { y: 8, color: D.RED, label: 'Response' }], vmarks: marks.length ? [marks[marks.length - 1]] : [], series: ser2, head: S.t, pin: pin, padB: 14 });
+      D.chart($('gSusp'), { T: T, y0: 0, y1: sy, yTicks: [0, 4, 8], hlines: [{ y: 1.5, color: '#3f9d86', label: 'Curiosity' }, { y: 4.5, color: '#d9a13a', label: 'Inspection' }, { y: 8, color: D.RED, label: 'Response' }], vmarks: marks.filter(function (m) { return m.crash; }), series: ser2, head: S.t, pin: pin, padB: 14 });
     } else {
       var r0 = H.rob[0] || 1, amax = 0.1; for (t = 0; t <= T; t++) if (H.acid[t] > amax) amax = Math.ceil(H.acid[t] * 10) / 10;
       var top = 1.2; for (t = 0; t <= T; t++) if (H.rob[t] / r0 > top) top = Math.ceil(H.rob[t] / r0 * 5) / 5;
@@ -815,23 +934,26 @@
   }
   function failStatLine(run) {
     var a = run.autopsy, st = Sim.stats(dishObj(), run.build).filter(function (x) { return x.id === a.stat; })[0];
-    return Sim.STAT_INFO[a.stat].name + (st ? ': ' + st.verdict : '') + ' (' + (CAUSE_WORDS[a.cause] || a.cause) + ')';
+    return Sim.STAT_INFO[a.stat].name + (st && st.state !== 'unchecked' ? ': ' + st.verdict : '') + ' (' + (CAUSE_WORDS[a.cause] || a.cause) + ')';
   }
   function recordRow(run, d) {
     var v = run.v;
+    var spare = d.exam ? ' Energy left: ' + (d.energy - Sim.energyOf(Sim.normalize(run.build))) + ' of ' + d.energy + '.' : '';
     if (d.aliveOnly) return '<div class="row"><b>Record</b><span>Colony at the end: ' + Math.round(run.H.rob[run.T] / run.H.rob[0] * 100) + '% of where it started.</span></div>';
-    return '<div class="row"><b>Record</b><span>In the band ' + Math.round(v.bandFrac * 100) + '% of the time (needs ' + Math.round(d.band.need * 100) + '%). Final share ' + (v.finalShare * 100).toFixed(1) + '%. Highest immune stage: ' + STAGE_NAMES[v.maxStage] + '.</span></div>';
+    return '<div class="row"><b>Record</b><span>In the band ' + Math.round(v.bandFrac * 100) + '% of the time (needs ' + Math.round(d.band.need * 100) + '%). Final share ' + (v.finalShare * 100).toFixed(1) + '%. Highest immune stage: ' + STAGE_NAMES[v.maxStage] + '.' + spare + '</span></div>';
   }
   function showResult() {
     var run = S.run, d = dishObj(); if (!run) return;
     S.resultShown = true; var v = run.v, ov = $('overlay'), html;
     if (v.win) {
       var stamp = STAMPS[D.hash(JSON.stringify(run.build)) % STAMPS.length];
-      var next = ORDER[ORDER.indexOf(d.id) + 1];
+      var next = ORDER[ORDER.indexOf(d.id) + 1], gr = d.exam ? Sim.grade(run, d, run.build) : null;
+      var gradeHtml = gr ? '<div class="gradebox g-' + gr.toLowerCase() + '" id="gradeBox"><span class="gk">Exam grade</span><b>' + gr + '</b><span class="gn">' + esc(GRADE_NEXT[gr]) + '</span></div>' : '';
+      var last = next == null && ORDER.every(function (i) { return S.cleared[i]; });
       html = '<div class="winwrap"><div class="paper memo"><h2>CLEARED</h2><div class="stampbox"><div class="stamp' + (reduced ? '' : ' slam') + '" id="stamp">' + stamp + '</div></div>' +
-        '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' +
+        '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' + gradeHtml +
         '<div class="row"><b>Dish</b><span>' + d.id + ': ' + esc(d.title) + '</span></div>' + recordRow(run, d) +
-        '<div class="pbtns">' + (next != null ? '<button type="button" data-act="next">Next dish</button>' : '') + '<button type="button" data-act="watch">Watch replay</button><button type="button" data-act="list">Dish list</button></div></div>' +
+        '<div class="pbtns">' + (next != null ? '<button type="button" data-act="next">Next dish</button>' : last ? '<button type="button" data-act="complete">Acidica complete</button>' : '') + '<button type="button" data-act="watch">Watch replay</button><button type="button" data-act="list">Dish list</button></div></div>' +
         '<div class="paper notebook"><h3>Stolen from the lab: notebook page ' + (ORDER.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id]) + '</h4><p>' + esc(d.notebook) + '</p><div class="scrawl">(Do not let them see you have read this.)</div></div></div>';
     } else {
       var a = run.autopsy;
@@ -840,10 +962,19 @@
         '<div class="row"><b>Stat that failed</b><span>' + esc(failStatLine(run)) + '</span></div>' +
         '<div class="row"><b>Also</b><span class="sec">' + (a.second ? esc(a.second.text) : 'No second cause of note.') + '</span></div>' +
         recordRow(run, d) +
-        '<div class="row"><b>Tip</b><span class="tipspan"><button type="button" data-act="tip" id="memoTipBtn">Tip</button><span id="memoTip"></span></span></div>' +
+        '<div class="row"><b>' + (d.exam ? 'Help' : 'Tip') + '</b><span class="tipspan"><button type="button" data-act="tip" id="memoTipBtn">' + (d.exam ? 'What changes this?' : 'Tip') + '</button><span id="memoTip"></span></span></div>' +
         '<div class="pbtns"><button type="button" data-act="adapt">Back to Adapt</button><button type="button" data-act="jump">Jump to the moment</button><button type="button" data-act="watch">Watch replay</button></div></div>';
     }
     ov.innerHTML = html; ov.hidden = false; S.overlayOpen = true; renderTips(); refresh();
+  }
+  function completeCard() {
+    var rows = ORDER.map(function (id) {
+      var d = Lv.dish(id), g = S.grades[id];
+      return '<div class="crow2"><span class="cn">' + id + '</span><span class="ct">' + esc(d.title) + '</span><span class="cg ' + (g ? 'g-' + g.toLowerCase() : '') + '">' + (S.cleared[id] ? (d.exam ? (g || 'Cleared') : '\u2713 Cleared') : 'Not cleared') + '</span></div>';
+    }).join('');
+    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>ACIDICA COMPLETE</h2><div class="covercap">The ten dishes</div><div class="clist">' + rows + '</div>' +
+      '<div class="row"><b>Next</b><span>A new planet, with one rule turned upside down.</span></div><div class="pbtns"><button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
+    $('overlay').hidden = false; S.overlayOpen = true;
   }
   $('overlay').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button[data-act]') : null;
@@ -855,6 +986,7 @@
     else if (a === 'jump') { closeOverlay(); S.playing = false; S.t = S.run.autopsy.from; setPlayLabel(); }
     else if (a === 'next') { closeOverlay(); selectDish(ORDER[ORDER.indexOf(S.dish) + 1]); }
     else if (a === 'list') { closeOverlay(); show('list'); }
+    else if (a === 'complete') completeCard();
   });
 
   // ---------------------------------------------------------------- frame loop
@@ -876,7 +1008,7 @@
   $('briefGo').addEventListener('click', enterWatch);
   $('unlockAll').addEventListener('click', function () { S.unlocked = true; save('unlocked2', true); renderList(); });
   $('resetProgress').addEventListener('click', function () {
-    S.cleared = {}; S.wins = {}; S.unlocked = false; S.seenWorld = false;
+    S.cleared = {}; S.wins = {}; S.grades = {}; save('grades2', {}); S.unlocked = false; S.seenWorld = false;
     save('cleared2', {}); save('wins2', {}); save('unlocked2', false); save('world2', false); renderList();
   });
   $('undo').addEventListener('click', function () { if (!S.undo.length) return; S.build = S.undo.pop(); S.preview = null; syncRuleFromBuild(); renderAdapt(false); });
@@ -890,6 +1022,7 @@
     if ($('ruleBox')) renderRuleBox();
   }
   $('tipBtn').addEventListener('click', pressTip);
+  $('stdBtn').addEventListener('click', startStandard);
   $('runBtn').addEventListener('click', doRun);
   $('playBtn').addEventListener('click', function () { setPlaying(!S.playing); });
   $('skipBtn').addEventListener('click', skip);
@@ -927,11 +1060,13 @@
     options: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt, #optList .optempty'), function (o) { var w = o.querySelector('.why'); return { id: o.getAttribute('data-id'), fitted: /fitted/.test(o.className), blocked: /blocked/.test(o.className), why: w ? w.textContent : '', img: (o.querySelector('img') || {}).complete ? o.querySelector('img').naturalWidth : null }; }); },
     fix: function (id) { var d = dishObj(), f = d.fixes.filter(function (x) { return x.id === id; })[0]; S.undo.push(copy(S.build)); S.build = Lv.applyFix(S.build, f); syncRuleFromBuild(); renderAdapt(false); return S.build; },
     setBuild: function (b) { S.undo.push(copy(S.build)); S.build = copy(b); syncRuleFromBuild(); renderAdapt(false); },
+    setDial: function (k, v) { mutate(function (bb) { bb[k] = v; }); },
     ruleChoose: ruleChoose, installRule: installRule, previewDial: previewDial,
-    bars: function () { return Array.prototype.map.call(document.querySelectorAll('#statBars .sb'), function (r) { return { stat: r.getAttribute('data-stat'), verdict: r.querySelector('.sb-verdict').textContent, vcls: r.querySelector('.sb-verdict').className, mark: r.querySelector('.sb-mark').style.left, markCls: r.querySelector('.sb-mark').className, ghost: r.querySelector('.sb-ghost').style.display === 'none' ? null : r.querySelector('.sb-ghost').style.left, ghostCls: r.querySelector('.sb-ghost').className, arrow: r.querySelector('.sb-arrow').textContent, arrowCls: r.querySelector('.sb-arrow').className, tag: r.querySelector('.sb-tag').textContent, failed: r.classList.contains('failed') }; }); },
+    bars: function () { return Array.prototype.map.call(document.querySelectorAll('#statBars .sb'), function (r) { return { stat: r.getAttribute('data-stat'), verdict: r.querySelector('.sb-verdict').textContent, vcls: r.querySelector('.sb-verdict').className, mark: r.querySelector('.sb-mark').style.left, markCls: r.querySelector('.sb-mark').className, ghost: r.querySelector('.sb-ghost').style.display === 'none' ? null : r.querySelector('.sb-ghost').style.left, ghostCls: r.querySelector('.sb-ghost').className, arrow: r.querySelector('.sb-arrow').textContent, arrowCls: r.querySelector('.sb-arrow').className, tag: r.querySelector('.sb-tag').textContent, failed: r.classList.contains('failed'), unchecked: r.classList.contains('unchecked'), zoneShown: r.querySelector('.sb-zone').style.display !== 'none' }; }); },
     liveBars: function () { return Array.prototype.map.call(document.querySelectorAll('#liveBars .sb'), function (r) { return { stat: r.getAttribute('data-stat'), verdict: r.querySelector('.sb-verdict').textContent, mark: r.querySelector('.sb-mark').style.left, tag: r.querySelector('.sb-tag').textContent }; }); },
+    completeCard: completeCard, whyList: whyList, startStandard: startStandard, marks: function () { return S.marks; }, grades: function () { return S.grades; },
     fixLine: function () { return $('fixLine').textContent; }, previewText: function () { return $('pvT').textContent; }, fail: function () { return S.fail; },
-    cards: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt'), function (o) { return { id: o.getAttribute('data-id'), helps: o.querySelector('.helps span').textContent, costs: o.querySelector('.costs span').textContent }; }); },
+    cards: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt'), function (o) { var c = o.querySelector('.chg'); return { id: o.getAttribute('data-id'), text: c.textContent, tones: Array.prototype.map.call(c.querySelectorAll('.ef[class*="t-"]'), function (x) { return x.className.replace(/.*t-/, '') + ':' + x.textContent.trim(); }) }; }); },
     info: function () {
       var r = S.run;
       return { screen: S.screen, mode: S.mode, dish: S.dish, build: S.build, slots: S.build && Sim.toSlots(S.build), slot: S.slot, layer: S.layer, pointed: S.pointed, carried: S.carried, t: S.t, stopAt: S.stopAt, playing: S.playing, watchDone: S.watchDone, runFinished: S.runFinished,
