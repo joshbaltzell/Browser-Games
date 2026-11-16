@@ -16,7 +16,9 @@ let fails = 0, t0 = Date.now();
 const f = (x, d) => x.toFixed(d == null ? 2 : d);
 const pc = x => f(x * 100, 1) + '%';
 const lap = name => console.log('  [' + ((Date.now() - t0) / 1000).toFixed(0) + 's] ' + name);
-function result(pass, tag, msg) { if (!pass) fails++; console.log((pass ? 'PASS ' : 'FAIL ') + tag + ' ' + msg); return pass; }
+const outcomes = {}; let nLines = 0;
+function result(pass, tag, msg) { if (!pass) fails++; nLines++; outcomes[tag.split(' ')[0]] = pass; console.log((pass ? 'PASS ' : 'FAIL ') + tag + ' ' + msg); return pass; }
+const checkedOf = st => st.filter(s => s.checked);
 const peak = r => { let m = 0; for (let t = 0; t <= r.T; t++) if (r.H.share[t] > m) m = r.H.share[t]; return m; };
 const cardKey = b => b.metabolism + ':' + b.parts.slice().sort().join('+') + ':' + (b.reflex ? JSON.stringify(b.reflex) : '');
 const carryOf = id => Lv.carry(id);
@@ -531,7 +533,7 @@ DISH_IDS.forEach(id => {   // a broad sample of the sweep builds that are legal 
     const D = Lv.dish(id); let safeAll = 0, safeWin = 0, wins = 0;
     sbSample[id].forEach(b => {
       const st = Sim.stats(D, b), r = play(id, b, SN), win = r.v.win; if (win) wins++;
-      if (st.every(s => s.state === 'safe')) { safeAll++; if (win) safeWin++; else dis.push('dish ' + id + ' ' + B.label(b) + ' (' + (Sim.autopsy(r) || {}).cause + ')'); }
+      if (checkedOf(st).every(s => s.state === 'safe')) { safeAll++; if (win) safeWin++; else dis.push('dish ' + id + ' ' + B.label(b) + ' (' + (Sim.autopsy(r) || {}).cause + ')'); }
     });
     tot += safeAll; agree += safeWin;
     lines.push('dish ' + id + ': ' + sbSample[id].length + ' builds, ' + wins + ' win, ' + safeAll + ' show all safe, ' + safeWin + ' of those win (' + (safeAll ? pc(safeWin / safeAll) : '-') + ')');
@@ -545,7 +547,7 @@ DISH_IDS.forEach(id => {   // a broad sample of the sweep builds that are legal 
     const D = Lv.dish(id); let n = 0, a = 0, m = 0;
     sbSample[id].forEach(b => {
       const r = play(id, b, SN); if (r.v.win) return;
-      const au = Sim.autopsy(r), st = Sim.stats(D, b), bad = st.filter(s => s.state !== 'safe'); n++;
+      const au = Sim.autopsy(r), st = Sim.stats(D, b), bad = checkedOf(st).filter(s => s.state !== 'safe'); n++;
       if (bad.length) a++;
       if (bad.some(s => s.id === au.stat)) m++; else miss.push('dish ' + id + ' ' + B.label(b) + ' (' + au.cause + ' -> ' + au.stat + ', unsafe: ' + (bad.map(s => s.id).join('/') || 'none') + ')');
     });
@@ -558,7 +560,7 @@ DISH_IDS.forEach(id => {   // a broad sample of the sweep builds that are legal 
   const lines = []; let ok = true;
   DISH_IDS.forEach(id => {
     const D = Lv.dish(id), st = Sim.stats(D, carryOf(id)), ids = st.map(s => s.id), want = NEWSTAT[id];
-    const unsafe = st.filter(s => s.state !== 'safe').map(s => s.id);
+    const unsafe = checkedOf(st).filter(s => s.state !== 'safe').map(s => s.id);
     const good = JSON.stringify(ids) === JSON.stringify(D.stats) && unsafe.length === 1 && unsafe[0] === want;
     if (!good) ok = false;
     lines.push('dish ' + id + ' [' + st.map(s => s.id + ' ' + s.value.toFixed(2) + ' ' + s.state).join(', ') + ']' + (good ? '' : ' WRONG'));
@@ -598,7 +600,7 @@ DISH_IDS.forEach(id => {   // a broad sample of the sweep builds that are legal 
     for (const b of sbSample[id]) {
       if (c >= (QUICK ? 15 : 40)) break;
       const r = play(id, b, SN); if (r.v.win) continue;
-      const st = Sim.stats(D, b).filter(s => s.state !== 'safe')[0]; if (!st) continue;
+      const st = checkedOf(Sim.stats(D, b)).filter(s => s.state !== 'safe')[0]; if (!st) continue;
       c++; const fx = Sim.statFixers(D, b, st.id); if (!fx.length || !fx.some(f => f.full)) continue;   // some losses need two changes: reported below, not a failure of the fixers
       test(id, b, st.id, 'sample ' + id + ' ' + B.label(b));
     }
@@ -623,7 +625,7 @@ DISH_IDS.forEach(id => {   // a broad sample of the sweep builds that are legal 
       const e = Sim.cardEffects(D, c, cd.id), nm = st => st.map(x => x.name + ' ' + (x.dir > 0 ? '+' : '-').repeat(x.steps));
       parts.push(cd.id + ' [helps: ' + (nm(e.helps).join(', ') || 'none') + '; costs: ' + (nm(e.costs).join(', ') || 'none') + ', energy ' + e.energy + (e.fits ? '' : ', over the limit') + ']');
       const tipped = (D.tipFixes && Object.keys(D.tipFixes).some(k => D.tipFixes[k].indexOf(cd.id) >= 0)) || D.fixes.some(fx => fx.changes && (fx.changes.add || []).indexOf(cd.id) >= 0 && fx.changes.add.length === 1 && !fx.changes.remove);
-      if (!e.fitted) { ok = false; parts.push('(' + cd.id + ' did not fit for preview)'); }
+      if (!e.preview) { ok = false; parts.push('(' + cd.id + ' did not fit for preview)'); }
       if (tipped && e.fits && !e.helps.some(h => h.stat === want)) { ok = false; parts.push('(' + cd.id + ' is a listed fix but does not list ' + want + ' under Helps)'); }
     }));
     lines.push('dish ' + id + ': ' + parts.join(' ; '));
@@ -631,6 +633,7 @@ DISH_IDS.forEach(id => {   // a broad sample of the sweep builds that are legal 
   result(ok, 'SB6 CARD EFFECTS ARE COMPUTED AND INCLUDE THE LISTED FIXES', '\n       ' + lines.join('\n       '));
 }
 
-const total = 33;
-console.log('\n' + (total - fails) + ' of ' + total + ' lines pass, ' + fails + ' fail. Total ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s.');
+require('./check-exam.js')({ Sim, Lv, Cards, B, P, QUICK, SN, data, outcomes, result, f, pc, lap, play, peak, carryOf });
+
+console.log('\n' + (nLines - fails) + ' of ' + nLines + ' lines pass, ' + fails + ' fail. Total ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s.');
 process.exit(fails ? 1 : 0);

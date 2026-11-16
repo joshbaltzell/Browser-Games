@@ -65,7 +65,7 @@ var LookAliveLevels = (function () {
   // Fix = { id, label, changes: { set: {pace, slop, metabolism}, add: [part ids], remove: [part ids], reflex: {...} }, heavy? }.
   // `heavy` marks a route that needs more than two changes.
   var DISHES = [
-    { id: 1, title: "Don't Dissolve", energy: 4, slots: ['envelope', 'insides'], opens: ['envelope', 'insides'], reflexSlot: false, dials: [], stats: ['acid'],
+    { id: 1, title: "Don't Dissolve", energy: 4, slots: ['envelope', 'insides'], opens: ['envelope', 'insides'], reflexSlot: false, dials: [], stats: ['acid', 'growth'], checked: ['acid'],
       ticks: 300, acid: 0.35, aliveOnly: true, suspicion: false, channels: [],
       problem: 'The water is acid. A cell with nothing to keep the acid out dissolves.',
       goal: 'Be alive at the end of the run.',
@@ -168,6 +168,42 @@ var LookAliveLevels = (function () {
       notebook: 'When it starves, Bacillus subtilis builds a tough spore, packs a copy of its DNA inside, and lets the mother cell dissolve away. The spore has almost no water and no metabolism, and it can survive boiling, drying and radiation for a very long time. Making one takes hours and cannot be undone, and waking one costs a full rebuild, so a spore cannot take advantage of a brief return of food. On Acidica the locals react in a few ticks and only to what is near them, so a unit that reacts to things it could not know gives itself away.' }
   ];
 
+  // ---------------------------------------------------------------- exam dishes 6 to 10 (GAMEPLAY-V2 section 14)
+  // No new mechanics, cards or slots: only dish parameters. Every slot opened so far is open (the Motor stays locked), and every card the planet has is offered.
+  // Parameters used here that dishes 1 to 5 do not set: `acidLoad` (holding off stronger acid costs more births, see RULES.md), `regWeight` (a stricter Naturalness line),
+  // `events` (two food crashes), `checked` (which of the shown stats can lose the dish), `exam: true`.
+  var EXAM_SLOTS = ['power', 'envelope', 'insides', 'division', 'signal', 'reflex'];
+  var ALL_STATS = ['acid', 'growth', 'smell', 'natural', 'crash'];
+  var ALL_CHAN = ['growth', 'waste', 'casualties', 'regularity'];
+  var EXAM_TIPS = { other: ['Something is out of balance.', 'This is an exam: open "What changes this?" under the bar that is out of its zone.'] };
+  function crash(tick, dur, bd) { return { type: 'bust', tick: tick, announce: tick - 20, rMult: 0, aMult: 0, depth: 0.945, dur: dur, bustDeath: bd }; }
+  function exam(o) {
+    var d = { id: o.id, title: o.title, exam: true, energy: o.energy, slots: EXAM_SLOTS, opens: [], reflexSlot: true, dials: ['pace', 'slop'], stats: ALL_STATS, checked: o.checked,
+      ticks: 300, acid: o.acid, suspicion: true, channels: ALL_CHAN, problem: o.problem, goal: o.goal || BAND_GOAL,
+      show: { pace: true, slop: true, metabolism: true, reflex: { bio: BIO_REFLEX, rule: true }, channels: ALL_CHAN,
+        shelves: { biology: ['respiration', 'fermentation', 'pump', 'lipids', 'acidproof', 'quorum', 'naps', 'wall'], machine: ['fuelcell', 'clock', 'shell', 'radio', 'copier', 'repair'] } },
+      allowed: { metabolism: ['respiration', 'fermentation', 'fuelcell'], parts: ALL_PARTS, bio: BIO_REFLEX, sensors: SENSORS, actions: ACTIONS },
+      band: BAND, event: o.events ? o.events[0] : NONE, tips: EXAM_TIPS, tipFixes: {}, fixes: [], notebook: o.notebook };
+    if (o.events) d.events = o.events;
+    d.peakSafe = 6;   // exam dishes: Smell and Naturalness count as safe only while their weighted peak is under 6 (the usual line is 7.5), because on these dishes several channels share the 8 that ends a run
+    ['abundance', 'acidLoad', 'regWeight'].forEach(function (k) { if (o[k] != null) d[k] = o[k]; });
+    return d;
+  }
+  DISHES.push(
+    exam({ id: 6, title: 'Strong Acid', energy: 5, acid: 0.8, acidLoad: 1.8, checked: ['acid', 'growth', 'smell', 'natural'],
+      problem: 'The acid is much stronger here. A thin membrane is not enough, and holding the acid out takes more from you.', notebook: 'Acid-loving archaea such as Picrophilus grow in acid roughly as strong as battery acid, and can still grow at around pH 0. Holding any difference in acidity between a cell and its surroundings costs continuous proton pumping, so protection is paid for in energy all the time. Picrophilus lowers the bill by letting its insides go acidic too, but that means building every protein to cope with acid. On Acidica a thin membrane is not enough in strong acid, and every full defence costs something: energy, growth, or looking like a machine.' }),
+    exam({ id: 7, title: 'Lean Times', energy: 2, acid: 0.5, acidLoad: 1.8, checked: ['acid', 'growth', 'smell', 'natural'],
+      abundance: { food: 13, crowd: 2.8, death: 0.02, cross: 6, run: 15, runFrom: 0.8 },
+      problem: 'Food is plentiful again, but your energy budget has been cut.', notebook: "Everything a cell builds has to be paid for out of the energy it can make, so a cell cannot have every defence at once. Picrophilus shows the price of going all in: it is so specialised for acid that it cannot grow above pH 4.0, trapped in its niche. A bigger protein set and a tighter membrane mean less energy for everything else. On Acidica the lab has cut your energy, and the cells that pass are the ones that cover a missing part's job some other way." }),
+    exam({ id: 8, title: 'Twice Bitten', energy: 5, acid: 0.5, checked: ALL_STATS, events: [crash(35, 100, 0.03), crash(145, 100, 0.03)],
+      problem: 'The food crashes twice, close together.', goal: 'Stay in the band through both food crashes.', notebook: 'Bacteria hedge their bets. In a growing Escherichia coli colony a small fraction of cells at random stop growing for a while: they forgo growth while their neighbours multiply, but they survive attacks that kill growing cells, and wake to rebuild the colony. Bacillus subtilis makes spores when it starves, but making one takes hours and cannot be undone, and waking one costs a full rebuild, so a spore cannot take advantage of a brief return of food. On Acidica a colony that sleeps through both crashes is still there when the natives have starved, and ends up looking like a take-over.' }),
+    exam({ id: 9, title: 'The Inspector', energy: 3, acid: 0.5, regWeight: 2, checked: ['acid', 'growth', 'smell', 'natural'],
+      problem: 'The inspector is stricter about anything that looks like a machine, and your energy is tight.', notebook: 'Cells in one population differ even when they have the same genes. Single-cell microscopy of Escherichia coli showed cells switching at random between a growing state and a non-growing state, and the sleepers were as drug-sensitive as their parents once they woke, so this variety is not genetic. A real colony is never uniform. On Acidica the inspector expects that mess, and a colony whose units behave in perfect step looks like a machine.' }),
+    exam({ id: 10, title: 'Greetings from Acidica', energy: 5, acid: 0.8, acidLoad: 2.4, regWeight: 2, checked: ALL_STATS, events: [crash(50, 85, 0.05)],
+      abundance: { food: 13, crowd: 2.8, death: 0.02, cross: 6, run: 15, runFrom: 0.8 },
+      problem: 'Strong acid, plentiful food, a food crash and a strict inspector, all at once.', goal: 'Stay in the band through the food crash.', notebook: 'A summary from the lab. Acid-lovers such as Picrophilus pay energy or build a whole acid-proof set of proteins. Escherichia coli and Bacillus subtilis hedge against hunger with sleepers and spores. Aliivibrio fischeri in a bobtail squid count their neighbours, and the squid vents about 90% of them every dawn so the colony never grows without limit. No living cell has everything: each defence costs energy, growth, or a place in the dish. A passing local is one that balanced them.' })
+  );
+
   function dish(id) { for (var i = 0; i < DISHES.length; i++) if (DISHES[i].id === id) return DISHES[i]; return null; }
   function mk(pace, slop, met, parts, reflex) { return { pace: pace, slop: slop, metabolism: met, parts: parts, reflex: reflex || null }; }
   // The simplest intended winner of each dish: the build that starts the next one. carry(1) is the Factory unit.
@@ -176,8 +212,23 @@ var LookAliveLevels = (function () {
     2: mk(4, 0, 'respiration', ['clock', 'pump']),                // dish 1: add the Proton pump
     3: mk(2, 0, 'respiration', ['clock', 'pump']),                // dish 2: Pace down to 2
     4: mk(2, 0, 'fermentation', ['clock', 'pump']),               // dish 3: swap to Fermentation
-    5: mk(2, 0, 'fermentation', ['pump'])                         // dish 4: remove the Crystal clock
+    5: mk(2, 0, 'fermentation', ['pump']),                        // dish 4: remove the Crystal clock
+    // Exam dishes: the simplest winner of the dish before (fewest parts, lowest energy, dials nearest the factory settings).
+    6: mk(2, 0, 'fermentation', ['pump'], { kind: 'bio', id: 'stringent' }),   // dish 5: the pace 2 pump cell plus the Stringent response
+    7: mk(4, 0, 'fermentation', ['pump']),                        // dish 6: the pump, with Pace back at the factory 4 (the pump's cost makes Pace 2 too slow)
+    8: mk(5, 2, 'fermentation', ['pump']),                        // dish 7: Pace 5 and Sloppiness 2 hold the band on energy 2
+    9: mk(5, 2, 'fermentation', ['pump'], { kind: 'bio', id: 'stringent' }),   // dish 8: the same cell plus the Stringent response
+    10: mk(3, 3, 'fermentation', ['pump'])                        // dish 9: Sloppiness 3 stands in for the machine parts
   };
+  // A known-legal cell for each exam dish that loses it the way the stat bars explain. For dishes 1 to 5 it is the carried build.
+  var STANDARD = {
+    6: mk(4, 0, 'fermentation', ['lipids']),                      // Tight membrane alone: Acid defence too low
+    7: mk(2, 0, 'fermentation', ['pump']),                        // too slow for the pump's cost: Growth too slow, then Naturalness
+    8: mk(3, 2, 'fermentation', ['pump']),                        // no reflex: Crash survival too low
+    9: mk(3, 0, 'fermentation', ['pump']),                        // perfectly regular timing: Naturalness too low
+    10: mk(3, 2, 'fermentation', ['pump'])                        // no reflex under strong acid and a strict inspector: Crash survival and Naturalness too low
+  };
+  function standard(id) { var c = STANDARD[id] || CARRY[id]; return c ? JSON.parse(JSON.stringify(c)) : null; }
   function carry(id) { var c = CARRY[id]; return c ? JSON.parse(JSON.stringify(c)) : null; }
   // Apply a fix (or tip fix) to a build: returns a new build.
   function applyFix(build, fix) {
@@ -191,6 +242,6 @@ var LookAliveLevels = (function () {
   // Tip for a loss cause (the cause string from LookAlive.autopsy): exact match, then 'other'. Returns [level1, level2].
   function tip(dishObj, cause) { var t = dishObj.tips; return t[cause] || t.other; }
 
-  return { PLANET: PLANET, WORLD: WORLD, FACTORY: FACTORY, SLOT_ORDER: SLOT_ORDER, DISHES: DISHES, dish: dish, carry: carry, applyFix: applyFix, tip: tip };
+  return { PLANET: PLANET, WORLD: WORLD, FACTORY: FACTORY, SLOT_ORDER: SLOT_ORDER, DISHES: DISHES, dish: dish, carry: carry, standard: standard, applyFix: applyFix, tip: tip };
 })();
 if (typeof module !== 'undefined') module.exports = LookAliveLevels;

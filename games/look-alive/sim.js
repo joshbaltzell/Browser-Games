@@ -63,6 +63,11 @@ var LookAlive = (function () {
     return up;
   }
   function runTicks(P, D) { return D.ticks || P.ticks; }
+  // A dish has one event (D.event) or several (D.events, the first of them is also D.event). Their levels combine as the largest.
+  function evList(D) { return D.events && D.events.length ? D.events : (D.event && D.event.tick >= 0 ? [D.event] : []); }
+  function evLevelD(D, tick, ramp) { var l = evList(D), m = 0; for (var i = 0; i < l.length; i++) { var v = evLevel(l[i], tick, ramp); if (v > m) m = v; } return m; }
+  function evNext(D, tick) { var l = evList(D), best = -1; for (var i = 0; i < l.length; i++) if (l[i].tick >= tick && (best < 0 || l[i].tick < best)) best = l[i].tick; return best; }
+  function evLastEnd(D, ramp) { var l = evList(D), m = 0; for (var i = 0; i < l.length; i++) { var e = l[i].tick + (l[i].dur || 0) + ramp; if (e > m) m = e; } return m; }
 
   // ---------------------------------------------------------------- build -> parameters (one place, used by step() and predict())
   var DEFAULT_BUILD = { pace: 4, slop: 0, metabolism: 'respiration', parts: ['clock'], reflex: null };   // the Factory unit
@@ -91,7 +96,7 @@ var LookAlive = (function () {
     if (met.fx.reg) { p.reg[met.id] = met.fx.reg; p.regMachine += met.fx.reg; }
     (b.parts || []).forEach(function (id) {
       var c = Cards.part(id); if (!c) return; var f = c.fx;
-      if (f.births) p.partBirths *= f.births;
+      if (f.births) p.partBirths *= (D.acidLoad && f.acid ? Math.pow(f.births, D.acidLoad) : f.births);   // acidLoad: holding off stronger acid costs more births
       if (f.tough) p.tough += f.tough;
       if (f.deathMult != null) p.deathMult *= f.deathMult;
       if (f.deathAdd) p.deathAdd += f.deathAdd;
@@ -341,7 +346,7 @@ var LookAlive = (function () {
       case 'share': return s.shareNow;
       case 'susp_growth': return s.lvl[0];
       case 'susp_waste': return s.lvl[1];
-      case 'ttev': return ev.tick < 0 ? 999 : Math.max(0, ev.tick - s.tick);
+      case 'ttev': { var nx = evNext(s.D, s.tick); return nx < 0 ? (evList(s.D).length ? 0 : 999) : nx - s.tick; }
     }
     return 0;
   }
@@ -350,7 +355,7 @@ var LookAlive = (function () {
     var P = s.P, D = s.D, n = s.n, nn = n * n, N = s.N, R = s.R, F = s.F, WA = s.WA, WB = s.WB, Q = s.Q, FD = s.FD, cap = s.cap, Z = s.Z, SP = s.SP;
     var Pn = P.native, Pr = P.robot, Ps = P.suspicion, Pq = P.quorum, Pe = P.senses, bp = s.bp, E = D.event, t = s.tick;
     var settling = s.settling, i, k;
-    var evl = settling ? 0 : evLevel(E, t, P.event.ramp);
+    var evl = settling ? 0 : evLevelD(D, t, P.event.ramp);
     var rateN = Pn.rate * (1 + (E.rMult || 0) * evl);
     var crossEv = 1 + (E.aMult || 0) * evl, cross = P.cross * crossEv;
     var bustMap = s.bustMap, bustD = E.type === 'bust' ? E.depth * evl : 0;
@@ -539,7 +544,7 @@ var LookAlive = (function () {
       s.fast[k] = s.fast[k] * Ps.fastKeep + (1 - Ps.fastKeep) * ex;
       s.slow[k] = s.slow[k] * Ps.slowKeep + Ps.slowGain * ex;
       s.lvl[k] = s.fast[k] + s.slow[k];
-      S += Ps.weight[k] * s.lvl[k];
+      S += Ps.weight[k] * (k === 3 && D.regWeight ? D.regWeight : 1) * s.lvl[k];
     }
     s.S = S;
     s.stage = S >= Ps.stage[2] ? 3 : S >= Ps.stage[1] ? 2 : S >= Ps.stage[0] ? 1 : 0;
@@ -557,7 +562,7 @@ var LookAlive = (function () {
     H.share[t] = sh; H.nativeShare[t] = 1 - sh;
     var best = -1, bw = 0.05;
     for (k = 0; k < 4; k++) {
-      var w = Ps.weight[k] * s.lvl[k];
+      var w = Ps.weight[k] * (k === 3 && s.D.regWeight ? s.D.regWeight : 1) * s.lvl[k];
       H.susp[CHAN[k]][t] = w;
       if (w > bw) { bw = w; best = k; }
     }
@@ -781,6 +786,8 @@ var LookAlive = (function () {
       if (D.abundance) res.text = 'Took over the dish by tick ' + ta + ': your share passed ' + passed(H, band) + ' and the lab noticed.';
       else res.text = 'Over the band from tick ' + ta + ': your share reached ' + pct(peak) + ' (ceiling ' + pct(band.hi) + ')' + (cu ? ', pushed up by ' + cu.name : '') + '.';
     } else if (below > 0) {
+      var evs = evList(D), which = 0;
+      evs.forEach(function (e, ei) { if (e.tick > 0 && tf > 0 && tf >= e.tick - 5 && tf <= e.tick + e.dur + 40) { E = e; which = ei; } });
       var inEv = E.tick > 0 && tf > 0 && tf >= E.tick - 5 && tf <= E.tick + E.dur + 40;
       // first tick of the final slide below the floor
       var ts = tf > 0 ? tf : band.warm;
@@ -789,7 +796,7 @@ var LookAlive = (function () {
       if (b.reflex && b.reflex.kind === 'bio') reflexText = Cards.bio(b.reflex.id).name;
       if (inEv && E.type === 'bust') {
         res.cause = 'bust'; res.card = b.reflex ? 'reflex' : null;
-        res.text = 'Lost to the bust, tick ' + Math.max(E.tick, ts - 30) + ' to ' + Math.min(T, ts + 30) + ': when food crashed at tick ' + E.tick + ' your share fell below ' + pct(band.lo) + ' and ' +
+        res.text = 'Lost to the bust, tick ' + Math.max(E.tick, ts - 30) + ' to ' + Math.min(T, ts + 30) + ': when food crashed ' + (which > 0 ? 'again ' : '') + 'at tick ' + E.tick + ' your share fell below ' + pct(band.lo) + ' and ' +
           (b.reflex ? 'your ' + reflexText + ' was not enough to stop it' : 'nothing in your build reacted') + '.';
       } else if (inEv && E.type === 'bloom') {
         res.cause = 'bloom'; res.card = cl ? cl.name : null;
@@ -814,7 +821,7 @@ var LookAlive = (function () {
   function autopsy(run) {
     var a = autopsyBase(run);
     if (!a) return a;
-    var D = run.dish, st = CAUSE_STAT[a.cause] || 'growth', sn = (D.stats || []);
+    var D = run.dish, st = CAUSE_STAT[a.cause] || 'growth', sn = checkedIds(D);
     if (sn.length && sn.indexOf(st) < 0) st = sn[sn.length - 1] === 'acid' || a.cause === 'starved' ? 'acid' : sn[0];
     if (a.cause === 'acid' && st === 'acid' && sn.indexOf('growth') >= 0) {   // some acid kept out, but the colony was too slow to replace what got in
       var as = stats(D, run.build).filter(function (x) { return x.id === 'acid'; })[0];
@@ -968,18 +975,26 @@ var LookAlive = (function () {
   function forecast(D, build) {
     var b = normalize(build), key = D.id + '|' + JSON.stringify(b);
     if (fcCache[key]) return fcCache[key];
-    var P = Lv().PLANET, run = play(P, D, b, { n: 16 }), H = run.H, T = run.T, band = D.band, t;
-    var ev = D.event && D.event.tick > 0 ? D.event.tick : 0;
-    var all = [], low = [], post = [], loss = 0, mx = { waste: 0, regularity: 0 }, mn = 1;
-    var evEnd = ev ? ev + (D.event.dur || 0) + (Lv().PLANET.event.ramp || 10) : 0;
-    for (t = band.warm; t <= T; t++) { all.push(H.share[t]); if (!ev || t <= ev) low.push(H.share[t]); if (ev && t > evEnd) post.push(H.share[t]); }
-    for (t = 1; t <= 10; t++) loss += H.acid[t] || 0;
-    for (t = 1; t <= T; t++) { if (H.susp.waste[t] > mx.waste) mx.waste = H.susp.waste[t]; if (H.susp.regularity[t] > mx.regularity) mx.regularity = H.susp.regularity[t]; }
-    if (ev) for (t = ev; t <= T; t++) if (H.share[t] < mn) mn = H.share[t];
-    var f = { acidLoss: loss / 10, p70: Math.max(qtile(all, ST.highQ), post.length ? qtile(post, 0.65) : 0), l70: qtile(low, ST.highQ), p30: qtile(low, 0.3), alive: run.v.alive, waste: mx.waste, reg: mx.regularity, crashMin: mn, pl30: post.length ? qtile(post, 0.3) : 1, win: run.v.win };
+    var run = play(Lv().PLANET, D, b, { n: 16 }), f = forecastOf(run, D);
     if (fcCount > 3000) { fcCache = {}; fcCount = 0; }
     fcCache[key] = f; fcCount++;
     return f;
+  }
+  // The numbers the stats read, taken from any finished run of the dish (the forecast above, or the real replay for the result grade).
+  function forecastOf(run, D) {
+    var H = run.H, T = run.T, band = D.band, t, ramp = Lv().PLANET.event.ramp || 10;
+    var ev = D.event && D.event.tick > 0 ? D.event.tick : 0;
+    var all = [], low = [], post = [], loss = 0, lossMax = 0, gpeak = 0, mx = { waste: 0, regularity: 0 }, mn = 1, below = 0, above = 0;
+    var evEnd = ev ? evLastEnd(D, ramp) : 0;
+    for (t = band.warm; t <= T; t++) {
+      all.push(H.share[t]); if (!ev || t <= ev) low.push(H.share[t]); if (ev && t > evEnd) post.push(H.share[t]);
+      if (H.share[t] < band.lo) below++; else if (H.share[t] > band.hi) above++;
+    }
+    for (t = 1; t <= 10; t++) loss += H.acid[t] || 0;
+    for (t = 1; t <= T; t++) { if (H.susp.growth[t] > gpeak) gpeak = H.susp.growth[t]; if ((H.acid[t] || 0) > lossMax) lossMax = H.acid[t]; if (H.susp.waste[t] > mx.waste) mx.waste = H.susp.waste[t]; if (H.susp.regularity[t] > mx.regularity) mx.regularity = H.susp.regularity[t]; }
+    if (ev) for (t = ev; t <= T; t++) if (H.share[t] < mn) mn = H.share[t];
+    return { acidLoss: loss / 10, acidLossMax: lossMax, p70: Math.max(qtile(all, ST.highQ), post.length ? qtile(post, 0.65) : 0), l70: qtile(low, ST.highQ), p30: qtile(low, 0.3), alive: run.v.alive, waste: mx.waste, reg: mx.regularity,
+      crashMin: mn, pl30: post.length ? qtile(post, 0.3) : 1, win: run.v.win, bandFrac: run.v.bandFrac, below: below, above: above, cnt: T - band.warm + 1, gpeak: gpeak, maxStage: run.v.maxStage, hasEvent: !!ev };
   }
   function shareVal(s) { return clamp(Math.log(Math.max(s, 1e-4) / ST.shareLo) / Math.log(ST.shareHi / ST.shareLo), 0, 1); }
   function crashVal(s) { return clamp(Math.log(Math.max(s, 1e-4) / ST.crashLo) / Math.log(ST.crashHi / ST.crashLo), 0, 1); }
@@ -988,15 +1003,31 @@ var LookAlive = (function () {
     if (id === 'acid') return [r3(1 - ST.acidSafeLoss / ST.acidScale), 1];
     if (id === 'growth') return [r3(shareVal(D.band.lo)), r3(shareVal(D.band.hi))];
     if (id === 'crash') return [r3(crashVal(ST.crashSafe)), 1];
-    return [r3(1 - ST.peakSafe / ST.peakLine), 1];
+    return [r3(1 - (D.peakSafe || ST.peakSafe) / ST.peakLine), 1];
   }
+  // Which stats a dish shows (D.stats) and which of them can lose it (D.checked, default all of D.stats).
+  function shownIds(D) { return D.stats || []; }
+  function checkedIds(D) { return D.checked || D.stats || []; }
+  function isChecked(D, id) { return checkedIds(D).indexOf(id) >= 0; }
   function statEval(D, id, f) {
+    var o = statEval0(D, id, f), chk = isChecked(D, id);
+    o.checked = chk;
+    if (!chk) { o.state = 'unchecked'; o.verdict = 'Not checked on this dish'; return o; }
+    if (id === 'growth') {
+      // between safe and unsafe: the quantile tests pass, but the colony spends more than a quarter of the run outside the band
+      if (o.state === 'safe') {
+        if (!D.aliveOnly && f.bandFrac >= D.band.need && f.bandFrac < 0.75) { o.state = 'edge'; o.verdict = 'Close to the edge'; }
+      }
+    }
+    return o;
+  }
+  function statEval0(D, id, f) {
     var z = statZone(D, id), v, state = 'safe', verdict = 'Safe';
     if (id === 'acid') {
       v = clamp(1 - f.acidLoss / ST.acidScale, 0, 1);
       if (v < z[0]) { state = 'low'; verdict = 'Too low: you will dissolve'; }
     } else if (id === 'growth') {
-      if (f.p70 > D.band.hi) { v = shareVal(f.p70); state = 'high'; verdict = 'Too fast: you will take over'; }
+      if (f.p70 > D.band.hi || (D.exam && (f.above > (1 - D.band.need) * f.cnt || f.gpeak > 4.5))) { v = shareVal(Math.max(f.p70, D.band.hi * 1.05)); state = 'high'; verdict = 'Too fast: you will take over'; }   // exam dishes: also high when above the band for over 30% of the run (a sleeping colony while the natives starve)
       else if (f.p30 < D.band.lo || (f.crashMin >= ST.crashSafe && f.pl30 < D.band.lo)) { v = shareVal(Math.min(f.p30, f.pl30)); state = 'low'; verdict = 'Too slow: you will fade out'; }
       else v = shareVal(Math.sqrt(Math.max(f.p30, 1e-4) * Math.max(f.l70, 1e-4)));
     } else if (id === 'smell') {
@@ -1012,9 +1043,10 @@ var LookAlive = (function () {
     return { id: id, name: STAT_INFO[id].name, value: r3(v), safe: z, state: state, verdict: verdict };
   }
   // The stats this dish shows, in order, for a build. Each: { id, name, value 0..1, safe [lo, hi], state low|safe|high, verdict }.
+  // Every stat the dish shows, plus Growth, in order; each has `checked`. An unchecked stat has state 'unchecked' and never affects a win or the "all safe" test.
   function stats(D, build) {
     var f = forecast(D, build);
-    return (D.stats || []).map(function (id) { return statEval(D, id, f); });
+    return shownIds(D).map(function (id) { return statEval(D, id, f); });
   }
   // A colony the acid dissolves has no meaningful Growth, Smell, Naturalness or Crash numbers (nothing is left to measure): only Acid defence counts then.
   function dissolved(D, b) { var f = forecast(D, b); return !f.alive && f.acidLoss > ST.acidSafeLoss; }
@@ -1027,7 +1059,8 @@ var LookAlive = (function () {
       var y = sb[i], da = statDist(x), db = statDist(y), dh = statHealth(y) - statHealth(x), better = null;
       if (db < da - 0.004) better = true; else if (db > da + 0.004) better = false;
       else if (da === 0 && db === 0) better = dh > 0.01 ? true : dh < -0.01 ? false : null;
-      return { id: x.id, name: x.name, from: x.value, to: y.value, fromState: x.state, toState: y.state, better: better, delta: r3(y.value - x.value), health: r3(dh) };
+      if (!x.checked) better = null;
+      return { id: x.id, name: x.name, checked: x.checked, from: x.value, to: y.value, fromState: x.state, toState: y.state, better: better, delta: r3(y.value - x.value), health: r3(dh) };
     });
   }
   function buildEnergy(b) {
@@ -1048,24 +1081,45 @@ var LookAlive = (function () {
     }
     return null;
   }
-  // What a card does for this cell on this dish: { helps: [{ stat, name, steps, dir }], costs: [...], energy, fits, build }.
-  // dir is +1 when the stat value goes up, -1 when it goes down (so Growth can say faster or slower).
+  // What a card does for this cell on this dish. One list, `changes`: [{ stat, name, direction 'up' | 'down', steps 1 | 2, words, tone 'good' | 'bad' | 'neutral', checked }].
+  //   words: plain directions ("Growth slower", "Acid defence up", "Smell closer", "Naturalness down", "Crash survival up").
+  //   tone: good when the change moves the stat toward, or keeps it in, its safe zone for the current cell; bad when it moves it out or further out;
+  //   neutral when the stat is not checked on this dish.
+  // A card already fitted (fitted: true, current: true) reports what it is doing: the cell with it against the cell without it.
+  // Also: energy (the card's cost), used (energy of the build with it), fits (within the dish limit), preview (a legal preview build exists), build.
+  // Old fields kept for the old page: helps and costs ({ stat, name, steps, dir +1|-1, delta }), checked stats only; `fitted` used to mean "preview exists" and now means "already fitted" (see `preview`).
+  var STAT_WORDS = { acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'],
+    natural: ['Naturalness up', 'Naturalness down'], crash: ['Crash survival up', 'Crash survival down'] };
+  var STATE_RANK = { safe: 0, edge: 1, low: 2, high: 2, unchecked: 0 };
+  function toneOf(x, y, dh) {
+    var da = statDist(x), db = statDist(y), ra = STATE_RANK[x.state], rb = STATE_RANK[y.state];
+    if (!x.checked) return 'neutral';
+    if (rb < ra || (rb === ra && db < da - 0.004)) return 'good';
+    if (rb > ra || (rb === ra && db > da + 0.004)) return 'bad';
+    return rb === 0 ? 'good' : (dh >= 0 ? 'good' : 'bad');    // same place: keeping it in the safe zone is good
+  }
   function cardEffects(D, build, cardId) {
-    var id = Cards.canon(cardId), c = Cards.part(id) || Cards.bio(id), base = build, nb = null, out = { helps: [], costs: [], energy: c && c.energy ? c.energy : 0, used: 0, fits: false, fitted: false, current: false };
+    var id = Cards.canon(cardId), c = Cards.part(id) || Cards.bio(id), base = build, nb = null;
+    var out = { changes: [], helps: [], costs: [], energy: c && c.energy ? c.energy : 0, used: 0, fits: false, fitted: false, current: false, preview: false };
     var sl0 = toSlots(build), now = c && c.slot === 'envelope' ? sl0.envelope.indexOf(id) >= 0 : c && c.slot && c.slot !== 'reflex' ? sl0[c.slot] === id : !!(sl0.reflex && sl0.reflex.kind === 'bio' && sl0.reflex.id === id);
     if (now) {   // already fitted: show what it does for this cell, measured against the cell without it
-      out.current = true; out.fitted = true; out.build = normalize(build); out.used = buildEnergy(out.build); out.fits = true;
+      out.current = true; out.fitted = true; out.preview = true; out.build = normalize(build); out.used = buildEnergy(out.build); out.fits = true;
       if (!c || c.slot === 'power') return out;
       var un = unfit(D, build, c.slot === undefined ? 'reflex' : c.slot, id);
       if (!un.ok) return out;
       base = un.build; nb = normalize(build);
     } else nb = fitForPreview(D, build, cardId);
     if (!nb) return out;
-    if (!out.current) { out.build = nb; out.fitted = true; out.used = buildEnergy(normalize(nb)); out.fits = out.used <= D.energy; }
+    if (!out.current) { out.build = nb; out.preview = true; out.used = buildEnergy(normalize(nb)); out.fits = out.used <= D.energy; }
     var dn = dissolved(D, nb), db0 = dissolved(D, base);
     statDiff(D, base, nb).forEach(function (d) {
       if (d.id !== 'acid' && (dn || db0)) return;
-      var steps = Math.abs(d.health) >= 0.15 ? 2 : 1;
+      var sa = stats(D, base).filter(function (x) { return x.id === d.id; })[0], sb = stats(D, nb).filter(function (x) { return x.id === d.id; })[0];
+      var steps = Math.abs(d.health) >= 0.15 ? 2 : 1, moved = d.better !== null || Math.abs(d.delta) >= 0.04 || d.fromState !== d.toState;
+      if (!moved) return;
+      var up = d.delta > 0 || (d.delta === 0 && d.health > 0), tone = toneOf(sa, sb, d.health);
+      out.changes.push({ stat: d.id, name: d.name, direction: up ? 'up' : 'down', steps: steps, words: STAT_WORDS[d.id][up ? 0 : 1], tone: tone, checked: d.checked });
+      if (!d.checked) return;
       if (d.better === true || (d.better === null && d.health > 0.03)) out.helps.push({ stat: d.id, name: d.name, steps: steps, dir: d.delta >= 0 ? 1 : -1, delta: d.delta });
       else if (d.better === false) out.costs.push({ stat: d.id, name: d.name, steps: steps, dir: d.delta >= 0 ? 1 : -1, delta: d.delta });
     });
@@ -1076,7 +1130,7 @@ var LookAlive = (function () {
   function statFixers(D, build, statId) {
     var b = normalize(build), base = stats(D, b), cur = null, k, i;
     base.forEach(function (s) { if (s.id === statId) cur = s; });
-    if (!cur) return [];
+    if (!cur || !cur.checked) return [];
     var full = [], part = [];
     function judge(nb) {   // 2: the stat becomes safe and nothing that was safe breaks; 1: it gets better; 0: no use
       var s = null, broke = false, now = stats(D, nb);
@@ -1118,7 +1172,7 @@ var LookAlive = (function () {
   // The same stats read live off a finished run at tick t (for the replay). value is null when the stat has nothing to show yet (Crash survival before the crash).
   function liveStats(run, t) {
     var D = run.dish, H = run.H, ev = D.event && D.event.tick > 0 ? D.event.tick : 0, i, tt = Math.max(1, Math.min(run.T, Math.floor(t)));
-    return (D.stats || []).map(function (id) {
+    return shownIds(D).map(function (id) {
       var z = statZone(D, id), v = null, state = 'safe', verdict = 'Safe';
       if (id === 'acid') {
         var a = 0, c = 0; for (i = Math.max(1, tt - 2); i <= tt; i++) { a += H.acid[i] || 0; c++; }
@@ -1134,8 +1188,27 @@ var LookAlive = (function () {
         if (ev && tt >= ev) { var mn = 1; for (i = ev; i <= tt; i++) if (H.share[i] < mn) mn = H.share[i]; v = crashVal(mn); if (v < z[0]) { state = 'low'; verdict = 'The crash will wipe you out'; } }
         else verdict = 'Waiting for the crash';
       }
-      return { id: id, name: STAT_INFO[id].name, value: v == null ? null : r3(v), safe: z, state: state, verdict: verdict };
+      var chk = isChecked(D, id);
+      if (!chk) { state = 'unchecked'; verdict = 'Not checked on this dish'; }
+      return { id: id, name: STAT_INFO[id].name, value: v == null ? null : r3(v), safe: z, state: state, verdict: verdict, checked: chk };
     });
+  }
+  // The result grade of a win (shown on exam dishes): 'Passable' | 'Convincing' | 'Benign', or null for a loss.
+  //   Passable   any win.
+  //   Convincing a win where the lab never reached the inspection stage (stage 2) and no checked stat ended 'edge' or unsafe on the run's own numbers.
+  //   Benign     Convincing, and every checked stat stayed in its safe zone for the whole run (acid loss under the line at every tick, Smell and Naturalness
+  //              peaks under 7.5, lowest share in the crash above the line, Growth safe) and at least 1 energy was left unspent.
+  function grade(run, D, build) {
+    D = D || run.dish; var v = run.v || verdict(run);
+    if (!v.win) return null;
+    var f = forecastOf(run, D), st = checkedIds(D).map(function (id) { return statEval(D, id, f); });
+    var safe = st.every(function (x) { return x.state === 'safe'; }), edge = st.some(function (x) { return x.state === 'edge' || x.state === 'low' || x.state === 'high'; });
+    if (isChecked(D, 'acid') && f.acidLossMax > ST.acidSafeLoss) safe = false;
+    var spare = D.energy - buildEnergy(normalize(build || run.build));
+    var convincing = v.maxStage <= 1 && !edge && safe;
+    if (v.maxStage <= 1 && !edge) convincing = true;
+    if (convincing && safe && spare >= 1) return 'Benign';
+    return convincing ? 'Convincing' : 'Passable';
   }
   // The preview sentence pieces for moving from build a to build b: ["Acid defence: safe", "Growth: a little slower", "Energy 2 of 4"].
   function diffWords(D, a, b) {
@@ -1155,7 +1228,7 @@ var LookAlive = (function () {
     return out;
   }
 
-  return { dissolved: dissolved, stats: stats, liveStats: liveStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
+  return { grade: grade, energyOf: buildEnergy, dissolved: dissolved, stats: stats, liveStats: liveStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
     channelsOn: channelsOn, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { ST: ST, newState: newState, step: step, HK: HK } };
 })();
 if (typeof module !== 'undefined') module.exports = LookAlive;

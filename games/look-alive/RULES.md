@@ -273,3 +273,53 @@ Full run of `node games/look-alive/dev/check.js` (362 s; 16 by 16 sweeps; every 
 - **Tips for secondary causes** (`below`, `other`) name a control or card in words but are not machine-checked (the checks test the tips that map to a fix).
 - **The Radio mesh and Quorum on dish 3 to 5** were not tuned beyond keeping the earlier properties.
 - **Not tested:** loading in a real browser; the page (it will not work until it is updated); 64x64 sweeps in bulk (samples only, E6); every machine rule (a pause rule on every sensor and value plus 5% of the rest, on about 10 card sets); the feel of any of it with a player; timing in a browser.
+
+## Exam dishes 6 to 10 and trade-off reporting (gameplay pass 5, GAMEPLAY-V2 section 14)
+
+No new cards, slots or mechanics. The five exam dishes only set dish parameters; every Acidica slot opened so far is open (Power, Envelope, Insides, Division, Signal, Reflex), the Motor stays locked, every card the planet has is offered, and the energy limit is the squeeze. They carry `exam: true`, `tips: { other: [generic, generic] }` (no answer tips; the page shows "What changes this?" from `statFixers`), `fixes: []`, a notebook page, `LookAliveLevels.carry(id)` and `LookAliveLevels.standard(id)`.
+
+### New dish parameters (all read in `sim.js`, all absent on dishes 1 to 5)
+
+| parameter | meaning |
+| --- | --- |
+| `acidLoad` | holding off stronger acid costs more births: a card that blocks acid and has a births cost (Proton pump 0.85, Tight membrane 0.95) is raised to this power. Not a new card or rule: it is the pump's cost scaling with the acid, as the real pumping does. Acid-proof insides and the Sealed shell have no births cost, so they are unaffected. |
+| `regWeight` | multiplies the Regularity channel's weight (2.4): a stricter inspector. Machine parts, a flat share line and perfect timing all cost more. The channel shown in the replay is weighted, so the Naturalness bar stays honest. |
+| `events` | a list of events (dish 8 has two food crashes); `event` is the first. Levels combine as the largest. The `ttev` sensor counts to the next event and reads 0 after the last. |
+| `checked` | which of the shown stats can lose the dish (default: all of `dish.stats`). |
+| `peakSafe` | Smell and Naturalness count as safe only while their weighted peak is under this (6 on the exam dishes; 7.5 elsewhere), because on these dishes several channels share the 8 that ends a run. |
+| `abundance` | as on dish 2 (dishes 7 and 10). |
+
+### The dishes
+
+All: 300 ticks, band 5% to 15% needing 70%, fermentation is the only Power that is not caught (Respiration and Fuel cell fail Smell), all four suspicion channels on, stats shown `acid, growth, smell, natural, crash`.
+
+| dish | title | energy | acid | other | checked stats | the squeeze |
+| --- | --- | --- | --- | --- | --- | --- |
+| 6 | Strong Acid | 5 | 0.8, acidLoad 1.8 | none | acid, growth, smell, natural | Tight membrane alone loses to the acid. Full protection costs: the pump makes Pace 2 too slow (Pace 3 to 4 wins; Pace 3 needs Sloppiness 1 or more), Acid-proof insides costs 3 of 5, the Sealed shell costs Naturalness (needs Random naps or Sloppiness). |
+| 7 | Lean Times | 2 | 0.5, acidLoad 1.8 | abundance (death 0.02) | acid, growth, smell, natural | Energy 2 fits the pump or the shell plus one 1-energy part. Acid-proof insides (3) and Head count (2 next to a pump) no longer fit, so Pace stands in for the Head count and Sloppiness for Random naps. |
+| 8 | Twice Bitten | 5 | 0.5 | two food crashes, ticks 35 to 145 and 145 to 255 (100 ticks each, 10 ramp, extra robot deaths 3% a tick, food cut to 5.5% of normal) | all five | No reflex loses. Stringent and SOS win alone; Sporulate alone loses at Pace 5 (see below). |
+| 9 | The Inspector | 3 | 0.5 | regWeight 2 | acid, growth, smell, natural | Perfectly regular timing or any stack of Machine parts is caught. Energy 3 fits a pump and Random naps, Acid-proof insides alone, or one carefully chosen Machine part (the Sealed shell with Random naps, or alone at Sloppiness 7 and above). |
+| 10 | Greetings from Acidica | 5 | 0.8, acidLoad 2.4 | abundance (death 0.02), regWeight 2, one crash at tick 50 (85 ticks, extra deaths 5% a tick) | all five | Everything at once. Winners need a reflex that hides the colony through the crash (all three Biology reflexes appear, Sporulate most), Pace and Sloppiness high enough to feed the pump, and an acid answer. |
+
+**Dish 8, why Sporulate alone loses.** Spores are immune to the crash and are counted in the share, and the natives starve while the colony sleeps. A colony that went to sleep through both 100-tick crashes is still there when the natives are at about 40% of normal, so its share climbs over 15% for more than 30% of the run. How big that overshoot is depends on the colony's size going in, so it depends on Pace: the carried cell (Pace 5) loses with Sporulate alone, Pace 3 wins with it. Winning combinations on the carried cell (pace 5, slop 2, fermentation + pump), 16x16 and 64x64: Stringent alone, SOS alone, Sporulate with Head count, Sporulate with Pace 3. Sporulate with Random naps or the Cell wall wins at 64x64 but not at 16x16 (not counted either way). No reflex, and Random naps without a reflex, lose. Stringent pauses growth and so loses when the crash deaths are high (extra deaths 7% a tick, as on dish 5) and wins here at 3%.
+This is not "has not woken by the second crash" as the spec put it: a sleeping colony is safe in this model and the loss comes from overshooting the band, so the dish 8 Growth bar says "Too fast" for that build (exam dishes also mark Growth high when the colony is over the band for more than 30% of the run, or when the Growth suspicion channel peaks over 4.5).
+
+**Dish 9, Machine builds.** Maximal all-Machine stacks (Fuel cell and fermentation Power, every dial setting): 0 wins. One carefully chosen Machine part: the Sealed shell with Random naps wins at Pace 0 to 4 and Sloppiness 1 to 8, and alone at Sloppiness 7 and above (also the Sync pulse with the pump at Sloppiness 7 and above).
+
+### Carried builds and standard cells
+
+`carry(id)` is the simplest winner of the dish before (fewest parts, lowest energy, dials nearest the factory settings): 6 = pace 2 fermentation + pump + Stringent; 7 = pace 4 fermentation + pump; 8 = pace 5 slop 2 fermentation + pump; 9 = pace 5 slop 2 fermentation + pump + Stringent; 10 = pace 3 slop 3 fermentation + pump. Each wins the dish before and loses the dish it enters (16x16 and 64x64), and all five are legal on the dish they enter (no energy cut is wide enough to make a carried winner illegal).
+`standard(id)`: 6 = pace 4 + Tight membrane (Acid defence low); 7 = pace 2 + pump (Growth low, Naturalness low); 8 = pace 3 slop 2 + pump, no reflex (Crash survival low); 9 = pace 3 + pump (Naturalness low); 10 = pace 3 slop 2 + pump (Growth, Naturalness and Crash survival low). Dishes 1 to 5 return the carried build.
+
+### Result grade: `LookAlive.grade(run, dish, build)`
+
+`null` for a loss, else `'Passable'`, `'Convincing'` or `'Benign'`.
+- **Passable**: any win.
+- **Convincing**: a win where the lab never reached the inspection stage (stage 2) and no checked stat ended at edge or unsafe on the run's own numbers.
+- **Benign**: Convincing, and every checked stat stayed in its safe zone for the whole run (acid loss under the line at every tick, Smell and Naturalness peaks under the dish's `peakSafe`, lowest share in a crash above the line, Growth safe and not at edge), and at least 1 energy was left unspent.
+
+### Trade-off reporting (replaces the stat part of the stat-bar pass)
+
+- `stats(dish, build)` returns every stat in `dish.stats` (all stats introduced so far, plus Growth from dish 1), each with `checked: true | false`. `dish.checked` lists the checked ones. An unchecked stat has `state: 'unchecked'`, `verdict: 'Not checked on this dish'`, still has a `value` and the band as `safe` (the page draws no zone), and never affects a win, `statFixers`, the autopsy stat or the "all safe" test. Dish 1 shows Growth unchecked; on dishes 6, 7 and 9 Crash survival is unchecked (no crash).
+- Growth has a third state, `'edge'` (verdict "Close to the edge"): the quantile tests say safe, and the forecast spends between 25% and 30% of the run outside the band (the win line is 30%). **Edge counts as not safe** in "all checked stats safe means a win" (X6, SB1): only `state === 'safe'` counts. It is a Growth state only.
+- `cardEffects(dish, build, cardId)` has one list, `changes: [{ stat, name, direction 'up' | 'down', steps 1 | 2, words, tone 'good' | 'bad' | 'neutral', checked }]`. `words` is one of "Acid defence up/down", "Growth faster/slower", "Smell closer/further off", "Naturalness up/down", "Crash survival up/down". Tone: good when the change moves the stat toward, or keeps it in, its safe zone for this cell (an edge to safe change is good, safe to edge is bad); bad when it moves it out or further out; neutral when the stat is unchecked. A card already fitted (`fitted: true`, `current: true`) reports what it is doing, the cell with it against the cell without it. `helps` and `costs` still exist (checked stats only, same shape as before). `fitted` used to mean "a preview exists" and now means "already fitted"; the preview flag is `preview`.
