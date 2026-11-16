@@ -1,0 +1,1684 @@
+<title>Look Alive Graphics Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#06070c;--panel:#0c0e16;--panel2:#10131d;--line:#1c2030;--line2:#2a3045;
+  --text:#d7dae8;--dim:#8a90a8;--faint:#5d637a;
+  --violet:#a78bfa;--pink:#ff6b95;--amber:#f5a524;--green:#2dd4a7;
+  --serif:Georgia,"Iowan Old Style","Palatino Linotype",Palatino,serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 var(--sans);overflow-x:hidden}
+.wrap{max-width:1200px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 72px}
+h1,h2,h3{font-family:var(--serif);font-weight:400;line-height:1.2;margin:0}
+h1{font-size:clamp(28px,5vw,42px);letter-spacing:.005em}
+h2{font-size:clamp(22px,3.4vw,28px);margin:56px 0 6px;padding-top:22px;border-top:1px solid var(--line)}
+h2 .n{font-family:var(--mono);font-size:.55em;color:var(--faint);margin-right:.7em;vertical-align:.25em;letter-spacing:.08em}
+h3{font-size:18px;margin:0 0 4px}
+p{margin:.6em 0;max-width:72ch}
+.lede{font-size:18px;color:var(--text);max-width:68ch}
+.kicker{font:12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 14px}
+.dim{color:var(--dim)}
+a{color:var(--violet)}
+code,.mono{font-family:var(--mono);font-size:.88em}
+.reco{border-left:3px solid var(--pink);background:var(--panel);padding:14px 18px;margin:22px 0 0;border-radius:0 8px 8px 0;max-width:80ch}
+.reco b{color:var(--pink);font-weight:600}
+.dot{display:inline-block;width:.7em;height:.7em;border-radius:50%;margin-right:.35em;vertical-align:-.05em}
+.cap{font-size:13.5px;color:var(--dim);margin:8px 0 0;max-width:80ch}
+figure{margin:0}
+/* before / after */
+.pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px;margin-top:18px}
+.pair img{display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--line);background:#000}
+.pair .tag{font:11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px;color:var(--faint)}
+.pair .bad .tag{color:var(--amber)}.pair .good .tag{color:var(--green)}
+/* stage */
+.stage{position:relative;width:100%;aspect-ratio:16/10;background:#000;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.stage canvas.int{touch-action:none;cursor:grab}
+.stage canvas.int:active{cursor:grabbing}
+.stage canvas:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible,select:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+.stage .ov{pointer-events:none}
+.readout{position:absolute;left:8px;top:8px;right:8px;font:11px/1.35 var(--mono);color:rgba(215,220,240,.82);background:rgba(4,5,9,.55);padding:4px 8px;border-radius:5px;pointer-events:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msg{margin:10px 0 0;padding:10px 12px;border:1px solid var(--amber);border-radius:8px;color:var(--amber);font-size:14px}
+.fb{margin-top:10px}.fb img{width:100%;border-radius:8px;display:block}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;margin-top:18px;align-items:start}
+@media(max-width:940px){.hero-grid{grid-template-columns:minmax(0,1fr)}.stage{aspect-ratio:4/3}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 14px 14px}
+fieldset{border:0;border-top:1px solid var(--line);margin:0;padding:12px 0 2px;min-width:0}
+fieldset:first-child{border-top:0}
+legend{font:11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding:0 6px 0 0;float:left;width:100%;margin-bottom:8px}
+fieldset>*:not(legend){clear:both}
+.row{display:flex;align-items:center;gap:10px;margin:6px 0;min-height:30px}
+.row label{flex:1;font-size:14px;cursor:pointer}
+.row input[type=range]{flex:1.4;min-width:0;accent-color:var(--violet)}
+.row output{font:12px var(--mono);color:var(--dim);min-width:3.4em;text-align:right}
+.row input[type=checkbox],.row input[type=radio]{width:18px;height:18px;accent-color:var(--violet);flex:none}
+.row.sl label{flex:.9}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+button{font:600 13.5px var(--sans);color:var(--text);background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:9px 13px;min-height:40px;cursor:pointer}
+button:hover{border-color:var(--violet)}
+button:disabled{opacity:.5;cursor:default}
+button.p{border-color:var(--pink);color:#ffd5e1}
+button.ev{border-color:var(--line2)}
+.tiny{font-size:12px;color:var(--faint);margin:6px 0 0}
+/* options */
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:18px;margin-top:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+.card .stage{aspect-ratio:16/10}
+.card h3{margin-top:12px}
+.card p{font-size:14.5px;margin:.3em 0}
+dl.kv{display:grid;grid-template-columns:7.5em 1fr;gap:5px 10px;margin:10px 0 0;font-size:13.5px}
+dl.kv dt{font:11px/1.9 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+dl.kv dd{margin:0;color:var(--text)}
+.cardtop{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
+/* cell lab */
+.cell-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;margin-top:18px;align-items:start}
+@media(max-width:940px){.cell-grid{grid-template-columns:minmax(0,1fr)}}
+.cell-grid .stage{aspect-ratio:16/8}
+/* tables */
+.tablebox{overflow-x:auto;margin:14px 0;border:1px solid var(--line);border-radius:8px;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+th,td{padding:8px 11px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:11px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);background:var(--panel);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.m{color:var(--green)}td.e{color:var(--amber)}td.s{color:var(--violet)}
+/* focus caption */
+.stage .overcap{position:absolute;left:0;right:0;bottom:14%;text-align:center;font:600 clamp(14px,2.4vw,22px)/1.2 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:#fff;text-shadow:0 0 18px rgba(255,107,149,.8);opacity:0;transition:opacity .5s;pointer-events:none;padding:0 12px}
+.stage .overcap.on{opacity:1}
+ol.plan{padding-left:1.2em;max-width:80ch}ol.plan li{margin:.5em 0}
+.dec{counter-reset:d;list-style:none;padding:0;max-width:80ch}
+.dec li{counter-increment:d;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px 12px 52px;margin:10px 0;position:relative}
+.dec li:before{content:counter(d);position:absolute;left:16px;top:12px;font:600 18px var(--mono);color:var(--pink)}
+.dec b{display:block;margin-bottom:2px}
+footer{margin-top:56px;color:var(--faint);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}.stage .overcap{transition:none}}
+
+/* HUD style from the agreed mock-up 03: thin violet line, rounded, mono labels */
+.readout{border:1px solid rgba(167,139,250,.35);background:rgba(8,6,16,.62);border-radius:8px;color:#cfc6f5;letter-spacing:.02em}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+.thumbs img{display:block;width:100%;height:auto;border-radius:6px;border:1px solid var(--line);background:#000}
+.thumbs figcaption{font-size:12.5px;color:var(--dim);margin-top:4px}
+td img.th{display:block;width:150px;max-width:100%;height:auto;border-radius:5px;border:1px solid var(--line);margin-bottom:4px}
+td.thc{min-width:170px}
+/* in-context play screen */
+.play{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:0;background:#000;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:14px}
+@media(max-width:760px){.play{grid-template-columns:minmax(0,1fr)}}
+.play .dishcol{position:relative;aspect-ratio:1/1;min-height:300px;max-height:640px;background:#000}
+@media(min-width:761px){.play .dishcol{aspect-ratio:auto;height:min(60vw,560px)}}
+.play canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.steps{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px;position:absolute;left:0;top:0;z-index:2}
+.steps span{font:11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;border:1px solid rgba(167,139,250,.35);color:#9a93c4;border-radius:999px;padding:6px 10px;background:rgba(6,5,12,.6)}
+.steps span.on{border-color:var(--pink);color:#ffd5e1;background:rgba(255,107,149,.16)}
+.instr{border-left:1px solid rgba(167,139,250,.28);background:linear-gradient(180deg,#0b0a14,#080710);padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+@media(max-width:760px){.instr{border-left:0;border-top:1px solid rgba(167,139,250,.28)}}
+.instr h4{margin:0 0 8px;font:11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:#6f6a96;font-weight:400}
+.sb{padding:9px 0;border-top:1px solid rgba(167,139,250,.16)}
+.sb:first-of-type{border-top:0}
+.sb .hd{display:flex;align-items:center;gap:8px;font-size:13px;color:#d9d4f5}
+.sb .hd svg{width:20px;height:20px;flex:none;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.sb .st{margin-left:auto;font:11px var(--mono);color:var(--green)}
+.sb.bad .st{color:var(--pink)}
+.sb .tr{position:relative;height:12px;border-radius:7px;margin:8px 2px 4px;border:1px solid rgba(167,139,250,.5);background:#0a0912;overflow:visible}
+.sb .tr .z{position:absolute;top:0;bottom:0}
+.sb .tr .safe{background:linear-gradient(90deg,rgba(45,212,167,.55),rgba(45,212,167,.35));border-left:1px solid var(--green);border-right:1px solid var(--green)}
+.sb .tr .dl{left:0;border-radius:6px 0 0 6px}.sb .tr .dr{right:0;border-radius:0 6px 6px 0}
+.pat-hatch .z.d{background:repeating-linear-gradient(135deg,rgba(255,107,149,.55) 0 2px,transparent 2px 5px)}
+.pat-dots .z.d{background:radial-gradient(circle,rgba(255,107,149,.8) 1.2px,transparent 1.6px) 0 0/6px 6px}
+.pat-cross .z.d{background:repeating-linear-gradient(45deg,rgba(245,165,36,.6) 0 1px,transparent 1px 5px),repeating-linear-gradient(-45deg,rgba(245,165,36,.6) 0 1px,transparent 1px 5px)}
+.pat-zig .z.d{background:repeating-linear-gradient(90deg,rgba(167,139,250,.7) 0 2px,transparent 2px 6px)}
+.sb .mk{position:absolute;top:-5px;width:2px;height:20px;background:#fff;box-shadow:0 0 6px #fff;transition:left .35s}
+.sb .mk:after{content:"";position:absolute;top:-4px;left:-4px;border:5px solid transparent;border-top-color:#fff;border-bottom:0}
+.sb .fc{position:absolute;top:-3px;width:10px;height:16px;border:1.5px solid #fff;border-radius:3px;margin-left:-5px;opacity:.7;transition:left .35s}
+.sb .ns{font-size:11.5px;color:var(--dim);margin:0}
+.band{margin-top:8px;border:1px solid rgba(167,139,250,.3);border-radius:8px;padding:6px}
+.band svg{display:block;width:100%;height:70px}
+/* paper and ink */
+.paper{position:absolute;z-index:3;background:linear-gradient(135deg,#f3e7cf,#e6d5b3);color:#5a4a30;border-radius:6px;box-shadow:0 10px 30px rgba(0,0,0,.6);padding:14px 18px;font-family:var(--serif);opacity:0;pointer-events:none;transition:opacity .5s,transform .5s}
+.paper.on{opacity:1;pointer-events:auto}
+.paper.win{right:4%;bottom:6%;width:min(62%,340px);transform:rotate(-5deg) scale(.96);text-align:center}
+.paper.win.on{transform:rotate(-5deg) scale(1)}
+.paper.win .small{font:11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#8a7650}
+.stamp{display:inline-block;font:900 clamp(18px,3.4vw,28px)/1.05 Impact,"Arial Black","Helvetica Neue",sans-serif;letter-spacing:.06em;text-transform:uppercase;padding:8px 12px;border:3px double currentColor;border-radius:6px;margin:8px 0;transform:rotate(-2deg);opacity:.88;mix-blend-mode:multiply}
+.stamp.g{color:#1f8a5f}.stamp.r{color:#c62828}
+.paper.tag{right:3%;top:8%;transform:rotate(5deg);padding:8px 14px;border-radius:4px 14px 14px 4px}
+.chalk{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;transition:opacity .6s}
+.chalk.on{opacity:1}
+.chalk text{font:italic 17px "Bradley Hand","Segoe Print","Comic Sans MS",cursive;fill:#f2f2f2}
+.chalk path,.chalk line{stroke:#f2f2f2;stroke-width:1.6;fill:none;stroke-linecap:round}
+.chalk circle.pin{fill:#ff4b4b;stroke:none}
+.sb.hot{background:rgba(255,107,149,.08);outline:1px dashed rgba(255,107,149,.6);outline-offset:2px}
+</style>
+<div class="wrap">
+
+<header>
+  <p class="kicker">Look Alive / graphics update / design lab</p>
+  <h1>Look Alive Graphics Lab</h1>
+  <p class="lede">The dish should feel like looking down a microscope. This page tests how to get there. Every picture below is a live WebGL2 render, not a screenshot. The cells are a small stand-in simulation, not the real game.</p>
+  <div class="reco">
+    <p style="margin:0"><b>Recommendation.</b> Build <b>Dark field with depth and haze</b> (option B) as the default look. Draw every cell as one instanced shader (a signed-distance capsule with rim light, glassy inside, granules and a tail), give each cell a depth so it blurs by its distance from a focal plane, and add a half-resolution bloom, a soft vignette and light grain. Use the rack-focus move at three moments only: entering a dish, the start of Watch, and the zoom into a failure. Keep Relief (DIC) and Fluorescence as optional lens modes for later, since the same cell shader already supports them. Flat dots stay as the low-power fallback. The UI around the dish is already designed in the agreed mock-ups (instrument panel, patterned stat bars, paper results); this update brings the game up to them, in a separate phase from the dish rendering.</p>
+  </div>
+  <p class="dim" style="margin-top:14px">Jump to: <a href="#today">today and the target</a>, <a href="#screens">mock-ups to screens</a>, <a href="#hero-demo">main demo</a>, <a href="#options">options side by side</a>, <a href="#cell">how cells are drawn</a>, <a href="#focus">the focus trick</a>, <a href="#perf">performance and plan</a>, <a href="#decisions">decisions</a>.</p>
+</header>
+
+<section id="today">
+  <h2><span class="n">01</span>Today and the target</h2>
+  <p><b>The target already exists.</b> The look of the dish and of the screens around it is defined in the plan (section 7) and in thirty reference images, and the owner has pointed to those mock-ups as the starting point. They are the design, not mood pieces. The job is to reach them, not to invent a new look. The current game shows flat dots in a chart-like panel. The mock-ups show a lit specimen, a thin-line instrument panel and paper results.</p>
+  <div class="pair">
+    <figure class="bad"><p class="tag">Today: play screen</p><img src="refs/current-game.jpg" alt="The current game: a round dish filled with flat pink, green, amber and violet dots on black, with a dark panel of text and bars" loading="lazy"><figcaption class="cap">Flat dots, no light, no depth. The panel is text and boxes. Nothing says &ldquo;instrument&rdquo;.</figcaption></figure>
+    <figure class="good"><p class="tag">Target: play screen (03)</p><img src="refs/03-gameplay-hud.jpg" alt="Agreed mock-up of the play screen: lit dish on the left, a slim instrument panel with gauges and a band graph on the right" loading="lazy"><figcaption class="cap">The dish fills the left, lit and soft-edged. A slim panel of line icons, gauges and a band graph sits on the right.</figcaption></figure>
+    <figure class="good"><p class="tag">Target: build screen (10)</p><img src="refs/10-build-screen.jpg" alt="Agreed mock-up of the build screen: a glowing cell portrait beside a panel of see-saw sliders and a rule card" loading="lazy"><figcaption class="cap">A large cell portrait beside the controls. The portrait is the same cell shader as the dish, zoomed in.</figcaption></figure>
+    <figure class="good"><p class="tag">Target: failure slide (11)</p><img src="refs/11-autopsy-slide.jpg" alt="Agreed mock-up of a failure as a lab slide with chalk arrows, a timeline pin and a COVER BLOWN tag" loading="lazy"><figcaption class="cap">Failure is a lab slide: the dish, chalk arrows, a timeline with a red pin and a paper tag.</figcaption></figure>
+    <figure class="good"><p class="tag">Target: win (12)</p><img src="refs/12-win-stamp.jpg" alt="Agreed mock-up of a win as a specimen card with a green SUFFICIENTLY BACTERIAL rubber stamp" loading="lazy"><figcaption class="cap">Success is a cream specimen card with a green rubber stamp over the dish.</figcaption></figure>
+    <figure class="good"><p class="tag">Target: zoomed out (04)</p><img src="refs/04-zoomed-out-colonies.jpg" alt="Mock-up of the whole dish seen from far away as glowing violet clouds with an amber haze" loading="lazy"><figcaption class="cap">Far out, cells merge into soft clouds with amber haze. This is the level-of-detail case.</figcaption></figure>
+  </div>
+  <p class="cap">Only the play screen has a current screenshot in the reference folder. The build, result and list screens need new captures before the real before-and-after can be shown.</p>
+</section>
+
+<section id="screens">
+  <h2><span class="n">02</span>From the agreed mock-ups to the screens</h2>
+  <p>Each screen of the game today has a mock-up it should follow. Some of the game has changed since the mock-ups were made. The build screen is now a body-slot loadout with five stat bars, not see-saw sliders. The COVER gauge and needles are gone; the stat bars are Acid defence, Growth, Smell, Naturalness and Crash survival. The steps are Briefing, Watch, Adapt, Run and Result. The table says what to copy, what to adapt, and what is still missing.</p>
+  <div class="tablebox"><table style="min-width:900px">
+    <thead><tr><th>Game screen</th><th>Follow this mock-up</th><th>Adapt, because the game has changed</th><th>Still missing</th></tr></thead>
+    <tbody>
+      <tr><td><b>World briefing</b></td><td class="thc"><img class="th" src="refs/26-planet-postcard.jpg" alt="Planet postcard mock-up" loading="lazy">26 postcard, 14 to 18 planets</td><td>Keep the postcard and planet art. Dish list sits under it as in 25.</td><td>Planet images are references only. Each planet needs its own field colour and haze strength in the dish shader.</td></tr>
+      <tr><td><b>Dish briefing</b></td><td class="thc"><img class="th" src="refs/13-handler-letter.jpg" alt="Handler letter mock-up" loading="lazy">13 letterhead memo, 02 specimen label</td><td>Briefing text becomes the memo: cream paper, ink, handler voice. It must name the dish&rsquo;s stat bars in play, not the old COVER gauge.</td><td>Paper style is not built. The memo needs the cream card, ink colour and a stamp for the dish goal.</td></tr>
+      <tr><td><b>Watch</b></td><td class="thc"><img class="th" src="refs/01-style-frame.jpg" alt="Style frame mock-up" loading="lazy">01 style frame, 03 play screen</td><td>Watch drops your carried cell in unchanged, with the rack-focus entry, and stops soon after it fails. The panel shows the stat bars with the failing one marked.</td><td>The lit dish itself (G1 to G3). Replay scrubber styled as a thin line with ticks (see 11).</td></tr>
+      <tr><td><b>Adapt</b></td><td class="thc"><img class="th" src="refs/10-build-screen.jpg" alt="Build screen mock-up" loading="lazy">10 build screen, 09 scout lens</td><td>See-saw sliders become a body-slot loadout with a cell diagram. The five stat bars with forecast outlines replace the dials. Keep the large cell portrait and the rule card on the right.</td><td>The cell portrait (the cell shader at large size, see section 05). Slot icons in the line style of 23. A scout lens panel.</td></tr>
+      <tr><td><b>Run and replay</b></td><td class="thc"><img class="th" src="refs/03-gameplay-hud.jpg" alt="Play screen mock-up" loading="lazy">03 play screen, 24 patterned gauges</td><td>The COVER gauge and needles are replaced by five stat bars in the 24 style (patterned danger ends, green safe band, white marker, outlined forecast). Keep the band graph from 03.</td><td>Instrument panel chrome, thin violet panel lines, line icons. Shown live in the next demo.</td></tr>
+      <tr><td><b>Result: win</b></td><td class="thc"><img class="th" src="refs/12-win-stamp.jpg" alt="Win stamp mock-up" loading="lazy">12 specimen card with green stamp</td><td>The stamp text is the dish&rsquo;s verdict. The card lists the five stat bars at the end, not a COVER score.</td><td>Paper card, rubber-stamp texture, stamp animation.</td></tr>
+      <tr><td><b>Result: loss</b></td><td class="thc"><img class="th" src="refs/11-autopsy-slide.jpg" alt="Autopsy slide mock-up" loading="lazy">11 autopsy slide, 19 robot states</td><td>The failing stat bar is named by a chalk arrow from the panel to the cells. Crash survival and Acid defence are the usual causes. The timeline pin marks the tick.</td><td>Chalk arrows and handwriting, the timeline with a red pin, the paper tag. Immune cells in 28 style.</td></tr>
+      <tr><td><b>Dish list</b></td><td class="thc"><img class="th" src="refs/25-dish-wall.jpg" alt="Dish wall mock-up" loading="lazy">25 dish wall</td><td>One lit specimen thumbnail per dish. Thumbnails can be rendered by the same shader at small size and frozen.</td><td>Thumbnail render path and stamp overlays for finished dishes.</td></tr>
+    </tbody></table></div>
+  <h3>The rest of the agreed set</h3>
+  <div class="thumbs">
+    <figure><img src="refs/21-stain-palette.jpg" alt="Stain palette board" loading="lazy"><figcaption>21 palette board: the four stains.</figcaption></figure>
+    <figure><img src="refs/23-icons-attributes.jpg" alt="Line icons for attributes" loading="lazy"><figcaption>23 line icons for the stat bars and slots.</figcaption></figure>
+    <figure><img src="refs/24-suspicion-channels.jpg" alt="Patterned gauges" loading="lazy"><figcaption>24 patterned gauges: colour is never the only cue.</figcaption></figure>
+    <figure><img src="refs/09-scout-lens.jpg" alt="Scout lens with callouts" loading="lazy"><figcaption>09 scout lens with callouts.</figcaption></figure>
+    <figure><img src="refs/28-immune-eyes-view.jpg" alt="Immune view" loading="lazy"><figcaption>28 immune eyes view.</figcaption></figure>
+    <figure><img src="refs/02-title-screen.jpg" alt="Title screen" loading="lazy"><figcaption>02 title screen with specimen label.</figcaption></figure>
+  </div>
+
+  <h3>The dish inside the play screen</h3>
+  <p>The dish judged alone is the wrong test. This is the same renderer placed in the agreed play-screen layout: dish on the left, instrument panel on the right with the five stat bars in the 03 and 24 style. The bars react to the stand-in dish. Their values here are made-up stand-ins, not game rules. Try the events, then the two result cards, which use the paper-and-ink style of 11 and 12.</p>
+  <div class="play" id="playBox">
+    <div class="dishcol" id="playDish">
+      <canvas id="playCv" aria-label="The dish inside the play screen layout"></canvas>
+      <div class="steps" aria-hidden="true"><span>1 Briefing</span><span>2 Watch</span><span>3 Adapt</span><span class="on">4 Run</span><span>5 Result</span></div>
+      <svg class="chalk" id="chalk" aria-hidden="true"></svg>
+      <div class="paper tag" id="lossTag"><span class="stamp r">Cover blown.</span></div>
+      <div class="paper win" id="winCard"><div class="small">Specimen card / dish 2</div><div class="stamp g">Sufficiently<br>bacterial</div><div class="small">Filed by the handler. No further questions.</div></div>
+    </div>
+    <aside class="instr" aria-label="Instrument panel">
+      <h4>Instruments &middot; outline marker = forecast</h4>
+      <div id="statbars"></div>
+      <div class="band" aria-hidden="true"><svg viewBox="0 0 240 70" preserveAspectRatio="none"><rect x="0" y="22" width="240" height="26" fill="rgba(45,212,167,.15)"/><line x1="0" y1="22" x2="240" y2="22" stroke="#2dd4a7" stroke-dasharray="4 3" stroke-width="1"/><line x1="0" y1="48" x2="240" y2="48" stroke="#2dd4a7" stroke-dasharray="4 3" stroke-width="1"/><path id="bandPath" d="" fill="none" stroke="#ff6b95" stroke-width="1.8"/></svg></div>
+    </aside>
+  </div>
+  <p class="msg" id="playCvMsg" hidden></p><div class="fb" id="playCvFb" hidden><img src="refs/03-gameplay-hud.jpg" alt="Static reference: the agreed play screen"></div>
+  <div class="btns" style="margin-top:12px">
+    <button class="ev" type="button" data-pev="acid">Dissolve in acid</button>
+    <button class="ev" type="button" data-pev="flood">Take over the dish</button>
+    <button class="ev" type="button" data-pev="immune">Immune response</button>
+    <button class="ev" type="button" data-pev="seam">Seam reveal</button>
+    <button class="p" type="button" id="btnWin">Result: win card</button>
+    <button class="p" type="button" id="btnLoss">Result: failure slide</button>
+    <button type="button" id="btnPlayReset">Reset</button>
+  </div>
+  <p class="cap">Left: the dish with the step pills. Right: five stat bars, each with a line icon, a danger end drawn in a pattern (so colour is never the only cue), a green safe band, a white marker and an outlined forecast marker, then the band graph. Below: the same renderer, nothing else changed. What is not here yet: real slot icons, the rule card, the scrubber.</p>
+</section>
+
+<section id="hero-demo">
+  <h2><span class="n">03</span>The main demo: one dish, every option</h2>
+  <p>Pick a look, then try the focus controls. <b>Rack focus</b> is the move the brief asked for. Drag to pan, use the wheel or pinch to zoom. Far out the cells merge into clouds; close in they show granules, tails and seams. Keys: arrows pan, plus and minus zoom, square brackets move the focal plane.</p>
+  <div class="hero-grid">
+    <div>
+      <div class="stage"><canvas id="hero" class="int" tabindex="0" aria-label="Interactive dish. Drag to pan, wheel or pinch to zoom. Arrow keys pan, plus and minus zoom, square brackets change focus."></canvas><canvas id="heroOv" class="ov" aria-hidden="true"></canvas><div class="readout" id="heroRead" aria-live="off"></div></div>
+      <p class="msg" id="heroMsg" hidden></p>
+      <div class="fb" id="heroFb" hidden><img src="refs/01-style-frame.jpg" alt="Static reference image shown because WebGL2 is unavailable"></div>
+      <p class="cap">One dish, about 900 cells by default (up to 30,000). Violet is native life, pink is the player&rsquo;s robot colony, amber is waste and acid, green is immune activity. Renderer reported by the browser: <span class="mono" id="rendererOut">unknown</span>.</p>
+    </div>
+    <div class="panel" role="group" aria-label="Demo controls">
+      <fieldset><legend>Look</legend>
+        <div class="row"><input type="radio" name="look" id="lk0" value="0"><label for="lk0">Today (flat dots)</label></div>
+        <div class="row"><input type="radio" name="look" id="lk1" value="1" checked><label for="lk1">Dark field</label></div>
+        <div class="row"><input type="radio" name="look" id="lk2" value="2"><label for="lk2">Phase contrast</label></div>
+        <div class="row"><input type="radio" name="look" id="lk3" value="3"><label for="lk3">Relief (DIC)</label></div>
+        <div class="row"><input type="radio" name="look" id="lk4" value="4"><label for="lk4">Fluorescence</label></div>
+      </fieldset>
+      <fieldset><legend>Depth and focus</legend>
+        <div class="row"><input type="checkbox" id="kdepth" data-k="depth" checked><label for="kdepth">Depth blur</label></div>
+        <div class="row sl"><label for="kfocus">Focus plane</label><input type="range" id="kfocus" data-k="focus" min="-0.5" max="1.5" step="0.01" value="0.5"><output>0.50</output></div>
+        <div class="row sl"><label for="kstr">Blur strength</label><input type="range" id="kstr" data-k="strength" min="0.3" max="2.2" step="0.05" value="1"><output>1.00</output></div>
+        <div class="btns"><button class="p" id="btnRack" type="button">Rack focus</button></div>
+        <div class="row"><input type="checkbox" id="kbreath" data-k="breathing"><label for="kbreath">Breathing (slight drift)</label></div>
+      </fieldset>
+      <fieldset><legend>Lens effects</legend>
+        <div class="row"><input type="checkbox" id="kbloom" data-k="bloom" checked><label for="kbloom">Bloom and glow</label></div>
+        <div class="row"><input type="checkbox" id="kvig" data-k="vignette" checked><label for="kvig">Vignette</label></div>
+        <div class="row"><input type="checkbox" id="kchr" data-k="chroma" checked><label for="kchr">Chromatic fringing</label></div>
+        <div class="row"><input type="checkbox" id="kgrain" data-k="grain" checked><label for="kgrain">Sensor grain</label></div>
+        <div class="row"><input type="checkbox" id="kdust" data-k="dust" checked><label for="kdust">Dust and out-of-focus specks</label></div>
+        <div class="row"><input type="checkbox" id="kret" data-k="reticle"><label for="kret">Reticle and scale bar</label></div>
+      </fieldset>
+      <fieldset><legend>Life</legend>
+        <div class="row"><input type="checkbox" id="kjit" data-k="jitter" checked><label for="kjit">Brownian jitter</label></div>
+        <div class="row"><input type="checkbox" id="kswim" data-k="swim" checked><label for="kswim">Swimming with tails</label></div>
+        <div class="row"><input type="checkbox" id="kdiv" data-k="divide" checked><label for="kdiv">Cells dividing</label></div>
+        <div class="row"><input type="checkbox" id="kgran" data-k="granules" checked><label for="kgran">Internal granules</label></div>
+        <div class="row"><input type="checkbox" id="khaze" data-k="haze" checked><label for="khaze">Waste and acid haze</label></div>
+        <div class="row"><input type="checkbox" id="ktrail" data-k="trail"><label for="ktrail">Slime trails</label></div>
+      </fieldset>
+      <fieldset><legend>Events</legend>
+        <div class="btns">
+          <button class="ev" type="button" data-ev="acid">Dissolve in acid</button>
+          <button class="ev" type="button" data-ev="flood">Take over the dish</button>
+          <button class="ev" type="button" data-ev="immune">Immune response</button>
+          <button class="ev" type="button" data-ev="seam">Seam reveal</button>
+          <button type="button" id="btnReset">Reset</button>
+        </div>
+      </fieldset>
+      <fieldset><legend>Scale and view</legend>
+        <div class="row sl"><label for="kcount">Cells</label><input type="range" id="kcount" data-k="count" min="0" max="100" step="1" value="22"><output id="countOut">900</output></div>
+        <div class="btns"><button type="button" id="btnPlay" aria-pressed="false">Pause</button><button type="button" id="btnHome">Reset view</button></div>
+        <p class="tiny">On a phone, dragging on the dish pans it. Scroll the page by dragging outside it.</p>
+      </fieldset>
+    </div>
+  </div>
+</section>
+
+<section id="options">
+  <h2><span class="n">04</span>Options side by side</h2>
+  <p>Four complete art directions, drawn live from the same stand-in dish (same cells, same seed). Each has the same four stain colours. Use the button to rack focus in all four at once and compare how each one handles being out of focus.</p>
+  <div class="btns"><button class="p" type="button" id="btnRackAll">Rack focus in all four</button></div>
+  <div class="opts">
+    <article class="card">
+      <div class="stage"><canvas id="optA" aria-label="Option A, dark field minimal"></canvas></div>
+      <p class="msg" id="optAMsg" hidden></p><div class="fb" id="optAFb" hidden><img src="refs/01-style-frame.jpg" alt="Static reference image"></div>
+      <div class="cardtop"><h3>A. Dark field, minimal</h3><button type="button" data-rack="optA">Rack focus</button></div>
+      <p>Bright rims on black, a little bloom, nothing else. No depth, no haze, no lens.</p>
+      <dl class="kv">
+        <dt>Good at</dt><dd>Reading at a glance. Every cell is crisp, so counts and shapes are easy to judge.</dd>
+        <dt>Costs</dt><dd>Lowest. About one cell pass plus bloom. Build effort: small (G1 only).</dd>
+        <dt>Stain colours</dt><dd>Very clear. Violet, pink, amber and green all stay saturated on black.</dd>
+        <dt>Stat cues</dt><dd>Acid shows as amber haze (needs the haze pass, so weaker here). Growth, smell and naturalness read from seams, tails and regularity at close range.</dd>
+      </dl>
+    </article>
+    <article class="card">
+      <div class="stage"><canvas id="optB" aria-label="Option B, dark field with depth and haze"></canvas></div>
+      <p class="msg" id="optBMsg" hidden></p><div class="fb" id="optBFb" hidden><img src="refs/01-style-frame.jpg" alt="Static reference image"></div>
+      <div class="cardtop"><h3>B. Dark field with depth and haze</h3><button type="button" data-rack="optB">Rack focus</button></div>
+      <p>The same black field, but cells sit at different depths and blur by distance. Amber haze drifts. Dust, vignette, grain and a trace of colour fringing at the edge.</p>
+      <dl class="kv">
+        <dt>Good at</dt><dd>Feeling like a real instrument. Depth gives the dish a third dimension, so scouting through layers becomes possible.</dd>
+        <dt>Costs</dt><dd>Moderate. Cells plus a haze pass, specks and half-resolution bloom. Build effort: medium (G1 to G3).</dd>
+        <dt>Stain colours</dt><dd>Clear when in focus. Blurred cells keep their hue but lose rim contrast, so strong blur must be brief.</dd>
+        <dt>Stat cues</dt><dd>Best of the four. Acid is a visible haze with fizz, smell is the amber field, growth shows as crowding, naturalness as seams and regularity.</dd>
+      </dl>
+    </article>
+    <article class="card">
+      <div class="stage"><canvas id="optC" aria-label="Option C, relief microscope"></canvas></div>
+      <p class="msg" id="optCMsg" hidden></p><div class="fb" id="optCFb" hidden><img src="refs/01-style-frame.jpg" alt="Static reference image"></div>
+      <div class="cardtop"><h3>C. Relief microscope</h3><button type="button" data-rack="optC">Rack focus</button></div>
+      <p>Differential interference contrast. Cells look like solid shaded forms on a grey-green field, lit from the upper left.</p>
+      <dl class="kv">
+        <dt>Good at</dt><dd>Showing shape and texture. Granules, membranes and seams look physical. It is the most &ldquo;real microscope&rdquo; of the four.</dd>
+        <dt>Costs</dt><dd>Similar to B in the GPU. Build effort: medium. Needs a shading model per cell part and a lighter-field UI.</dd>
+        <dt>Stain colours</dt><dd>Weakest. Colour is only a light tint, and the light field fights the neon palette in the rest of the interface.</dd>
+        <dt>Stat cues</dt><dd>Acid and smell are subtle. Seams and lattice read well as relief. Fine as an optional lens, risky as the default.</dd>
+      </dl>
+    </article>
+    <article class="card">
+      <div class="stage"><canvas id="optD" aria-label="Option D, fluorescence night"></canvas></div>
+      <p class="msg" id="optDMsg" hidden></p><div class="fb" id="optDFb" hidden><img src="refs/01-style-frame.jpg" alt="Static reference image"></div>
+      <div class="cardtop"><h3>D. Fluorescence night</h3><button type="button" data-rack="optD">Rack focus</button></div>
+      <p>Cells are filled with glowing stain, not just rimmed. Strong bloom, soft edges, and out-of-focus cells turn into glowing fog.</p>
+      <dl class="kv">
+        <dt>Good at</dt><dd>Mood and colour. Out-of-focus looks beautiful. Good for zoomed-out colony clouds and for marketing frames.</dd>
+        <dt>Costs</dt><dd>Moderate to high. Stronger bloom (more fill rate). Build effort: medium, as it shares the cell shader.</dd>
+        <dt>Stain colours</dt><dd>Strongest colour of all, but crowded areas blow out toward white, which hides the pink-versus-violet split.</dd>
+        <dt>Stat cues</dt><dd>Haze and green activity read well. Shape cues (seams, tails) are softer because edges glow into each other.</dd>
+      </dl>
+    </article>
+  </div>
+</section>
+
+<section id="cell">
+  <h2><span class="n">05</span>How a cell is drawn</h2>
+  <p>In the game, no cell is a sprite. One shader draws every cell from its numbers. This lab builds one up layer by layer. The native cell (left, violet) and the robot cell (right, pink) use the same code; the robot adds a lattice of regular parts, seams and, if the player fits an Envelope, extra membrane layers.</p>
+  <div class="cell-grid">
+    <div>
+      <div class="stage"><canvas id="cellCv" aria-label="One native cell beside one robot cell, drawn procedurally"></canvas></div>
+      <p class="msg" id="cellCvMsg" hidden></p><div class="fb" id="cellCvFb" hidden><img src="refs/05-closeup-native-vs-robot.jpg" alt="Static reference: native cell beside robot cell"></div>
+      <p class="cap">Left: native. Right: robot. Use the layer switches, or press Build up to watch the layers arrive one by one. Each layer is a few lines of shader, not an image.</p>
+    </div>
+    <div class="panel">
+      <fieldset><legend>Layers</legend>
+        <div class="btns"><button class="p" type="button" id="btnBuild">Build up</button></div>
+        <div class="row"><input type="checkbox" id="b1" data-bit="1" checked><label for="b1">1. Body shape (distance function)</label></div>
+        <div class="row"><input type="checkbox" id="b2" data-bit="2" checked><label for="b2">2. Rim light</label></div>
+        <div class="row"><input type="checkbox" id="b4" data-bit="4" checked><label for="b4">3. Glassy interior</label></div>
+        <div class="row"><input type="checkbox" id="b8" data-bit="8" checked><label for="b8">4. Granules / regular parts</label></div>
+        <div class="row"><input type="checkbox" id="b16" data-bit="16"><label for="b16">5. Envelope membrane layers (robot)</label></div>
+        <div class="row sl"><label for="envN">Envelope layers</label><input type="range" id="envN" min="1" max="3" step="1" value="2"><output id="envOut">2</output></div>
+        <div class="row"><input type="checkbox" id="b32" data-bit="32" checked><label for="b32">6. Hexagonal seams (robot)</label></div>
+        <div class="row sl"><label for="seamN">Seam amount</label><input type="range" id="seamN" min="0" max="1" step="0.02" value="1"></div>
+        <div class="row"><input type="checkbox" id="b64" data-bit="64" checked><label for="b64">7. Tail</label></div>
+      </fieldset>
+      <fieldset><legend>View</legend>
+        <div class="row"><input type="radio" name="cellLook" id="cl1" value="1" checked><label for="cl1">Dark field</label></div>
+        <div class="row"><input type="radio" name="cellLook" id="cl4" value="4"><label for="cl4">Fluorescence</label></div>
+        <div class="row"><input type="radio" name="cellLook" id="cl3" value="3"><label for="cl3">Relief (DIC)</label></div>
+        <div class="row"><input type="radio" name="cellLook" id="cl2" value="2"><label for="cl2">Phase contrast</label></div>
+      </fieldset>
+    </div>
+  </div>
+  <p>What this shows: the player&rsquo;s fitted parts can appear on the cell with no new art. Envelope sets the layer count, Machine parts set the seam amount and lattice, Flagellum sets the tail, and a sloppiness dial can jitter the lattice. The seam reveal in the dish above is the same seam layer switched on by a moving ring.</p>
+</section>
+
+<section id="focus">
+  <h2><span class="n">06</span>The focus trick, and where to use it</h2>
+  <p>A real microscope never shows a sharp picture the moment you look. The image swims, the field is a wash of soft discs, you turn the knob past focus, and it settles. That half second tells the viewer that a lens is there. Here it is cheap: the focal plane is one number, each cell has a depth, and blur is a function of the difference. Rack focus is that number moving on a damped curve (start far out, overshoot once, settle in about 1.5 seconds) while exposure rises a little.</p>
+  <p>Press a button to see one of three moments. Each one starts a fresh dish.</p>
+  <div class="stage" style="max-width:900px"><canvas id="focCv" aria-label="Rack focus demo for three game moments"></canvas><div class="overcap" id="focCap"></div></div>
+  <p class="msg" id="focCvMsg" hidden></p><div class="fb" id="focCvFb" hidden><img src="refs/01-style-frame.jpg" alt="Static reference"></div>
+  <div class="btns" style="margin-top:12px">
+    <button class="p" type="button" data-script="enter">1. Entering a dish</button>
+    <button class="p" type="button" data-script="watch">2. The Watch step starts</button>
+    <button class="p" type="button" data-script="fail">3. Zoom to the moment of failure</button>
+    <button type="button" id="focReset">Reset</button>
+  </div>
+  <p class="cap">1: slow settle from a heavy blur with a touch of zoom, over about two seconds, while the dish name appears. 2: a short pull to a near layer and back, like the lens waking up. 3: the acid event runs, the view zooms into the colony, and focus hunts back as the cells fizz away. Moment 3 is the one that should be most dramatic.</p>
+  <h3 style="margin-top:22px">Focus as a gameplay idea</h3>
+  <p>Cells live at different depths. Natives spread through the whole depth range. The player&rsquo;s robots sit in a narrow band. Immune cells hover higher up. Scouting then becomes focusing through layers: a slider (or the Scout lens) sweeps the focal plane, and whatever lives at that depth snaps into view. The player learns where the immune cells wait by finding them at the top layer, and learns that their own colony is thin, flat and regular because it all sharpens at once. This costs no extra rules. It only needs the depth number to be part of the simulation&rsquo;s per-species data.</p>
+</section>
+
+<section id="perf">
+  <h2><span class="n">07</span>Performance and build plan</h2>
+  <h3>Techniques, cost, risk</h3>
+  <p>Column &ldquo;Basis&rdquo; says where each number comes from. <span style="color:var(--green)">Measured</span> means measured on this page in headless Chrome (see below). <span style="color:var(--violet)">Spike</span> means measured in the earlier render spike. <span style="color:var(--amber)">Estimated</span> means a reasoned guess that still needs a real device.</p>
+  <div class="tablebox"><table>
+    <thead><tr><th>Technique</th><th>What it does</th><th>Cost</th><th>Risk</th><th>Basis</th></tr></thead>
+    <tbody>
+      <tr><td>Instanced SDF cell shader</td><td>One draw call. Capsule shape, rim, interior, granules, tail, seams.</td><td>See table below</td><td>Low. Fragment cost grows with overlap.</td><td class="m">Measured</td></tr>
+      <tr><td>Per-instance depth, blur as edge softness and quad size</td><td>No blur pass. The quad grows, the edge softens, energy is conserved.</td><td>Almost free on top of the cell pass</td><td>Low. Large blur makes big quads and more overdraw.</td><td class="m">Measured</td></tr>
+      <tr><td>Bokeh disc for far cells and specks</td><td>Above about 10 px of blur the shape becomes a ring-edged disc.</td><td>Free (same shader)</td><td>Low</td><td class="m">Measured</td></tr>
+      <tr><td>Density clouds for tiny cells</td><td>Soft gaussian splat per cell, fading in as cells shrink under about 6 px.</td><td>Extra pass only when zoomed out</td><td>Medium. Overdraw at 30,000 cells.</td><td class="m">Measured</td></tr>
+      <tr><td>Half and quarter resolution bloom</td><td>Bright pass, separable blur at 1/2 and 1/4 size, added back.</td><td>Seven small passes</td><td>Low. Needs float render targets.</td><td class="m">Measured</td></tr>
+      <tr><td>Haze, trails, acid and immune fields</td><td>A 128 by 128 field texture under a domain-warped noise shader.</td><td>One full-screen pass, about 20 noise lookups per pixel</td><td>Medium. The heaviest pixel shader here on weak GPUs.</td><td class="m">Measured</td></tr>
+      <tr><td>Vignette, fringing, grain</td><td>In the composite pass.</td><td>Free</td><td>Low</td><td class="m">Measured</td></tr>
+      <tr><td>Real simulation hookup</td><td>Replace the stand-in cell list with samples from the density fields.</td><td>CPU build about 23 ns per cell</td><td>Medium. Needs stable individuals and a depth per species.</td><td class="s">Spike</td></tr>
+      <tr><td>Phone and integrated GPU</td><td>Half resolution scene, no haze noise, no clouds.</td><td>Unknown</td><td>High until tested on a device</td><td class="e">Estimated</td></tr>
+    </tbody></table></div>
+  <h3>Measured on a real run</h3>
+  <p>Frame time here is JavaScript plus GPU for one frame, forced to finish, so it is not capped at 60 fps. The renderer matters: see the note below the table.</p>
+  <div class="tablebox"><table><thead><tr><th>Look</th><th>Cells</th><th>Drawn</th><th>Frame</th><th>CPU</th><th>GPU timer</th></tr></thead><tbody id="benchOut">
+  <tr><td>Today (flat dots)</td><td>1,000</td><td>1,000</td><td>1.34 ms</td><td>0.28 ms</td><td>0.55 ms</td></tr>
+<tr><td>Today (flat dots)</td><td>3,000</td><td>3,000</td><td>1.71 ms</td><td>0.48 ms</td><td>0.73 ms</td></tr>
+<tr><td>Today (flat dots)</td><td>10,000</td><td>10,000</td><td>2.84 ms</td><td>1.3 ms</td><td>0.98 ms</td></tr>
+<tr><td>Today (flat dots)</td><td>30,000</td><td>30,000</td><td>6.21 ms</td><td>3.67 ms</td><td>1.22 ms</td></tr>
+<tr><td>Dark field</td><td>1,000</td><td>1,000</td><td>1.71 ms</td><td>0.72 ms</td><td>0.96 ms</td></tr>
+<tr><td>Dark field</td><td>3,000</td><td>3,000</td><td>3.62 ms</td><td>0.52 ms</td><td>1.78 ms</td></tr>
+<tr><td>Dark field</td><td>10,000</td><td>10,000</td><td>5.82 ms</td><td>1.37 ms</td><td>3.64 ms</td></tr>
+<tr><td>Dark field</td><td>30,000</td><td>30,000</td><td>13.34 ms</td><td>3.69 ms</td><td>8.65 ms</td></tr>
+<tr><td>Relief (DIC)</td><td>1,000</td><td>1,000</td><td>1.65 ms</td><td>0.7 ms</td><td>0.91 ms</td></tr>
+<tr><td>Relief (DIC)</td><td>3,000</td><td>3,000</td><td>2.66 ms</td><td>0.54 ms</td><td>1.43 ms</td></tr>
+<tr><td>Relief (DIC)</td><td>10,000</td><td>10,000</td><td>5.76 ms</td><td>1.28 ms</td><td>3.53 ms</td></tr>
+<tr><td>Relief (DIC)</td><td>30,000</td><td>30,000</td><td>12.97 ms</td><td>3.61 ms</td><td>8.12 ms</td></tr>
+
+  </tbody></table></div>
+  <p class="cap" id="benchNote">Measured while building this page: headless Chrome on an Apple M5 (ANGLE Metal renderer, real GPU), canvas 810 by 506 px at device pixel ratio 1, 2026-11-16. Frame is JS plus GPU for one frame, forced to finish, 30 frames per row. A retina screen has about 4 times the pixels, so expect fill-bound rows to cost more; the page caps the dish at 1.8 million pixels and lowers resolution by itself if frames stay above 24 ms. This is a fast machine: treat these as a floor, not a prediction for a phone.</p>
+  <div class="btns"><button type="button" id="btnBench">Measure on this machine</button></div>
+  <p class="tiny">The button runs the main dish at 1,000, 3,000, 10,000 and 30,000 cells for three looks. It takes about 15 seconds and pauses the page.</p>
+
+  <h3 style="margin-top:28px">Build phases</h3>
+  <div class="tablebox"><table>
+    <thead><tr><th>Phase</th><th>Work</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td><b>G1</b> Cell shader</td><td>Instanced SDF cells in dark field: rim, interior, granules, tails, seams, pinch. Replaces the dot drawing in <code>draw.js</code> with a WebGL2 canvas, driven by a fake cell list.</td><td>One cell reads as a cell. Native and robot are distinguishable at a glance.</td></tr>
+      <tr><td><b>G2</b> Depth and focus</td><td>Per-cell depth, focal plane, blur as softness, bokeh discs, rack focus helper, breathing.</td><td>The focus trick feels good and does not hurt readability.</td></tr>
+      <tr><td><b>G3</b> Lens and atmosphere</td><td>Half-resolution bloom, vignette, fringing, grain, dust, dish rim, haze field with acid and immune layers.</td><td>The dish looks like a place. Frame time stays inside budget.</td></tr>
+      <tr><td><b>G4</b> Motion and events</td><td>Jitter, swimming, division, dissolve, takeover, immune convergence, seam ring.</td><td>Every game event has a visual that explains itself without text.</td></tr>
+      <tr><td><b>U1</b> UI chrome (parallel track)</td><td>Instrument panel with thin violet lines, five patterned stat bars with forecast outlines, band graph, step pills, then paper results (win card, failure slide with chalk arrows, timeline pin), memo letterhead and dish wall. Plain HTML and CSS around the canvas.</td><td>The screens match the agreed mock-ups, and the dish reads well in context.</td></tr>
+      <tr><td><b>G5</b> Real simulation</td><td>Sample individuals from the density fields. Level of detail between clouds and cells. Stable identities when panning. Quality tiers and automatic fallback.</td><td>The look holds on real data, on 5,000-cell phones and on 50,000-cell desktops.</td></tr>
+    </tbody></table></div>
+  <h3 style="margin-top:22px">What building this showed</h3>
+  <ul>
+    <li>Additive cells wash out. Per-channel tone mapping turned every crowded cluster white and lost the violet. A hue-preserving tone map plus a small automatic gain at high counts fixed it. Bokeh discs also had to conserve energy, or they became a violet fog (the first version was about four times too bright).</li>
+    <li>Bloom was the biggest cause of a smeared dish. At the first strength the natives read as one glowing blob; at about a third of that the rims read again. Bloom should be subtle in this game.</li>
+    <li>Looks: dark field and relief (DIC) look good. Fluorescence is beautiful but crowded areas blow out. Phase contrast looked worst: the bright halos fight each other when cells touch. Relief reads as real shape but weakens the pink-versus-violet split.</li>
+    <li>At 30,000 cells with no empty space the dish becomes a solid slab of colour and looks worse than the mock-ups, which have empty black between colonies. Real dishes should keep voids. A cheap shader path for cells under about 3 px roughly halved the cost at 30,000 cells. Depth blur at the default zoom is subtle because cells are only 3 to 6 px; the rack-focus start needs a 35 px or larger blur to be felt.</li>
+  </ul>
+</section>
+
+<section id="decisions">
+  <h2><span class="n">08</span>Decisions for the owner</h2>
+  <ol class="dec">
+    <li><b>Which look is the default?</b> Recommended: B, dark field with depth and haze. It keeps the four stain colours strongest and carries the stat cues. A is the safe, cheap floor. C and D are better as optional lens modes than as the identity of the game.</li>
+    <li><b>How strong should focus effects be?</b> Recommended: the blur strength at 1.0 or slightly under, with the full heavy blur only in the three rack-focus moments. During play, depth blur should stay light enough that no cell is unreadable. Try the strength slider in the main demo before deciding.</li>
+    <li><b>Do lens modes become a game feature?</b> Recommended: yes, later. Phase contrast and relief are cheap once the cell shader exists and fit the Scout lens (the immune view could be fluorescence, the seam view could be relief). Not needed for the first release.</li>
+    <li><b>What is the performance floor?</b> Recommended: 5,000 cells on a phone with no haze noise and no clouds, 20,000 by default on a laptop, 50,000 on request. Flat dots stay as an automatic fallback below that.</li>
+        <li><b>Bring the UI chrome up to the agreed mock-ups?</b> Recommended: yes, as its own phase (U1) alongside the dish work: instrument panel, patterned stat bars, paper results, chalk slide. The dish alone will not make the game feel like the mock-ups.</li>
+</ol>
+</section>
+
+<footer>Stand-in simulation and renderer written for this page only. Nothing here is connected to the real game yet. Real-microscopy looks (dark field, phase contrast, DIC, fluorescence, depth of field) are rendered as stylised effects, not as physical simulations.</footer>
+</div>
+<script>
+(function(){
+"use strict";
+/* ---------- GLSL ---------- */
+const GL_COMMON = `
+const vec3 C_NAT=vec3(0.655,0.545,0.980);
+const vec3 C_ROB=vec3(1.0,0.42,0.584);
+const vec3 C_AMB=vec3(0.961,0.647,0.141);
+const vec3 C_IMM=vec3(0.176,0.827,0.655);
+float h11(float p){p=fract(p*.1031);p*=p+33.33;p*=p+p;return fract(p);}
+float h21(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
+float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h21(i),h21(i+vec2(1,0)),f.x),mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){float a=.5,s=0.;for(int i=0;i<4;i++){s+=a*vn(p);p=p*2.03+vec2(17.1,9.2);a*=.5;}return s;}
+`;
+
+const VS_FULL = `#version 300 es
+void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));gl_Position=vec4(p*2.-1.,0.,1.);}`;
+
+/* ---- background: field of view, dish rim, haze, trails, acid, seam ring ---- */
+const FS_BG = `#version 300 es
+precision highp float; precision highp int;
+uniform vec2 uRes,uCen; uniform float uScale,uTime,uBgBlur,uAcid,uHaze,uTrail,uDish;
+uniform vec4 uRing; uniform sampler2D uF; uniform int iLook;
+out vec4 o;
+${GL_COMMON}
+void main(){
+  vec2 px=gl_FragCoord.xy; px.y=uRes.y-px.y;
+  vec2 w=(px-.5*uRes)/uScale+uCen;
+  float rd=length(w);
+  float aa=1.4/uScale, bb=uBgBlur/uScale;
+  float inside=uDish>.5?1.-smoothstep(1.-aa-bb,1.+aa+bb,rd):1.;
+  vec3 base,outc=vec3(0.);
+  vec2 L=normalize(vec2(-.72,-.69));
+  if(iLook==0){base=vec3(.010,.012,.026);}
+  else if(iLook==1){base=vec3(.004,.004,.013)+vec3(.012,.006,.03)*smoothstep(.3,1.,rd)*uDish;}
+  else if(iLook==2){base=vec3(.50,.505,.52)+(vn(w*38.)-.5)*.012+(vn(w*3.)-.5)*.02;outc=vec3(.035);}
+  else if(iLook==3){float gr=.5+.5*dot(normalize(w+1e-4),L)*rd*.6; base=vec3(.30,.40,.36)*(.92+.14*gr)+(vn(w*70.)-.5)*.018+(vn(w*7.)-.5)*.03;outc=vec3(.03,.04,.037);}
+  else {base=vec3(.0,.003,.009);}
+  vec3 c=mix(outc,base,inside);
+  /* fields */
+  vec2 fuv=(w+1.15)/2.3;
+  vec4 F=texture(uF,fuv);
+  float inb=step(abs(w.x),1.15)*step(abs(w.y),1.15);
+  float wst=F.r*inb, imu=F.g*inb, trl=F.b*inb;
+  float tt=uTime*.06;
+  vec2 q=w*2.6;
+  vec2 warp=vec2(fbm(q+vec2(tt,0.)),fbm(q*1.1+vec2(5.2,1.3)-vec2(0.,tt)));
+  float hz=fbm(q*1.3+warp*1.8+tt*.5);
+  float bf=clamp(uBgBlur/18.,0.,.85);
+  hz=mix(hz,.5,bf);
+  float haze=smoothstep(.12,.92,hz);
+  vec3 hc=C_AMB*wst*(.10+1.15*haze*haze)*.85+C_IMM*imu*(.08+.9*haze)*.6;
+  float ac=uAcid;
+  hc+=vec3(.96,.80,.16)*ac*(.03+.34*haze)*inside;
+  vec2 gq=w*46.; vec2 id=floor(gq); vec2 fq=fract(gq)-.5; float hh=h21(id);
+  float ph=fract(uTime*(.4+hh)+hh*7.);
+  float fz=exp(-pow((length(fq)-ph*.38)/.05,2.))*(1.-ph)*step(.72,hh)*ac*inside;
+  hc+=vec3(1.,.85,.45)*fz*.5;
+  vec3 tc=C_ROB*trl*(.35+.5*vn(w*50.))*.65;
+  if(uHaze>.5){
+    if(iLook==1||iLook==4) c+=(hc*(iLook==4?.8:1.))*inside;
+    else if(iLook==2) c-=(vec3(.55,.65,.8)*dot(hc,vec3(.33))*.85+hc*.12)*inside;
+    else if(iLook==3){float hz2=fbm(q*1.3+warp*1.8+tt*.5+vec2(.06,.06));c+=hc*.3*inside+vec3(1.,.97,.9)*(hz2-hz)*9.*min(1.,wst*2.+ac)*inside;}
+  }
+  if(uTrail>.5&&iLook>0){
+    if(iLook==2) c-=(vec3(1.)-C_ROB*.6)*trl*.22*inside; else c+=tc*inside*(iLook==3?.45:1.);
+  }
+  /* dish rim */
+  if(uDish>.5){
+    float ring=exp(-pow((rd-1.)/(.0065+bb*.9),2.));
+    float outer=exp(-max(rd-1.,0.)/.045)*step(1.,rd);
+    vec3 rc;
+    if(iLook==0) rc=vec3(.28,.28,.34)*.55*ring;
+    else if(iLook==1) rc=vec3(.50,.40,.95)*(ring*.95+outer*.16);
+    else if(iLook==2) rc=vec3(.30)*ring;
+    else if(iLook==3) rc=vec3(1.,.97,.92)*(.1+.3*dot(normalize(w+1e-4),L))*ring;
+    else rc=vec3(.25,.36,.9)*(ring*.55+outer*.08);
+    c+=rc;
+  }
+  /* seam ring sweep */
+  if(uRing.w>0.){
+    float d=abs(length(w-uRing.xy)-uRing.z);
+    float rr=exp(-pow(d/.011,2.))*1.5+exp(-pow(d/.07,2.))*.22;
+    float ang=atan(w.y-uRing.y,w.x-uRing.x);
+    float outd=max(length(w-uRing.xy)-uRing.z,0.);
+    float sp=exp(-outd/.12)*(.35+.65*vn(vec2(ang*38.,uTime*.3)))*step(.0,length(w-uRing.xy)-uRing.z)*.55;
+    vec3 rg=mix(C_ROB,vec3(1.),.45)*rr*.8+C_AMB*sp*.6;
+    rg*=uRing.w*inside;
+    c+=iLook==2?rg*.35:rg;
+  }
+  o=vec4(c,1.);
+}`;
+
+/* ---- cells ---- */
+const VS_CELL = `#version 300 es
+precision highp float; precision highp int;
+layout(location=0) in vec2 aCorner;
+layout(location=1) in vec4 aA;  // x y r ang
+layout(location=2) in vec4 aB;  // species depth phase hl
+layout(location=3) in vec4 aC;  // pinch dissolve seam tail
+layout(location=4) in vec4 aD;  // fade
+uniform vec2 uRes,uCen; uniform float uScale,uFocus,uK,uTol,uZoom,uDepth,uEnv;
+uniform int iLook;
+out vec2 vP; out float vR,vHs,vBlur,vDep,vPh; flat out float vSp; out vec4 vC,vD;
+void main(){
+  float rpx=aA.z*uScale, pin=aC.x;
+  float hs=rpx*aB.w;
+  float hpx=hs*(1.+.9*pin)+rpx*.9*pin;
+  float b=0.;
+  if(iLook>0&&uDepth>.5) b=clamp(max(abs(aB.y-uFocus)-uTol,0.)*uK*(.55+.45*sqrt(uZoom)),0.,72.);
+  float tail=aC.w*rpx*4.4;
+  float pad=2.5+b*1.5+rpx*.5*float(iLook==4)+max(2.,.07*rpx)*3.*step(.5,uEnv);
+  float ex=hpx+rpx+tail+pad, ey=rpx+pad+(aC.w>.5?rpx*.75:0.);
+  if(aB.x>1.5&&aB.x<2.5){ex=rpx*1.5+pad;ey=ex;}
+  vec2 p=aCorner*vec2(ex,ey);
+  vec2 pos=(aA.xy-uCen)*uScale+.5*uRes;
+  float ca=cos(aA.w),sa=sin(aA.w);
+  vec2 pp=pos+vec2(ca*p.x-sa*p.y,sa*p.x+ca*p.y);
+  gl_Position=vec4(pp.x/uRes.x*2.-1.,1.-pp.y/uRes.y*2.,0.,1.);
+  vP=p; vR=rpx; vHs=hs; vBlur=b; vDep=aB.y; vPh=aB.z; vSp=aB.x; vC=aC; vD=aD;
+}`;
+
+const FS_CELL = `#version 300 es
+precision highp float; precision highp int;
+in vec2 vP; in float vR,vHs,vBlur,vDep,vPh; flat in float vSp; in vec4 vC,vD;
+uniform int iLook,iLay; uniform float uTime,uGranK,uEnv,uCloud,uScale;
+out vec4 o;
+${GL_COMMON}
+void main(){
+  float sp=vSp;
+  bool rob=sp>.5&&sp<1.5, imm=sp>1.5&&sp<2.5;
+  vec3 col=sp<.5?C_NAT:(rob?C_ROB:(imm?C_IMM:C_AMB));
+  col=pow(col,vec3(1.5))*1.12;
+  float r=vR, bl=vBlur;
+  float pin=vC.x, dis=max(vC.y,0.), seam=vC.z, tailF=vC.w, fade=vD.x;
+  float rr=r*(1.-.3*dis);
+  float h2=vHs*(1.+.9*pin)+r*.9*pin;
+  float d; vec2 g;
+  if(imm){
+    float a=atan(vP.y,vP.x);
+    float w=1.+.15*sin(3.*a+uTime*1.6+vPh*20.)+.09*sin(5.*a-uTime*2.3+vPh*9.)+.05*sin(2.*a+uTime*.8);
+    float L=length(vP)+1e-4; d=L-rr*w; g=vP/L; h2=0.;
+  } else {
+    float x=clamp(vP.x,-h2,h2); vec2 q=vec2(vP.x-x,vP.y); float L=length(q)+1e-4;
+    float pr=1.-.82*pin*pin*exp(-pow(vP.x/(.42*(h2+rr)+1.),2.));
+    d=L-rr*pr; g=q/L;
+  }
+  float fB=float((iLay&1)!=0),fR=float((iLay&2)!=0),fI=float((iLay&4)!=0),fG=float((iLay&8)!=0),fE=float((iLay&16)!=0),fS=float((iLay&32)!=0),fT=float((iLay&64)!=0);
+  if(iLook==0){
+    float disc=1.-smoothstep(-.8,.8,length(vP)-rr*(1.+vHs/max(r,.01)*.45));
+    float k=1.;
+    if(dis>.001){ k=1.-dis; }
+    o=vec4(col*disc*.6*k*(1.-fade),1.);return;
+  }
+  float soft=.7+bl*.85;
+  float fill=1.-smoothstep(-soft,soft,d);
+  float t=clamp(-d/max(rr,.5),0.,1.);
+  if(rr<3.2&&bl<2.5){
+    float rm=exp(-pow((d+.9)/max(1.,.12*rr+bl*.5),2.));
+    vec3 cs;
+    if(iLook==2) cs=-(vec3(1.)-.5*col)*fill*.28+vec3(.3)*exp(-pow((d-1.4)/1.8,2.))*smoothstep(-.5,1.,d);
+    else if(iLook==3) cs=mix(vec3(1.),col*1.5,.4)*dot(g,vec2(-.72,-.69))*fill*(1.-t)*.55+col*fill*.38;
+    else cs=col*(fill*.2+rm*.6)*(iLook==4?1.3:1.);
+    float vs=1.;if(uCloud>.5)vs=smoothstep(2.,4.5,rr+h2);
+    float kp=1.;if(dis>.001)kp=1.-dis;
+    o=vec4(cs*(1.-fade)*vs*kp,1.);return;
+  }
+  float lodv=smoothstep(2.5,7.,rr);
+  float big=smoothstep(12.,45.,rr);
+  vec2 np=vP/max(rr,1.)*2.2+vPh*31.+vec2(uTime*.04,-uTime*.03);
+  float mot=vn(np)*.6+vn(np*2.3)*.4;
+  /* granules */
+  float gran=0.; vec2 gg=vec2(0.);
+  if(!rob){
+    for(int i=0;i<6;i++){
+      float fi=float(i);
+      vec2 gp=vec2((h11(vPh*13.1+fi)-.5)*2.*(h2+rr*.5),(h11(vPh*7.7+fi*3.1)-.5)*rr*1.0);
+      gp+=.12*rr*vec2(sin(uTime*.35+fi*2.1+vPh*9.),cos(uTime*.3+fi*1.7+vPh*5.));
+      float gs=rr*(.09+.12*h11(vPh*3.3+fi*5.))+.5;
+      vec2 dd=vP-gp; float gv=exp(-dot(dd,dd)/(gs*gs));
+      gran+=gv; gg+=-2.*dd/(gs*gs)*gv;
+    }
+  }
+  /* robot lattice and seams */
+  float latt=0.,seamLine=0.;
+  if(rob){
+    float u=max(rr*.36,.5); vec2 hp=vP/u; vec2 rv=vec2(1.,1.732); vec2 hh=rv*.5;
+    vec2 a=mod(hp,rv)-hh; vec2 b2=mod(hp-hh,rv)-hh; vec2 gv=dot(a,a)<dot(b2,b2)?a:b2;
+    vec2 aa=abs(gv); float hd=max(dot(aa,normalize(vec2(1.,1.732))),aa.x); float e=.5-hd;
+    latt=exp(-dot(gv,gv)*10.);
+    seamLine=1.-smoothstep(0.,1.1/u+.015,e);
+  }
+  float att=1./(1.+pow(bl/(rr+2.),2.)*.9);
+  float mB=smoothstep(2.5,14.,bl);
+  float Rd=rr+h2*.6+bl*.55;
+  float db=length(vP)-Rd; float sb=1.+Rd*.16;
+  float fillB=1.-smoothstep(-sb,sb,db);
+  float ringB=exp(-pow((db+sb*.8)/(sb*.9),2.));
+  float areaK=clamp(rr*(rr+h2)*2.4/(Rd*Rd),.03,1.);
+  vec3 s=vec3(0.),bok=vec3(0.);
+  float rimW=max(1.,.10*rr)+bl*.5;
+  float rim=exp(-pow((d+rimW*.8)/rimW,2.));
+  float spec=pow(max(dot(-g,normalize(vec2(-.55,-.85))),0.),6.)*rim;
+  if(iLook==1){
+    float edgeGlow=exp(-max(d,0.)/(.9+.12*rr+bl*.5))*step(0.,d)*.35;
+    vec3 rimc=mix(col,vec3(1.),.16);
+    s=col*fill*.07*fB
+     +(rimc*(rim*.78+edgeGlow*.7)+vec3(spec)*.22)*fR
+     +col*fill*(.03+.12*pow(1.-t,1.5))*(.45+1.1*mot)*fI*mix(.6,1.,lodv)*(1.+1.3*big)
+     +mix(col,vec3(1.),.4)*(gran*(.55+.6*big))*fill*fG*lodv*uGranK
+     +col*fill*exp(-pow(vP.y/(rr*.55),2.))*exp(-pow(vP.x/(h2+rr*.9),4.))*.07*big*fI*float(!rob);
+    if(rob){
+      s+=mix(col,vec3(1.),.3)*latt*fill*.55*fG*lodv*uGranK;
+      s+=mix(col,vec3(1.),.55)*seamLine*seam*fill*1.25*fS*lodv;
+      float ee=max(2.,.07*rr);
+      for(int k=1;k<4;k++){ if(float(k)<=uEnv+.01){ s+=col*exp(-pow((d-float(k)*ee)/(.75+bl*.4),2.))*(.65/float(k))*fE; } }
+    }
+    bok=col*(fillB*.30+ringB*.55)*areaK*.42;
+  } else if(iLook==2){
+    float dark=fill*(.16*fB+.18*fI*(.45+mot)*(.4+.6*sqrt(t)));
+    float halo=exp(-pow((d-1.2-.03*rr)/(1.8+.05*rr+bl*.9),2.))*smoothstep(-.5,1.,d);
+    s=halo*(vec3(.2)+col*.1)*fR-dark*(vec3(1.)-.55*col)
+      -vec3(gran)*fill*.22*fG*lodv*uGranK*(vec3(1.)-.5*col);
+    if(rob){
+      s-=(vec3(1.)-.5*col)*latt*fill*.16*fG*lodv;
+      s-=(vec3(1.)-.5*col)*seamLine*seam*fill*.5*fS*lodv;
+      float ee=max(2.,.07*rr);
+      for(int k=1;k<4;k++){ if(float(k)<=uEnv+.01){ s-=(vec3(1.)-.5*col)*exp(-pow((d-float(k)*ee)/(.75+bl*.4),2.))*(.45/float(k))*fE; } }
+    }
+    bok=-(vec3(1.)-.5*col)*(fillB*.14+ringB*.12)*areaK*.55+vec3(.12)*ringB*areaK*.35;
+  } else if(iLook==3){
+    vec2 Ld=normalize(vec2(-.72,-.69));
+    float sh=dot(g,Ld)*(fill*pow(1.-t,1.15)*1.25+(1.-fill)*exp(-max(d,0.)/1.5)*.55);
+    float sh2=dot(gg,Ld)*rr*.1;
+    s=mix(vec3(1.,.97,.9),col*1.5,.42)*(sh*.6)*fR+col*fill*.42*fB*(.7+.6*mot*fI)
+      +vec3(1.,.97,.9)*sh2*.35*fG*fill*lodv*uGranK+col*fill*(1.-t)*.08*fI;
+    if(rob){
+      s+=vec3(1.,.97,.9)*(latt-.3)*fill*.12*fG*lodv;
+      s+=vec3(1.,.9,.9)*seamLine*seam*fill*.30*fS*lodv*sign(dot(g,Ld)+.01+(1.-t)*0.0)*0.0+col*seamLine*seam*fill*.55*fS*lodv;
+      float ee=max(2.,.07*rr);
+      for(int k=1;k<4;k++){ if(float(k)<=uEnv+.01){ s+=vec3(1.)*dot(g,Ld)*exp(-pow((d-float(k)*ee)/(.9+bl*.4),2.))*(.5/float(k))*fE; } }
+    }
+    bok=col*fillB*.045*areaK+vec3(1.)*ringB*.02*areaK;
+  } else {
+    float nuc=exp(-pow(vP.x/(h2*.7+rr*.6),2.)-pow(vP.y/(rr*.5),2.));
+    float glow=exp(-max(d,0.)/(rr*.45+1.+bl*.4))*step(0.,d)*.16;
+    s=col*(fill*.26*fB+fill*.30*mot*fI*(.5+.8*t)+rim*.38*fR+nuc*fill*.34*fI+gran*fill*.95*fG*lodv*uGranK+glow*fR)*1.25;
+    if(rob){
+      s+=col*latt*fill*.6*fG*lodv*uGranK;
+      s+=mix(col,vec3(1.),.5)*seamLine*seam*fill*1.1*fS*lodv;
+      float ee=max(2.,.07*rr);
+      for(int k=1;k<4;k++){ if(float(k)<=uEnv+.01){ s+=col*exp(-pow((d-float(k)*ee)/(.8+bl*.4),2.))*(.6/float(k))*fE; } }
+    }
+    bok=col*(fillB*.55+ringB*.12)*areaK*.5;
+  }
+  /* tail */
+  if(tailF>.5&&fT>.5){
+    float s0=-vP.x-(h2+rr*.78); float Lt=rr*4.;
+    if(s0>0.&&s0<Lt){
+      float u2=s0/Lt; float amp=rr*.45*(.25+u2);
+      float yc=amp*sin(s0/(rr*1.15)-uTime*5.5+vPh*6.28);
+      float tw=max(.55,.10*rr)*(1.-.45*u2)+bl*.6;
+      float tv=exp(-pow((vP.y-yc)/tw,2.))*(1.-u2*u2)*smoothstep(2.5,6.,rr)*att;
+      vec3 tc=rob?C_AMB:mix(col,vec3(1.),.35);
+      if(iLook==2) s-=(vec3(1.)-.5*tc)*tv*.5; else if(iLook==3) s+=tc*tv*.35; else s+=tc*tv*(iLook==4?.9:.85);
+    }
+  }
+  vec3 rgb=mix(s*att,bok,mB);
+  /* dissolve in acid */
+  if(dis>.001){
+    float nn=vn(vP/max(rr,1.)*2.6+vPh*40.)*.7+.3*clamp(length(vP)/(h2+rr+1.),0.,1.);
+    float th=dis*1.15;
+    float keep=smoothstep(th-.12,th+.02,nn);
+    float burn=exp(-pow((nn-th+.04)/.07,2.))*smoothstep(-2.,1.,-d);
+    rgb=rgb*keep*(1.+.6*sin(dis*3.14))+vec3(1.,.72,.28)*burn*(iLook==2?.5:1.4)*(iLook==2?-0.6:1.);
+  }
+  float vis=1.;
+  if(uCloud>.5) vis=smoothstep(2.,4.5,rr+h2);
+  o=vec4(rgb*(1.-fade)*vis,1.);
+}`;
+
+/* ---- soft clouds when cells are tiny (level of detail) ---- */
+const VS_CLOUD = `#version 300 es
+precision highp float; precision highp int;
+layout(location=0) in vec2 aCorner;
+layout(location=1) in vec4 aA;
+layout(location=2) in vec4 aB;
+layout(location=3) in vec4 aC;
+layout(location=4) in vec4 aD;
+uniform vec2 uRes,uCen; uniform float uScale,uFocus,uK,uTol,uZoom,uDepth;
+uniform int iLook;
+out vec2 vP; out float vSig,vAmp; flat out float vSp; out float vFade;
+void main(){
+  float rpx=aA.z*uScale, hpx=rpx*aB.w;
+  float b=0.;
+  if(iLook>0&&uDepth>.5) b=clamp(max(abs(aB.y-uFocus)-uTol,0.)*uK*(.55+.45*sqrt(uZoom)),0.,72.);
+  float sig=(rpx+hpx)*1.05+2.5+b*.7;
+  float vis=smoothstep(2.,4.5,rpx+hpx);
+  vec2 p=aCorner*sig*2.35;
+  vec2 pos=(aA.xy-uCen)*uScale+.5*uRes+p;
+  gl_Position=vec4(pos.x/uRes.x*2.-1.,1.-pos.y/uRes.y*2.,0.,1.);
+  vP=p; vSig=sig;
+  float s1=rpx+hpx+1.;
+  vAmp=(1.-vis)*clamp(.32*s1*s1/(sig*sig),.01,.2)*(1.-aD.x)*(1.-.5*clamp(aC.y,0.,1.));
+  vSp=aB.x; vFade=aD.x;
+}`;
+const FS_CLOUD = `#version 300 es
+precision highp float; precision highp int;
+in vec2 vP; in float vSig,vAmp; flat in float vSp; in float vFade;
+uniform int iLook;
+out vec4 o;
+const vec3 C_NAT=vec3(0.655,0.545,0.980);
+const vec3 C_ROB=vec3(1.0,0.42,0.584);
+const vec3 C_AMB=vec3(0.961,0.647,0.141);
+const vec3 C_IMM=vec3(0.176,0.827,0.655);
+void main(){
+  float gg=max(exp(-dot(vP,vP)/(2.*vSig*vSig))-.063,0.)*vAmp*1.07;
+  vec3 col=vSp<.5?C_NAT:(vSp<1.5?C_ROB:(vSp<2.5?C_IMM:C_AMB));
+  col=pow(col,vec3(1.5))*1.12;
+  vec3 c;
+  if(iLook==2) c=-(vec3(1.)-.5*col)*gg*.75;
+  else if(iLook==3) c=col*gg*.45;
+  else if(iLook==4) c=col*gg*1.4;
+  else c=col*gg*1.15;
+  o=vec4(c,1.);
+}`;
+
+/* ---- specks: dust, out-of-focus particles, bubbles ---- */
+const VS_SPECK = `#version 300 es
+precision highp float; precision highp int;
+layout(location=0) in vec2 aCorner;
+layout(location=1) in vec4 aS; // x y size depth
+layout(location=2) in vec4 aT; // kind phase hue alpha
+uniform vec2 uRes,uCen; uniform float uScale,uFocus,uK,uTol,uZoom,uDepth;
+uniform int iLook;
+out vec2 vP; out float vR,vB,vH,vAl,vKind,vPh;
+void main(){
+  float kind=aT.x; float szpx; vec2 pos; float b;
+  if(kind<.5||kind>1.5){ szpx=aS.z*uScale; pos=(aS.xy-uCen)*uScale+.5*uRes;
+    b=(iLook>0&&uDepth>.5)?clamp(max(abs(aS.w-uFocus)-uTol,0.)*uK*(.55+.45*sqrt(uZoom)),0.,72.):0.; }
+  else { szpx=aS.z; pos=aS.xy*uRes; b=aS.w; }
+  float R=szpx*.5+b*.6;
+  float ext=R*1.5+3.;
+  vec2 p=aCorner*ext;
+  vec2 pp=pos+p;
+  gl_Position=vec4(pp.x/uRes.x*2.-1.,1.-pp.y/uRes.y*2.,0.,1.);
+  vP=p; vR=R; vB=b; vH=aT.z; vAl=aT.w; vKind=kind; vPh=aT.y;
+}`;
+const FS_SPECK = `#version 300 es
+precision highp float; precision highp int;
+in vec2 vP; in float vR,vB,vH,vAl,vKind,vPh;
+uniform int iLook; uniform float uTime;
+out vec4 o;
+void main(){
+  float d=length(vP)-vR;
+  float sf=1.+vR*.16+vB*.1;
+  float fill=1.-smoothstep(-sf,sf,d);
+  float ring=exp(-pow((d+sf*.8)/(sf*.9),2.));
+  float amp=clamp(vR*vR*.9/((vR+vB)*(vR+vB)+1.),.05,1.);
+  vec3 c=vH<.5?vec3(.72,.78,1.):(vH<.8?vec3(.96,.65,.14):vec3(.65,.55,.98));
+  float I;
+  if(vKind>1.5){ // bubble
+    I=ring*.9+fill*.05; vec2 hp=vP-vec2(-.3,-.3)*vR; I+=exp(-dot(hp,hp)/(vR*vR*.05+.5))*.7*smoothstep(2.,5.,vR);
+    c=vec3(1.,.85,.5);
+  } else if(vB<1.5) { I=fill*.7+ring*.2; }
+  else { I=fill*.28+ring*.5; }
+  I*=amp*vAl;
+  vec3 rgb=c*I;
+  if(iLook==2) rgb=-(vec3(1.)-.4*c)*I*.9;
+  else if(iLook==3) rgb=vec3(1.,.97,.9)*I*.5*(.4+.6*sin(vPh*20.+uTime*.2));
+  o=vec4(rgb,1.);
+}`;
+
+/* ---- bloom and composite ---- */
+const FS_BRIGHT = `#version 300 es
+precision highp float; precision highp int; uniform sampler2D uS; uniform vec2 uPx; uniform float uThr;
+out vec4 o;
+void main(){
+  vec2 uv=gl_FragCoord.xy*uPx*2.;
+  vec3 c=texture(uS,uv+uPx*vec2(-.5,-.5)).rgb+texture(uS,uv+uPx*vec2(.5,-.5)).rgb+texture(uS,uv+uPx*vec2(-.5,.5)).rgb+texture(uS,uv+uPx*vec2(.5,.5)).rgb;
+  c*=.25; vec3 b=max(c-uThr,0.);
+  o=vec4(b*1.5,1.);
+}`;
+const FS_DOWN = `#version 300 es
+precision highp float; precision highp int; uniform sampler2D uS; uniform vec2 uPx;
+out vec4 o;
+void main(){
+  vec2 uv=gl_FragCoord.xy*uPx*2.;
+  vec3 c=texture(uS,uv+uPx*vec2(-.5,-.5)).rgb+texture(uS,uv+uPx*vec2(.5,-.5)).rgb+texture(uS,uv+uPx*vec2(-.5,.5)).rgb+texture(uS,uv+uPx*vec2(.5,.5)).rgb;
+  o=vec4(c*.25,1.);
+}`;
+const FS_BLUR = `#version 300 es
+precision highp float; precision highp int; uniform sampler2D uS; uniform vec2 uDir,uPx;
+out vec4 o;
+void main(){
+  vec2 uv=gl_FragCoord.xy*uPx;
+  vec3 c=texture(uS,uv).rgb*.2270270;
+  c+=(texture(uS,uv+uDir*1.3846153).rgb+texture(uS,uv-uDir*1.3846153).rgb)*.3162162;
+  c+=(texture(uS,uv+uDir*3.2307692).rgb+texture(uS,uv-uDir*3.2307692).rgb)*.0702702;
+  o=vec4(c,1.);
+}`;
+const FS_COMP = `#version 300 es
+precision highp float; precision highp int;
+uniform sampler2D uS,uB1,uB2; uniform vec2 uRes;
+uniform float uBloom,uVig,uChroma,uGrain,uExp,uTime; uniform int iLook;
+out vec4 o;
+${GL_COMMON}
+void main(){
+  vec2 uv=gl_FragCoord.xy/uRes; vec2 cc=uv-.5; float rad=dot(cc,cc);
+  vec3 c;
+  float k=.03*uChroma;
+  c.r=texture(uS,uv+cc*rad*k).r; c.g=texture(uS,uv).g; c.b=texture(uS,uv-cc*rad*k).b;
+  vec3 b=texture(uB1,uv).rgb*.24+texture(uB2,uv).rgb*.4;
+  c+=b*uBloom;
+  float v=1.-uVig*.66*smoothstep(.26,.80,length(cc)*1.18);
+  c*=v*uExp;
+  if(iLook==1||iLook==4){ c=max(c,0.); float mx=max(max(c.r,c.g),max(c.b,1e-4)); vec3 hp=c/mx*(1.-exp(-mx*1.15)); vec3 pc=1.-exp(-c*1.5); c=mix(pc,hp,.78); c=pow(c,vec3(.93)); }
+  else if(iLook==0){ c=min(max(c,0.),1.); }
+  else { c=max(c,0.); c=c/(1.+.22*c)*1.1; }
+  float n=h21(gl_FragCoord.xy+fract(uTime*3.7)*113.)-.5;
+  float n2=h21(gl_FragCoord.xy*.5+fract(uTime*1.3)*71.)-.5;
+  float lum=dot(c,vec3(.33));
+  c+=(n+n2*.5)*uGrain*.06*(1.15-lum);
+  c+=(h21(gl_FragCoord.xy)-.5)/255.;
+  o=vec4(max(c,0.),1.);
+}`;
+
+/* ---------- stand-in simulation ---------- */
+function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const FG=128, FR=1.15;
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+
+class Sim{
+  constructor(N,seed){this.seed=seed;this.reset(N);}
+  reset(N){
+    this.rnd=mulberry(this.seed);const R=this.rnd;
+    this.N=N;const cap=this.cap=Math.ceil(N*1.6)+256;
+    const F=()=>new Float32Array(cap);
+    this.x=F();this.y=F();this.ang=F();this.r=F();this.hl=F();this.dep=F();this.ph=F();
+    this.pinch=F();this.prate=F();this.dis=F();this.drate=F();this.seam=F();this.seamT=F();
+    this.tail=F();this.fade=F();this.frate=F();this.spd=F();this.turn=F();
+    this.sp=new Uint8Array(cap);this.alive=new Uint8Array(cap);
+    this.free=[];for(let i=cap-1;i>=0;i--)this.free.push(i);
+    this.t=0;this.ss=clamp(Math.pow(1500/N,.35),.45,1.15)*1.7;
+    this.fw=new Float32Array(FG*FG);this.fi=new Float32Array(FG*FG);this.ft=new Float32Array(FG*FG);this.tmp=new Float32Array(FG*FG);
+    this.tex=new Uint8Array(FG*FG*4);
+    this.robG=new Float32Array(48*48);
+    this.acid=0;this.acidTarget=0;this.acidHold=0;
+    this.flood=false;this.immuneOn=false;this.immuneQ=0;this.ring=null;this.bub=[];
+    this.cx=0.28;this.cy=-0.08;this.colR=0.2;this.nRob=0;this.nNat=0;this.nImm=0;this.robList=[];
+    this.immTarget=[0.28,-0.08];this.tgtT=0;
+    const g=()=>(R()+R()+R()+R()-2)*1.73;this.g=g;
+    const ss=this.ss;
+    const nR=Math.round(clamp(N*.07,40,N<5000?9999:230));
+    const rR=.0115*ss;
+    const Rc=2.0*rR*Math.sqrt(nR)*1.0;this.colR=Rc;
+    for(let i=0;i<nR;i++){
+      const rho=Rc*Math.sqrt((i+.5)/nR),th=i*2.39996;
+      const k=this.add(1,this.cx+rho*Math.cos(th)+g()*rR*.12,this.cy+rho*Math.sin(th)+g()*rR*.12);
+      this.r[k]=rR*(.97+.06*R());this.hl[k]=.0+.12*R();this.ang[k]=0;this.dep[k]=clamp(.55+g()*.07,0,1);
+    }
+    const big=N>3000;const nc=big?Math.min(42,9+Math.round(N/800)):9,cl=[];for(let i=0;i<nc;i++){const a=R()*6.283,d=Math.sqrt(R())*.88;cl.push([Math.cos(a)*d,Math.sin(a)*d,big?.035+.07*R():.13+.1*R()]);}
+    const nN=N-nR;
+    for(let i=0;i<nN;i++){
+      let px,py,ok=false,tries=0;
+      while(!ok&&tries++<12){
+        if(R()<(big?.85:.5)){const c=cl[(R()*nc)|0];px=c[0]+g()*c[2];py=c[1]+g()*c[2];}
+        else{const a=R()*6.283,d=Math.sqrt(R())*.95;px=Math.cos(a)*d;py=Math.sin(a)*d;}
+        ok=px*px+py*py<.93&&Math.hypot(px-this.cx,py-this.cy)>Rc*1.12;
+      }
+      if(!ok)continue;
+      this.addNative(px,py);
+    }
+    // seed waste blobs
+    for(let b=0;b<4;b++){const a=R()*6.283,d=.35+.5*R(),bx=Math.cos(a)*d,by=Math.sin(a)*d,s=.1+.1*R();
+      for(let j=0;j<FG;j++)for(let i=0;i<FG;i++){const wx=(i+.5)/FG*2*FR-FR,wy=(j+.5)/FG*2*FR-FR;this.fw[j*FG+i]+=.55*Math.exp(-((wx-bx)**2+(wy-by)**2)/(s*s));}}
+    this.dust=[];
+    for(let i=0;i<150;i++){const a=R()*6.283,d=Math.sqrt(R())*1.05;this.dust.push({x:Math.cos(a)*d,y:Math.sin(a)*d,s:.0025+.009*R()*R()*2,z:R(),h:R(),ph:R()});}
+    this.lens=[];
+    for(let i=0;i<34;i++)this.lens.push({x:R(),y:R(),s:6+30*R()*R(),b:8+22*R(),h:R()*.5,al:.035+.07*R(),ph:R()});
+  }
+  add(spc,x,y){
+    if(!this.free.length)return -1;
+    const i=this.free.pop();this.alive[i]=1;this.sp[i]=spc;this.x[i]=x;this.y[i]=y;
+    this.pinch[i]=0;this.prate[i]=0;this.dis[i]=0;this.drate[i]=0;this.seam[i]=0;this.seamT[i]=0;this.fade[i]=0;this.frate[i]=0;this.tail[i]=0;this.spd[i]=0;
+    this.ph[i]=this.rnd();this.ang[i]=this.rnd()*6.283;this.turn[i]=0;
+    return i;
+  }
+  addNative(px,py){
+    const R=this.rnd,i=this.add(0,px,py);if(i<0)return -1;const ss=this.ss;
+    const coc=R()<.25;
+    this.r[i]=.0105*ss*(.8+.5*R());this.hl[i]=coc?R()*.25:.8+1.5*R();
+    this.dep[i]=clamp(.45+this.g()*.17,0,1);
+    if(R()<.3){this.tail[i]=1;this.spd[i]=.035+.045*R();}
+    return i;
+  }
+  kill(i){this.alive[i]=0;this.free.push(i);}
+  stats(){return[this.nNat,this.nRob,this.nImm];}
+  // events
+  evAcid(){
+    const R=this.rnd;this.acidTarget=1;this.acidHold=0;
+    for(let i=0;i<this.cap;i++){if(this.alive[i]&&this.sp[i]===1&&this.fade[i]===0){
+      const dd=Math.hypot(this.x[i]-this.cx,this.y[i]-this.cy)/Math.max(this.colR,.05);
+      this.dis[i]=-(R()*1.6+dd*1.3);this.drate[i]=1/(1.3+R()*1.4);this.prate[i]=0;}}
+  }
+  evFlood(){this.flood=true;}
+  evImmune(){this.immuneOn=true;this.immuneQ=Math.max(28,Math.min(140,Math.round(this.N*.008)));}
+  evSeam(){
+    this.ring={t:0,cx:this.cx,cy:this.cy,max:this.colR+.35,dur:2.8};
+  }
+  step(dt,f){
+    dt=Math.min(dt,.05);
+    const R=this.rnd,T=this.t+=dt,g=this.g;
+    const J=f.jitter?.0095*Math.sqrt(dt):0,JR=f.jitter?.9*Math.sqrt(dt):0;
+    const cap=this.cap,x=this.x,y=this.y,ang=this.ang,sp=this.sp,alive=this.alive;
+    // robot grid + centroid
+    const rg=this.robG;let sx=0,sy=0,nr=0,nn=0,ni=0;
+    const needGrid=f.swim||this.flood;
+    if(needGrid)rg.fill(0);
+    const rob=this.robList;rob.length=0;
+    for(let i=0;i<cap;i++){if(!alive[i])continue;const s=sp[i];
+      if(s===1){nr++;sx+=x[i];sy+=y[i];rob.push(i);if(needGrid){const gx=((x[i]+1)*24)|0,gy=((y[i]+1)*24)|0;if(gx>=0&&gx<48&&gy>=0&&gy<48)rg[gy*48+gx]+=1;}}
+      else if(s===0)nn++;else ni++;}
+    this.nRob=nr;this.nNat=nn;this.nImm=ni;
+    if(nr>0){this.cx+=(sx/nr-this.cx)*Math.min(1,dt*3);this.cy+=(sy/nr-this.cy)*Math.min(1,dt*3);}
+    // events: division and death start picks
+    if(f.divide||this.flood){
+      const rate=f.divide?.004:0;
+      let k=(nn+nr)*rate*dt;let n=Math.floor(k+R());
+      for(let q=0;q<n;q++){const i=(R()*cap)|0;if(alive[i]&&sp[i]<2&&this.prate[i]===0&&this.fade[i]===0&&this.dis[i]===0)this.prate[i]=1/(2.2+R()*2.4);}
+      if(this.flood&&nr>0){
+        k=nr*1.0*dt;n=Math.floor(k+R());
+        for(let q=0;q<n;q++){const i=rob[(R()*nr)|0];if(this.prate[i]===0&&this.dis[i]===0)this.prate[i]=1/(1.1+R()*.7);}
+      }
+      if(this.flood&&nn>0){k=nn*.5*(nr/(nr+nn+1))*dt;n=Math.floor(k+R());
+        for(let q=0;q<n;q++){const i=(R()*cap)|0;if(alive[i]&&sp[i]===0&&this.fade[i]===0){this.frate[i]=1/(.8+R()*.6);this.fade[i]=.0001;}}}
+      // natural death of natives keeps count steady
+      if(f.divide){k=nn*rate*dt*1.05;n=Math.floor(k+R());
+        for(let q=0;q<n;q++){const i=(R()*cap)|0;if(alive[i]&&sp[i]===0&&this.fade[i]===0&&this.prate[i]===0){this.frate[i]=1/(1.2+R());this.fade[i]=.0001;}}}
+    }
+    // main loop
+    const flood=this.flood,tt=T;
+    for(let i=0;i<cap;i++){
+      if(!alive[i])continue;
+      const s=sp[i];let xi=x[i],yi=y[i];
+      if(J){xi+=g()*J;yi+=g()*J;ang[i]+=g()*JR;}
+      // slow convection
+      xi+=Math.sin(3.1*yi+.13*tt+1.7)*.0035*dt;yi+=Math.cos(2.7*xi-.11*tt)*.0035*dt;
+      if(s===0){
+        if(this.tail[i]&&f.swim){const a=ang[i];xi+=Math.cos(a)*this.spd[i]*dt;yi+=Math.sin(a)*this.spd[i]*dt;this.turn[i]+=g()*dt*3-this.turn[i]*dt;ang[i]+=this.turn[i]*dt*1.2;}
+      }else if(s===1&&f.swim){
+        const gx=clamp(((xi+1)*24)|0,1,46),gy=clamp(((yi+1)*24)|0,1,46);
+        const dxg=rg[gy*48+gx+1]-rg[gy*48+gx-1],dyg=rg[(gy+1)*48+gx]-rg[(gy-1)*48+gx];
+        xi+=(-dxg*.018+g()*.012+(this.cx-xi)*.02)*dt;yi+=(-dyg*.018+g()*.012+(this.cy-yi)*.02)*dt;
+      }else if(s===2){
+        const dx=this.immTarget[0]-xi,dy=this.immTarget[1]-yi,dd=Math.hypot(dx,dy)+1e-4;
+        const want=Math.atan2(dy,dx);let da=want-ang[i];da=Math.atan2(Math.sin(da),Math.cos(da));
+        const near=dd<this.colR+.1;
+        ang[i]+=da*Math.min(1,dt*(near?.4:1.6))+g()*dt*(near?4:1.2);
+        const v=near?.045:.16+.05*Math.sin(tt*2+this.ph[i]*20);
+        xi+=Math.cos(ang[i])*v*dt;yi+=Math.sin(ang[i])*v*dt;
+        // deposit immune activity
+        const gx=((xi+FR)/(2*FR)*FG)|0,gy=((yi+FR)/(2*FR)*FG)|0;if(gx>=0&&gx<FG&&gy>=0&&gy<FG)this.fi[gy*FG+gx]+=.7*dt;
+      }
+      const d2=xi*xi+yi*yi;
+      if(d2>.9){const d=Math.sqrt(d2);xi=xi/d*.95;yi=yi/d*.95;if(s===0)ang[i]=Math.atan2(-yi,-xi)+(R()-.5);}
+      x[i]=xi;y[i]=yi;
+      if(s===1){
+        const gx=((xi+FR)/(2*FR)*FG)|0,gy=((yi+FR)/(2*FR)*FG)|0;
+        if(gx>=0&&gx<FG&&gy>=0&&gy<FG){this.fw[gy*FG+gx]+=.22*dt;if(f.trail&&f.swim)this.ft[gy*FG+gx]+=.9*dt;}
+        // seams ease
+        this.seam[i]+=(this.seamT[i]-this.seam[i])*Math.min(1,dt*5);
+      }
+      // dissolve
+      if(this.drate[i]>0){
+        this.dis[i]+=this.drate[i]*dt;
+        const d=this.dis[i];
+        if(d>0&&d<1&&R()<dt*7&&this.bub.length<260)this.bub.push({x:xi+g()*.012,y:yi+g()*.012,s:.004+.007*R(),l:1,vy:-.05-.06*R(),z:this.dep[i],ph:R()});
+        if(d>=1){const gx=((xi+FR)/(2*FR)*FG)|0,gy=((yi+FR)/(2*FR)*FG)|0;if(gx>=0&&gx<FG&&gy>=0&&gy<FG)this.fw[gy*FG+gx]+=.5;this.kill(i);continue;}
+      }
+      // fade
+      if(this.frate[i]>0){this.fade[i]+=this.frate[i]*dt;if(this.fade[i]>=1){this.kill(i);continue;}}
+      // flood: natives next to robots die
+      if(flood&&s===0&&this.frate[i]===0){
+        const gx=((xi+1)*24)|0,gy=((yi+1)*24)|0;
+        if(gx>=1&&gx<47&&gy>=1&&gy<47){const o=gy*48+gx;const rho=rg[o]+.5*(rg[o-1]+rg[o+1]+rg[o-48]+rg[o+48]);if(rho>0&&R()<rho*.6*dt){this.frate[i]=1/(.8+R()*.6);this.fade[i]=.0001;}}
+      }
+      // dividing
+      if(this.prate[i]>0){
+        this.pinch[i]+=this.prate[i]*dt;
+        if(this.pinch[i]>=1){
+          const j=this.free.length>0?this.add(s,0,0):-1;
+          if(j<0){this.pinch[i]=0;this.prate[i]=0;}
+          else{
+            const L=this.r[i]*(1+this.hl[i])*.95+this.r[i]*.2;const a=ang[i];const ca=Math.cos(a),sa=Math.sin(a);
+            this.copyTo(i,j);
+            x[j]=x[i]+ca*L*.55;y[j]=y[i]+sa*L*.55;x[i]-=ca*L*.55;y[i]-=sa*L*.55;
+            this.pinch[i]=0;this.prate[i]=0;this.pinch[j]=0;this.prate[j]=0;
+            if(s===0){this.hl[i]*=.9;this.hl[j]*=.9;}
+            this.ph[j]=R();
+            this.seam[j]=this.seam[i];
+            if(s===2){this.immuneQ=0;}
+          }
+        }
+      }
+    }
+    // spawn immune
+    if(this.immuneOn&&this.immuneQ>0){
+      const n=Math.min(this.immuneQ,Math.ceil(dt*40));
+      for(let q=0;q<n;q++){const a=R()*6.283;const k=this.add(2,Math.cos(a)*.94,Math.sin(a)*.94);if(k<0)break;
+        this.r[k]=.021*this.ss*(.9+.3*R());this.hl[k]=0;this.dep[k]=clamp(.62+g()*.12,0,1);this.ang[k]=a+3.14159;this.tail[k]=0;this.immuneQ--;}
+    }
+    if(this.immuneOn&&nr>0){this.immTarget[0]=this.cx;this.immTarget[1]=this.cy;}
+    // acid easing
+    this.acid+=(this.acidTarget-this.acid)*Math.min(1,dt*(this.acidTarget>this.acid?1.2:.5));
+    if(this.acidTarget===1){
+      let any=false;for(let i=0;i<cap;i++)if(alive[i]&&sp[i]===1){any=true;break;}
+      if(!any){this.acidHold+=dt;if(this.acidHold>2.2)this.acidTarget=0;}
+    }
+    // seam ring
+    if(this.ring){
+      const rg2=this.ring;rg2.t+=dt;const rad=Math.min(1,rg2.t/rg2.dur)*rg2.max;rg2.rad=rad;
+      for(const i of rob){if(Math.hypot(x[i]-rg2.cx,y[i]-rg2.cy)<rad)this.seamT[i]=1;}
+      if(rg2.t>rg2.dur+3.6){for(const i of rob)this.seamT[i]=0;}
+      if(rg2.t>rg2.dur+5){this.ring=null;}
+    }
+    // bubbles
+    for(let b=this.bub.length-1;b>=0;b--){const q=this.bub[b];q.l-=dt*.55;q.y+=q.vy*dt;q.x+=g()*.01*dt;if(q.l<=0){this.bub[b]=this.bub[this.bub.length-1];this.bub.pop();}}
+    // dust
+    const dj=Math.sqrt(dt)*.012;
+    for(const p of this.dust){p.x+=g()*dj+Math.sin(p.ph*30+T*.1)*.004*dt;p.y+=g()*dj+Math.cos(p.ph*20+T*.12)*.004*dt;const d=Math.hypot(p.x,p.y);if(d>1.06){p.x*=-.97;p.y*=-.97;}}
+    this.fieldStep(dt,f);
+  }
+  copyTo(i,j){
+    this.r[j]=this.r[i];this.hl[j]=this.hl[i];this.dep[j]=clamp(this.dep[i]+(this.rnd()-.5)*.04,0,1);this.ang[j]=this.ang[i];this.tail[j]=this.tail[i];this.spd[j]=this.spd[i];
+  }
+  fieldStep(dt,f){
+    const fw=this.fw,fi=this.fi,ft=this.ft,tmp=this.tmp,tex=this.tex;
+    const dw=Math.max(0,1-.12*dt),di=Math.max(0,1-.7*dt),dtr=Math.max(0,1-(f.trail?.35:2.5)*dt);
+    const arr=[[fw,dw,.2],[fi,di,.25],[ft,dtr,.08]];
+    for(let a=0;a<3;a++){
+      const A=arr[a][0],dec=arr[a][1],k=Math.min(.2,arr[a][2]*dt*3);
+      for(let j=1;j<FG-1;j++){const o=j*FG;for(let i=1;i<FG-1;i++){const c=A[o+i];
+        tmp[o+i]=(c+(A[o+i-1]+A[o+i+1]+A[o+i-FG]+A[o+i+FG]-4*c)*k)*dec;}}
+      for(let j=1;j<FG-1;j++){const o=j*FG;for(let i=1;i<FG-1;i++)A[o+i]=tmp[o+i];}
+    }
+    for(let n=0;n<FG*FG;n++){const o=n*4;
+      tex[o]=Math.min(255,fw[n]*255);tex[o+1]=Math.min(255,fi[n]*255);tex[o+2]=Math.min(255,ft[n]*255);tex[o+3]=255;}
+  }
+}
+
+/* ---------- renderer ---------- */
+const INT_RE=/^i[A-Z]/;
+const SPECIES_H=[1,1,1,1];
+class Lab{
+  constructor(cv,o){
+    this.cv=cv;this.o=o||{};this.mode=this.o.mode||'dish';this.name=this.o.name||'lab';
+    this.cfg=Object.assign({
+      look:1,focus:.5,strength:1,depth:1,breathing:0,bloom:1,vignette:1,chroma:1,grain:1,dust:1,reticle:0,
+      jitter:1,swim:1,divide:1,granules:1,haze:1,trail:0,count:1500,lay:127,env:0
+    },this.o.cfg||{});
+    this.view={cx:this.o.cx||0,cy:this.o.cy||0,zoom:this.o.zoom||1};
+    this.visible=true;this.paused=false;this.forceUntil=0;this.dirty=true;this.t=0;this.exposure=1;this.anim=null;
+    this.ms=0;this.cpuMs=0;this.gpuMs=-1;this.drawn=0;this.fps=0;this.lastT=0;this.frames=0;this.ok=false;
+    this.sim=null;this.px=1;this.W=0;this.H=0;
+    const gl=cv.getContext('webgl2',{antialias:false,alpha:false,powerPreference:'high-performance'});
+    this.gl=gl;
+    if(!gl){this.fail('WebGL2 is not available');return;}
+    try{this.init();this.ok=true;}catch(e){this.fail(String(e&&e.message||e));}
+  }
+  fail(msg){this.ok=false;this.err=msg;if(this.o.onfail)this.o.onfail(this,msg);}
+  prog(vs,fs){
+    const gl=this.gl;const mk=(t,s)=>{const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(sh));return sh;};
+    const p=gl.createProgram();gl.attachShader(p,mk(gl.VERTEX_SHADER,vs));gl.attachShader(p,mk(gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);
+    if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));
+    return{h:p,u:{}};
+  }
+  U(p,vals){
+    const gl=this.gl;gl.useProgram(p.h);
+    for(const k in vals){let l=p.u[k];if(l===undefined)l=p.u[k]=gl.getUniformLocation(p.h,k);if(l===null)continue;
+      const v=vals[k];
+      if(INT_RE.test(k))gl.uniform1i(l,v);
+      else if(typeof v==='number')gl.uniform1f(l,v);
+      else if(v.length===2)gl.uniform2f(l,v[0],v[1]);else if(v.length===4)gl.uniform4f(l,v[0],v[1],v[2],v[3]);}
+    if(p.tx)for(const k in p.tx){const l=gl.getUniformLocation(p.h,k);if(l){gl.uniform1i(l,p.tx[k]);}}
+  }
+  init(){
+    const gl=this.gl;
+    this.floatOK=!!gl.getExtension('EXT_color_buffer_float');
+    gl.getExtension('OES_texture_float_linear');
+    this.timer=gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    this.pBg=this.prog(VS_FULL,FS_BG);this.pCell=this.prog(VS_CELL,FS_CELL);this.pCloud=this.prog(VS_CLOUD,FS_CLOUD);
+    this.pSpeck=this.prog(VS_SPECK,FS_SPECK);this.pBright=this.prog(VS_FULL,FS_BRIGHT);this.pDown=this.prog(VS_FULL,FS_DOWN);
+    this.pBlur=this.prog(VS_FULL,FS_BLUR);this.pComp=this.prog(VS_FULL,FS_COMP);
+    this.vaoEmpty=gl.createVertexArray();
+    // quad
+    const quad=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,quad);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+    this.quad=quad;
+    // cell instances
+    this.ICAP=Math.ceil(Math.max(this.cfg.count,this.o.maxCount||this.cfg.count)*1.6)+300;
+    this.cellBuf=gl.createBuffer();this.vaoCell=gl.createVertexArray();gl.bindVertexArray(this.vaoCell);
+    gl.bindBuffer(gl.ARRAY_BUFFER,quad);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.cellBuf);gl.bufferData(gl.ARRAY_BUFFER,this.ICAP*64,gl.DYNAMIC_DRAW);
+    for(let k=0;k<4;k++){gl.enableVertexAttribArray(1+k);gl.vertexAttribPointer(1+k,4,gl.FLOAT,false,64,k*16);gl.vertexAttribDivisor(1+k,1);}
+    this.inst=new Float32Array(this.ICAP*16);
+    // specks
+    this.SCAP=700;this.speckBuf=gl.createBuffer();this.vaoSpeck=gl.createVertexArray();gl.bindVertexArray(this.vaoSpeck);
+    gl.bindBuffer(gl.ARRAY_BUFFER,quad);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.speckBuf);gl.bufferData(gl.ARRAY_BUFFER,this.SCAP*32,gl.DYNAMIC_DRAW);
+    for(let k=0;k<2;k++){gl.enableVertexAttribArray(1+k);gl.vertexAttribPointer(1+k,4,gl.FLOAT,false,32,k*16);gl.vertexAttribDivisor(1+k,1);}
+    this.spk=new Float32Array(this.SCAP*8);
+    gl.bindVertexArray(null);
+    // field texture
+    this.fieldTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.fieldTex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,FG,FG,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    this.buildSim();
+    this.targets={};
+  }
+  buildSim(){
+    if(this.mode==='cells'){this.sim=null;return;}
+    this.sim=new Sim(this.cfg.count,this.o.seed||7);
+    this.view.cx=this.o.cx||0;this.view.cy=this.o.cy||0;
+  }
+  setCount(n){
+    this.cfg.count=n;
+    if(n*1.6+300>this.ICAP){this.ICAP=Math.ceil(n*1.6)+300;const gl=this.gl;gl.bindBuffer(gl.ARRAY_BUFFER,this.cellBuf);gl.bufferData(gl.ARRAY_BUFFER,this.ICAP*64,gl.DYNAMIC_DRAW);this.inst=new Float32Array(this.ICAP*16);}
+    this.buildSim();this.dirty=true;
+  }
+  mkTarget(w,h,float){
+    const gl=this.gl;const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
+    if(float)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,w,h,0,gl.RGBA,gl.HALF_FLOAT,null);
+    else gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+    return{tex,fb,w,h};
+  }
+  resize(){
+    const cv=this.cv;const r=cv.getBoundingClientRect();
+    const cssW=Math.max(2,Math.round(r.width)),cssH=Math.max(2,Math.round(r.height));
+    let px=Math.min(window.devicePixelRatio||1,2)*(this.qScale||1);const budget=this.o.budget||1.8e6;
+    if(cssW*cssH*px*px>budget)px=Math.sqrt(budget/(cssW*cssH));
+    const W=Math.max(2,Math.round(cssW*px)),H=Math.max(2,Math.round(cssH*px));
+    if(W===this.W&&H===this.H)return;
+    this.W=W;this.H=H;this.px=px;cv.width=W;cv.height=H;this.cssW=cssW;this.cssH=cssH;
+    if(!this.ok)return;
+    const gl=this.gl;const f=this.floatOK;const T=this.targets;
+    for(const k in T){gl.deleteTexture(T[k].tex);gl.deleteFramebuffer(T[k].fb);}
+    const hw=Math.max(2,W>>1),hh=Math.max(2,H>>1),qw=Math.max(2,W>>2),qh=Math.max(2,H>>2);
+    this.targets={scene:this.mkTarget(W,H,f),a:this.mkTarget(hw,hh,f),b:this.mkTarget(hw,hh,f),c:this.mkTarget(qw,qh,f),d:this.mkTarget(qw,qh,f)};
+    this.dirty=true;
+  }
+  baseScale(){return Math.min(this.W,this.H)*.46;}
+  scale(){return this.mode==='cells'?this.W/3.0:this.baseScale()*this.view.zoom;}
+  // focus with breathing, anim
+  curFocus(){
+    let f=this.cfg.focus;
+    if(this.cfg.breathing)f+=.03*Math.sin(this.t*.8)+.014*Math.sin(this.t*2.1+1);
+    return f;
+  }
+  rack(){this.anim={kind:'rack',t:0,dur:2.0};this.forceUntil=performance.now()+2600;}
+  runScript(name){
+    this.reset();
+    const v=this.view;
+    if(name==='enter'){this.anim={kind:'enter',t:0,dur:2.2};}
+    else if(name==='watch'){this.anim={kind:'watch',t:0,dur:2.0};}
+    else if(name==='fail'){this.anim={kind:'fail',t:0,dur:5.0};this.sim.evAcid();}
+    this.forceUntil=performance.now()+(this.anim.dur+.6)*1000;
+  }
+  reset(){
+    this.anim=null;this.exposure=1;this.cfg.focus=this.o.cfg&&this.o.cfg.focus!==undefined?this.o.cfg.focus:.5;
+    this.view.zoom=this.o.zoom||1;this.view.cx=this.o.cx||0;this.view.cy=this.o.cy||0;
+    this.buildSim();this.dirty=true;
+  }
+  tickAnim(dt){
+    const a=this.anim;if(!a)return;
+    a.t+=dt;const u=Math.min(1,a.t/a.dur);
+    const ease=x=>x*x*(3-2*x);
+    const hunt=(t,f0,T)=>T+(f0-T)*Math.exp(-2.3*t)*Math.cos(2*Math.PI*.5*t);
+    if(a.kind==='rack'){
+      this.cfg.focus=hunt(a.t,-1.35,.5);
+      this.exposure=.45+.55*ease(Math.min(1,a.t/1.1));
+    }else if(a.kind==='enter'){
+      this.cfg.focus=hunt(a.t,-1.1,.5);
+      this.view.zoom=(this.o.zoom||1)*(1.12-.12*ease(u));
+      this.exposure=.3+.7*ease(Math.min(1,a.t/1.2));
+    }else if(a.kind==='watch'){
+      // a quick pull to a near plane and back: the lens "wakes up"
+      this.cfg.focus=u<.4?.5+(.12-.5)*ease(u/.4):.12+(.5-.12)*ease((u-.4)/.6);
+      this.exposure=.85+.15*ease(u);
+    }else if(a.kind==='fail'){
+      const s=this.sim;
+      this.view.zoom=(this.o.zoom||1)*(1+4.2*ease(Math.min(1,a.t/2.6)));
+      this.view.cx+=(s.cx-this.view.cx)*Math.min(1,dt*3);this.view.cy+=(s.cy-this.view.cy)*Math.min(1,dt*3);
+      this.cfg.focus=a.t<.5?.5:hunt(a.t-.5,-.9,.5);
+      this.exposure=1;
+    }
+    if(u>=1){this.anim=null;if(a.kind!=='fail'){this.cfg.focus=.5;this.exposure=1;}}
+    this.dirty=true;
+  }
+  doEvent(name){
+    const s=this.sim;if(!s)return;
+    if(name==='acid')s.evAcid();else if(name==='flood')s.evFlood();else if(name==='immune')s.evImmune();else if(name==='seam')s.evSeam();
+    this.forceUntil=performance.now()+1200;
+  }
+  // build one frame of cell instances; returns count
+  pack(){
+    const inst=this.inst;let n=0;
+    const W=this.W,H=this.H,sc=this.scale(),cx=this.view.cx,cy=this.view.cy;
+    if(this.mode==='cells'){
+      const cells=this.o.cells;const t=this.t;
+      for(const c of cells){const o=n*16;
+        inst[o]=c.x;inst[o+1]=c.y;inst[o+2]=c.r;inst[o+3]=c.ang+.03*Math.sin(t*.6+c.x);
+        inst[o+4]=c.sp;inst[o+5]=this.cfg.focus;inst[o+6]=c.ph;inst[o+7]=c.hl;
+        inst[o+8]=0;inst[o+9]=0;inst[o+10]=c.seam;inst[o+11]=1;inst[o+12]=0;inst[o+13]=0;inst[o+14]=0;inst[o+15]=0;n++;}
+      return n;
+    }
+    const s=this.sim,cap=s.cap,alive=s.alive;
+    const x=s.x,y=s.y,r=s.r,hl=s.hl,ang=s.ang,sp=s.sp,dep=s.dep,ph=s.ph,pinch=s.pinch,dis=s.dis,seam=s.seam,tail=s.tail,fade=s.fade;
+    const hw=W*.5,hh=H*.5;
+    for(let i=0;i<cap;i++){
+      if(!alive[i])continue;
+      const m=(r[i]*(1+hl[i]*1.9)+(tail[i]?r[i]*4.4:0)+.03)*sc+80;
+      const px=(x[i]-cx)*sc,py=(y[i]-cy)*sc;
+      if(px<-hw-m||px>hw+m||py<-hh-m||py>hh+m)continue;
+      const o=n*16;
+      inst[o]=x[i];inst[o+1]=y[i];inst[o+2]=r[i];inst[o+3]=ang[i];
+      inst[o+4]=sp[i];inst[o+5]=dep[i];inst[o+6]=ph[i];inst[o+7]=hl[i];
+      inst[o+8]=pinch[i];inst[o+9]=dis[i];inst[o+10]=seam[i];inst[o+11]=tail[i];
+      inst[o+12]=fade[i];
+      n++;
+    }
+    return n;
+  }
+  packSpecks(){
+    const k=this.spk;let n=0;const s=this.sim;const c=this.cfg;
+    const put=(a,b,cc,d,kind,ph,h,al)=>{if(n>=this.SCAP)return;const o=n*8;k[o]=a;k[o+1]=b;k[o+2]=cc;k[o+3]=d;k[o+4]=kind;k[o+5]=ph;k[o+6]=h;k[o+7]=al;n++;};
+    if(!s||this.cfg.look===0)return 0;
+    if(c.dust){
+      for(const p of s.dust)put(p.x,p.y,p.s,p.z,0,p.ph,p.h,.55);
+      for(const l of s.lens)put(l.x,l.y,l.s,l.b,1,l.ph,l.h,l.al*1.6);
+    }
+    for(const b of s.bub)put(b.x,b.y,b.s,b.z,2,b.ph,.6,Math.min(1,b.l*1.5));
+    return n;
+  }
+  frame(now,dt,doBench){
+    const gl=this.gl,c=this.cfg,sim=this.sim,T=this.targets;
+    this.t+=dt;
+    this.tickAnim(dt);
+    const t0=performance.now();
+    if(sim){sim.step(dt,{jitter:c.jitter,swim:c.swim,divide:c.divide,trail:c.trail});}
+    const n=this.pack();this.drawn=n;
+    const W=this.W,H=this.H,sc=this.scale(),look=c.look;
+    const focus=this.curFocus();
+    const K=34*c.strength,tol=.09,zoom=this.mode==='cells'?3:this.view.zoom;
+    const kz=(.55+.45*Math.sqrt(zoom));
+    const bgBlur=(look>0&&c.depth)?clamp(Math.max(Math.abs(.5-focus)-tol,0)*K*kz,0,72):0;
+    const cellPx=this.mode==='cells'?999:(.0105*(sim?sim.ss:1)*(1+1.5))*sc;
+    const cloud=(this.mode!=='cells'&&look>0&&cellPx<8&&!this.noCloud)?1:0;
+    // uploads
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.cellBuf);gl.bufferSubData(gl.ARRAY_BUFFER,0,this.inst,0,n*16);
+    const ns=this.packSpecks();
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.speckBuf);if(ns)gl.bufferSubData(gl.ARRAY_BUFFER,0,this.spk,0,ns*8);
+    if(sim){gl.bindTexture(gl.TEXTURE_2D,this.fieldTex);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,FG,FG,gl.RGBA,gl.UNSIGNED_BYTE,sim.tex);}
+    const common={uRes:[W,H],uCen:[this.view.cx,this.view.cy],uScale:sc,uFocus:focus,uK:K,uTol:tol,uZoom:zoom,uDepth:(look>0&&c.depth)?1:0,iLook:look,uTime:this.t};
+    // timer query
+    let q=null;
+    if(this.timer&&!this.qBusy){q=gl.createQuery();gl.beginQuery(this.timer.TIME_ELAPSED_EXT,q);}
+    gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,T.scene.fb);gl.viewport(0,0,W,H);
+    // background
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.fieldTex);
+    const ring=sim&&sim.ring?[sim.ring.cx,sim.ring.cy,sim.ring.rad||0,(sim.ring.t<sim.ring.dur?1:Math.max(0,1-(sim.ring.t-sim.ring.dur)/1.2))]:[0,0,0,0];
+    this.pBg.tx={uF:0};
+    this.U(this.pBg,Object.assign({},common,{uBgBlur:bgBlur,uAcid:sim?sim.acid:0,uHaze:(c.haze&&look>0&&this.mode==='dish')?1:0,uTrail:(c.trail&&this.mode==='dish')?1:0,uDish:this.mode==='dish'?1:0,uRing:ring}));
+    gl.bindVertexArray(this.vaoEmpty);gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE);
+    // clouds
+    gl.bindVertexArray(this.vaoCell);
+    if(cloud&&n){this.U(this.pCloud,common);gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,n);}
+    // cells
+    this.U(this.pCell,Object.assign({},common,{iLay:c.lay,uGranK:c.granules?1:0,uEnv:c.env,uCloud:cloud}));
+    if(n)gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,n);
+    // specks
+    if(ns){gl.bindVertexArray(this.vaoSpeck);this.U(this.pSpeck,common);gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,ns);}
+    gl.disable(gl.BLEND);
+    // bloom
+    const bloomOn=c.bloom&&look>0;
+    gl.bindVertexArray(this.vaoEmpty);
+    if(bloomOn){
+      const thr=look===1?.6:look===4?.34:look===2?.62:.7;
+      const bind=(tg,src)=>{gl.bindFramebuffer(gl.FRAMEBUFFER,tg.fb);gl.viewport(0,0,tg.w,tg.h);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,src.tex);};
+      bind(T.a,T.scene);this.pBright.tx={uS:0};this.U(this.pBright,{uPx:[1/W,1/H],uThr:thr});gl.drawArrays(gl.TRIANGLES,0,3);
+      const blur=(dst,src,dx,dy)=>{bind(dst,src);this.pBlur.tx={uS:0};this.U(this.pBlur,{uPx:[1/dst.w,1/dst.h],uDir:[dx/dst.w,dy/dst.h]});gl.drawArrays(gl.TRIANGLES,0,3);};
+      blur(T.b,T.a,1,0);blur(T.a,T.b,0,1);
+      bind(T.c,T.a);this.pDown.tx={uS:0};this.U(this.pDown,{uPx:[1/T.a.w,1/T.a.h]});gl.drawArrays(gl.TRIANGLES,0,3);
+      blur(T.d,T.c,1.8,0);blur(T.c,T.d,0,1.8);if(this.o.bloomPasses!==2){blur(T.d,T.c,3,0);blur(T.c,T.d,0,3);}
+    }
+    // composite
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,H);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,T.scene.tex);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,T.a.tex);
+    gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,T.c.tex);
+    this.pComp.tx={uS:0,uB1:1,uB2:2};
+    const bl=look===4?1.35:look===1?1:.55;
+    this.U(this.pComp,{uRes:[W,H],uBloom:bloomOn?bl:0,uVig:c.vignette&&look>0?1:0,uChroma:c.chroma&&look>0?1:0,uGrain:c.grain&&look>0?1:0,uExp:this.exposure*(this.mode==='dish'&&n>1500?Math.max(.55,1-.3*Math.log10(n/1500)):1),uTime:this.t,iLook:look});
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.activeTexture(gl.TEXTURE0);
+    if(q){gl.endQuery(this.timer.TIME_ELAPSED_EXT);this.qBusy=q;}
+    else if(this.qBusy){
+      const qq=this.qBusy;
+      if(gl.getQueryParameter(qq,gl.QUERY_RESULT_AVAILABLE)){
+        const bad=gl.getParameter(this.timer.GPU_DISJOINT_EXT);
+        if(!bad)this.gpuMs=gl.getQueryParameter(qq,gl.QUERY_RESULT)/1e6;
+        gl.deleteQuery(qq);this.qBusy=null;}
+    }
+    this.cpuMs+=((performance.now()-t0)-this.cpuMs)*.1;
+    this.bgBlur=bgBlur;this.curFocusV=focus;this.curScale=sc;
+    this.dirty=false;
+  }
+  syncGpu(){const gl=this.gl,b=new Uint8Array(4);gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,b);}
+}
+
+/* ---------- page wiring ---------- */
+const $=(s,r)=>(r||document).querySelector(s);
+const $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
+const reduceMotion=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+const labs=[];
+const LOOK_NAMES=['Today (flat dots)','Dark field','Phase contrast','Relief (DIC)','Fluorescence'];
+const LOOK_DEFAULTS=[
+  {depth:0,bloom:0,vignette:0,chroma:0,grain:0,dust:0,haze:0,trail:0},
+  {depth:1,bloom:1,vignette:1,chroma:1,grain:1,dust:1,haze:1},
+  {depth:1,bloom:0,vignette:1,chroma:0,grain:1,dust:1,haze:1},
+  {depth:1,bloom:0,vignette:1,chroma:0,grain:1,dust:1,haze:1},
+  {depth:1,bloom:1,vignette:1,chroma:0,grain:1,dust:0,haze:1}
+];
+function fmt(n){return n.toLocaleString('en-US');}
+
+function failUI(lab,msg){
+  const box=document.getElementById(lab.id+'Msg');
+  if(box){box.hidden=false;box.textContent='WebGL2 is not available here ('+msg+'). Showing the static reference image instead.';}
+  const fb=document.getElementById(lab.id+'Fb');if(fb)fb.hidden=false;
+  lab.cv.style.display='none';
+  const ov=document.getElementById(lab.id+'Ov');if(ov)ov.style.display='none';
+}
+function mk(id,opts){
+  const cv=document.getElementById(id);if(!cv)return null;
+  opts=Object.assign({},opts);const lab=new Lab(cv,opts);lab.id=id;
+  if(!lab.ok){failUI(lab,lab.err||'unknown');lab.visible=false;}
+  else{
+    labs.push(lab);lab.resize();
+    cv.addEventListener('webglcontextlost',e=>{e.preventDefault();lab.ok=false;const b=document.getElementById(id+'Msg');if(b){b.hidden=false;b.textContent='The graphics context was lost. Reload the page to restore it.';}});
+    if('IntersectionObserver' in window){new IntersectionObserver(es=>{for(const e of es){lab.visible=e.isIntersecting;if(e.isIntersecting)lab.dirty=true;}},{rootMargin:'80px'}).observe(cv);}
+    if('ResizeObserver' in window)new ResizeObserver(()=>{lab.dirty=true;}).observe(cv);
+  }
+  return lab;
+}
+
+/* hero */
+const hero=mk('hero',{name:'hero',maxCount:30000,seed:7,cfg:{look:1,count:900}});
+const SHARED_SEED=11;
+const optDefs={
+  optA:{look:1,depth:0,bloom:1,vignette:0,chroma:0,grain:0,dust:0,haze:0,breathing:0},
+  optB:{look:1,depth:1,bloom:1,vignette:1,chroma:1,grain:1,dust:1,haze:1,breathing:1},
+  optC:{look:3,depth:1,bloom:0,vignette:1,chroma:0,grain:1,dust:1,haze:1,breathing:1},
+  optD:{look:4,depth:1,bloom:1,vignette:1,chroma:0,grain:1,dust:0,haze:1,breathing:1}
+};
+const opts={};
+for(const id in optDefs){opts[id]=mk(id,{seed:SHARED_SEED,zoom:3.1,cx:.14,cy:-.02,budget:1.2e6,cfg:Object.assign({count:900,swim:1,divide:1,granules:1},optDefs[id])});}
+const cellLab=mk('cellCv',{mode:'cells',budget:1.6e6,cells:[
+  {x:-.7,y:.22,r:.19,ang:Math.PI-.5,sp:0,ph:.37,hl:1.45,seam:0},
+  {x:.62,y:.22,r:.19,ang:Math.PI-.5,sp:1,ph:.71,hl:1.45,seam:1}],
+  cfg:{look:1,depth:0,bloom:1,vignette:1,chroma:0,grain:1,dust:0,haze:0,lay:127&~16,env:0}});
+const focLab=mk('focCv',{seed:5,zoom:1.3,cx:.1,cy:0,budget:1.6e6,cfg:{look:1,count:1200}});
+if(reduceMotion){for(const l of labs)l.paused=true;}
+
+/* controls */
+function setLook(lab,i,applyDefaults){
+  lab.cfg.look=i;
+  if(applyDefaults)Object.assign(lab.cfg,LOOK_DEFAULTS[i]);
+  lab.dirty=true;
+}
+function syncHero(){
+  if(!hero||!hero.ok)return;
+  $$('[data-k]').forEach(el=>{const k=el.dataset.k;if(el.type==='checkbox')el.checked=!!hero.cfg[k];else if(el.type==='range'&&k!=='count'){el.value=hero.cfg[k];}
+    const o=el.parentElement&&$('output',el.parentElement);if(o&&k!=='count'&&el.type==='range')o.textContent=(+hero.cfg[k]).toFixed(2);});
+  $$('input[name=look]').forEach(r=>{r.checked=(+r.value===hero.cfg.look);});
+}
+function countFromSlider(v){return Math.round(500*Math.pow(60,v/100)/50)*50;}
+if(hero&&hero.ok){
+  $$('[data-k]').forEach(el=>{
+    const k=el.dataset.k;
+    el.addEventListener('input',()=>{
+      if(k==='count'){const n=countFromSlider(+el.value);$('#countOut').textContent=fmt(n);clearTimeout(el._t);el._t=setTimeout(()=>hero.setCount(n),60);return;}
+      if(el.type==='checkbox')hero.cfg[k]=el.checked?1:0;else hero.cfg[k]=parseFloat(el.value);
+      const o=$('output',el.parentElement);if(o&&el.type==='range')o.textContent=(+hero.cfg[k]).toFixed(2);
+      hero.dirty=true;
+    });
+  });
+  $$('input[name=look]').forEach(r=>r.addEventListener('change',()=>{setLook(hero,+r.value,true);syncHero();}));
+  $('#btnRack').addEventListener('click',()=>hero.rack());
+  $$('[data-ev]').forEach(b=>b.addEventListener('click',()=>{hero.doEvent(b.dataset.ev);}));
+  $('#btnReset').addEventListener('click',()=>{hero.reset();syncHero();});
+  const pp=$('#btnPlay');
+  const setPlay=()=>{pp.textContent=hero.paused?'Play':'Pause';pp.setAttribute('aria-pressed',hero.paused?'true':'false');};
+  pp.addEventListener('click',()=>{for(const l of labs)l.paused=!hero.paused;setPlay();});
+  setPlay();syncHero();
+  // zoom and pan
+  const cv=hero.cv,ptrs=new Map();let lastD=0,lastMid=null;
+  const toWorld=(cx,cy)=>{const r=cv.getBoundingClientRect(),k=hero.px,sc=hero.scale();return[((cx-r.left)*k-hero.W/2)/sc+hero.view.cx,((cy-r.top)*k-hero.H/2)/sc+hero.view.cy];};
+  const zoomAt=(cx,cy,f)=>{const v=hero.view,w=toWorld(cx,cy);const nz=clamp(v.zoom*f,.3,18);const r=cv.getBoundingClientRect(),k=hero.px;
+    v.zoom=nz;const sc=hero.scale();v.cx=w[0]-((cx-r.left)*k-hero.W/2)/sc;v.cy=w[1]-((cy-r.top)*k-hero.H/2)/sc;
+    v.cx=clamp(v.cx,-1.2,1.2);v.cy=clamp(v.cy,-1.2,1.2);hero.dirty=true;};
+  cv.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.clientX,e.clientY,Math.exp(-e.deltaY*.0015));},{passive:false});
+  cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY]);lastD=0;lastMid=null;});
+  cv.addEventListener('pointermove',e=>{
+    if(!ptrs.has(e.pointerId))return;const p=ptrs.get(e.pointerId);const dx=e.clientX-p[0],dy=e.clientY-p[1];ptrs.set(e.pointerId,[e.clientX,e.clientY]);
+    if(ptrs.size===1){const sc=hero.scale()/hero.px;hero.view.cx=clamp(hero.view.cx-dx/sc,-1.2,1.2);hero.view.cy=clamp(hero.view.cy-dy/sc,-1.2,1.2);hero.dirty=true;}
+    else if(ptrs.size===2){const a=Array.from(ptrs.values()),d=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]);
+      if(lastD>0)zoomAt((a[0][0]+a[1][0])/2,(a[0][1]+a[1][1])/2,d/lastD);lastD=d;}
+  });
+  const up=e=>{ptrs.delete(e.pointerId);lastD=0;};
+  cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+  $('#btnHome').addEventListener('click',()=>{hero.view.zoom=1;hero.view.cx=0;hero.view.cy=0;hero.dirty=true;});
+  cv.addEventListener('keydown',e=>{
+    const sc=hero.scale()/hero.px,st=40/sc;let h=true;
+    if(e.key==='+'||e.key==='=')zoomAt(cv.getBoundingClientRect().left+cv.clientWidth/2,cv.getBoundingClientRect().top+cv.clientHeight/2,1.2);
+    else if(e.key==='-')zoomAt(cv.getBoundingClientRect().left+cv.clientWidth/2,cv.getBoundingClientRect().top+cv.clientHeight/2,1/1.2);
+    else if(e.key==='ArrowLeft')hero.view.cx-=st;else if(e.key==='ArrowRight')hero.view.cx+=st;
+    else if(e.key==='ArrowUp')hero.view.cy-=st;else if(e.key==='ArrowDown')hero.view.cy+=st;
+    else if(e.key==='['||e.key===','){hero.cfg.focus=clamp(hero.cfg.focus-.03,-.5,1.5);syncHero();}
+    else if(e.key===']'||e.key==='.'){hero.cfg.focus=clamp(hero.cfg.focus+.03,-.5,1.5);syncHero();}
+    else h=false;
+    if(h){e.preventDefault();hero.dirty=true;}
+  });
+}
+/* option cards */
+$$('[data-rack]').forEach(b=>b.addEventListener('click',()=>{const l=opts[b.dataset.rack];if(l&&l.ok)l.rack();}));
+const rackAll=$('#btnRackAll');if(rackAll)rackAll.addEventListener('click',()=>{for(const id in opts)if(opts[id]&&opts[id].ok)opts[id].rack();});
+/* cell lab */
+if(cellLab&&cellLab.ok){
+  $$('[data-bit]').forEach(el=>el.addEventListener('change',()=>{let m=cellLab.cfg.lay;const b=+el.dataset.bit;m=el.checked?(m|b):(m&~b);cellLab.cfg.lay=m;
+    if(b===16)cellLab.cfg.env=el.checked?(+$('#envN').value):0;cellLab.dirty=true;}));
+  $('#envN').addEventListener('input',e=>{$('#envOut').textContent=e.target.value;if(cellLab.cfg.lay&16)cellLab.cfg.env=+e.target.value;cellLab.dirty=true;});
+  $$('input[name=cellLook]').forEach(r=>r.addEventListener('change',()=>{cellLab.cfg.look=+r.value;cellLab.dirty=true;}));
+  $('#seamN').addEventListener('input',e=>{cellLab.o.cells[1].seam=+e.target.value;cellLab.dirty=true;});
+  $('#btnBuild').addEventListener('click',()=>{
+    const order=[1,2,4,8,64,32,16];const boxes=order.map(b=>$('[data-bit="'+b+'"]'));
+    boxes.forEach(b=>{b.checked=false;});cellLab.cfg.lay=0;cellLab.cfg.env=0;cellLab.dirty=true;
+    let i=0;const step=()=>{if(i>=order.length)return;const b=boxes[i];b.checked=true;let m=cellLab.cfg.lay|order[i];cellLab.cfg.lay=m;if(order[i]===16)cellLab.cfg.env=+$('#envN').value;i++;cellLab.dirty=true;setTimeout(step,900);};
+    cellLab.forceUntil=performance.now()+9000;setTimeout(step,300);});
+}
+/* focus moments */
+const focCap=$('#focCap');
+if(focLab&&focLab.ok){
+  $$('[data-script]').forEach(b=>b.addEventListener('click',()=>{
+    const n=b.dataset.script;focLab.runScript(n);
+    const txt={enter:'Dish 2: Don’t Take Over',watch:'WATCH: your cell is running',fail:'Failure: acid reaches the colony'}[n];
+    focCap.textContent=txt;focCap.classList.add('on');clearTimeout(focCap._t);focCap._t=setTimeout(()=>focCap.classList.remove('on'),n==='fail'?4800:2600);
+  }));
+  $('#focReset').addEventListener('click',()=>{focLab.reset();focCap.classList.remove('on');});
+}
+
+/* overlay: reticle, scale bar, focus readout */
+function drawOverlay(){
+  const ov=$('#heroOv');if(!ov||!hero||!hero.ok)return;
+  const cv=hero.cv,w=cv.clientWidth,h=cv.clientHeight,d=Math.min(window.devicePixelRatio||1,2);
+  if(ov.width!==Math.round(w*d)||ov.height!==Math.round(h*d)){ov.width=Math.round(w*d);ov.height=Math.round(h*d);}
+  const g=ov.getContext('2d');g.setTransform(d,0,0,d,0,0);g.clearRect(0,0,w,h);
+  if(!hero.cfg.reticle)return;
+  g.strokeStyle='rgba(167,139,250,.6)';g.fillStyle='rgba(207,198,245,.85)';g.lineWidth=1;
+  g.font='11px ui-monospace,Menlo,Consolas,monospace';
+  const cx=w/2,cy=h/2;
+  g.beginPath();g.moveTo(cx-18,cy);g.lineTo(cx-5,cy);g.moveTo(cx+5,cy);g.lineTo(cx+18,cy);g.moveTo(cx,cy-18);g.lineTo(cx,cy-5);g.moveTo(cx,cy+5);g.lineTo(cx,cy+18);g.stroke();
+  g.beginPath();g.arc(cx,cy,Math.min(w,h)*.3,0,6.283);g.setLineDash([2,6]);g.globalAlpha=.4;g.stroke();g.setLineDash([]);g.globalAlpha=1;
+  const m=14,L=16;g.beginPath();
+  [[m,m,1,1],[w-m,m,-1,1],[m,h-m,1,-1],[w-m,h-m,-1,-1]].forEach(c=>{g.moveTo(c[0],c[1]+c[3]*L);g.lineTo(c[0],c[1]);g.lineTo(c[0]+c[2]*L,c[1]);});
+  g.stroke();
+  const upw=40; // micrometres per world unit (stand-in)
+  const pxPerUm=hero.scale()/hero.px/upw;
+  const nice=[1,2,5,10,20,50,100,200,500];let um=nice[0];for(const n of nice){um=n;if(n*pxPerUm>90)break;}
+  const len=um*pxPerUm;
+  g.fillRect(m+4,h-m-14,len,2);g.fillRect(m+4,h-m-18,1,10);g.fillRect(m+4+len,h-m-18,1,10);
+  g.fillText(um+' µm',m+4,h-m-24);
+  g.textAlign='right';g.fillText('focus plane '+hero.curFocusV.toFixed(2)+'   zoom '+hero.view.zoom.toFixed(2)+'x',w-m-4,h-m-8);g.textAlign='left';
+}
+
+/* readout */
+let rendererName='';
+(function(){if(hero&&hero.ok){const gl=hero.gl,e=gl.getExtension('WEBGL_debug_renderer_info');rendererName=e?gl.getParameter(e.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);}})();
+function readout(){
+  if(!hero||!hero.ok)return;
+  const el=$('#heroRead');
+  const g=hero.gpuMs>=0?hero.gpuMs.toFixed(1)+' ms':'n/a';
+  el.textContent=LOOK_NAMES[hero.cfg.look]+'  |  '+fmt(hero.drawn)+' cells drawn  |  frame '+hero.ms.toFixed(1)+' ms ('+(hero.ms>0?Math.round(1000/hero.ms):0)+' fps)  |  cpu '+hero.cpuMs.toFixed(1)+' ms  |  gpu '+g;
+  const rn=$('#rendererOut');if(rn)rn.textContent=rendererName||'unknown';
+}
+
+/* main loop */
+let last=performance.now(),rd=0;
+function loop(now){
+  requestAnimationFrame(loop);
+  const raw=(now-last)/1000;last=now;const dt=Math.min(.05,raw);
+  for(const lab of labs){
+    if(!lab.ok||!lab.visible||lab.benching)continue;
+    const forced=now<lab.forceUntil;
+    if(lab.paused&&!forced&&!lab.dirty)continue;
+    lab.resize();
+    const live=!lab.paused||forced;
+    lab.frame(now,live?dt:0);
+    if(live){lab.ms+=(raw*1000-lab.ms)*.08;lab.slow=(lab.slow||0)+(lab.ms>24?raw:-raw*2);if(lab.slow<0)lab.slow=0;
+      if(lab.slow>2.5&&(lab.qScale||1)>.5){lab.qScale=(lab.qScale||1)*.8;lab.slow=0;lab.W=0;lab.resize();}}
+  }
+  if(hero&&hero.ok&&hero.visible){drawOverlay();if((rd+=raw)>.3){rd=0;readout();}}
+}
+requestAnimationFrame(loop);
+
+/* benchmark */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function bench(counts,looks,frames){
+  const lab=hero;if(!lab||!lab.ok)return[];
+  frames=frames||24;
+  const keep={look:lab.cfg.look,count:lab.cfg.count,paused:lab.paused};
+  lab.benching=true;const rows=[];
+  for(const lk of looks){
+    for(const n of counts){
+      lab.cfg.look=lk;Object.assign(lab.cfg,LOOK_DEFAULTS[lk]);lab.setCount(n);lab.resize();
+      for(let i=0;i<8;i++){lab.frame(performance.now(),1/60);}lab.syncGpu();
+      let tot=0,cpu=0;const gp=[];
+      for(let i=0;i<frames;i++){
+        const t0=performance.now();lab.frame(t0,1/60);lab.syncGpu();tot+=performance.now()-t0;cpu+=lab.cpuMs;
+        await sleep(2);if(lab.gpuMs>=0)gp.push(lab.gpuMs);
+      }
+      gp.sort((a,b)=>a-b);
+      rows.push({look:LOOK_NAMES[lk],cells:n,drawn:lab.drawn,ms:+(tot/frames).toFixed(2),cpu:+(cpu/frames).toFixed(2),gpu:gp.length?+gp[gp.length>>1].toFixed(2):null,W:lab.W,H:lab.H});
+    }
+  }
+  lab.cfg.look=keep.look;lab.setCount(keep.count);lab.benching=false;syncHero();
+  return rows;
+}
+const btnB=$('#btnBench');
+if(btnB){btnB.addEventListener('click',async()=>{
+  btnB.disabled=true;btnB.textContent='Measuring...';
+  const rows=await bench([1000,3000,10000,30000],[0,1,3],20);
+  const tb=$('#benchOut');tb.textContent='';
+  for(const r of rows){const tr=document.createElement('tr');
+    [r.look,fmt(r.cells),fmt(r.drawn),r.ms+' ms',r.cpu+' ms',r.gpu===null?'n/a':r.gpu+' ms'].forEach(t=>{const td=document.createElement('td');td.textContent=t;tr.appendChild(td);});tb.appendChild(tr);}
+  $('#benchNote').textContent='Measured just now on this machine: '+(rendererName||'unknown renderer')+', canvas '+(rows[0]?rows[0].W+'x'+rows[0].H:'')+' px. "Frame" is JS plus GPU time for one frame, forced to finish, so it is not capped at 60 fps.';
+  btnB.disabled=false;btnB.textContent='Measure on this machine';
+});}
+
+
+
+/* ---------- play screen in context ---------- */
+const playLab=mk('playCv',{seed:7,zoom:1.05,cx:.04,cy:0,budget:1.6e6,cfg:{look:1,count:900}});
+const tot=s=>s.nNat+s.nRob+s.nImm+1;
+const STATS=[
+ {k:'acid',n:'Acid defence',pat:'pat-dots',col:'#f5a524',band:[.35,.9],ic:'<path d="M12 3C9 8 6 11 6 14.5A6 6 0 0 0 18 14.5C18 11 15 8 12 3Z"/><circle cx="10.5" cy="14.5" r="1.3"/>',
+  txt:v=>v<.35?'Too weak: acid will dissolve you':v>.9?'Overbuilt':'Safe',f:s=>clamp(.62-.58*s.acid,0,1)},
+ {k:'growth',n:'Growth',pat:'pat-hatch',col:'#a78bfa',band:[.1,.45],ic:'<path d="M3 20V4M3 20H21"/><path d="M5 17C9 17 12 15 14 11S18 6 20 5"/>',
+  txt:v=>v<.1?'Too slow: you will fade':v>.45?'Too fast: you will take over':'Safe',f:s=>clamp((s.nRob/tot(s))/.6,0,1)},
+ {k:'smell',n:'Smell',pat:'pat-cross',col:'#f5a524',band:[.15,.6],ic:'<path d="M3 12c3-5 4 5 7 0s4 5 7 0 3-2 4 0"/>',
+  txt:v=>v>.6?'Too strong: natives will notice':v<.15?'Too faint':'Safe',f:s=>clamp(.3+.0006*s.nRob+.2*s.acid,0,1)},
+ {k:'nat',n:'Naturalness',pat:'pat-zig',col:'#2dd4a7',band:[.4,.85],ic:'<path d="M8 21h8l-2-16h-4z"/><path d="M12 17l4-9"/>',
+  txt:v=>v<.4?'Too regular: they can tell':'Safe',f:s=>clamp((s.ring&&s.ring.t<s.ring.dur+3?.22:.64)-(s.nRob/tot(s)-.07)*.5,0,1)},
+ {k:'crash',n:'Crash survival',pat:'pat-hatch',col:'#ff6b95',band:[.5,1],ic:'<path d="M3 13l6-3 2 2 2-2 8 3"/><path d="M12 4v3M8 5l1 2M16 5l-1 2"/>',
+  txt:v=>v<.5?'Too fragile: you will not survive':'Safe',f:s=>clamp(1-.9*s.acid-s.nImm*.012-(s.nRob/tot(s)-.07)*.4,0,1)}
+];
+const sbEl={};
+(function(){const box=document.getElementById('statbars');if(!box)return;
+  STATS.forEach(S=>{const d=document.createElement('div');d.className='sb '+S.pat;
+    d.innerHTML='<div class="hd"><svg viewBox="0 0 24 24" stroke="'+S.col+'">'+S.ic+'</svg><span>'+S.n+'</span><span class="st">Safe</span></div><div class="tr"><div class="z d dl" style="width:'+(S.band[0]*100)+'%"></div><div class="z d dr" style="width:'+((1-S.band[1])*100)+'%"></div><div class="z safe" style="left:'+(S.band[0]*100)+'%;right:'+((1-S.band[1])*100)+'%"></div><div class="fc"></div><div class="mk"></div></div>';
+    box.appendChild(d);sbEl[S.k]={el:d,mk:d.querySelector('.mk'),fc:d.querySelector('.fc'),st:d.querySelector('.st'),prev:null,dv:0};});
+})();
+const bandHist=[];
+function updateStats(){
+  if(!playLab||!playLab.ok||!playLab.sim||!playLab.visible)return;const s=playLab.sim;
+  STATS.forEach(S=>{const r=sbEl[S.k];if(!r)return;const v=S.f(s);const dv=r.prev===null?0:v-r.prev;r.prev=v;r.dv=r.dv*.7+dv*.3;
+    const fc=clamp(v+r.dv*14,0,1);r.mk.style.left=(v*100)+'%';r.fc.style.left=(fc*100)+'%';
+    r.st.textContent=S.txt(v);r.el.classList.toggle('bad',v<S.band[0]||v>S.band[1]);});
+  bandHist.push(clamp(s.nRob/tot(s)/.6,0,1));if(bandHist.length>60)bandHist.shift();
+  const p=bandHist.map((v,i)=>(i?'L':'M')+(i/59*240).toFixed(1)+' '+(64-v*58).toFixed(1)).join('');
+  const bp=document.getElementById('bandPath');if(bp)bp.setAttribute('d',p);
+}
+setInterval(updateStats,200);
+if(playLab&&playLab.ok){
+  const chalk=$('#chalk'),loss=$('#lossTag'),win=$('#winCard');
+  const clearRes=()=>{chalk.classList.remove('on');loss.classList.remove('on');win.classList.remove('on');$$('.sb').forEach(e=>e.classList.remove('hot'));};
+  $$('[data-pev]').forEach(b=>b.addEventListener('click',()=>{clearRes();playLab.doEvent(b.dataset.pev);}));
+  $('#btnPlayReset').addEventListener('click',()=>{clearRes();playLab.reset();bandHist.length=0;});
+  $('#btnWin').addEventListener('click',()=>{clearRes();playLab.reset();playLab.runScript('watch');setTimeout(()=>win.classList.add('on'),600);});
+  $('#btnLoss').addEventListener('click',()=>{
+    clearRes();playLab.reset();playLab.sim.evAcid();playLab.sim.evImmune();playLab.forceUntil=performance.now()+9000;
+    setTimeout(()=>{const w=playLab.cssW,h=playLab.cssH,sc=playLab.scale()/playLab.px,s=playLab.sim;
+      const cx=(s.cx-playLab.view.cx)*sc+w/2,cy=(s.cy-playLab.view.cy)*sc+h/2;
+      chalk.setAttribute('viewBox','0 0 '+w+' '+h);
+      let html='<path d="M'+(w*.08)+' '+(h*.78)+' C'+(w*.2)+' '+(h*.72)+' '+(cx-60)+' '+(cy+60)+' '+(cx-26)+' '+(cy+22)+'"/><path d="M'+(cx-26)+' '+(cy+22)+' l-3 11 M'+(cx-26)+' '+(cy+22)+' l11 -2"/>';
+      html+='<text x="'+(w*.06)+'" y="'+(h*.82)+'">acid gets in: defence too weak</text>';
+      html+='<path d="M'+(w*.6)+' '+(h*.2)+' C'+(w*.55)+' '+(h*.25)+' '+(cx+50)+' '+(cy-50)+' '+(cx+22)+' '+(cy-22)+'"/><path d="M'+(cx+22)+' '+(cy-22)+' l4 -11 M'+(cx+22)+' '+(cy-22)+' l-11 -3"/>';
+      html+='<text x="'+(w*.5)+'" y="'+(h*.17)+'">immune cells arrive</text>';
+      html+='<line x1="'+(w*.08)+'" y1="'+(h-26)+'" x2="'+(w*.92)+'" y2="'+(h-26)+'"/>';
+      for(let i=0;i<11;i++)html+='<line x1="'+(w*.08+i*w*.084)+'" y1="'+(h-31)+'" x2="'+(w*.08+i*w*.084)+'" y2="'+(h-21)+'"/>';
+      html+='<circle class="pin" cx="'+(w*.66)+'" cy="'+(h-26)+'" r="6"/>';
+      chalk.innerHTML=html;chalk.classList.add('on');loss.classList.add('on');
+      sbEl.acid.el.classList.add('hot');sbEl.crash.el.classList.add('hot');},4200);});
+}
+
+window.__LAB={playLab,hero,opts,cellLab,focLab,labs,bench,setLook,syncHero,Sim,rendererName:()=>rendererName,errors:[]};
+
+})();
+</script>
