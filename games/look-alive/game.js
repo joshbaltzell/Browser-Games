@@ -24,9 +24,18 @@
   function load(k, d) { try { var v = localStorage.getItem(KEY + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); } catch (e) { /* private window */ } }
 
+  // Saved builds from before the biology pass: Copying errors is now Random naps, Chemotaxis is now Sporulate.
+  function canonBuild(b) {
+    if (!b) return b;
+    if (b.parts) b.parts = b.parts.map(Cards.canon);
+    if (b.reflex && b.reflex.kind === 'bio') b.reflex.id = Cards.canon(b.reflex.id);
+    return b;
+  }
+  function canonWins(w) { for (var k in w) canonBuild(w[k]); return w; }
+
   var S = {
     screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null },
-    cleared: load('cleared2', {}), wins: load('wins2', {}), seenWorld: load('world2', false), unlocked: load('unlocked2', false), realOpen: load('real2', null),
+    cleared: load('cleared2', {}), wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), unlocked: load('unlocked2', false), realOpen: load('real2', null),
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
     t: 0, playing: false, speed: 4, resultShown: false, overlayOpen: false, runCount: 0, troubleTick: -1, cardEls: [], shownDish: -1, chipCache: {},
@@ -133,6 +142,7 @@
     $('worldName').textContent = W.name;
     var box = $('worldFacts'); box.innerHTML = '';
     W.facts.forEach(function (f, i) { box.appendChild(el('div', 'fact', '<div class="fn">' + (i + 1) + '</div><p>' + esc(f) + '</p>')); });
+    $('worldBadge').textContent = W.badge || '';
     $('worldMission').textContent = W.mission;
   }
   function worldContinue() {
@@ -218,7 +228,7 @@
   function reflexCardEl(id) {
     var c = Cards.bio(id), w = el('div', 'card bio'); w.setAttribute('data-id', id); w.setAttribute('role', 'button'); w.tabIndex = 0;
     w.innerHTML = '<div class="in"><div class="c-head"><b>' + esc(c.name) + '</b><span class="inbadge">in your cell</span><span class="cost">Reflex slot</span></div>' +
-      '<p class="real"><i>Real</i>' + esc(c.real) + '</p><p class="game"><i>Rule</i>' + esc(c.sentence) + '</p><div class="chips"><span class="chip good">Senses locally, a few ticks late</span><span class="chip good">No suspicion</span></div></div>';
+      '<p class="real"><i>Real</i>' + esc(c.real) + '</p><p class="game"><i>Rule</i>' + esc(c.sentence) + '</p><div class="chips">' + (id === 'sporulate' ? '<span class="chip good">Spores do not eat, divide or die</span><span class="chip">Slow to wake once food returns</span>' : '<span class="chip good">Senses locally, a few ticks late</span>') + '<span class="chip good">No suspicion</span></div></div>';
     w.addEventListener('click', function () { pickReflex(id); });
     w.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); pickReflex(id); } });
     return w;
@@ -604,7 +614,7 @@
   function closeOverlay() { $('overlay').hidden = true; S.overlayOpen = false; if (S.screen === 'run') refresh(); }
   function coverName(b) {
     var genus = { respiration: 'Coccus', fermentation: 'Bacillus', fuelcell: 'Vibrio' }[b.metabolism] || 'Coccus';
-    var epi = [], bio = { stringent: 'parcus', chemotaxis: 'errans', sos: 'reparans' }, ptx = { wall: 'armatus', quorum: 'sociabilis', errors: 'varius', flagellum: 'natans', clock: 'horarius', radio: 'radiatus', copier: 'perfectus', repair: 'reparatus', pump: 'protonicus', lipids: 'densus', shell: 'testaceus' };
+    var epi = [], bio = { stringent: 'parcus', sporulate: 'sporans', sos: 'reparans' }, ptx = { wall: 'armatus', quorum: 'sociabilis', naps: 'dormiens', acidproof: 'acidotolerans', flagellum: 'natans', clock: 'horarius', radio: 'radiatus', copier: 'perfectus', repair: 'reparatus', pump: 'protonicus', lipids: 'densus', shell: 'testaceus' };
     if (b.reflex) epi.push(b.reflex.kind === 'bio' ? bio[b.reflex.id] : 'computans');
     b.parts.forEach(function (id) { epi.push(ptx[id]); });
     if (machineCount(b)) epi.push('suspiciosus');

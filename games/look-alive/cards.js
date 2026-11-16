@@ -7,12 +7,12 @@ var LookAliveCards = (function () {
   var parts = [
     // ---- Biology shelf (safe from suspicion) ----
     { id: 'respiration', name: 'Respiration', shelf: 'biology', kind: 'metabolism', energy: 0, counterpart: 'fuelcell',
-      real: 'Uses oxygen to get about 15 times more energy from sugar than fermentation does.',
+      real: 'Cells that use oxygen break sugar down completely and get far more energy from it than fermentation does.',
       game: 'High yield. On Acidica the waste is wrong, so it raises Waste.',
       effect: 'Metabolism. Yield +20%. Waste mix differs from natives.',
       fx: { yield: 1.20, mix: 0.2, waste: 1 } },
     { id: 'fermentation', name: 'Fermentation', shelf: 'biology', kind: 'metabolism', energy: 0, counterpart: 'fuelcell',
-      real: 'Breaks sugar down without oxygen. Fast, low yield, and it leaves acid behind.',
+      real: 'Lactic acid bacteria break sugar down without oxygen. Fast, low yield, and it leaves acid behind.',
       game: 'Your waste matches the sour natives. You get fewer births per meal.',
       effect: 'Metabolism. Yield -15%. Waste mix equals natives.',
       fx: { yield: 0.85, mix: 0.7, waste: 1 } },
@@ -21,26 +21,33 @@ var LookAliveCards = (function () {
       game: 'You survive the planet\'s events better. It costs energy to build, so you divide a little slower.',
       effect: 'Toughness +2. Births -6%.',
       fx: { births: 0.94, tough: 2 } },
-    { id: 'quorum', name: 'Quorum signal', shelf: 'biology', kind: 'part', energy: 2, counterpart: 'radio',
-      real: 'Cells leak a small molecule. When enough builds up, the whole group changes behaviour.',
-      game: 'Your cells slow down where they are crowded. The signal is slow and fades with distance.',
+    { id: 'quorum', name: 'Head count (quorum signal)', shelf: 'biology', kind: 'part', energy: 2, counterpart: 'radio',
+      real: 'Cells leak a small molecule and listen for it. Packed inside a bobtail squid, glowing Aliivibrio fischeri bacteria hear each other and all light up together.',
+      game: 'Changed for the game: here the signal makes your cells slow down where they are crowded. It is slow and fades with distance.',
       effect: 'The Biology answer to overgrowth: births fall as the local signal rises. The signal lags by a few ticks and diffuses.',
       fx: { quorum: 1 } },
-    { id: 'errors', name: 'Copying errors', shelf: 'biology', kind: 'part', energy: 1, counterpart: 'copier',
-      real: 'Copying DNA is not perfect. Mistakes make each cell slightly different.',
-      game: 'Some daughters fail. That is normal, and it makes you look natural.',
-      effect: 'Natural variance: lowers Regularity. Death rate up slightly.',
-      fx: { sigma: 0.03, deathAdd: 0.008 } },
+    // Random naps: a small, constant two-way flow between awake and napping. Napping cells do not eat or divide, are not hit by a food
+    // crash and die at a fraction of the usual rate (death); they wake at `wake` a tick, but only when local food is back (wakeLo to wakeHi).
+    { id: 'naps', name: 'Random naps', shelf: 'biology', kind: 'part', energy: 1, counterpart: 'copier',
+      real: 'In any colony a few cells randomly stop growing for a while. Sleepers survive what kills the rest, then wake and rebuild.',
+      game: 'Some of your cells nap at random. You grow a little slower, you look natural, and the nappers ride out a food crash.',
+      effect: 'Natural variance: lowers Regularity. Births -3%. A few cells nap and survive a food crash, then wake when food returns.',
+      fx: { sigma: 0.03, births: 0.97, nap: { enter: 0.008, wake: 0.12, death: 0.6, wakeLo: 0.18, wakeHi: 0.33 } } },
     { id: 'pump', name: 'Proton pump', shelf: 'biology', kind: 'part', energy: 2, counterpart: 'shell',
-      real: 'Acid-loving microbes keep their insides near neutral by pumping acid back out. It costs a lot of energy.',
+      real: 'Acid-loving archaea keep their insides near neutral by pumping acid back out. It costs a lot of energy.',
       game: 'You survive the acid. The pumping is expensive, so you divide slower.',
       effect: 'Full acid protection. Births -15%.',
       fx: { births: 0.85, acid: 1 } },
     { id: 'lipids', name: 'Tight membrane', shelf: 'biology', kind: 'part', energy: 1, counterpart: 'shell',
-      real: 'Some acid-loving archaea build membranes from tightly packed lipids that acid can barely cross.',
+      real: 'Acid-loving archaea such as Picrophilus build membranes that let almost no acid through.',
       game: 'Most of the acid stays out. Cheap, and not quite enough alone in strong acid.',
       effect: 'Blocks most acid. Births -5%.',
       fx: { births: 0.95, acid: 0.85 } },
+    { id: 'acidproof', name: 'Acid-proof insides', shelf: 'biology', kind: 'part', energy: 3, counterpart: 'shell',
+      real: 'Picrophilus lives in acid as strong as battery acid. It lets its insides go acidic too, and builds every protein to cope.',
+      game: 'Nothing to pump and nothing to block: the acid cannot hurt you. Rebuilding everything is expensive, so it takes the most energy.',
+      effect: 'Full acid protection. No cost to births, but the highest energy cost of the acid defences.',
+      fx: { acid: 1 } },
     { id: 'flagellum', name: 'Flagellum', shelf: 'biology', kind: 'part', energy: 2, counterpart: null,
       real: 'A spinning tail driven by a tiny motor. Bacteria run, tumble and run again, drifting toward food.',
       game: 'Your colony spreads toward food.',
@@ -53,13 +60,13 @@ var LookAliveCards = (function () {
       game: 'Best yield. You leave no trail, and on Acidica everyone leaves a trail.',
       effect: 'Metabolism. Yield +35%. No waste: raises Waste strongly.',
       fx: { yield: 1.35, mix: 0.7, waste: 0, reg: 0.5 } },
-    { id: 'clock', name: 'Crystal clock', shelf: 'machine', kind: 'part', energy: 1, counterpart: null,
-      real: 'No cell has one. Every unit divides at the same instant.',
-      game: 'No wasted cycles, so more growth. Dividing in unison is a tell.',
+    { id: 'clock', name: 'Sync pulse', shelf: 'machine', kind: 'part', energy: 1, counterpart: null,
+      real: 'Real cells can keep time. One cyanobacterium runs a 24-hour clock on three proteins. Each cell still divides on its own schedule.',
+      game: 'Every unit divides at the same instant. No wasted cycles, and dividing in unison is a tell.',
       effect: 'Births +15%. Regularity up.',
       fx: { births: 1.15, reg: 0.8 } },
     { id: 'shell', name: 'Sealed shell', shelf: 'machine', kind: 'part', energy: 1, counterpart: 'pump',
-      real: 'No cell has one. A ceramic case that acid cannot touch.',
+      real: 'Diatoms build glass shells, full of pores so life can pass through. This one is sealed solid, which nothing alive could survive.',
       game: 'Acid cannot hurt you and it costs nothing to run. It does not look like skin.',
       effect: 'Full acid protection. Regularity up, once Regularity is switched on.',
       fx: { acid: 1, reg: 0.8 } },
@@ -68,7 +75,7 @@ var LookAliveCards = (function () {
       game: 'Holds your share at a target. A perfectly flat line is a tell.',
       effect: 'The Machine answer to overgrowth: global feedback holds share near the band centre. Regularity up, more when the share graph is flat.',
       fx: { radio: 1, reg: 0.5 } },
-    { id: 'copier', name: 'Perfect copier', shelf: 'machine', kind: 'part', energy: 1, counterpart: 'errors',
+    { id: 'copier', name: 'Perfect copier', shelf: 'machine', kind: 'part', energy: 1, counterpart: 'naps',
       real: 'No cell has one. Copies never fail.',
       game: 'Nothing ever dies, so you grow faster. Nothing ever dying looks wrong.',
       effect: 'Death rate near zero. Regularity up strongly.',
@@ -81,16 +88,18 @@ var LookAliveCards = (function () {
   ];
 
   // Counterpart links are symmetric pairs: fermentation/respiration with fuel cell, quorum with radio, pump/lipids with shell,
-  // copying errors with perfect copier, cell wall with self-repair. The `counterpart` field above points one way for display.
-  var pairs = [['respiration', 'fuelcell'], ['fermentation', 'fuelcell'], ['quorum', 'radio'], ['errors', 'copier'], ['wall', 'repair'], ['pump', 'shell'], ['lipids', 'shell']];
+  // random naps with perfect copier, cell wall with self-repair. The `counterpart` field above points one way for display.
+  var pairs = [['respiration', 'fuelcell'], ['fermentation', 'fuelcell'], ['quorum', 'radio'], ['naps', 'copier'], ['wall', 'repair'], ['pump', 'shell'], ['lipids', 'shell'], ['acidproof', 'shell']];
 
   var bioReflexes = [
     { id: 'stringent', name: 'Stringent response', shelf: 'biology', sentence: 'When food here is low, pause dividing.',
       real: 'Starved bacteria make an alarm molecule that shuts growth down until food returns.',
       fx: { foodBelow: 0.375, softness: 0.12, deathMult: 0.035 } },
-    { id: 'chemotaxis', name: 'Chemotaxis', shelf: 'biology', sentence: 'When food is richer nearby, move toward it.',
-      real: 'Bacteria compare food now with a moment ago, and keep swimming while it improves.',
-      fx: { move: 0.3 } },
+    // Sporulate: below `foodBelow` (smoothly, over `softness`) a fraction `rate` of the awake colony a tick becomes spores. Spores do not eat,
+    // divide or die. They wake at `wakeRate` a tick, only when food is back above `wakeAbove` (smoothly), so recovery is slow.
+    { id: 'sporulate', name: 'Sporulate', shelf: 'biology', sentence: 'When food runs out, turn part of the colony into spores.',
+      real: 'Starving Bacillus subtilis cells seal a copy of their DNA inside a tough spore that can survive boiling, drying and radiation for a very long time. Making one takes hours and cannot be undone.',
+      fx: { foodBelow: 0.34, softness: 0.1, rate: 0.25, wakeAbove: 0.32, wakeRate: 0.02 } },
     { id: 'sos', name: 'SOS response', shelf: 'biology', sentence: 'When under attack, stop dividing and repair.',
       real: 'Damage switches on repair genes and halts division until the damage is fixed.',
       fx: { attackAbove: 0.0115, softness: 0.02, repair: 0.6, deathMult: 0.07 } }
@@ -116,8 +125,11 @@ var LookAliveCards = (function () {
   var ruleFx = { pauseDeath: 0.15, fastMult: 1.5, fastDeath: 1.5, sloppyBirths: 1.0, sloppySigma: 0.015, move: 0.15 };
 
   function byId(list, id) { for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i]; return null; }
-  function part(id) { return byId(parts, id); }
-  function bio(id) { return byId(bioReflexes, id); }
+  // Saved builds from before the biology pass use the old ids: Copying errors became Random naps, Chemotaxis became Sporulate.
+  var ALIAS = { errors: 'naps', chemotaxis: 'sporulate' };
+  function canon(id) { return ALIAS[id] || id; }
+  function part(id) { return byId(parts, canon(id)); }
+  function bio(id) { return byId(bioReflexes, canon(id)); }
   function sensor(id) { return byId(sensors, id); }
   function action(id) { return byId(actions, id); }
   function ruleText(r) {
@@ -126,6 +138,6 @@ var LookAliveCards = (function () {
   }
 
   return { parts: parts, pairs: pairs, bioReflexes: bioReflexes, sensors: sensors, actions: actions, ruleFx: ruleFx,
-    part: part, bio: bio, sensor: sensor, action: action, ruleText: ruleText };
+    canon: canon, part: part, bio: bio, sensor: sensor, action: action, ruleText: ruleText };
 })();
 if (typeof module !== 'undefined') module.exports = LookAliveCards;

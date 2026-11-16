@@ -265,7 +265,7 @@ var LAD = (function () {
     }
     for (i = 0; i < cells.length; i++) {
       var q = cells[i], x = cx + q.x + Math.sin(time * 1.3 + q.ph) * 1.6 * wob, y = cy + q.y + Math.cos(time * 1.1 + q.ph) * 1.6 * wob;
-      var odd = parts.indexOf('errors') >= 0 && q.odd > 0.75;
+      var odd = parts.indexOf('naps') >= 0 && q.odd > 0.75;
       ctx.shadowColor = PINK; ctx.shadowBlur = 10;
       ctx.fillStyle = odd ? '#ff9a6b' : PINK; ctx.globalAlpha = 0.85;
       ctx.beginPath(); ctx.arc(x, y, odd ? q.s * 0.7 : q.s, 0, 7); ctx.fill();

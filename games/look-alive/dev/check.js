@@ -33,12 +33,12 @@ DISH_IDS.forEach(id => {
   sweepAll(null, cfs.filter((_, i) => i % stride === 0));
   const noReflexCount = all.length;
   if (D.reflexSlot) {
-    const prot = c => c.parts.indexOf('pump') >= 0 || c.parts.indexOf('shell') >= 0;   // anything else is dissolved before the bust matters
+    const prot = c => c.parts.indexOf('pump') >= 0 || c.parts.indexOf('shell') >= 0 || c.parts.indexOf('acidproof') >= 0;   // anything else is dissolved before the bust matters
     const sub = cfs.filter((c, i) => prot(c) && i % (QUICK ? 6 : 5) === 0);
     D.allowed.bio.forEach(rid => sweepAll(B.bioRef(rid), sub));
     const score = {}; all.forEach(r => { if (r.win && r.build.reflex) { const k = r.build.metabolism + ':' + r.build.parts.join(','); score[k] = (score[k] || 0) + 1; } });
     const sets = {}; Object.keys(score).sort((a, b) => score[b] - score[a]).slice(0, QUICK ? 3 : 6).forEach(k => { sets[k] = 1; });
-    ['pump', 'pump,wall', 'pump,errors', 'pump,repair'].forEach(ps => { sets['fermentation:' + ps] = 1; });
+    ['pump', 'pump,wall', 'pump,naps', 'pump,repair'].forEach(ps => { sets['fermentation:' + ps] = 1; });
     const rsub = Object.keys(sets).map(k => { const [m, ps] = k.split(':'); return { metabolism: m, parts: ps ? ps.split(',') : [] }; });
     const rules = B.allRules(D), R = B.rng(31), pick = [];
     rules.forEach(rl => { if (rl.action === 'pause' || R() < (QUICK ? 0.04 : 0.05)) pick.push(rl); });
@@ -59,7 +59,7 @@ const carryRuns = {};
   DISH_IDS.forEach(id => {
     const c = carryOf(id), parts = [];
     [SN, 64].forEach(n => {
-      const r = play(id, c, n), a = Sim.autopsy(r), ft = r.v.win ? -1 : B.failTick(r, a), limit = id === 1 ? 30 : 100;
+      const r = play(id, c, n), a = Sim.autopsy(r), ft = r.v.win ? -1 : B.failTick(r, a), limit = id === 1 ? 30 : id === 2 ? 60 : 100;
       if (n === SN) carryRuns[id] = { r, a };
       const good = !r.v.win && a && INTENDED[id].indexOf(a.cause) >= 0 && ft > 0 && ft <= limit;
       ok = ok && good;
@@ -139,7 +139,7 @@ const otherWin = {};
 // ------------------------------------------------------------------ P5. dish 1: full acid protection survives, none dies by tick 30
 {
   const D = Lv.dish(1), all = data[1].all;
-  const prot = r => r.build.parts.indexOf('pump') >= 0 || r.build.parts.indexOf('shell') >= 0;
+  const prot = r => r.build.parts.indexOf('pump') >= 0 || r.build.parts.indexOf('shell') >= 0 || r.build.parts.indexOf('acidproof') >= 0;
   const none = r => !r.build.parts.some(id => Cards.part(id).fx.acid);
   // none: dies by tick 30 (re-run to read the extinction tick); full: every dial setting survives; lipids alone: survives but loses ground
   const full = all.filter(prot), nop = [];
@@ -151,7 +151,7 @@ const otherWin = {};
   let tdef = -1; for (let t = 1; t <= nm.T; t++) if (nm.H.rob[t] <= P.extinct) { tdef = t; break; }
   const rel = (r, t) => f(r.H.rob[t] / r.H.rob[0], 2);
   const good = fullAlive === full.length && died === nop.length;
-  result(good, 'P5 DISH 1 ACID', full.length + ' runs with a Proton pump or Sealed shell (every legal card set, every dial): ' + fullAlive + ' survive. ' + nop.length + ' runs with no protection (every card set, pace 0 to 8): ' + died + ' dead by tick 30 (latest at tick ' + worstDie + '). Factory unit: robots at 50% by tick ' + nm.H.rob.findIndex((x, i) => i > 0 && x < 0.5 * nm.H.rob[0]) + ', extinct at tick ' + tdef + '. Tight membrane alone: survives (' + (lip.v.win ? 'yes' : 'NO') + '), colony at ' + rel(lip, 30) + ' of its start by tick 30 and ' + rel(lip, 300) + ' at the end');
+  result(good, 'P5 DISH 1 ACID', full.length + ' runs with a Proton pump, Sealed shell or Acid-proof insides (every legal card set, every dial): ' + fullAlive + ' survive. ' + nop.length + ' runs with no protection (every card set, pace 0 to 8): ' + died + ' dead by tick 30 (latest at tick ' + worstDie + '). Factory unit: robots at 50% by tick ' + nm.H.rob.findIndex((x, i) => i > 0 && x < 0.5 * nm.H.rob[0]) + ', extinct at tick ' + tdef + '. Tight membrane alone: survives (' + (lip.v.win ? 'yes' : 'NO') + '), colony at ' + rel(lip, 30) + ' of its start by tick 30 and ' + rel(lip, 300) + ' at the end');
 }
 
 // ------------------------------------------------------------------ P6. dish 2: the default overgrows, Pace 2 or lower or Quorum holds the band
@@ -174,7 +174,7 @@ const otherWin = {};
   const parts = []; let ok = true;
   DISH_IDS.forEach(id => {
     const map = {}; data[id].all.forEach(r => { map[r.key] = r; });
-    let winners = 0, checked = 0, badShare = 0, badStage = 0, bad = 0, worstShare = 0, worstStage = 0, worstAt = '';
+    let explained = 0, winners = 0, checked = 0, badShare = 0, badStage = 0, bad = 0, worstShare = 0, worstStage = 0, worstAt = '';
     const done = {};
     data[id].all.forEach(r => {
       if (!r.win || done[r.key]) return; done[r.key] = 1; winners++;
@@ -184,13 +184,21 @@ const otherWin = {};
         const ds = Math.abs(o.finalShare - r.finalShare), dg = Math.abs(o.maxStage - r.maxStage);
         if (ds > worstShare) { worstShare = ds; worstAt = B.label(r.build) + ' -> ' + B.label(nb); }
         if (dg > worstStage) worstStage = dg;
-        if (ds > TOL) { badShare++; badHere = true; }
-        if (dg > 1) { badStage++; badHere = true; }
+        if (ds > TOL || dg > 1) {
+          // The one sanctioned cliff: on dish 2 a step up in Pace can tip a held colony into the runaway flood. It only counts as explained
+          // when the neighbour loses by taking over the dish (the autopsy says so, with the real figure) and predict() flags the runaway.
+          if (id === 2 && !o.win) {
+            const nr = play(2, nb, SN), na = Sim.autopsy(nr), pr = Sim.predict(Lv.dish(2), nb);
+            if (na && (na.cause === 'overgrew' || na.cause === 'exposed:casualties') && /share passed \d+%/.test(na.text) && pr.runaway && pr.totals.some(x => /Runaway/.test(x))) { explained++; return; }
+          }
+          if (ds > TOL) { badShare++; badHere = true; }
+          if (dg > 1) { badStage++; badHere = true; }
+        }
       });
       if (badHere) bad++;
     });
     if (id !== 1) ok = ok && bad === 0;
-    parts.push('dish ' + id + (id === 1 ? ' (info only, no band)' : '') + ': ' + winners + ' winners, ' + checked + ' neighbour steps, worst share change ' + f(worstShare * 100, 1) + ' points, worst stage change ' + worstStage + '; ' + bad + ' winners break the rule (' + badShare + ' share steps, ' + badStage + ' stage steps)' + (bad ? ' e.g. ' + worstAt : ''));
+    parts.push('dish ' + id + (id === 1 ? ' (info only, no band)' : '') + ': ' + winners + ' winners, ' + checked + ' neighbour steps, worst share change ' + f(worstShare * 100, 1) + ' points, worst stage change ' + worstStage + '; ' + bad + ' winners break the rule (' + badShare + ' share steps, ' + badStage + ' stage steps)' + (id === 2 ? '; ' + explained + ' steps into the runaway flood excluded as explained cliffs (autopsy gives the real figure, predict() says Runaway)' : '') + (bad ? ' e.g. ' + worstAt : ''));
   });
   result(ok, 'P7 DIAL SMOOTHNESS (5 points, 1 stage)', '\n       ' + parts.join('\n       '));
 }
@@ -212,7 +220,7 @@ const d5 = data[5];
   function eqArr(a, b) { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
   function eqRun(a, b) {
     const s = a._s, t = b._s;
-    for (const k of ['N', 'R', 'F', 'WA', 'WB', 'Q', 'FD']) if (!eqArr(s[k], t[k])) return false;
+    for (const k of ['N', 'R', 'F', 'WA', 'WB', 'Q', 'FD', 'Z', 'SP']) if (!eqArr(s[k], t[k])) return false;
     for (const k of Sim._internal.HK) if (!eqArr(a.H[k], b.H[k])) return false;
     for (const c of Sim.CHAN) if (!eqArr(a.H.susp[c], b.H.susp[c])) return false;
     return true;
@@ -234,7 +242,7 @@ const d5 = data[5];
   });
   const times = []; let worst = 0, sum = 0, worstAt = '';
   DISH_IDS.forEach(id => { Sim.play(P, Lv.dish(id), carryOf(id), { n: 64, history: false }); });   // settle the 64x64 natives once
-  const bs = [['carry', id => carryOf(id)], ['rich', id => B.build(6, 6, 'fermentation', ['pump', 'quorum', 'errors'], id === 5 ? B.bioRef('sos') : null)]];
+  const bs = [['carry', id => carryOf(id)], ['rich', id => B.build(6, 6, 'fermentation', ['pump', 'quorum', 'naps'], id === 5 ? B.bioRef('sos') : null)]];
   let cold = 0;
   DISH_IDS.forEach(id => bs.forEach(([nm, mk]) => { for (let k = 0; k < 4; k++) {
     const b = mk(id), a = process.hrtime.bigint(); Sim.play(P, Lv.dish(id), b, { n: 64, snapEvery: 10 });
@@ -376,11 +384,71 @@ const d5 = data[5];
   const tries = [
     ['swap shell for pump, remove the clock', swap(B.fixed(shellCarry, D.fixes.find(x => x.id === 'noclock')))],
     ['swap shell for pump, Sloppiness 4', swap(B.fixed(shellCarry, D.fixes.find(x => x.id === 'slop')))],
-    ['swap shell for pump, add Copying errors', swap(B.fixed(shellCarry, D.fixes.find(x => x.id === 'errors')))]
+    ['swap shell for pump, add Random naps', swap(B.fixed(shellCarry, D.fixes.find(x => x.id === 'naps')))]
   ].map(([nm, b]) => ({ nm, ok: Sim.validate(D, b).ok, win: play(4, b, SN).v.win && play(4, b, 64).v.win }));
   result(!base.v.win && a.cause === 'exposed:regularity' && tries.every(t => t.ok && t.win), 'E7 SHELL CARRIED INTO DISH 4 IS RECOVERABLE', 'shell build loses (' + a.cause + ', exposed at tick ' + base.v.exposedAt + '); ' + tries.map(t => t.nm + ': ' + (t.win ? 'wins' : 'LOSES')).join('; '));
 }
 
-const total = 17;
+// ------------------------------------------------------------------ N1 to N4. the biology pass (GAMEPLAY-V2 section 11)
+const minShare = (r, a, b) => { let m = 1; for (let t = a; t <= b; t++) if (r.H.share[t] < m) m = r.H.share[t]; return m; };
+{
+  const D = Lv.dish(1), solo = B.build(4, 0, 'respiration', ['acidproof']), carry = carryOf(1);
+  const fx = D.fixes.find(x => x.id === 'acidproof'), swapped = B.fixed(carry, fx);
+  const rows = [['Acid-proof insides alone', solo], ['carried cell with the clock swapped for it', swapped]].map(([nm, b]) => ({ nm, ok: Sim.validate(D, b).ok, r16: play(1, b, SN), r64: play(1, b, 64) }));
+  const withClock = Sim.validate(D, B.build(4, 0, 'respiration', ['clock', 'acidproof']));
+  const energies = Cards.parts.filter(c => c.fx.acid).map(c => c.name + ' ' + c.energy), top = Cards.parts.filter(c => c.fx.acid).every(c => c.id === 'acidproof' || c.energy < Cards.part('acidproof').energy);
+  const noBirthCost = !Cards.part('acidproof').fx.births;
+  const good = rows.every(x => x.ok && x.r16.v.win && x.r64.v.win) && !withClock.ok && top && noBirthCost && Cards.part('acidproof').fx.acid === 1;
+  result(good, 'N1 DISH 1: ACID-PROOF INSIDES ALONE WINS', rows.map(x => x.nm + ': ' + (x.ok ? 'legal' : 'ILLEGAL') + ', 16x16 ' + (x.r16.v.win ? 'win' : 'LOSE') + ' (colony ' + f(x.r16.H.rob[300] / x.r16.H.rob[0], 2) + ' of start), 64x64 ' + (x.r64.v.win ? 'win' : 'LOSE')).join('; ') + '. Energy of the acid cards: ' + energies.join(', ') + ' (Acid-proof insides highest: ' + top + '; no births cost: ' + noBirthCost + '). With the clock kept it does not fit the dish (energy limit ' + D.energy + '): ' + (withClock.ok ? 'FITS' : 'does not fit'));
+}
+{
+  const c4 = carryOf(4), c5 = carryOf(5), D4 = Lv.dish(4), D5 = Lv.dish(5);
+  const fix = D4.fixes.find(x => x.id === 'naps'), b4 = B.fixed(c4, fix);
+  const r16 = play(4, b4, SN), r64 = play(4, b4, 64), base = play(4, c4, SN);
+  const b5 = Object.assign({}, c5, { parts: c5.parts.concat(['naps']) }), n16 = play(5, b5, SN), n64 = play(5, b5, 64), plain = play(5, c5, SN);
+  const good = Sim.validate(D4, b4).ok && r16.v.win && r64.v.win && !base.v.win && Sim.validate(D5, b5).ok && !n16.v.win && !n64.v.win;
+  result(good, 'N2 RANDOM NAPS ALONE FIXES DISH 4, AND HELPS BUT DOES NOT WIN DISH 5', 'dish 4 carried build + Random naps: 16x16 ' + (r16.v.win ? 'win' : 'LOSE') + ' (band ' + pc(r16.v.bandFrac) + ', peak stage ' + r16.v.maxStage + '), 64x64 ' + (r64.v.win ? 'win' : 'LOSE') + ' (band ' + pc(r64.v.bandFrac) + '); without it: ' + (base.v.win ? 'WON' : 'lost') + '. Dish 5 carried build alone: lowest share after the bust ' + pc(minShare(plain, 60, 300)) + ', colony at the end ' + f(plain.H.rob[300] / plain.H.rob[0], 3) + ' of its start; with Random naps: lowest share ' + pc(minShare(n16, 60, 300)) + ', colony at the end ' + f(n16.H.rob[300] / n16.H.rob[0], 3) + ' of its start, ' + pc(n16.H.dorm[100]) + ' of the colony asleep at tick 100; still ' + (n16.v.win ? 'WINS' : 'loses') + ' (16x16) and ' + (n64.v.win ? 'WINS' : 'loses') + ' (64x64)');
+}
+{
+  const c5 = carryOf(5), D5 = Lv.dish(5), out = [];
+  let good = true;
+  ['sporulate', 'stringent'].forEach(id => {
+    const b = Object.assign({}, c5, { reflex: { kind: 'bio', id } }), r16 = play(5, b, SN), r64 = play(5, b, 64);
+    good = good && Sim.validate(D5, b).ok && r16.v.win && r64.v.win;
+    out.push({ id, r16, r64 });
+  });
+  const sp = out[0].r16, st = out[1].r16;
+  const slower = sp.H.dorm[200] > 0.3 && st.H.dorm[200] === 0 && sp.H.dorm[100] > 0.8;   // a saved reserve at the bottom of the crash, still being woken at tick 200
+  good = good && slower;
+  const line = o => o.id + ': 16x16 ' + (o.r16.v.win ? 'win' : 'LOSE') + ' (band ' + pc(o.r16.v.bandFrac) + ', lowest share ' + pc(minShare(o.r16, 60, 300)) + ', share at tick 100/200/300 ' + pc(o.r16.H.share[100]) + '/' + pc(o.r16.H.share[200]) + '/' + pc(o.r16.H.share[300]) + ', dormant at tick 100/200/300 ' + pc(o.r16.H.dorm[100]) + '/' + pc(o.r16.H.dorm[200]) + '/' + pc(o.r16.H.dorm[300]) + '), 64x64 ' + (o.r64.v.win ? 'win' : 'LOSE');
+  result(good, 'N3 SPORULATE AND STRINGENT EACH WIN DISH 5, AND FEEL DIFFERENT', out.map(line).join(' | ') + '. Sporulate saves a reserve through the crash (' + pc(sp.H.dorm[100]) + ' of the colony in spores at tick 100) and wakes slowly (' + pc(sp.H.dorm[200]) + ' still asleep at tick 200); Stringent keeps everyone awake and waiting (nothing dormant)');
+}
+{
+  const D = data[5].D, cfs = B.configs(D).filter(c => c.parts.indexOf('naps') >= 0);
+  let runs = 0, wins = 0, best = 0, bestAt = '';
+  cfs.forEach(c => B.dialSweep(D, c, null, SN).forEach(r => { runs++; if (r.win) wins++; if (r.bandFrac > best) { best = r.bandFrac; bestAt = B.label(r.build); } }));
+  const noneAll = data[5].all.slice(0, data[5].noReflexCount).filter(r => r.win).length;
+  result(wins === 0 && noneAll === 0 && runs > 0, 'N4 DISH 5 STILL NEEDS A REFLEX, EVEN WITH RANDOM NAPS', cfs.length + ' card sets containing Random naps x all 81 dials, no reflex: ' + runs + ' runs, ' + wins + ' win (best band time ' + pc(best) + ' at ' + bestAt + '); across every card set in the dish 5 sweep, reflex-free wins: ' + noneAll);
+}
+
+// ------------------------------------------------------------------ N5. every cell that wins dish 1 floods dish 2 when carried in unchanged
+{
+  const D1 = Lv.dish(1), D2 = Lv.dish(2), winners = [], bad = [];
+  const unlockedWith = ['pump', 'lipids', 'acidproof', 'shell', 'clock'];
+  B.configs(D1).forEach(c => { const b = B.build(4, 0, c.metabolism, c.parts, null); if (Sim.validate(D1, b).ok && play(1, b, SN).v.win && play(1, b, 64).v.win) winners.push(b); });
+  let flood = 0, worstPeak = 9, latest = 0, worstAt = '';
+  winners.forEach(b => {
+    const v = Sim.validate(D2, b), r = play(2, b, SN), r64 = play(2, b, 64), a = Sim.autopsy(r), ft = r.v.win ? -1 : B.failTick(r, a);
+    const pk = Math.min(peak(r), peak(r64)), okCause = a && (a.cause === 'overgrew' || a.cause === 'exposed:casualties');
+    const ok = v.ok && !r.v.win && !r64.v.win && okCause && pk >= 0.30 && ft > 0 && ft <= 60;
+    if (ok) flood++; else bad.push(B.label(b) + ' (' + (r.v.win ? 'WINS' : a ? a.cause : '-') + ', peak ' + pc(pk) + ', visible ' + ft + ')');
+    if (pk < worstPeak) { worstPeak = pk; worstAt = B.label(b); }
+    if (ft > latest) latest = ft;
+  });
+  const fac = play(2, carryOf(1), SN), facA = Sim.autopsy(fac);
+  result(winners.length > 0 && flood === winners.length, 'N5 EVERY DISH 1 WINNER FLOODS DISH 2 UNCHANGED', winners.length + ' builds win dish 1 at Pace 4 (every legal card set of one or two parts within energy ' + D1.energy + '; the Factory unit on its own does not, it dissolves); carried unchanged into dish 2 (acid ' + D2.acid + '): ' + flood + ' flood it (lose by taking over, peak share at least 30% at both grid sizes). Smallest peak ' + pc(worstPeak) + ' (' + worstAt + '), latest visible tick ' + latest + ' (limit 60).' + (bad.length ? ' NOT FLOODING: ' + bad.join('; ') : '') + ' The Factory unit itself on dish 2: ' + (facA ? facA.cause : 'won'));
+}
+
+const total = 22;
 console.log('\n' + (total - fails) + ' of ' + total + ' lines pass, ' + fails + ' fail. Total ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s.');
 process.exit(fails ? 1 : 0);

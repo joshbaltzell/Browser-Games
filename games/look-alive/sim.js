@@ -86,7 +86,7 @@ var LookAlive = (function () {
       sigma: Pr.sigmaBase + Pr.sigmaPerSlop * b.slop,
       reg: {}, regMachine: 0, quorum: false, radio: false, moveFood: 0,
       bio: null, rule: null, isDefault: isDefault(b), machineParts: 0, ids: [met.id].concat(b.parts || []),
-      acidKeep: 1, acidBlock: 0, acid: D.acid || 0, acidRate: 0
+      acidKeep: 1, acidBlock: 0, acid: D.acid || 0, acidRate: 0, nap: null
     };
     if (met.fx.reg) { p.reg[met.id] = met.fx.reg; p.regMachine += met.fx.reg; }
     (b.parts || []).forEach(function (id) {
@@ -99,6 +99,7 @@ var LookAlive = (function () {
       if (f.quorum) p.quorum = true;
       if (f.radio) p.radio = true;
       if (f.moveFood) p.moveFood += f.moveFood;
+      if (f.nap) p.nap = f.nap;
       if (f.acid) p.acidKeep *= 1 - f.acid;
       if (f.reg) { p.reg[id] = f.reg; p.regMachine += f.reg; }
     });
@@ -153,7 +154,7 @@ var LookAlive = (function () {
       P: P, D: D, build: build, n: n, T: T, tick: 0, rng: (opts.seed || 12345) | 0, bp: params(P, D, build),
       cap: makeCap(n), bustMap: makeBust(n),
       N: new Float32Array(nn), R: new Float32Array(nn), F: new Float32Array(nn), WA: new Float32Array(nn), WB: new Float32Array(nn),
-      Q: new Float32Array(nn), FD: new Float32Array(nn),
+      Q: new Float32Array(nn), FD: new Float32Array(nn), Z: new Float32Array(nn), SP: new Float32Array(nn),   // Z: napping units, SP: spores (both are part of the colony but inactive)
       tN: new Float32Array(nn), tR: new Float32Array(nn), tF: new Float32Array(nn), tA: new Float32Array(nn), tB: new Float32Array(nn), tQ: new Float32Array(nn),
       mv: new Float32Array(nn),
       fast: [0, 0, 0, 0], slow: [0, 0, 0, 0], raw: [0, 0, 0, 0], lvl: [0, 0, 0, 0],
@@ -180,7 +181,7 @@ var LookAlive = (function () {
     return s;
   }
   var HK = ['share', 'nativeShare', 'nat', 'rob', 'food', 'total', 'stage', 'kill', 'fires', 'lead', 'births', 'rate', 'nrate', 'qsig', 'radioMult',
-    'rawG', 'rawW', 'rawC', 'rawR', 'regT', 'regM', 'regF', 'regD', 'regR', 'sloppy', 'acid'];
+    'rawG', 'rawW', 'rawC', 'rawR', 'regT', 'regM', 'regF', 'regD', 'regR', 'sloppy', 'acid', 'dorm'];
 
   // The settled native-only dish, computed once per grid size and then copied.
   function baseState(P, n) {
@@ -212,7 +213,7 @@ var LookAlive = (function () {
   }
 
   function step(s) {
-    var P = s.P, D = s.D, n = s.n, nn = n * n, N = s.N, R = s.R, F = s.F, WA = s.WA, WB = s.WB, Q = s.Q, FD = s.FD, cap = s.cap;
+    var P = s.P, D = s.D, n = s.n, nn = n * n, N = s.N, R = s.R, F = s.F, WA = s.WA, WB = s.WB, Q = s.Q, FD = s.FD, cap = s.cap, Z = s.Z, SP = s.SP;
     var Pn = P.native, Pr = P.robot, Ps = P.suspicion, Pq = P.quorum, Pe = P.senses, bp = s.bp, E = D.event, t = s.tick;
     var settling = s.settling, i, k;
     var evl = settling ? 0 : evLevel(E, t, P.event.ramp);
@@ -232,11 +233,14 @@ var LookAlive = (function () {
     if (!settling && D.suspicion !== false) killR = Math.min(Ps.killCap, Ps.kill * Math.max(0, s.S - Ps.killFrom));   // gradual: no instant delete
     s.killNow = killR;
     var rbRate = bp.rate;
+    // Runaway (abundance dishes): with food everywhere and nothing eating you, dividing feeds on itself. The more of you there are, the faster
+    // you divide, in proportion to how eager the Pace dial is (above `runFrom`). Quorum and Radio act on the whole birth rate, so they can hold it.
+    var runK = D.abundance && !settling && D.abundance.run ? D.abundance.run * Math.max(0, bp.paceMult - (D.abundance.runFrom || 0)) : 0;
     var useQ = bp.quorum && !settling, qEmit = Pq.emit, qDecay = Pq.decay;
-    var moveFoodBase = bp.moveFood, chemo = bioId === 'chemotaxis';
+    var moveFoodBase = bp.moveFood, napP = settling ? null : bp.nap, spore = bioId === 'sporulate';
     var ruleToward = rule && rule.action === 'toward', ruleAway = rule && rule.action === 'away';
     var noisyMove = !ruleToward;
-    var sumN = 0, sumR = 0, bN = 0, bR = 0, bR0 = 0, cas = 0, upRt = 0, upNt = 0, killed = 0, fireMass = 0, sloppyMass = 0, qSum = 0;
+    var sumZ = 0, sumSP = 0, sumN = 0, sumR = 0, bN = 0, bR = 0, bR0 = 0, cas = 0, upRt = 0, upNt = 0, killed = 0, fireMass = 0, sloppyMass = 0, qSum = 0;
     var Kh = P.foodHalf, fpb = P.foodPerBirth, mixN = Pn.mixA, wAmt = bp.wasteAmt, mixR = bp.mix;
     var baseDeath = Pr.death * bp.deathMult + bp.deathAdd + (D.abundance && !settling ? D.abundance.death || 0 : 0);
     var acidD = settling ? 0 : bp.acidRate, ab = D.abundance, crowdR = Pr.crowd * (ab && !settling ? ab.crowd : 1), acidLoss = 0, abFood = ab && !settling ? ab.food || 0 : 0, abCross = ab && !settling ? ab.cross || 1 : 1;
@@ -244,8 +248,8 @@ var LookAlive = (function () {
     for (i = 0; i < nn; i++) {
       var nv = N[i], rv = R[i], fv = F[i];
       var phi = fv / (fv + Kh), phiR = abFood > 0 ? fv * abFood / (fv * abFood + Kh) : phi;
-      var m = rbRate * mulR * radioM, dm = 1, kmul = 1, bmul = 1, mf = moveFoodBase, ma = 0;
-      var m0 = m, bioQ = 1;   // m0: the division rate the immune system measures (biology reflexes and the quorum signal are not counted)
+      var m = rbRate * mulR * radioM * (runK > 0 ? 1 + runK * (rv / s.N0) : 1), dm = 1, kmul = 1, bmul = 1, mf = moveFoodBase, ma = 0;
+      var m0 = m, bioQ = 1, spIn = 0, spOut = 0, napIn = 0, napOut = 0, zv = napP ? Z[i] : 0, sv = spore ? SP[i] : 0;   // m0: the division rate the immune system measures (biology reflexes and the quorum signal are not counted)
       if (useQ) { var qv = Q[i]; bioQ = 1 - Pq.max * qv / (qv + Pq.half); qSum += qv; }
       if (bio) {
         var lv = 0;
@@ -257,7 +261,12 @@ var LookAlive = (function () {
           var dg = s.attackEma * (1 + Pe.noise * hz(i, t, 2));
           lv = clamp((dg - bio.fx.attackAbove) / bio.fx.softness, 0, 1);
           bioQ *= 1 - lv; kmul *= 1 - bio.fx.repair * lv; dm *= 1 - lv * (1 - bio.fx.deathMult);
-        } else if (chemo) { mf += bio.fx.move; lv = 1; }
+        } else if (spore) {
+          var fs = FD[i] * (1 + Pe.noise * hz(i, t, 1)), bf = bio.fx;
+          lv = clamp((bf.foodBelow - fs) / bf.softness, 0, 1);
+          spIn = rv * bf.rate * lv;                                           // starving: part of the colony turns into spores
+          spOut = sv * bf.wakeRate * clamp((fs - bf.wakeAbove) / bf.softness, 0, 1);   // slow wake-up, only once food is back
+        }
         fireMass += rv * lv;
       }
       if (rule) {
@@ -280,11 +289,16 @@ var LookAlive = (function () {
       bn *= sc; br *= sc; br0 *= sc; upN *= sc; upR *= sc;
       var casCell = nv * Pn.crowd * cross * abCross * rv;
       var deathN = nv * (Pn.death + Pn.crowd * nv) + casCell;
+      if (napP) {
+        napIn = rv * napP.enter; napOut = zv * napP.wake * clamp((FD[i] - napP.wakeLo) / (napP.wakeHi - napP.wakeLo), 0, 1);
+      }
       var deathR = rv * (baseDeath + crowdR * (rv + Pr.cross * crossEv * nv) + bustDeath * bustTf * bmul) * dm + rv * acidD;
       acidLoss += rv * acidD;
       var killCell = rv * killR * killTf * kmul;
       var nN = nv + bn - deathN; if (nN < 0) nN = 0;
-      var nR = rv + br - deathR - killCell; if (nR < 0) nR = 0;
+      var nR = rv + br - deathR - killCell - napIn + napOut - spIn + spOut; if (nR < 0) nR = 0;
+      if (napP) { var nZ = zv + napIn - napOut - zv * (baseDeath * napP.death + acidD); Z[i] = nZ < 0 ? 0 : nZ; sumZ += Z[i]; }
+      if (spore) { SP[i] = sv + spIn - spOut; sumSP += SP[i]; }
       var nF = fv - upN - upR + P.regrow * (cap[i] * (1 - bustD * bustMap[i]) - fv); if (nF < 0) nF = 0;
       var eR = upR * wAmt;
       WA[i] = WA[i] * (1 - P.wasteDecay) + upN * mixN + eR * mixR;
@@ -338,15 +352,16 @@ var LookAlive = (function () {
     if (settling) return;
 
     // ---- shares ----
-    var tN2 = 0, tR2 = 0, tF2 = 0, Nn = s.N, Rn = s.R;
+    var tN2 = 0, tR2 = 0, tF2 = 0, Nn = s.N, Rn = s.R, tDo = sumZ + sumSP;
     for (i = 0; i < nn; i++) { tN2 += Nn[i]; tR2 += Rn[i]; tF2 += Fn[i]; }
+    tR2 += tDo;                                   // napping units and spores are still part of the colony
     var shareNow = tN2 + tR2 > 0 ? tR2 / (tN2 + tR2) : 0;
     var dShare = (shareNow - s.sharePrev) / Math.max(shareNow, 0.02);
     s.sharePrev = s.shareNow; s.shareNow = shareNow;
     s.flatRing[s.ringPos] = dShare; s.ringPos = (s.ringPos + 1) % s.flatRing.length; if (s.ringN < s.flatRing.length) s.ringN++;
     s.sloppyFrac = sloppyFrac;
     s.radioNow = radioM; s.qNow = qSum / nn;
-    s.sums = { N: tN2, R: tR2, F: tF2, births: bR, cas: cas, acid: sumR > 1e-9 ? acidLoss / sumR : 0, rate: sumR > 1e-9 ? bR / sumR : 0, nrate: sumN > 1e-9 ? bN / sumN : 0 };
+    s.sums = { dorm: tR2 > 0 ? tDo / tR2 : 0, N: tN2, R: tR2, F: tF2, births: bR, cas: cas, acid: sumR > 1e-9 ? acidLoss / sumR : 0, rate: sumR > 1e-9 ? bR / sumR : 0, nrate: sumN > 1e-9 ? bN / sumN : 0 };
     s.attackEma += Pe.attackAlpha * ((killR * killTf + bustDeath * bustTf) - s.attackEma);
 
     if (D.suspicion === false) {
@@ -362,7 +377,7 @@ var LookAlive = (function () {
     s.emaBR += 0.25 * (rateRobot - s.emaBR); s.emaBN += 0.25 * (rateNat - s.emaBN);
     var rho = upRt + upNt > 1e-9 ? upRt / (upRt + upNt) : 0;
     s.emaRho += 0.25 * (rho - s.emaRho);
-    var present = sumR / nn > P.extinct;
+    var present = tR2 / nn > P.extinct;
     var raw = s.raw;
     var lg = present && s.emaBN > 1e-9 ? Math.log((s.emaBR + 1e-9) / s.emaBN) : 0;
     raw[0] = lg >= 0 ? lg / Ps.growthScale : Math.min(Ps.growthSlowMax, -lg / Ps.growthScaleSlow);   // dividing faster than natives is the louder tell
@@ -400,10 +415,10 @@ var LookAlive = (function () {
 
   function record(s) {
     var H = s.H, t = s.tick, nn = s.n * s.n, k, Ps = s.P.suspicion, sm = s.sums;
-    var sn = 0, sr = 0, sf = 0, i;
-    for (i = 0; i < nn; i++) { sn += s.N[i]; sr += s.R[i]; sf += s.F[i]; }
+    var sn = 0, sr = 0, sf = 0, sd = 0, i;
+    for (i = 0; i < nn; i++) { sn += s.N[i]; sr += s.R[i] + s.Z[i] + s.SP[i]; sd += s.Z[i] + s.SP[i]; sf += s.F[i]; }
     H.tick[t] = t;
-    H.nat[t] = sn / nn; H.rob[t] = sr / nn; H.food[t] = sf / nn;
+    H.nat[t] = sn / nn; H.rob[t] = sr / nn; H.dorm[t] = sr > 0 ? sd / sr : 0; H.food[t] = sf / nn;
     var sh = sn + sr > 0 ? sr / (sn + sr) : 0;
     H.share[t] = sh; H.nativeShare[t] = 1 - sh;
     var best = -1, bw = 0.05;
@@ -420,7 +435,7 @@ var LookAlive = (function () {
   }
 
   // ---------------------------------------------------------------- snapshots
-  var ARR = ['N', 'R', 'F', 'WA', 'WB', 'Q', 'FD'];
+  var ARR = ['N', 'R', 'F', 'WA', 'WB', 'Q', 'FD', 'Z', 'SP'];
   var SCAL = ['tick', 'rng', 'S', 'stage', 'emaBR', 'emaBN', 'emaRho', 'attackEma', 'killNow', 'shareNow', 'sharePrev', 'ringPos', 'ringN', 'sloppyFrac', 'fireNow', 'radioNow', 'qNow'];
   function snapshot(s) {
     var o = { tick: s.tick, st: { fast: s.fast.slice(), slow: s.slow.slice(), raw: s.raw.slice(), lvl: s.lvl.slice(), flatRing: new Float32Array(s.flatRing),
@@ -429,7 +444,8 @@ var LookAlive = (function () {
     for (k = 0; k < ARR.length; k++) o.st[ARR[k]] = new Float32Array(s[ARR[k]]);
     for (k = 0; k < SCAL.length; k++) o.st[SCAL[k]] = s[SCAL[k]];
     for (k = 0; k < nn; k++) wa[k] = s.WA[k] + s.WB[k];
-    o.robot = o.st.R; o.native = o.st.N; o.food = o.st.F; o.waste = wa; o.quorum = o.st.Q;
+    var rb = new Float32Array(nn); for (k = 0; k < nn; k++) rb[k] = s.R[k] + s.Z[k] + s.SP[k];
+    o.robot = rb; o.native = o.st.N; o.food = o.st.F; o.waste = wa; o.quorum = o.st.Q;
     return o;
   }
   function resumeState(run, snapIndex) {
@@ -471,7 +487,7 @@ var LookAlive = (function () {
     var sn = run.snaps[snapIndex], nn = run.n * run.n;
     var wa = new Float32Array(nn), i;
     for (i = 0; i < nn; i++) wa[i] = sn.st.WA[i] / Math.max(1e-9, sn.st.WA[i] + sn.st.WB[i]);
-    return { tick: sn.tick, n: run.n, robot: new Float32Array(sn.st.R), native: new Float32Array(sn.st.N), food: new Float32Array(sn.st.F),
+    return { tick: sn.tick, n: run.n, robot: new Float32Array(sn.robot), native: new Float32Array(sn.st.N), food: new Float32Array(sn.st.F),
       waste: new Float32Array(sn.waste), wasteMix: wa, quorum: new Float32Array(sn.st.Q) };
   }
 
@@ -521,9 +537,11 @@ var LookAlive = (function () {
   // ================================================================ autopsy
   function pct(x) { return Math.round(x * 100) + '%'; }
   function avg(a, f, t) { var s = 0, c = 0; f = Math.max(1, f); for (var i = f; i <= t; i++) { s += a[i]; c++; } return c ? s / c : 0; }
+  // The figure the lab reports for a take-over: the peak share, rounded down to a whole 10% (never below the band ceiling).
+  function passed(H, band) { var pk = 0; for (var i = 0; i < H.share.length; i++) if (H.share[i] > pk) pk = H.share[i]; return pct(pk >= 0.2 ? Math.floor(pk * 10 + 1e-9) / 10 : band.hi); }
   function nm(id) { var c = Cards.part(id); return c ? c.name : id; }
   var REG_PHRASE = {
-    clock: function (f) { return 'your Crystal clock had every unit dividing in unison from tick ' + f; },
+    clock: function (f) { return 'your Sync pulse had every unit dividing in unison from tick ' + f; },
     radio: function (f) { return 'your Radio mesh held your share perfectly flat from tick ' + f + ', and nothing natural does that'; },
     copier: function (f) { return 'your Perfect copier meant nothing ever died from tick ' + f; },
     repair: function (f) { return 'your Self-repair rebuilt damaged units in a way no cell can, from tick ' + f; },
@@ -598,7 +616,7 @@ var LookAlive = (function () {
         else { why = 'your ' + nm(bp.metabolism) + ' leaves a different waste trail from the natives\' (' + pct(bp.wasteGap) + ' off), and on Acidica everyone smells the same'; res.card = bp.metabolism; }
       } else if (D.abundance) {
         var pk = 0; for (t = 1; t <= te; t++) if (H.share[t] > pk) pk = H.share[t];
-        why = 'with this much food and nothing eating you, your share passed ' + pct(pk >= 0.3 ? 0.3 : band.hi) + ' and the lab noticed';
+        why = 'your share passed ' + passed(H, band) + ' and the lab noticed';
         res.card = null; res.takeover = true;
       } else {
         var cu2 = growthCulprit(run, true);
@@ -615,7 +633,8 @@ var LookAlive = (function () {
       for (var cid in cs) if (!topId || cs[cid] > cs[topId]) topId = cid;
       res.cardShare = tot > 0 ? cs[topId] / tot : 1; res.topCard = topId;
       if (res.cardShare > res.dominance) res.dominance = res.cardShare;
-      res.text = (res.takeover ? 'Took over the dish by tick ' + te : v.exposedAt > 0 ? 'Exposed at tick ' + te : 'The immune system closed in from tick ' + te) + ': ' + why + '.';
+      res.text = (res.takeover ? 'Took over the dish by tick ' + te : v.exposedAt > 0 ? 'Exposed at tick ' + te : 'The immune system closed in from tick ' + te) + ': ' + why + '.' +
+        (res.takeover ? '' : ' The locals check badges, and a border line formed around your colony.');
       if (second >= 0 && tot > 0 && sums[second] / tot >= 0.25) {
         res.second = { channel: second, cause: 'exposed:' + ck[second], text: 'It was also adding to ' + ck[second] + ' suspicion (' + pct(sums[second] / tot) + ' of the total).' };
       }
@@ -625,7 +644,7 @@ var LookAlive = (function () {
       var cu = growthCulprit(run, true);
       res.cause = 'overgrew'; res.from = ta; res.to = T; res.dominance = above / Math.max(1, above + below);
       res.card = cu ? cu.name : null;
-      if (D.abundance) res.text = 'Took over the dish by tick ' + ta + ': with this much food and nothing eating you, your share passed ' + pct(peak >= 0.3 ? 0.3 : band.hi) + ' and the lab noticed.';
+      if (D.abundance) res.text = 'Took over the dish by tick ' + ta + ': your share passed ' + passed(H, band) + ' and the lab noticed.';
       else res.text = 'Over the band from tick ' + ta + ': your share reached ' + pct(peak) + ' (ceiling ' + pct(band.hi) + ')' + (cu ? ', pushed up by ' + cu.name : '') + '.';
     } else if (below > 0) {
       var inEv = E.tick > 0 && tf > 0 && tf >= E.tick - 5 && tf <= E.tick + E.dur + 40;
@@ -668,6 +687,7 @@ var LookAlive = (function () {
     if (f.quorum) o.push('Births fall where crowded', 'Signal lags and diffuses');
     if (f.radio) o.push('Holds share near ' + pct(0.10));
     if (f.sigma && ch.regularity) o.push('Regularity down');
+    if (f.nap) o.push('Some cells nap through a food crash');
     if (f.deathAdd) o.push('Deaths up slightly');
     if (f.deathMult != null && f.deathMult < 0.5) o.push('Almost nothing dies');
     if (f.moveFood) o.push('Drifts toward food');
@@ -678,9 +698,18 @@ var LookAlive = (function () {
   function predict(D, build, P) {
     P = P || (typeof LookAliveLevels !== 'undefined' ? LookAliveLevels.PLANET : require('./levels.js').PLANET);
     var bp = params(P, D, build), Pr = P.robot, cards = [], ch = channelsOn(D);
-    var out = { energy: { used: 0, max: D.energy }, pace: [], slop: [], cards: cards, totals: [], chips: [], channels: ch, acid: null };
+    var out = { runaway: false, energy: { used: 0, max: D.energy }, pace: [], slop: [], cards: cards, totals: [], chips: [], channels: ch, acid: null };
     function add(src, label, chips) { chips.forEach(function (c) { out.chips.push({ source: src, text: c }); }); cards.push({ id: src, label: label, chips: chips }); }
     out.pace = [Math.abs(bp.paceMult - 1) < 0.005 ? 'Births at the native rate' : 'Births ' + sgn(bp.paceMult - 1) + ' vs natives'];
+    // Runaway is read off a short dry run of the model itself (16 by 16), so the warning cannot disagree with what the dish then does.
+    var ab = D.abundance, runaway = false;
+    if (ab && ab.run) {
+      var dry = play(P, D, build, { n: 16 }), pkd = 0;
+      for (var q = 0; q <= dry.T; q++) if (dry.H.share[q] > pkd) pkd = dry.H.share[q];
+      runaway = !dry.v.win && D.band && pkd > D.band.hi;
+    }
+    out.runaway = runaway;
+    if (runaway) out.pace.push('Runaway: with food everywhere, this pace floods the dish');
     out.slop = build.slop === 0 ? ['Perfectly regular'] : ['Births ' + sgn(bp.slopMult - 1)].concat(ch.regularity ? ['Regularity down', 'Timing variance ' + pct(bp.sigma / P.native.sigma) + ' of natives'] : []);
     var met = Cards.part(build.metabolism);
     if (met) { out.energy.used += met.energy; add(met.id, met.name, cardChips(met, ch)); }
@@ -688,7 +717,7 @@ var LookAlive = (function () {
     var rf = build.reflex;
     if (rf && rf.kind === 'bio') {
       var bc = Cards.bio(rf.id);
-      if (bc) add(bc.id, bc.name, [bc.sentence, 'Senses locally, a few ticks late, with noise', 'No suspicion']);
+      if (bc) add(bc.id, bc.name, bc.id === 'sporulate' ? [bc.sentence, 'Spores do not eat, divide or die', 'Slow to wake once food returns', 'No suspicion'] : [bc.sentence, 'Senses locally, a few ticks late, with noise', 'No suspicion']);
     } else if (rf && rf.kind === 'machine') {
       var sn = Cards.sensor(rf.sensor), rc = ['Reads exact values instantly'];
       if (ch.regularity) rc.push('Regularity up while installed and each tick it fires');
@@ -702,6 +731,7 @@ var LookAlive = (function () {
       out.acid = bp.acidBlock >= 0.999 ? { state: 'full', text: 'Keeps the acid out' } : bp.acidBlock > 0.05 ? { state: 'most', text: 'Blocks most acid' } : { state: 'none', text: 'Nothing keeps the acid out' };
       out.totals.push(out.acid.state === 'none' ? 'Acid: nothing keeps it out, you will dissolve' : out.acid.state === 'most' ? 'Acid: most of it is kept out, some still gets in' : 'Acid: kept out');
     }
+    if (runaway) out.totals.push('Runaway: dividing feeds on itself here, and nothing eats you. This build takes over the dish. Slow down, or add Head count or Radio mesh');
     out.totals.push('Births ' + sgn(net - 1) + ' vs natives');
     if (net > 1.15) out.totals.push(ch.growth ? 'Growth suspicion up: dividing ' + pct(net - 1) + ' faster than natives' : 'Divides faster than the natives: more of you');
     else if (net < 0.85) out.totals.push('Slower than natives: may not replace losses');

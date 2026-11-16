@@ -42,8 +42,8 @@ var LookAliveLevels = (function () {
   var NONE = { type: 'none', tick: -1, announce: -1, rMult: 0, aMult: 0, depth: 0, dur: 0, bustDeath: 0 };
   var BAND = { lo: 0.05, hi: 0.15, need: 0.7, warm: 30 };
   var BAND_GOAL = 'Stay between 5% and 15% of the dish, without the lab noticing you.';
-  var ALL_PARTS = ['wall', 'quorum', 'errors', 'flagellum', 'clock', 'radio', 'copier', 'repair', 'pump', 'lipids', 'shell'];
-  var BIO_REFLEX = ['stringent', 'chemotaxis', 'sos'];
+  var ALL_PARTS = ['wall', 'quorum', 'naps', 'flagellum', 'clock', 'radio', 'copier', 'repair', 'pump', 'lipids', 'acidproof', 'shell'];
+  var BIO_REFLEX = ['stringent', 'sporulate', 'sos'];
   var SENSORS = ['food', 'density', 'native', 'share', 'susp_growth', 'susp_waste', 'ttev'];
   var ACTIONS = ['pause', 'fast', 'sloppy', 'toward', 'away'];
 
@@ -54,6 +54,7 @@ var LookAliveLevels = (function () {
       'Food is everywhere, and nothing here eats microbes. The locals keep their own numbers down.',
       'Everyone leaves a sour trail. A cell with the wrong waste, or no waste, stands out.'
     ],
+    badge: 'The locals can tell you apart because real colonies can: Proteus mirabilis swarms check each other\'s identity proteins, and a visible border line forms between strangers.',
     mission: 'A lab on Acidica keeps these dishes. Pass as a local and you get a page of their notebook.'
   };
 
@@ -65,100 +66,102 @@ var LookAliveLevels = (function () {
       problem: 'The water is acid. A cell with nothing to keep the acid out dissolves.',
       goal: 'Be alive at the end of the run.',
       show: { partSlots: 2, pace: false, slop: false, metabolism: false, reflex: false, channels: [],
-        shelves: { biology: ['pump', 'lipids'], machine: ['clock', 'shell'] } },
-      allowed: { metabolism: ['respiration'], parts: ['clock', 'pump', 'lipids', 'shell'], bio: [], sensors: [], actions: [] },
+        shelves: { biology: ['pump', 'lipids', 'acidproof'], machine: ['clock', 'shell'] } },
+      allowed: { metabolism: ['respiration'], parts: ['clock', 'pump', 'lipids', 'acidproof', 'shell'], bio: [], sensors: [], actions: [] },
       band: { lo: 0.05, hi: 0.15, need: 0, warm: 30 }, event: NONE,
       tips: {
-        acid: ['The acid is getting in. Nothing in your cell keeps it out.', 'Try the Proton pump on the Biology shelf. The Tight membrane and the Sealed shell also help.'],
+        acid: ['The acid is getting in. Nothing in your cell keeps it out.', 'Try the Proton pump on the Biology shelf. The Tight membrane and the Sealed shell also help, and so does Acid-proof insides if you take off the Sync pulse to make room for it.'],
         other: ['Your colony is too small to last.', 'Keep a full acid defence, the Proton pump or the Sealed shell, and keep the Pace at 4.']
       },
-      tipFixes: { acid: ['pump', 'lipids', 'shell'] },
+      tipFixes: { acid: ['pump', 'lipids', 'shell', 'acidproof'] },
       fixes: [
         { id: 'pump', label: 'Add the Proton pump', changes: { add: ['pump'] } },
         { id: 'lipids', label: 'Add the Tight membrane (barely enough)', changes: { add: ['lipids'] } },
-        { id: 'shell', label: 'Add the Sealed shell', changes: { add: ['shell'] } }
+        { id: 'shell', label: 'Add the Sealed shell', changes: { add: ['shell'] } },
+        { id: 'acidproof', label: 'Swap the Sync pulse for Acid-proof insides (it takes all 3 energy)', changes: { remove: ['clock'], add: ['acidproof'] } }
       ],
-      notebook: 'Some microbes thrive in water as acidic as stomach acid. They keep their insides close to neutral by pumping protons out of the cell, and some build membranes of tightly packed lipids that acid can barely cross. Both defences cost energy, which is one reason acid-loving microbes grow slowly. On Acidica the acid is stronger than anything in nature, and a ceramic shell would beat it, but no real cell has one.' },
+      notebook: 'Picrophilus torridus is an archaeon that grows best in acid roughly as strong as battery acid, and can still grow at around pH 0. Most acid-loving microbes keep their insides near neutral by pumping acid back out, which costs energy all the time, but Picrophilus lets its insides go acidic too and builds every protein to cope, inside a membrane that lets almost no acid through. On Acidica the water dissolves anything unprotected, and a sealed ceramic shell would keep it out completely, while a real cell can never be sealed: even a diatom\'s glass shell is full of pores so life can pass through.' },
     { id: 2, title: "Don't Take Over", energy: 5, partSlots: 3, reflexSlot: false, dials: ['pace'],
-      ticks: 300, acid: 0.35, abundance: { food: 4, crowd: 2.5, death: 0.02, cross: 6 }, suspicion: true, channels: ['casualties'],
+      ticks: 300, acid: 0.18, abundance: { food: 13, crowd: 2.8, death: 0.03, cross: 6, run: 15, runFrom: 0.8 }, suspicion: true, channels: ['casualties'],
       problem: 'Food is everywhere and nothing eats you, so a cell that divides at its usual pace floods the dish.',
       goal: BAND_GOAL,
       show: { partSlots: 3, pace: true, slop: false, metabolism: false, reflex: false, channels: ['casualties'],
-        shelves: { biology: ['pump', 'lipids', 'quorum'], machine: ['clock', 'shell', 'radio'] } },
-      allowed: { metabolism: ['respiration'], parts: ['clock', 'pump', 'lipids', 'shell', 'quorum', 'radio'], bio: [], sensors: [], actions: [] },
+        shelves: { biology: ['pump', 'lipids', 'acidproof', 'quorum'], machine: ['clock', 'shell', 'radio'] } },
+      allowed: { metabolism: ['respiration'], parts: ['clock', 'pump', 'lipids', 'acidproof', 'shell', 'quorum', 'radio'], bio: [], sensors: [], actions: [] },
       band: BAND, event: NONE,
       tips: {
-        'exposed:casualties': ['Your colony is taking over the dish. There is plenty of food and nothing to hold you back.', 'Turn the Pace down to 2, or add the Quorum signal on the Biology shelf.'],
-        overgrew: ['Your colony is taking over the dish. There is plenty of food and nothing to hold you back.', 'Turn the Pace down to 2, or add the Quorum signal on the Biology shelf.'],
-        below: ['Your colony is too small to stay in the band.', 'Turn the Pace up a little: Pace 2 or 3 is about right.'],
+        'exposed:casualties': ['Your colony is taking over the dish. There is plenty of food and nothing to hold you back.', 'Turn the Pace down to 2, or add the Head count (quorum signal) on the Biology shelf.'],
+        overgrew: ['Your colony is taking over the dish. There is plenty of food and nothing to hold you back.', 'Turn the Pace down to 2, or add the Head count (quorum signal) on the Biology shelf.'],
+        below: ['Your colony is too small to stay in the band.', 'Turn the Pace up a little: Pace 1 or 2 is about right.'],
         other: ['Something else is out of balance.', 'Open the autopsy: it names the card or control behind the problem.']
       },
       tipFixes: { 'exposed:casualties': ['pace', 'quorum'], overgrew: ['pace', 'quorum'] },
       fixes: [
         { id: 'pace', label: 'Turn Pace down to 2', changes: { set: { pace: 2 } } },
-        { id: 'quorum', label: 'Add the Quorum signal', changes: { add: ['quorum'] } },
+        { id: 'quorum', label: 'Add the Head count (quorum signal)', changes: { add: ['quorum'] } },
         { id: 'radio', label: 'Add the Radio mesh (Machine answer)', changes: { add: ['radio'] } }
       ],
-      notebook: 'A growing population follows an S-shaped curve: slow at first, fast while food is plentiful, then flat at the carrying capacity, the most the habitat can feed. With nothing to hold it back, a population overshoots that limit and then crashes as it runs out of food. Real populations are held in check by food, disease and predators. On Acidica the locals keep their own numbers down and nothing keeps yours down, so you have to do it yourself.' },
+      notebook: 'Aliivibrio fischeri bacteria live packed inside the light organ of the bobtail squid, and every dawn the squid vents about 90% of them and lets the survivors regrow. Each bacterium leaks a small molecule and listens for it, so once enough of them are crowded together they all switch on their lights at the same moment. A colony never grows without limit: in the squid something always resets it. On Acidica the locals keep their own numbers down and nothing keeps yours down, so you have to do it yourself.' },
     { id: 3, title: 'Smell Right', energy: 5, partSlots: 3, reflexSlot: false, dials: ['pace'],
       ticks: 300, acid: 0.35, suspicion: true, channels: ['casualties', 'waste'],
       problem: 'Everyone on Acidica leaves the same sour trail. Your cell leaves a different one.',
       goal: BAND_GOAL,
       show: { partSlots: 3, pace: true, slop: false, metabolism: true, reflex: false, channels: ['casualties', 'waste'],
-        shelves: { biology: ['respiration', 'fermentation', 'pump', 'lipids', 'quorum'], machine: ['fuelcell', 'clock', 'shell', 'radio'] } },
-      allowed: { metabolism: ['respiration', 'fermentation', 'fuelcell'], parts: ['clock', 'pump', 'lipids', 'shell', 'quorum', 'radio'], bio: [], sensors: [], actions: [] },
+        shelves: { biology: ['respiration', 'fermentation', 'pump', 'lipids', 'acidproof', 'quorum'], machine: ['fuelcell', 'clock', 'shell', 'radio'] } },
+      allowed: { metabolism: ['respiration', 'fermentation', 'fuelcell'], parts: ['clock', 'pump', 'lipids', 'acidproof', 'shell', 'quorum', 'radio'], bio: [], sensors: [], actions: [] },
       band: BAND, event: NONE,
       tips: {
         'exposed:waste': ['Your waste trail is wrong for Acidica. The locals smell it.', 'Swap Respiration for Fermentation in the Metabolism slot: its waste matches the natives\'.'],
-        below: ['Your colony is too small to stay in the band.', 'Turn the Pace up a little, or swap back to Respiration only if its waste is not a problem.'],
+        below: ['Your colony is too small to stay in the band.', 'Turn the Pace up a little.'],
         other: ['Something else is out of balance.', 'Open the autopsy: it names the card or control behind the problem.']
       },
       tipFixes: { 'exposed:waste': ['ferment'] },
       fixes: [
         { id: 'ferment', label: 'Swap Respiration for Fermentation', changes: { set: { metabolism: 'fermentation' } } }
       ],
-      notebook: 'Cells with oxygen respire: they break sugar down completely and get about 15 times more energy than fermentation does. Without oxygen they ferment, which is fast and wasteful and leaves acids behind, such as lactic acid. The waste a cell leaves is a chemical fingerprint of how it makes its energy. On Acidica the locals ferment, so their trail is sour, and a cell that respires leaves a different trail.' },
+      notebook: 'Lactic acid bacteria ferment sugar without oxygen, which is fast and gets little energy out of it, and they leave lactic acid behind. Cells that use oxygen break sugar down completely and get far more energy from the same meal. The waste a cell leaves is a chemical fingerprint of how it makes its energy. On Acidica the locals ferment, so everyone leaves the same sour trail, and a cell that respires leaves a different one.' },
     { id: 4, title: 'Be Messy', energy: 6, partSlots: 3, reflexSlot: false, dials: ['pace', 'slop'],
       ticks: 300, acid: 0.35, suspicion: true, channels: ['casualties', 'waste', 'regularity'],
       problem: 'Machine parts make every cell divide on the same schedule. Real cells are messier.',
       goal: BAND_GOAL,
       show: { partSlots: 3, pace: true, slop: true, metabolism: true, reflex: false, channels: ['casualties', 'waste', 'regularity'],
-        shelves: { biology: ['respiration', 'fermentation', 'pump', 'lipids', 'quorum', 'errors', 'wall', 'flagellum'], machine: ['fuelcell', 'clock', 'shell', 'radio', 'copier', 'repair'] } },
+        shelves: { biology: ['respiration', 'fermentation', 'pump', 'lipids', 'acidproof', 'quorum', 'naps', 'wall', 'flagellum'], machine: ['fuelcell', 'clock', 'shell', 'radio', 'copier', 'repair'] } },
       allowed: { metabolism: ['respiration', 'fermentation', 'fuelcell'], parts: ALL_PARTS, bio: [], sensors: [], actions: [] },
       band: BAND, event: NONE,
       tips: {
-        'exposed:regularity': ['Your cells divide in perfect step. Nothing natural does that.', 'Take off the Crystal clock, or add Copying errors, or raise Sloppiness to 4 or more.'],
+        'exposed:regularity': ['Your cells divide in perfect step. Nothing natural does that.', 'Take off the Sync pulse, or add Random naps, or raise Sloppiness to 4 or more.'],
         below: ['Your colony is too small to stay in the band.', 'Turn the Pace up a little, or take a slow part off.'],
         other: ['Something else is out of balance.', 'Open the autopsy: it names the card or control behind the problem.']
       },
-      tipFixes: { 'exposed:regularity': ['noclock', 'errors', 'slop'] },
+      tipFixes: { 'exposed:regularity': ['noclock', 'naps', 'slop'] },
       fixes: [
-        { id: 'noclock', label: 'Remove the Crystal clock', changes: { remove: ['clock'] } },
-        { id: 'errors', label: 'Add Copying errors', changes: { add: ['errors'] } },
+        { id: 'noclock', label: 'Remove the Sync pulse', changes: { remove: ['clock'] } },
+        { id: 'naps', label: 'Add Random naps', changes: { add: ['naps'] } },
         { id: 'slop', label: 'Raise Sloppiness to 4', changes: { set: { slop: 4 } } }
       ],
-      notebook: 'No two cells in a colony are quite the same. Copying DNA is never perfect, and each cell divides at its own moment in its cycle. That variation is why real colonies look ragged, and why some cells survive when conditions change. On Acidica anything perfectly regular stands out, so a machine has to learn to be messy.' },
+      notebook: 'In a growing colony of Escherichia coli, a small fraction of cells at random stop growing for a while. Those sleepers survive drugs that attack growing cells, and when the drug is washed away they wake and rebuild the colony. This variety is not genetic: once they wake, the sleepers are as drug-sensitive as their parents. On Acidica anything perfectly regular stands out, so a machine has to learn to be messy.' },
     { id: 5, title: 'When Things Change', energy: 6, partSlots: 3, reflexSlot: true, dials: ['pace', 'slop'],
       ticks: 300, acid: 0.5, suspicion: true, channels: ['growth', 'waste', 'casualties', 'regularity'],
       problem: 'Partway through the run the food crashes.',
       goal: 'Stay in the band through the food crash.',
       show: { partSlots: 3, pace: true, slop: true, metabolism: true, reflex: { bio: BIO_REFLEX, rule: true }, channels: ['growth', 'waste', 'casualties', 'regularity'],
-        shelves: { biology: ['respiration', 'fermentation', 'pump', 'lipids', 'quorum', 'errors', 'wall', 'flagellum'], machine: ['fuelcell', 'clock', 'shell', 'radio', 'copier', 'repair'] } },
+        shelves: { biology: ['respiration', 'fermentation', 'pump', 'lipids', 'acidproof', 'quorum', 'naps', 'wall', 'flagellum'], machine: ['fuelcell', 'clock', 'shell', 'radio', 'copier', 'repair'] } },
       allowed: { metabolism: ['respiration', 'fermentation', 'fuelcell'], parts: ALL_PARTS, bio: BIO_REFLEX, sensors: SENSORS, actions: ACTIONS },
       band: BAND, event: { type: 'bust', tick: 50, announce: 30, rMult: 0, aMult: 0, depth: 0.945, dur: 85, bustDeath: 0.07 },
       tips: {
-        bust: ['The food crashed and your cell had no way to react.', 'Put the Stringent response or the SOS response in the Reflex slot.'],
+        bust: ['The food crashed and your cell had no way to react.', 'Put the Stringent response, the Sporulate reflex or the SOS response in the Reflex slot.'],
         below: ['Your colony is too small to stay in the band.', 'Turn the Pace up a little, or put a reflex in the Reflex slot.'],
         other: ['Something else is out of balance.', 'Open the autopsy: it names the card or control behind the problem.']
       },
-      tipFixes: { bust: ['stringent', 'sos'] },
+      tipFixes: { bust: ['stringent', 'sporulate', 'sos'] },
       fixes: [
         { id: 'stringent', label: 'Add the Stringent response', changes: { reflex: { kind: 'bio', id: 'stringent' } } },
+        { id: 'sporulate', label: 'Add the Sporulate reflex', changes: { reflex: { kind: 'bio', id: 'sporulate' } } },
         { id: 'sos', label: 'Add the SOS response', changes: { reflex: { kind: 'bio', id: 'sos' } } },
         { id: 'rule', label: 'Add a machine rule (pause when food is low) and push Pace and Sloppiness to 8', heavy: true,
           changes: { set: { pace: 8, slop: 8 }, reflex: { kind: 'machine', sensor: 'food', cmp: 'lt', value: 0.35, action: 'pause' } } }
       ],
-      notebook: 'Bacteria sense their surroundings with chemistry: a receptor binds a molecule and the cell changes which genes are on within minutes. A starving cell makes an alarm signal, the stringent response, that pauses growth until food returns, and a damaged cell switches on repair, the SOS response. On Acidica the locals react in a few ticks and only to what is near them, so a unit that reacts to things it could not know gives itself away.' }
+      notebook: 'When it starves, Bacillus subtilis builds a tough spore, packs a copy of its DNA inside, and lets the mother cell dissolve away. The spore has almost no water and no metabolism, and it can survive boiling, drying and radiation for a very long time. Making one takes hours and cannot be undone, and waking one costs a full rebuild, so a spore cannot take advantage of a brief return of food. On Acidica the locals react in a few ticks and only to what is near them, so a unit that reacts to things it could not know gives itself away.' }
   ];
 
   function dish(id) { for (var i = 0; i < DISHES.length; i++) if (DISHES[i].id === id) return DISHES[i]; return null; }

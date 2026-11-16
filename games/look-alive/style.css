@@ -65,6 +65,7 @@ canvas { display: block; }
 .fact { height: 168px; background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; padding: 14px 16px; overflow: hidden; }
 .fact .fn { font-family: var(--mono); font-size: 22px; color: var(--vio); margin-bottom: 6px; }
 .fact p { margin: 0; font-size: 17px; line-height: 1.4; }
+.badge { font-size: 15px; line-height: 1.45; color: var(--dim); max-width: 70ch; height: 46px; margin: 0 0 10px; }
 .mission { font-size: 16px; line-height: 1.5; color: var(--dim); max-width: 70ch; height: 50px; margin: 0 0 14px; }
 .briefrow { display: grid; grid-template-columns: 130px 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 17px; line-height: 1.4; min-height: 64px; }
 .briefrow b { font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); padding-top: 4px; font-weight: 400; }

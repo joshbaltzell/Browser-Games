@@ -31,3 +31,6 @@ Dish 0 tutorial and match-the-ghost, Scout screen and pins, build snapshots (the
 - Dish 5 bust autopsy `from` can be well after the crash (tick 63 vs crash at 50) and `to` is 300; Watch uses `from + 12`.
 - Dish 2 watch failure is the share crossing 15% (overgrew), not suspicion; no Casualties needle spike is needed to see it.
 - Dish 3 autopsy text mentions "(71% off)" and a long sentence; shown as is.
+
+## Biology pass
+Card names changed (Sync pulse, Head count (quorum signal), Random naps, Acid-proof insides, Sporulate); ids `clock`, `quorum`, `shell` kept, `errors` and `chemotaxis` are mapped to `naps` and `sporulate` (`Cards.canon`, and on load in `game.js`). `LookAliveLevels.WORLD.badge` is shown on the world briefing. Dish 2 now has a runaway (see RULES.md) and acid 0.18. Card text can clip at the bottom on the Biology shelf (fixed card height): the Acid-proof insides Game line is cut off at 1280x577.
