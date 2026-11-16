@@ -1,104 +1,72 @@
-// Look Alive: the planet, the three dishes and the card vocabulary. Data only, no logic.
+// Look Alive: the planet and the dishes. Data only, no logic except a lookup helper.
+// Plain script: global LookAliveLevels in a browser, module.exports in Node.
 var LookAliveLevels = (function () {
   'use strict';
 
-  // One planet, one native species. Every number here is a tuning knob of the rules spike.
+  // One planet (Acidica), one native species. Every number here is a tuning knob of the simulation.
   var PLANET = {
+    name: 'Acidica',
     ticks: 300,
     settle: 250,            // native-only ticks run once to reach the dish's starting state
     startShare: 0.09,       // robots start as this share of the dish
-    foodHalf: 0.3,          // Kh: food level giving half speed
-    regrow: 0.02,           // food regrowth per tick toward the patch cap (slow)
+    foodHalf: 0.3,          // food level giving half speed
+    regrow: 0.02,           // food regrowth per tick toward the patch map
     foodDiffuse: 0.06, popDiffuse: 0.05, wasteDiffuse: 0.10, wasteDecay: 0.12,
-    foodPerBirth: 0.2,      // food used per birth (before efficiency)
-    cross: 0.5,             // competition coefficient between species (below 1: they can coexist)
+    foodPerBirth: 0.2,      // food used per birth
+    cross: 0.5,             // competition of robots on natives (below 1: the species coexist)
     native: { rate: 0.12, death: 0.03, crowd: 0.042, mixA: 0.7, sigma: 0.05 },
     robot: {
-      death: 0.02, crowd: 0.60, cross: 0.05,
-      rateBase: 0.7, ratePerDiv: 0.25,      // division rate = native * (0.7 + 0.25 d)
-      toughSlow: 0.04, toughDeath: 0.06,    // each toughness step: births -4%, base death -6%
-      effBirth: 0.06, effWaste: 0.12,       // each efficiency step: births +6%, waste -12%
-      jitSigma: 0.010, jitBase: 0.005, jitCost: 0.04,  // timing noise sd = 0.005 + 0.010 j; each step: births -4%
-      wasteCost: 0.03,                      // each matching step: births -3%
-      mixStart: 0.2,                        // robot waste mix (share of chemical A) with no matching; 3 steps match the natives
-      wasteSteps: 3,
-      fastMult: 1.6, matchCost: 0.15, awayMove: 0.15
+      death: 0.04, crowd: 0.20, cross: 0.05,            // robot crowding is mostly on themselves: the coexistence rule
+      paceBase: 0.72, pacePer: 0.07,                    // births multiplier = paceBase + pacePer * pace (pace 4 = 1.0)
+      slopCost: 0.02,                                   // each slop step: births -2%
+      sigmaBase: 0.0025, sigmaPerSlop: 0.0059375        // timing noise sd (slop 8 = the natives' 0.05)
     },
+    quorum: { emit: 0.5, decay: 0.10, diffuse: 0.12, max: 0.45, half: 0.25 },
+    radio: { target: 0.10, gain: 6, lo: 0.3, hi: 1.2 },
+    senses: { foodAlpha: 0.30, noise: 0.20, attackAlpha: 0.30 },   // biology reflexes: delayed (about 3 ticks) and noisy
+    event: { ramp: 10 },
     suspicion: {
-      growthScale: 0.15, wasteScale: 0.012, casualtyScale: 0.0012, regularityGain: 1.6,
-      deadzone: [1.0, 1.0, 1.0, 0.5],       // growth, waste, casualties, regularity
-      weight: [1.0, 1.5, 1.0, 2.4],
-      fastKeep: 0.90, slowKeep: 0.994, slowGain: 0.012,
+      growthScale: 0.15, growthScaleSlow: 0.40, growthSlowMax: 1.8, wasteScale: 2.0, casualtyScale: 0.10,
+      regTiming: 2.0, regFlat: 1.2, regFactory: 0.5, regRuleInstall: 0.2, regRuleFire: 0.9, flatRef: 0.004,
+      flatWindow: 20,
+      deadzone: [1.0, 1.0, 1.5, 0.5],       // growth, waste, casualties, regularity
+      weight: [1.0, 1.0, 1.0, 2.0],
+      cap: [6, 6, 6, 6],                    // soft cap on each channel's excess (compresses the top)
+      fastKeep: 0.90, slowKeep: 0.99, slowGain: 0.02,
       stage: [1.5, 4.5, 8.0],               // curiosity, inspection, response
-      kill: 0.08, killTough: 0.5, window: 20
+      kill: 0.004, killFrom: 8.0, killCap: 0.15, killTough: 0.25
     },
-    band: { lo: 0.05, hi: 0.15, need: 0.7, warm: 30 },
-    extinct: 0.002          // robot or native density below this means that species is gone
+    extinct: 0.002
   };
 
-  var ATTR = ['div', 'tough', 'eff', 'jit', 'waste'];
-  var ATTR_MAX = [4, 4, 4, 4, 3];
+  var NONE = { type: 'none', tick: -1, announce: -1, rMult: 0, aMult: 0, depth: 0, dur: 0, bustDeath: 0 };
 
   var DISHES = [
-    { id: 1, name: 'First Swab', slots: 0, budget: 9,
-      event: { tick: -1, announce: -1, rMult: 0, aMult: 0 },
-      blurb: 'Hold a 5 to 15 percent share. Match your waste to theirs. No surprises.' },
-    { id: 2, name: 'Weather Turns', slots: 0, budget: 11,
-      event: { tick: 150, announce: 100, rMult: 0.22, aMult: 0.0 },
-      blurb: 'At tick 150 the natives bloom. A robust build rides it out.' },
-    { id: 3, name: 'The Great Bloom', slots: 1, budget: 11,
-      event: { tick: 150, announce: 100, rMult: 0.50, aMult: 0.2 },
-      blurb: 'The bloom is too big for any fixed build. One reflex card is required.' }
+    { id: 0, title: 'Match the Ghost', energy: 0, partSlots: 0, reflexSlot: false, cannotFail: true, dials: ['pace'],
+      ticks: 120, suspicion: false,
+      allowed: { metabolism: ['respiration'], parts: [], bio: [], sensors: [], actions: [] },
+      band: { lo: 0, hi: 1, need: 0, warm: 30 }, event: NONE,
+      notebook: 'Bacteria multiply by binary fission: one cell grows, copies its DNA and splits in two, so a colony doubles again and again. With plenty of food the count climbs in a steep curve, and when food runs short the curve flattens. On Acidica the natives follow the same curve, so your units only have to divide at the same pace.' },
+    { id: 1, title: 'Stay Small, Eat Quietly', energy: 3, partSlots: 2, reflexSlot: false, dials: ['pace', 'slop'],
+      allowed: { metabolism: ['respiration', 'fermentation', 'fuelcell'], parts: ['wall', 'quorum', 'errors', 'clock'], bio: [], sensors: [], actions: [] },
+      band: { lo: 0.05, hi: 0.15, need: 0.7, warm: 30 }, event: NONE,
+      notebook: 'Every habitat has a carrying capacity: the most cells its food can feed. Species that share a food supply compete, but a small group that eats a little can live alongside a bigger one. On Acidica the natives expect a small, quiet newcomer, and the immune system notices anyone whose waste or growth does not look like theirs.' },
+    { id: 3, title: 'Be Messy', energy: 6, partSlots: 3, reflexSlot: false, dials: ['pace', 'slop'],
+      allowed: { metabolism: ['respiration', 'fermentation', 'fuelcell'], parts: ['wall', 'quorum', 'errors', 'flagellum', 'clock', 'radio', 'copier', 'repair'], bio: [], sensors: [], actions: [] },
+      band: { lo: 0.05, hi: 0.15, need: 0.7, warm: 30 },
+      event: { type: 'bloom', tick: 150, announce: 100, rMult: 0.25, aMult: 0.2, depth: 0, dur: 0, bustDeath: 0 },
+      notebook: 'No two cells in a colony are quite the same, because copying DNA is imperfect and each cell lands at a slightly different moment in its cycle. That variation is why real colonies look ragged, and why some cells survive when conditions change. On Acidica anything perfectly regular stands out, so a machine has to learn to be messy.' },
+    { id: 4, title: 'When Things Change', energy: 6, partSlots: 3, reflexSlot: true, dials: ['pace', 'slop'],
+      allowed: { metabolism: ['respiration', 'fermentation', 'fuelcell'], parts: ['wall', 'quorum', 'errors', 'flagellum', 'clock', 'radio', 'copier', 'repair'],
+        bio: ['stringent', 'chemotaxis', 'sos'], sensors: ['food', 'density', 'native', 'share', 'susp_growth', 'susp_waste', 'ttev'],
+        actions: ['pause', 'fast', 'sloppy', 'toward', 'away'] },
+      band: { lo: 0.05, hi: 0.15, need: 0.7, warm: 30 },
+      event: { type: 'bust', tick: 150, announce: 100, rMult: 0, aMult: 0, depth: 0.9, dur: 80, bustDeath: 0.075 },
+      notebook: 'Bacteria sense their surroundings with chemistry: a receptor binds a molecule, and the cell changes what its genes are doing within moments. A starving cell makes an alarm signal that pauses growth, and a damaged cell switches on repair. On Acidica the natives react in a few ticks and only to what is near them, so a unit that reacts to things it could not know gives itself away.' }
   ];
 
-  var SENSORS = [
-    { id: 'density', name: 'own density here', values: [0.05, 0.1, 0.2, 0.4] },
-    { id: 'share', name: 'own share here', values: [0.04, 0.07, 0.12, 0.2] },
-    { id: 'food', name: 'food here', values: [0.15, 0.3, 0.5, 0.8] },
-    { id: 'native', name: 'native density here', values: [0.8, 1.0, 1.2, 1.5] },
-    { id: 'susp_growth', name: 'growth suspicion', values: [0.5, 1, 2] },
-    { id: 'susp_waste', name: 'waste suspicion', values: [0.5, 1, 2] },
-    { id: 'susp_casualties', name: 'casualties suspicion', values: [0.5, 1, 2] },
-    { id: 'susp_regularity', name: 'regularity suspicion', values: [0.5, 1, 2] },
-    { id: 'phase', name: 'event phase (1 announced, 2 happened)', values: [0, 1] }
-  ];
-  var ACTIONS = ['pause', 'fast', 'waste', 'jitter', 'toward', 'away'];
-  var ACTION_NAMES = {
-    pause: 'pause dividing', fast: 'divide faster', waste: 'switch waste to native mix',
-    jitter: 'add jitter', toward: 'move toward food', away: 'move away from food'
-  };
+  function dish(id) { for (var i = 0; i < DISHES.length; i++) if (DISHES[i].id === id) return DISHES[i]; return null; }
 
-  // Every card the vocabulary can express: sensor x comparator x value x action.
-  function allCards() {
-    var out = [];
-    for (var s = 0; s < SENSORS.length; s++) {
-      for (var v = 0; v < SENSORS[s].values.length; v++) {
-        for (var c = 0; c < 2; c++) {
-          for (var a = 0; a < ACTIONS.length; a++) {
-            out.push({ sensor: SENSORS[s].id, cmp: c ? '>' : '<', value: SENSORS[s].values[v], action: ACTIONS[a] });
-          }
-        }
-      }
-    }
-    return out;
-  }
-  function cardText(r) {
-    var sn = SENSORS.filter(function (x) { return x.id === r.sensor; })[0];
-    return 'WHEN ' + sn.name + ' ' + r.cmp + ' ' + r.value + ' THEN ' + ACTION_NAMES[r.action];
-  }
-
-  // Every legal attribute allocation for a dish (each attribute within its max, total within the budget).
-  function allBuilds(dish) {
-    var out = [], a, b, c, d, e;
-    for (a = 0; a <= ATTR_MAX[0]; a++) for (b = 0; b <= ATTR_MAX[1]; b++) for (c = 0; c <= ATTR_MAX[2]; c++)
-      for (d = 0; d <= ATTR_MAX[3]; d++) for (e = 0; e <= ATTR_MAX[4]; e++) {
-        if (a + b + c + d + e <= dish.budget) out.push({ div: a, tough: b, eff: c, jit: d, waste: e, rules: [] });
-      }
-    return out;
-  }
-  function spent(b) { return b.div + b.tough + b.eff + b.jit + b.waste; }
-
-  return { PLANET: PLANET, DISHES: DISHES, SENSORS: SENSORS, ACTIONS: ACTIONS, ACTION_NAMES: ACTION_NAMES, ATTR: ATTR, ATTR_MAX: ATTR_MAX,
-    allCards: allCards, cardText: cardText, allBuilds: allBuilds, spent: spent };
+  return { PLANET: PLANET, DISHES: DISHES, dish: dish };
 })();
 if (typeof module !== 'undefined') module.exports = LookAliveLevels;

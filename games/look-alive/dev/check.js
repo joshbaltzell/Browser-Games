@@ -1,226 +1,281 @@
-// Run: node games/look-alive/dev/check.js   (a few minutes: it sweeps every build of every dish, and every card)
-// Look Alive rules spike. Nine properties, one PASS or FAIL line each, with the numbers.
+// Run: node games/look-alive/dev/check.js         (about 4 to 6 minutes: it sweeps every card set against all 81 dial settings)
+//      node games/look-alive/dev/check.js quick   (smaller sweeps, about a minute, for tuning)
+// Look Alive: the ten properties of MVP-SPEC section 7, one PASS or FAIL line each with numbers, then a summary.
 const Sim = require('../sim.js');
 const Lv = require('../levels.js');
+const Cards = require('../cards.js');
 const B = require('./bots.js');
-const P = Lv.PLANET, DISHES = Lv.DISHES;
-const SN = 16;          // grid size for sweeps (a parameter; winners are re-checked at 64)
-const TOL = 0.05;       // smoothness tolerance: 5 percentage points of final share
+const P = Lv.PLANET;
+const QUICK = process.argv[2] === 'quick';
+const SN = 16;            // sweeps run on a 16x16 grid; a sample of results is confirmed at 64x64 (property X)
+const TOL = 0.05;         // smoothness: one dial step may move the final share by at most 5 points
+const DISH_IDS = [1, 3, 4];
 let fails = 0, t0 = Date.now();
-const lap = name => console.log('  [' + ((Date.now() - t0) / 1000).toFixed(1) + 's] ' + name);
 const f = (x, d) => x.toFixed(d == null ? 2 : d);
 const pc = x => f(x * 100, 1) + '%';
-function verdict(pass, tag, msg) { if (!pass) fails++; console.log((pass ? 'PASS ' : 'FAIL ') + tag + ' ' + msg); }
-const names = DISHES.map(d => 'dish ' + d.id);
+const lap = name => console.log('  [' + ((Date.now() - t0) / 1000).toFixed(0) + 's] ' + name);
+function result(pass, tag, msg) { if (!pass) fails++; console.log((pass ? 'PASS ' : 'FAIL ') + tag + ' ' + msg); return pass; }
+const shelfCount = b => B.isMachineBuild(b) ? 'machine' : 'biology';
 
-console.log('Look Alive rules spike: ' + DISHES.length + ' dishes, ' + P.ticks + ' ticks, sweep grid ' + SN + 'x' + SN + ', band ' + pc(P.band.lo) + ' to ' + pc(P.band.hi));
-console.log('Attribute builds per dish: ' + DISHES.map(d => 'dish ' + d.id + ' ' + Lv.allBuilds(d).length).join(', ') + '; cards in the vocabulary: ' + Lv.allCards().length);
+console.log('Look Alive checks: dishes ' + DISH_IDS.join(', ') + ', ' + P.ticks + ' ticks, sweep grid ' + SN + 'x' + SN + (QUICK ? ' (quick mode)' : ''));
 
-// ---------- exhaustive attribute sweeps (no rules) ----------
-const sweeps = DISHES.map(d => B.sweepBuilds(d, SN));
-lap('attribute sweeps');
-const wins = sweeps.map(r => r.filter(x => x.win));
-
-// ---------- 1. doing nothing loses every dish ----------
-{
-  const parts = []; let all = true;
-  DISHES.forEach(d => {
-    const s = B.play(d, B.nothing(), 64);
-    const a = B.autopsy(s);
-    all = all && !s.verdict.win;
-    parts.push('dish ' + d.id + ': ' + a.cause + ' (final share ' + pc(s.verdict.finalShare) + ', in band ' + pc(s.verdict.bandFrac) + ', peak stage ' + s.verdict.maxStage + ')');
-  });
-  verdict(all, '1 NOTHING LOSES', parts.join(' | '));
-}
-
-// ---------- 2. maxing growth loses through suspicion or the immune response ----------
-{
-  const parts = []; let all = true;
-  DISHES.forEach((d, i) => {
-    const b = B.maxGrowth(d), s = B.play(d, b, 64), v = s.verdict, a = B.autopsy(s);
-    const viaSusp = !v.win && (v.maxStage >= 2 || v.peakS >= P.suspicion.stage[1]);
-    all = all && viaSusp;
-    const d4 = sweeps[i].filter(x => x.build.div === 4), d4w = d4.filter(x => x.win).length;
-    parts.push('dish ' + d.id + ' [' + B.label(b) + ']: ' + (v.win ? 'WON' : 'lost') + ', peak stage ' + v.maxStage + ', peak suspicion ' + f(v.peakS) + ' (' + a.cause + '); ' + d4w + '/' + d4.length + ' builds with division 4 win');
-  });
-  verdict(all, '2 MAX GROWTH LOSES', '\n       ' + parts.join('\n       '));
-}
-
-// ---------- 5 (search part first): cards on dish 3 ----------
-const dish3 = DISHES[2], cards = Lv.allCards();
-const R = B.rng(777), allB = Lv.allBuilds(dish3);
-const randomBuilds = []; for (let i = 0; i < 60; i++) randomBuilds.push(allB[Math.floor(R() * allB.length)]);
-const robust = wins[1].map(x => x.build).slice(0, 24);   // builds that win the bloom-lite dish 2
-const cand = randomBuilds.concat(robust);
-const cardRes = cards.map(c => {
-  let winsRandom = 0, winsRobust = 0, fireFrac = 0, nw = 0;
-  cand.forEach((b, i) => {
-    const s = B.play(dish3, Object.assign({}, b, { rules: [c] }), SN);
-    if (s.verdict.win) {
-      if (i < randomBuilds.length) winsRandom++; else winsRobust++;
-      fireFrac += s.fired[0] / (SN * SN * P.ticks); nw++;
-    }
-  });
-  return { card: c, winsRandom, winsRobust, fire: nw ? fireFrac / nw : 0 };
-});
-lap('card search (' + cards.length + ' cards x ' + cand.length + ' builds)');
-const winCards = cardRes.filter(r => r.winsRandom + r.winsRobust > 0).sort((a, b) => (b.winsRandom + b.winsRobust) - (a.winsRandom + a.winsRobust));
-const topCards = winCards.filter(r => r.fire < 0.8).slice(0, 3);
-// exhaustive builds under the three best conditional cards
-const cardSweeps = topCards.map(r => B.sweepBuilds(dish3, SN, [r.card]));
-lap('exhaustive builds under the top cards');
-
-// ---------- 3. at least two clearly different winning builds per dish ----------
-{
-  const parts = []; let all = true;
-  DISHES.forEach((d, i) => {
-    let w = wins[i], total = sweeps[i].length, label = '';
-    if (i === 2) {
-      w = [].concat.apply([], cardSweeps.map(cs => cs.filter(x => x.win)));
-      total = sweeps[i].length * Math.max(1, topCards.length);
-      label = ' (attribute x top-' + topCards.length + ' cards)';
-    }
-    const dist = B.distinctSet(w.map(x => x.build));
-    all = all && dist.length >= 2;
-    parts.push('dish ' + d.id + ': ' + w.length + '/' + total + ' win' + label + ', ' + dist.length + ' mutually different; e.g. ' + dist.slice(0, 2).map(B.label).join('  VS  '));
-  });
-  verdict(all, '3 TWO+ DIFFERENT WINNERS', '\n       ' + parts.join('\n       '));
-}
-
-// ---------- 4. smoothness ----------
-{
-  const parts = []; let all = true, worstShare = 0, worstStage = 0;
-  const sets = DISHES.map((d, i) => i < 2 ? [[sweeps[i], d]] : cardSweeps.map(cs => [cs, d]));
-  DISHES.forEach((d, i) => {
-    let ws = 0, wg = 0, knife = 0, total = 0, kw = 0, nwin = 0, at = '', ksh = 0, kst = 0;
-    sets[i].forEach(pair => {
-      const m = B.smoothness(pair[1], pair[0], TOL);
-      if (m.worst.dShare > ws) { ws = m.worst.dShare; at = m.worst.at; }
-      wg = Math.max(wg, m.worst.dStage); knife += m.knifeAll; total += m.total; kw += m.knifeWin; nwin += m.winners; ksh += m.knifeShare; kst += m.knifeStage;
-    });
-    worstShare = Math.max(worstShare, ws); worstStage = Math.max(worstStage, wg);
-    parts.push('dish ' + d.id + ': worst winner-neighbour share change ' + f(ws * 100, 1) + 'pp, worst stage jump ' + wg + '; winners on a knife edge ' + kw + '/' + nwin + '; ALL builds on a knife edge ' + knife + '/' + total + ' = ' + pc(knife / total) + ' (share-only ' + ksh + ', stage-only ' + kst + ')' + (i === 2 ? ' (with the top cards)' : ''));
-  });
-  all = worstShare <= TOL && worstStage <= 1;
-  verdict(all, '4 SMOOTH (tolerance ' + TOL * 100 + 'pp, stage jump <= 1)', '\n       ' + parts.join('\n       '));
-}
-
-// ---------- 5. dish 3 needs a rule; which cards win ----------
-{
-  const attrWins = wins[2].length;
-  verdict(attrWins === 0 && winCards.length > 0, '5 DISH 3 NEEDS A RULE',
-    attrWins + '/' + sweeps[2].length + ' attribute-only builds win (exhaustive); ' + winCards.length + '/' + cards.length + ' cards win with at least one of ' + cand.length + ' tried builds');
-  const cond = winCards.filter(r => r.fire < 0.8), degen = winCards.filter(r => r.fire >= 0.8);
-  console.log('       conditional winning cards (wins among ' + randomBuilds.length + ' random + ' + robust.length + ' robust builds):');
-  cond.forEach(r => console.log('         ' + String(r.winsRandom).padStart(2) + ' + ' + String(r.winsRobust).padStart(2) + '  fires ' + pc(r.fire) + '  ' + Lv.cardText(r.card)));
-  console.log('       always-on cards (fire in over 80% of cell-ticks; a free attribute in disguise): ' + degen.length + (degen.length ? ' e.g. ' + degen.slice(0, 3).map(r => Lv.cardText(r.card)).join(' | ') : ''));
-}
-
-// ---------- 6. slider sweep resistance ----------
-{
-  const parts = [];
-  DISHES.forEach((d, i) => parts.push('dish ' + d.id + ' ' + pc(wins[i].length / sweeps[i].length) + ' (' + wins[i].length + '/' + sweeps[i].length + ')'));
-  const rndPairs = cardRes.reduce((a, r) => a + r.winsRandom, 0), rndTot = cards.length * randomBuilds.length;
-  // structure = sensor + action; how many of the 54 have any winning threshold or comparator
-  const struct = {}, structAll = {};
-  cardRes.forEach(r => {
-    const k = r.card.sensor + ' -> ' + r.card.action;
-    structAll[k] = (structAll[k] || 0) + 1;
-    if (r.winsRandom + r.winsRobust > 0 && r.fire < 0.8) struct[k] = (struct[k] || 0) + 1;
-  });
-  const nStruct = Object.keys(structAll).length, nWinStruct = Object.keys(struct).length;
-  // numeric nudge: attribute-only builds near a good build never win dish 3
-  const structural = wins[2].length === 0 && nWinStruct / nStruct <= 0.25;
-  verdict(structural, '6 SLIDER SWEEP RESISTANCE',
-    'random attribute build wins: ' + parts.join(', ') + '; dish 3 random (build, card) pairs win ' + pc(rndPairs / rndTot) + ' (' + rndPairs + '/' + rndTot + '); ' +
-    'dish 3 needs a structural choice: ' + nWinStruct + ' of ' + nStruct + ' (sensor, action) structures have a conditional winner (' + Object.keys(struct).join('; ') + '); no attribute nudge wins');
-  Object.keys(struct).forEach(k => console.log('       structure ' + k + ': ' + struct[k] + '/' + structAll[k] + ' (cmp, value) variants win'));
-}
-
-// ---------- 7. determinism, snapshots ----------
-{
-  const card = topCards.length ? topCards[0].card : cards[0];
-  const b = Object.assign({}, wins[1][0] ? wins[1][0].build : B.nothing(), { rules: [card] });
-  const same = (x, y) => ['N', 'R', 'F', 'WA', 'WB'].every(k => Buffer.compare(Buffer.from(x[k].buffer), Buffer.from(y[k].buffer)) === 0);
-  const hsame = (x, y) => ['share', 'S', 'stage', 'kill', 'nat', 'rob', 'food'].every(k => Buffer.compare(Buffer.from(x.hist[k].buffer), Buffer.from(y.hist[k].buffer)) === 0) &&
-    x.hist.lvl.every((a, i) => Buffer.compare(Buffer.from(a.buffer), Buffer.from(y.hist.lvl[i].buffer)) === 0) &&
-    x.hist.fires[0].every((v, i) => v === y.hist.fires[0][i]);
-  const a = B.play(dish3, b, 32, { snapEvery: 100 }), c = B.play(dish3, b, 32);
-  const rep = same(a, c) && hsame(a, c);
-  const res = [100, 200].map(tk => {
-    const snap = a.snaps.filter(sn => sn.tick === tk)[0];
-    const r = Sim.resume(P, dish3, b, snap, { n: 32 }); Sim.run(r);
-    return same(a, r) && hsame(a, r);
-  });
-  // a different seed must differ (the noise is real)
-  const d = B.play(dish3, b, 32, { seed: 99 });
-  const diff = !same(a, d);
-  verdict(rep && res[0] && res[1] && diff, '7 DETERMINISM', 'repeat run identical: ' + rep + '; resume from tick 100 identical (fields + history): ' + res[0] + '; from tick 200: ' + res[1] + '; other seed differs: ' + diff + ' (32x32, dish 3, ' + B.label(b) + ')');
-}
-
-// ---------- 8. attribution ----------
-{
-  const cases = [];
-  DISHES.forEach((d, i) => {
-    cases.push({ d: d, b: B.nothing(), tag: 'doing nothing' });
-    cases.push({ d: d, b: B.maxGrowth(d), tag: 'max growth' });
-    const losers = sweeps[i].filter(x => !x.win), R2 = B.rng(31 + i);
-    for (let k = 0; k < 150; k++) cases.push({ d: d, b: losers[Math.floor(R2() * losers.length)].build, tag: 'random loser' });
-  });
-  const kinds = {}; let resolved = 0, losing = 0; const ex = {};
-  cases.forEach(c => {
-    const s = B.play(c.d, c.b, SN);
-    if (s.verdict.win) return;
-    losing++;
-    const a = B.autopsy(s);
-    const ok = a.dominance >= 0.5 && a.from > 0 && a.to >= a.from;
-    if (ok) resolved++;
-    kinds[a.cause] = (kinds[a.cause] || 0) + 1;
-    if (!ex[a.cause]) ex[a.cause] = 'dish ' + c.d.id + ' [' + B.label(c.b) + '] ' + a.text + ' (dominant by ' + pc(a.dominance) + ')';
-  });
-  verdict(resolved / losing >= 0.9, '8 ATTRIBUTION', resolved + '/' + losing + ' losing runs have one dominant cause (>= 50% of the blame) with a tick range. Causes: ' +
-    Object.keys(kinds).map(k => k + ' ' + kinds[k]).join(', '));
-  const pick = Object.keys(ex).sort((x, y) => (x.indexOf('exposed') === 0 ? 0 : 1) - (y.indexOf('exposed') === 0 ? 0 : 1));
-  console.log('       autopsies (grid ' + SN + 'x' + SN + '):');
-  pick.slice(0, 5).forEach(k => console.log('         - ' + ex[k]));
-}
-
-// ---------- 9. speed ----------
-{
-  const b = wins[1][0] ? wins[1][0].build : B.nothing();
-  const lines = [];
-  function time(label, n, opts, reps) {
-    Sim.baseState(P, n);   // the one-off native settle is timed separately
-    let best = 1e9;
-    for (let r = 0; r < reps; r++) { const t = process.hrtime.bigint(); const s = Sim.create(P, dish3, b, Object.assign({ n: n }, opts)); Sim.run(s); best = Math.min(best, Number(process.hrtime.bigint() - t) / 1e6); }
-    lines.push(label + ' ' + f(best, 0) + ' ms'); return best;
+// ------------------------------------------------------------------ sweeps
+// For each dish: every card set x every dial setting, with no reflex; on dish 4 also each biology reflex and a sample of machine rules.
+const data = {};
+DISH_IDS.forEach(id => {
+  const D = Lv.dish(id), cfs = B.configs(D), all = [];
+  const stride = QUICK ? 4 : 1;
+  const sweepAll = (reflex, cs) => cs.forEach(c => B.dialSweep(D, c, reflex, SN).forEach(r => all.push(r)));
+  sweepAll(null, cfs.filter((_, i) => i % stride === 0));
+  const noReflexCount = all.length;
+  if (D.reflexSlot) {
+    const isBio = c => [c.metabolism].concat(c.parts).every(id => Cards.part(id).shelf === 'biology');
+    const sub = cfs.filter((c, i) => i % (QUICK ? 8 : 3) === 0 || isBio(c));   // every third card set, and every all-Biology one
+    D.allowed.bio.forEach(rid => sweepAll(B.bioRef(rid), sub));
+    // machine rules: tried on the card sets that win with the Stringent response, plus every respiration card set built from
+    // wall, errors, repair and radio (toughness and a quiet colony are where a rule can help), over the upper dial range
+    const score = {}; all.forEach(r => { if (r.win && r.build.reflex) { const k = r.build.metabolism + ':' + r.build.parts.join(','); score[k] = (score[k] || 0) + 1; } });
+    const sets = {}; Object.keys(score).sort((a, b) => score[b] - score[a]).slice(0, QUICK ? 4 : 8).forEach(k => { sets[k] = 1; });
+    const fam = ['wall', 'errors', 'repair', 'radio'];
+    for (let m = 0; m < 16; m++) { const ps = fam.filter((_, i) => m & (1 << i)); if (ps.length <= D.partSlots && ps.reduce((a, x) => a + Cards.part(x).energy, 0) <= D.energy) sets['respiration:' + ps.join(',')] = 1; }
+    const rsub = Object.keys(sets).map(k => { const [m, ps] = k.split(':'); return { metabolism: m, parts: ps ? ps.split(',') : [] }; });
+    const rules = B.allRules(D), R = B.rng(31), pick = [];
+    rules.forEach(rl => { if (rl.action === 'pause' || R() < (QUICK ? 0.06 : 0.12)) pick.push(rl); });
+    pick.forEach(rl => rsub.forEach(c => {
+      for (let p = 5; p <= 8; p += 1) for (let s = 4; s <= 8; s += 1) {
+        const b = B.build(p, s, c.metabolism, c.parts, rl), r = B.sum(B.play(D, b, SN)); r.build = b; r.key = B.key(b); all.push(r);
+      }
+    }));
   }
-  let t = process.hrtime.bigint(); Sim.baseState(P, 64 + 1); const settle65 = Number(process.hrtime.bigint() - t) / 1e6;
-  const a64 = time('64x64 full run with history', 64, {}, 3);
-  const n64 = time('64x64 no history', 64, { history: false }, 3);
-  const s64 = time('64x64 history + snapshot every 10 ticks', 64, { snapEvery: 10 }, 3);
-  const a256 = time('256x256 full run with history', 256, {}, 1);
-  const n256 = time('256x256 no history', 256, { history: false }, 1);
-  const s256 = time('256x256 history + snapshot every 10 ticks', 256, { snapEvery: 10 }, 1);
-  const a16 = time('16x16 full run (the sweep size)', 16, {}, 5);
-  const oneSnap = (() => { const s = Sim.create(P, dish3, b, { n: 256 }); Sim.run(s, 50); const t1 = process.hrtime.bigint(); for (let i = 0; i < 20; i++) Sim.snapshot(s); return Number(process.hrtime.bigint() - t1) / 1e6 / 20; })();
-  verdict(a64 < 2000 && a256 < 15000, '9 SPEED', lines.join('; ') + '; history costs ' + f(a64 - n64, 0) + ' ms at 64 and ' + f(a256 - n256, 0) + ' ms at 256; 29 snapshots add ' + f(s64 - a64, 0) + ' ms at 64 and ' + f(s256 - a256, 0) + ' ms at 256 (one 256x256 snapshot ' + f(oneSnap, 1) + ' ms); one-off native settle (250 ticks) at 65x65 ' + f(settle65, 0) + ' ms');
-}
+  data[id] = { D, cfs, all, noReflexCount };
+  lap('dish ' + id + ': ' + all.length + ' runs, ' + all.filter(r => r.win).length + ' wins');
+});
 
-// ---------- extra: do the 16x16 results hold at 64x64? ----------
+// ------------------------------------------------------------------ 1. default build loses and the autopsy says why
 {
-  const parts = []; let okAll = true;
-  DISHES.forEach((d, i) => {
-    const w = i === 2 ? cardSweeps.length ? cardSweeps[0].filter(x => x.win) : [] : wins[i];
-    const R3 = B.rng(5 + i), pick = [];
-    for (let k = 0; k < Math.min(25, w.length); k++) pick.push(w[Math.floor(R3() * w.length)]);
-    let holds = 0, fsum = 0;
-    pick.forEach(x => { const s = B.play(d, x.build, 64); if (s.verdict.win) holds++; fsum += Math.abs(s.verdict.finalShare - x.finalShare); });
-    okAll = okAll && pick.length > 0 && holds / pick.length >= 0.8;
-    parts.push('dish ' + d.id + ' ' + holds + '/' + pick.length + ' (mean final-share gap ' + f(fsum / Math.max(1, pick.length) * 100, 1) + 'pp)');
+  const parts = []; let ok = true;
+  DISH_IDS.forEach(id => {
+    const r = B.play(data[id].D, B.dflt(), SN), a = Sim.autopsy(r);
+    const good = !r.v.win && a && a.text && /factory/i.test(a.text);
+    ok = ok && good;
+    parts.push('dish ' + id + ': ' + (r.v.win ? 'WON' : 'lost') + ', peak stage ' + r.v.maxStage + ' | ' + (a ? a.text : 'no autopsy'));
   });
-  verdict(okAll, 'X GRID SIZE AGREEMENT', 'sampled 16x16 winners re-run at 64x64 still win: ' + parts.join(', '));
+  result(ok, '1 DEFAULT LOSES', '\n       ' + parts.join('\n       '));
 }
 
-console.log('\n' + (fails ? fails + ' FAILING' : 'all passing') + ' in ' + ((Date.now() - t0) / 1000).toFixed(1) + 's');
-process.exitCode = fails ? 1 : 0;
+// ------------------------------------------------------------------ 2. the all-Machine build loses through Regularity
+{
+  const parts = []; let ok = true;
+  DISH_IDS.forEach(id => {
+    const D = data[id].D, mach = D.allowed.parts.filter(x => B.shelfOf(x) === 'machine'), met = D.allowed.metabolism.filter(x => B.shelfOf(x) === 'machine')[0];
+    const k = Math.min(D.partSlots, mach.length), stacks = [];
+    (function rec(i, ch) {
+      if (ch.length === k) { const e = ch.reduce((a, x) => a + Cards.part(x).energy, Cards.part(met).energy); if (e <= D.energy) stacks.push(ch.slice()); return; }
+      for (let j = i; j < mach.length; j++) { ch.push(mach[j]); rec(j + 1, ch); ch.pop(); }
+    })(0, []);
+    let n = 0, wins = 0, exposed = 0, regLead = 0;
+    stacks.forEach(st => {
+      for (let p = 0; p <= 8; p++) for (let s = 0; s <= 8; s++) {
+        const r = B.play(D, B.build(p, s, met, st, null), SN); n++;
+        if (r.v.win) { wins++; continue; }
+        const a = Sim.autopsy(r);
+        if (a.cause.indexOf('exposed') === 0) { exposed++; if (a.channel === 3) regLead++; }
+      }
+    });
+    const good = wins === 0 && exposed > 0 && regLead / exposed >= 0.8;
+    ok = ok && good;
+    parts.push('dish ' + id + ' [' + met + ' + ' + stacks.map(s => s.join('+')).join(' | ') + ']: ' + n + ' dial settings, ' + wins + ' wins, ' + exposed + ' exposed (' + pc(exposed / n) + '), ' + regLead + ' of those led by Regularity (' + pc(exposed ? regLead / exposed : 0) + ')');
+  });
+  result(ok, '2 ALL-MACHINE LOSES THROUGH REGULARITY', '\n       ' + parts.join('\n       '));
+}
+
+// ------------------------------------------------------------------ 3. both shelves viable
+const examples = {};
+{
+  const parts = []; let ok = true;
+  DISH_IDS.forEach(id => {
+    const w = data[id].all.filter(r => r.win);
+    const bio = w.filter(r => B.isBioBuild(r.build)), mach = w.filter(r => B.isMachineBuild(r.build));
+    // example winners: the one with the highest band fraction among each shelf, preferring the fewest cards
+    const pickBest = list => list.slice().sort((a, b) => (b.bandFrac - a.bandFrac) || (a.build.parts.length - b.build.parts.length))[0];
+    const withOneTwo = mach.filter(r => {
+      const m = r.build.parts.filter(x => B.shelfOf(x) === 'machine').length + (B.shelfOf(r.build.metabolism) === 'machine' ? 1 : 0) + (r.build.reflex && r.build.reflex.kind === 'machine' ? 1 : 0);
+      return m >= 1 && m <= 2;
+    });
+    examples[id] = { bio: pickBest(bio), mach: pickBest(withOneTwo.length ? withOneTwo : mach) };
+    const good = bio.length > 0 && mach.length > 0;
+    ok = ok && good;
+    parts.push('dish ' + id + ': ' + bio.length + ' all-Biology winners, ' + mach.length + ' winners using a Machine card (' + withOneTwo.length + ' with only one or two) of ' + data[id].all.length + ' runs');
+  });
+  result(ok, '3 BOTH SHELVES VIABLE', '\n       ' + parts.join('\n       '));
+  DISH_IDS.forEach(id => {
+    const e = examples[id];
+    console.log('       dish ' + id + ' Biology example: ' + (e.bio ? B.label(e.bio.build) + ' (final share ' + pc(e.bio.finalShare) + ', in band ' + pc(e.bio.bandFrac) + ')' : 'none'));
+    console.log('       dish ' + id + ' Machine example: ' + (e.mach ? B.label(e.mach.build) + ' (final share ' + pc(e.mach.finalShare) + ', in band ' + pc(e.mach.bandFrac) + ')' : 'none'));
+  });
+}
+
+// ------------------------------------------------------------------ 4. dial smoothness for every winning build
+{
+  const parts = []; let ok = true;
+  DISH_IDS.forEach(id => {
+    const map = {}; data[id].all.forEach(r => { map[r.key] = r; });
+    let winners = 0, checked = 0, badShare = 0, badStage = 0, bad = 0, worstShare = 0, worstStage = 0, worstAt = '';
+    const done = {};
+    data[id].all.forEach(r => {
+      if (!r.win || done[r.key]) return; done[r.key] = 1; winners++;
+      let badHere = false;
+      B.neighbours(r.build).forEach(nb => {
+        const o = map[B.key(nb)]; if (!o) return; checked++;
+        const ds = Math.abs(o.finalShare - r.finalShare), dg = Math.abs(o.maxStage - r.maxStage);
+        if (ds > worstShare) { worstShare = ds; worstAt = B.label(r.build) + ' -> ' + B.label(nb); }
+        if (dg > worstStage) worstStage = dg;
+        if (ds > TOL) { badShare++; badHere = true; }
+        if (dg > 1) { badStage++; badHere = true; }
+      });
+      if (badHere) bad++;
+    });
+    const good = bad === 0;
+    ok = ok && good;
+    parts.push('dish ' + id + ': ' + winners + ' winners, ' + checked + ' neighbour steps, worst share change ' + f(worstShare * 100, 1) + ' points, worst stage change ' + worstStage + '; ' + bad + ' winners break the rule (' + badShare + ' share steps, ' + badStage + ' stage steps)' + (bad ? ' e.g. ' + worstAt : ''));
+  });
+  result(ok, '4 DIAL SMOOTHNESS (5 points, 1 stage)', '\n       ' + parts.join('\n       '));
+}
+
+// ------------------------------------------------------------------ 5. dish 4 needs a reflex
+{
+  const d = data[4], none = d.all.slice(0, d.noReflexCount);
+  const bioWin = d.all.filter(r => r.win && r.build.reflex && r.build.reflex.kind === 'bio');
+  const macWin = d.all.filter(r => r.win && r.build.reflex && r.build.reflex.kind === 'machine');
+  const noneWins = none.filter(r => r.win);
+  const byBio = {}; bioWin.forEach(r => { byBio[r.build.reflex.id] = (byBio[r.build.reflex.id] || 0) + 1; });
+  const good = noneWins.length === 0 && bioWin.length > 0 && macWin.length > 0;
+  result(good, '5 DISH 4 NEEDS A REFLEX', none.length + ' reflex-free builds (every card set, every dial): ' + noneWins.length + ' win. Biology reflexes: ' + bioWin.length + ' winning runs ' + JSON.stringify(byBio) +
+    '. Machine rules: ' + macWin.length + ' winning runs, ' + new Set(macWin.map(r => Cards.ruleText(r.build.reflex))).size + ' different rules' +
+    (macWin[0] ? ' (e.g. ' + B.label(macWin[0].build) + ')' : ''));
+}
+
+// ------------------------------------------------------------------ 6. an always-on machine rule is never better than the same build without it
+{
+  const D = Lv.dish(4), R = B.rng(77), N = QUICK ? 150 : 500;
+  // Dish 4 as it is (the bust makes every reflex-free build lose, so a rule could only turn a loss into a win), and a calm copy of dish 4
+  // with no event, where many reflex-free builds win and an always-on rule has something to lose.
+  const calm = Object.assign({}, D, { event: { type: 'none', tick: -1, announce: -1, rMult: 0, aMult: 0, depth: 0, dur: 0, bustDeath: 0 } });
+  const always = [];
+  Cards.actions.forEach(a => { always.push(B.machineRule('food', 'gt', -1, a.id)); });
+  always.push(B.machineRule('ttev', 'gt', -1, 'fast'), B.machineRule('share', 'lt', 2, 'fast'), B.machineRule('ttev', 'gt', -1, 'toward'));
+  const out = []; let ok = true;
+  [['dish 4', D], ['dish 4 without the bust', calm]].forEach(([name, DD]) => {
+    const bases = [];
+    if (DD === D) data[4].all.filter(r => r.win).slice(0, N).forEach(r => bases.push(Object.assign({}, r.build, { reflex: null })));
+    else { let tries = 0; while (bases.length < N && tries++ < 20 * N) { const b = B.randomBuild(D, R); b.reflex = null; if (Sim.play(P, calm, b, { n: SN }).v.win) bases.push(b); } }
+    for (let i = 0; i < N; i++) { const b = B.randomBuild(D, R); b.reflex = null; bases.push(b); }
+    let pairs = 0, better = 0, worse = 0, sameWin = 0, alwaysOn = 0, baseWins = 0, firstBetter = '';
+    always.forEach(rule => bases.forEach(b => {
+      const base = Sim.play(P, DD, b, { n: SN }), withR = Sim.play(P, DD, Object.assign({}, b, { reflex: rule }), { n: SN });
+      pairs++; if (base.v.win) baseWins++;
+      if (withR.H.fires[150] > 0.8) alwaysOn++;
+      if (withR.v.win && !base.v.win) { better++; if (!firstBetter) firstBetter = B.label(withR.build); }
+      else if (!withR.v.win && base.v.win) worse++;
+      else if (withR.v.win && base.v.win) sameWin++;
+    }));
+    ok = ok && better === 0;
+    out.push(name + ': ' + pairs + ' pairs (' + always.length + ' always-on rules x ' + bases.length + ' builds, ' + (baseWins / always.length) + ' builds win without a rule; the rule fired in over 80% of units at tick 150 in ' + alwaysOn + '): the rule turned a loss into a win ' + better + ' times, a win into a loss ' + worse + ' times, kept a win ' + sameWin + ' times' + (better ? '; first: ' + firstBetter : ''));
+  });
+  result(ok, '6 ALWAYS-ON RULE NEVER BETTER', '\n       ' + out.join('\n       '));
+}
+
+// ------------------------------------------------------------------ 7. random legal builds win rarely on dishes 3 and 4
+{
+  const parts = []; let ok = true;
+  [1, 3, 4].forEach(id => {
+    const D = Lv.dish(id), R = B.rng(500 + id), N = QUICK ? 300 : 1500; let w = 0;
+    for (let i = 0; i < N; i++) if (B.play(D, B.randomBuild(D, R), SN).v.win) w++;
+    const rate = w / N;
+    if (id !== 1) ok = ok && rate < 0.15;
+    parts.push('dish ' + id + (id === 1 ? ' (not part of the check)' : '') + ': ' + w + ' of ' + N + ' (' + pc(rate) + ')');
+  });
+  result(ok, '7 RANDOM BUILDS RARELY WIN', parts.join(', '));
+}
+
+// ------------------------------------------------------------------ 8. deterministic, and every snapshot restores to the same end state
+{
+  let runs = 0, same = 0, snapsTried = 0, snapsOk = 0, restoreOk = 0;
+  function eqArr(a, b) { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
+  function eqRun(a, b) {
+    const s = a._s, t = b._s;
+    for (const k of ['N', 'R', 'F', 'WA', 'WB', 'Q', 'FD']) if (!eqArr(s[k], t[k])) return false;
+    for (const k of Sim._internal.HK) if (!eqArr(a.H[k], b.H[k])) return false;
+    for (const c of Sim.CHAN) if (!eqArr(a.H.susp[c], b.H.susp[c])) return false;
+    return true;
+  }
+  const R = B.rng(88), pool = [];
+  DISH_IDS.forEach(id => { for (let i = 0; i < (QUICK ? 3 : 8); i++) pool.push([Lv.dish(id), B.randomBuild(Lv.dish(id), R)]); });
+  pool.push([Lv.dish(4), B.build(5, 5, 'respiration', ['wall'], B.bioRef('stringent'))]);
+  pool.push([Lv.dish(4), B.build(6, 7, 'respiration', ['wall', 'radio'], B.machineRule('food', 'lt', 0.35, 'pause'))]);
+  pool.push([Lv.dish(4), B.build(6, 5, 'fermentation', ['quorum', 'flagellum', 'wall'], B.bioRef('chemotaxis'))]);
+  pool.forEach(([D, b], i) => {
+    const n = i % 5 === 0 ? 64 : SN;
+    const r1 = Sim.play(P, D, b, { n, snapEvery: 10 }), r2 = Sim.play(P, D, b, { n, snapEvery: 10 });
+    runs++; if (eqRun(r1, r2)) same++;
+    const idxs = [0, 1, Math.floor(r1.snaps.length / 2), r1.snaps.length - 2];
+    idxs.forEach(k => {
+      if (k < 0 || k >= r1.snaps.length) return;
+      snapsTried++; if (eqRun(r1, Sim.resume(r1, k))) snapsOk++;
+      const fld = Sim.restore(r1, k); if (fld.robot.length === n * n && eqArr(fld.robot, r1.snaps[k].robot) && fld.tick === r1.snaps[k].tick) restoreOk++;
+    });
+  });
+  result(same === runs && snapsOk === snapsTried && restoreOk === snapsTried, '8 DETERMINISTIC', runs + ' builds run twice: ' + same + ' identical (all fields and every history array, byte for byte); ' + snapsTried + ' snapshot resumes: ' + snapsOk + ' reproduce the same end state and history; restore() returned the stored fields ' + restoreOk + ' of ' + snapsTried + ' times');
+}
+
+// ------------------------------------------------------------------ 9. losses have one dominant cause
+{
+  const parts = []; let ok = true;
+  DISH_IDS.forEach(id => {
+    const D = Lv.dish(id), R = B.rng(900 + id), N = QUICK ? 300 : 1000; let lost = 0, dom = 0, noText = 0; const causes = {};
+    for (let i = 0; i < N; i++) {
+      const r = B.play(D, B.randomBuild(D, R), SN); if (r.v.win) continue;
+      lost++; const a = Sim.autopsy(r);
+      if (!a || !a.text || !(a.to >= a.from) || !a.cause) { noText++; continue; }
+      causes[a.cause] = (causes[a.cause] || 0) + 1;
+      if (a.dominance >= 0.5) dom++;
+    }
+    const frac = lost ? dom / lost : 1;
+    ok = ok && frac >= 0.9 && noText === 0;
+    parts.push('dish ' + id + ': ' + dom + ' of ' + lost + ' losses (' + pc(frac) + ') have a cause holding at least half the blame' + (noText ? ', ' + noText + ' with no text' : '') + ' ' + JSON.stringify(causes));
+  });
+  result(ok, '9 ONE DOMINANT CAUSE', '\n       ' + parts.join('\n       '));
+}
+
+// ------------------------------------------------------------------ 10. speed
+{
+  const times = [];
+  const bs = [B.dflt(), B.build(5, 5, 'respiration', ['wall', 'quorum'], null), B.build(6, 6, 'respiration', ['wall', 'radio', 'errors'], B.bioRef('stringent')), B.build(6, 8, 'respiration', ['wall'], B.machineRule('food', 'lt', 0.35, 'pause'))];
+  const D4 = Lv.dish(4);
+  const cold0 = Date.now(); Sim.play(P, D4, bs[0], { n: 65, history: false }); const cold = Date.now() - cold0;   // one-off: settles the natives for a new grid size
+  let worst = 0, sum = 0, cnt = 0;
+  bs.forEach(b => { for (let k = 0; k < 4; k++) { const a = process.hrtime.bigint(); Sim.play(P, D4, b, { n: 64, snapEvery: 10 }); const ms = Number(process.hrtime.bigint() - a) / 1e6; times.push(ms); worst = Math.max(worst, ms); sum += ms; cnt++; } });
+  const c64a = Date.now(); Sim.play(P, D4, bs[0], { n: 64, snapEvery: 10 }); // warm check
+  result(worst < 100, '10 SPEED', '64x64 full run with history and a snapshot every 10 ticks: mean ' + f(sum / cnt, 0) + ' ms, worst ' + f(worst, 0) + ' ms over ' + cnt + ' runs (limit 100). The one-off native settle for a new grid size costs ' + cold + ' ms and is cached.');
+}
+
+// ------------------------------------------------------------------ X. grid agreement (extra)
+{
+  const parts = []; let all = true;
+  DISH_IDS.forEach(id => {
+    const w = data[id].all.filter(r => r.win), R = B.rng(1234 + id), pick = [];
+    const idx = w.map((_, i) => i); while (pick.length < Math.min(QUICK ? 10 : 30, w.length)) pick.push(w[idx.splice(Math.floor(R() * idx.length), 1)[0]]);
+    let still = 0, gap = 0, borderline = 0;
+    pick.forEach(r => {
+      const o = B.play(data[id].D, r.build, 64);
+      if (o.v.win) still++; else if (Math.abs(o.v.bandFrac - data[id].D.band.need) <= 0.05 || Math.abs(r.bandFrac - data[id].D.band.need) <= 0.05) borderline++;
+      gap += Math.abs(o.v.finalShare - r.finalShare);
+    });
+    all = all && still + borderline === pick.length && still / pick.length >= 0.9;
+    parts.push('dish ' + id + ': ' + still + ' of ' + pick.length + ' sampled 16x16 winners still win at 64x64' + (borderline ? ' (' + borderline + ' more were within 5 points of the 70% band line)' : '') + ', mean final-share gap ' + f(100 * gap / Math.max(1, pick.length), 1) + ' points');
+  });
+  result(all, 'X GRID AGREEMENT (extra)', parts.join('; '));
+}
+
+console.log('\n' + (10 + 1 - fails) + ' of 11 lines pass (ten properties plus the grid agreement), ' + fails + ' fail. Total ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s.');
+process.exit(fails ? 1 : 0);
