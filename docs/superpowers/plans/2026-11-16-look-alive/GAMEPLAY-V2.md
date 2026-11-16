@@ -121,3 +121,27 @@ LookAlive.DEFAULT_BUILD         // the Factory unit
 |---|---|---|
 | 1 | Sonnet | Simulation, cards, levels and checks for this file |
 | 2 | Sonnet | Page changes in section 9 |
+
+## 11. Biology pass (from the catalogue of 100 abilities)
+
+Reviewed against `biology-100.md` on 17 Nov. Entry numbers refer to that file.
+
+### Corrections: lines that were wrong or loose
+
+| Card | Problem | Change |
+|---|---|---|
+| Crystal clock | "No cell has one" is false. A cyanobacterium keeps a 24-hour clock with three proteins (entry 58). The Machine part is really about dividing in unison. | Rename **Sync pulse**. Real: "Real cells can keep time. One cyanobacterium runs a 24-hour clock on three proteins. Each cell still divides on its own schedule." Game: "Every unit divides at the same instant. No wasted cycles, and dividing in unison is a tell." |
+| Sealed shell | "No cell has one" is false. Diatoms build glass shells and coccolithophores build chalk plates (entries 84, 85). | Real: "Diatoms build glass shells, full of pores so life can pass through. This one is sealed solid, which nothing alive could survive." |
+| Copying errors | Mutations are not what makes cells divide at different moments. The real source of the variety we want is random switching: a few cells nap (entry 3). | Replace with **Random naps**. Real: "In any colony a few cells randomly stop growing for a while. Sleepers survive what kills the rest, then wake and rebuild." Game: "Some of your cells nap at random. You grow a little slower, you look natural, and the nappers ride out a food crash." |
+| Quorum signal | In real cells the signal switches on group behaviour such as glowing. It does not directly slow division. | Rename **Head count (quorum signal)**. Real: "Cells leak a small molecule and listen for it. Packed inside a squid, glowing bacteria hear each other and all light up together." Game: "Changed for the game: here the signal makes your cells slow down where they are crowded. It is slow and fades with distance." |
+| Chemotaxis reflex | Never wins a dish. | Replace with **Sporulate** (entry 67). Sentence: "When food runs out, turn part of the colony into spores." Real: "Starving Bacillus cells seal a copy of their DNA inside a tough spore that can wait out years. Making one takes hours and cannot be undone." |
+
+### Additions for the first dishes
+
+- **Acid-proof insides** (dish 1, Biology, entry 70). Real: "Picrophilus lives in acid as strong as battery acid. It lets its insides go acidic too, and builds every protein to cope." Game: "Nothing to pump and nothing to block: the acid cannot hurt you. Rebuilding everything is expensive, so it takes the most energy." A third real answer to acid, alongside pumping it out and keeping it out.
+- **Name the real organism on each card and page.** Proton pump and Tight membrane: acid-loving archaea. Fermentation: lactic acid bacteria. Head count: *Aliivibrio fischeri* in the bobtail squid. Sporulate: *Bacillus subtilis*.
+- **Identity badges.** The reason the locals can tell you apart is real: colonies of *Proteus mirabilis* check each other's identity proteins, and a visible border line forms between strangers (entry 83). Use this in the world briefing and when you are exposed: "The locals check badges. A border line forms around your colony."
+
+### Saved for later planets
+
+Coat swap (entry 5) as the first mimicry skill. Spring-loaded spear (9). Built-in compass (51). Gas-filled floats (45). Stolen solar panels (35). Viral mugshot memory (1). Shared iron grabbers and cheats (79).
