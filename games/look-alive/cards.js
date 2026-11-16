@@ -24,13 +24,23 @@ var LookAliveCards = (function () {
     { id: 'quorum', name: 'Quorum signal', shelf: 'biology', kind: 'part', energy: 2, counterpart: 'radio',
       real: 'Cells leak a small molecule. When enough builds up, the whole group changes behaviour.',
       game: 'Your cells slow down where they are crowded. The signal is slow and fades with distance.',
-      effect: 'Births fall as the local signal rises. The signal lags by a few ticks and diffuses.',
+      effect: 'The Biology answer to overgrowth: births fall as the local signal rises. The signal lags by a few ticks and diffuses.',
       fx: { quorum: 1 } },
     { id: 'errors', name: 'Copying errors', shelf: 'biology', kind: 'part', energy: 1, counterpart: 'copier',
       real: 'Copying DNA is not perfect. Mistakes make each cell slightly different.',
       game: 'Some daughters fail. That is normal, and it makes you look natural.',
       effect: 'Natural variance: lowers Regularity. Death rate up slightly.',
-      fx: { sigma: 0.02, deathAdd: 0.008 } },
+      fx: { sigma: 0.03, deathAdd: 0.008 } },
+    { id: 'pump', name: 'Proton pump', shelf: 'biology', kind: 'part', energy: 2, counterpart: 'shell',
+      real: 'Acid-loving microbes keep their insides near neutral by pumping acid back out. It costs a lot of energy.',
+      game: 'You survive the acid. The pumping is expensive, so you divide slower.',
+      effect: 'Full acid protection. Births -15%.',
+      fx: { births: 0.85, acid: 1 } },
+    { id: 'lipids', name: 'Tight membrane', shelf: 'biology', kind: 'part', energy: 1, counterpart: 'shell',
+      real: 'Some acid-loving archaea build membranes from tightly packed lipids that acid can barely cross.',
+      game: 'Most of the acid stays out. Cheap, and not quite enough alone in strong acid.',
+      effect: 'Blocks most acid. Births -5%.',
+      fx: { births: 0.95, acid: 0.85 } },
     { id: 'flagellum', name: 'Flagellum', shelf: 'biology', kind: 'part', energy: 2, counterpart: null,
       real: 'A spinning tail driven by a tiny motor. Bacteria run, tumble and run again, drifting toward food.',
       game: 'Your colony spreads toward food.',
@@ -47,11 +57,16 @@ var LookAliveCards = (function () {
       real: 'No cell has one. Every unit divides at the same instant.',
       game: 'No wasted cycles, so more growth. Dividing in unison is a tell.',
       effect: 'Births +15%. Regularity up.',
-      fx: { births: 1.15, reg: 1.0 } },
+      fx: { births: 1.15, reg: 0.8 } },
+    { id: 'shell', name: 'Sealed shell', shelf: 'machine', kind: 'part', energy: 1, counterpart: 'pump',
+      real: 'No cell has one. A ceramic case that acid cannot touch.',
+      game: 'Acid cannot hurt you and it costs nothing to run. It does not look like skin.',
+      effect: 'Full acid protection. Regularity up, once Regularity is switched on.',
+      fx: { acid: 1, reg: 0.8 } },
     { id: 'radio', name: 'Radio mesh', shelf: 'machine', kind: 'part', energy: 2, counterpart: 'quorum',
       real: 'No cell has one. Every unit knows the exact head count at once.',
       game: 'Holds your share at a target. A perfectly flat line is a tell.',
-      effect: 'Global feedback holds share near the band centre. Regularity up, more when the share graph is flat.',
+      effect: 'The Machine answer to overgrowth: global feedback holds share near the band centre. Regularity up, more when the share graph is flat.',
       fx: { radio: 1, reg: 0.5 } },
     { id: 'copier', name: 'Perfect copier', shelf: 'machine', kind: 'part', energy: 1, counterpart: 'errors',
       real: 'No cell has one. Copies never fail.',
@@ -65,20 +80,20 @@ var LookAliveCards = (function () {
       fx: { tough: 4, reg: 0.8 } }
   ];
 
-  // Counterpart links are symmetric pairs: fermentation/respiration with fuel cell, quorum with radio,
+  // Counterpart links are symmetric pairs: fermentation/respiration with fuel cell, quorum with radio, pump/lipids with shell,
   // copying errors with perfect copier, cell wall with self-repair. The `counterpart` field above points one way for display.
-  var pairs = [['respiration', 'fuelcell'], ['fermentation', 'fuelcell'], ['quorum', 'radio'], ['errors', 'copier'], ['wall', 'repair']];
+  var pairs = [['respiration', 'fuelcell'], ['fermentation', 'fuelcell'], ['quorum', 'radio'], ['errors', 'copier'], ['wall', 'repair'], ['pump', 'shell'], ['lipids', 'shell']];
 
   var bioReflexes = [
     { id: 'stringent', name: 'Stringent response', shelf: 'biology', sentence: 'When food here is low, pause dividing.',
       real: 'Starved bacteria make an alarm molecule that shuts growth down until food returns.',
-      fx: { foodBelow: 0.30, softness: 0.10, deathMult: 0.12 } },
+      fx: { foodBelow: 0.375, softness: 0.12, deathMult: 0.035 } },
     { id: 'chemotaxis', name: 'Chemotaxis', shelf: 'biology', sentence: 'When food is richer nearby, move toward it.',
       real: 'Bacteria compare food now with a moment ago, and keep swimming while it improves.',
       fx: { move: 0.3 } },
     { id: 'sos', name: 'SOS response', shelf: 'biology', sentence: 'When under attack, stop dividing and repair.',
       real: 'Damage switches on repair genes and halts division until the damage is fixed.',
-      fx: { attackAbove: 0.012, softness: 0.02, repair: 0.6, deathMult: 0.25 } }
+      fx: { attackAbove: 0.0115, softness: 0.02, repair: 0.6, deathMult: 0.07 } }
   ];
 
   // Machine rule vocabulary. Readings are exact and instant; global and suspicion sensors are things no cell could know.

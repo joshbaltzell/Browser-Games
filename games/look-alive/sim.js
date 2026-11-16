@@ -65,15 +65,17 @@ var LookAlive = (function () {
   function runTicks(P, D) { return D.ticks || P.ticks; }
 
   // ---------------------------------------------------------------- build -> parameters (one place, used by step() and predict())
-  var DEFAULT_BUILD = { pace: 4, slop: 0, metabolism: 'respiration', parts: [], reflex: null };
+  var DEFAULT_BUILD = { pace: 4, slop: 0, metabolism: 'respiration', parts: ['clock'], reflex: null };   // the Factory unit
 
   function isDefault(b) {
-    return b.pace === 4 && b.slop === 0 && b.metabolism === 'respiration' && (!b.parts || !b.parts.length) && !b.reflex;
+    return b.pace === 4 && b.slop === 0 && b.metabolism === 'respiration' && !!b.parts && b.parts.length === 1 && b.parts[0] === 'clock' && !b.reflex;
   }
+  // Which suspicion channels a dish switches on (a channel that is off contributes nothing).
+  function channelList(D) { return D.suspicion === false ? [] : (D.channels || CHAN); }
+  function channelsOn(D) { var l = channelList(D), o = {}; CHAN.forEach(function (c) { o[c] = l.indexOf(c) >= 0; }); return o; }
 
   function params(P, D, build) {
     var Pr = P.robot, Pn = P.native, b = build;
-    if (D.cannotFail) b = { pace: build.pace, slop: 0, metabolism: 'respiration', parts: [], reflex: null };
     var met = Cards.part(b.metabolism) || Cards.part('respiration');
     var p = {
       pace: b.pace, slop: b.slop, metabolism: met.id,
@@ -83,7 +85,8 @@ var LookAlive = (function () {
       partBirths: 1, tough: 0, deathMult: 1, deathAdd: 0,
       sigma: Pr.sigmaBase + Pr.sigmaPerSlop * b.slop,
       reg: {}, regMachine: 0, quorum: false, radio: false, moveFood: 0,
-      bio: null, rule: null, isDefault: !D.cannotFail && isDefault(b), machineParts: 0, ids: [met.id].concat(b.parts || [])
+      bio: null, rule: null, isDefault: isDefault(b), machineParts: 0, ids: [met.id].concat(b.parts || []),
+      acidKeep: 1, acidBlock: 0, acid: D.acid || 0, acidRate: 0
     };
     if (met.fx.reg) { p.reg[met.id] = met.fx.reg; p.regMachine += met.fx.reg; }
     (b.parts || []).forEach(function (id) {
@@ -96,8 +99,11 @@ var LookAlive = (function () {
       if (f.quorum) p.quorum = true;
       if (f.radio) p.radio = true;
       if (f.moveFood) p.moveFood += f.moveFood;
+      if (f.acid) p.acidKeep *= 1 - f.acid;
       if (f.reg) { p.reg[id] = f.reg; p.regMachine += f.reg; }
     });
+    p.acidBlock = 1 - p.acidKeep;
+    p.acidRate = p.acid * p.acidKeep;                                  // fraction of the colony the acid dissolves each tick
     p.births = p.paceMult * p.yield * p.slopMult * p.partBirths;      // gross division multiplier of the build, before quorum, radio and rules
     p.rate = Pn.rate * p.births;
     p.wasteGap = p.wasteAmt === 0 ? 1 : Math.abs(p.mix - Pn.mixA) / Pn.mixA;
@@ -111,7 +117,6 @@ var LookAlive = (function () {
     var pr = [], b = build || {}, A = D.allowed;
     function int08(v) { return typeof v === 'number' && isFinite(v) && v === Math.floor(v) && v >= 0 && v <= 8; }
     if (!int08(b.pace)) pr.push('Pace must be a whole number from 0 to 8.');
-    if (D.cannotFail) return { ok: pr.length === 0, problems: pr };
     if (!int08(b.slop)) pr.push('Sloppiness must be a whole number from 0 to 8.');
     var mids = A.metabolism;
     if (mids.indexOf(b.metabolism) < 0) pr.push('Pick a metabolism: ' + mids.join(', ') + '.');
@@ -154,6 +159,7 @@ var LookAlive = (function () {
       fast: [0, 0, 0, 0], slow: [0, 0, 0, 0], raw: [0, 0, 0, 0], lvl: [0, 0, 0, 0],
       S: 0, stage: 0, emaBR: 0, emaBN: 0, emaRho: 0, attackEma: 0, killNow: 0, shareNow: 0, sharePrev: 0,
       flatRing: new Float32Array(P.suspicion.flatWindow), ringPos: 0, ringN: 0, sloppyFrac: 0, N0: 1,
+      chOn: CHAN.map(function (c) { return channelList(D).indexOf(c) >= 0; }),
       settling: false, snapEvery: opts.snapEvery || 0, snaps: [], recordHistory: opts.history !== false, sums: null, fireNow: 0
     };
     if (base) {
@@ -174,7 +180,7 @@ var LookAlive = (function () {
     return s;
   }
   var HK = ['share', 'nativeShare', 'nat', 'rob', 'food', 'total', 'stage', 'kill', 'fires', 'lead', 'births', 'rate', 'nrate', 'qsig', 'radioMult',
-    'rawG', 'rawW', 'rawC', 'rawR', 'regT', 'regM', 'regF', 'regD', 'regR', 'sloppy'];
+    'rawG', 'rawW', 'rawC', 'rawR', 'regT', 'regM', 'regF', 'regD', 'regR', 'sloppy', 'acid'];
 
   // The settled native-only dish, computed once per grid size and then copied.
   function baseState(P, n) {
@@ -232,11 +238,12 @@ var LookAlive = (function () {
     var noisyMove = !ruleToward;
     var sumN = 0, sumR = 0, bN = 0, bR = 0, bR0 = 0, cas = 0, upRt = 0, upNt = 0, killed = 0, fireMass = 0, sloppyMass = 0, qSum = 0;
     var Kh = P.foodHalf, fpb = P.foodPerBirth, mixN = Pn.mixA, wAmt = bp.wasteAmt, mixR = bp.mix;
-    var baseDeath = Pr.death * bp.deathMult + bp.deathAdd;
+    var baseDeath = Pr.death * bp.deathMult + bp.deathAdd + (D.abundance && !settling ? D.abundance.death || 0 : 0);
+    var acidD = settling ? 0 : bp.acidRate, ab = D.abundance, crowdR = Pr.crowd * (ab && !settling ? ab.crowd : 1), acidLoss = 0, abFood = ab && !settling ? ab.food || 0 : 0, abCross = ab && !settling ? ab.cross || 1 : 1;
 
     for (i = 0; i < nn; i++) {
       var nv = N[i], rv = R[i], fv = F[i];
-      var phi = fv / (fv + Kh);
+      var phi = fv / (fv + Kh), phiR = abFood > 0 ? fv * abFood / (fv * abFood + Kh) : phi;
       var m = rbRate * mulR * radioM, dm = 1, kmul = 1, bmul = 1, mf = moveFoodBase, ma = 0;
       var m0 = m, bioQ = 1;   // m0: the division rate the immune system measures (biology reflexes and the quorum signal are not counted)
       if (useQ) { var qv = Q[i]; bioQ = 1 - Pq.max * qv / (qv + Pq.half); qSum += qv; }
@@ -267,13 +274,14 @@ var LookAlive = (function () {
         }
       }
       mv[i] = mf; s.tR[i] = ma;     // tR is reused below as scratch only after this loop; ma goes to tN temporarily
-      var bn = rateN * phi * nv * mulN, br0 = m0 * phi * rv, br = br0 * bioQ;
+      var bn = rateN * phi * nv * mulN, br0 = m0 * phiR * rv, br = br0 * bioQ;
       var upN = bn * fpb, upR = br * fpb, tot = upN + upR;
       var sc = tot > fv ? fv / (tot + 1e-12) : 1;
       bn *= sc; br *= sc; br0 *= sc; upN *= sc; upR *= sc;
-      var casCell = nv * Pn.crowd * cross * rv;
+      var casCell = nv * Pn.crowd * cross * abCross * rv;
       var deathN = nv * (Pn.death + Pn.crowd * nv) + casCell;
-      var deathR = rv * (baseDeath + Pr.crowd * (rv + Pr.cross * crossEv * nv) + bustDeath * bustTf * bmul) * dm;
+      var deathR = rv * (baseDeath + crowdR * (rv + Pr.cross * crossEv * nv) + bustDeath * bustTf * bmul) * dm + rv * acidD;
+      acidLoss += rv * acidD;
       var killCell = rv * killR * killTf * kmul;
       var nN = nv + bn - deathN; if (nN < 0) nN = 0;
       var nR = rv + br - deathR - killCell; if (nR < 0) nR = 0;
@@ -338,7 +346,7 @@ var LookAlive = (function () {
     s.flatRing[s.ringPos] = dShare; s.ringPos = (s.ringPos + 1) % s.flatRing.length; if (s.ringN < s.flatRing.length) s.ringN++;
     s.sloppyFrac = sloppyFrac;
     s.radioNow = radioM; s.qNow = qSum / nn;
-    s.sums = { N: tN2, R: tR2, F: tF2, births: bR, cas: cas, rate: sumR > 1e-9 ? bR / sumR : 0, nrate: sumN > 1e-9 ? bN / sumN : 0 };
+    s.sums = { N: tN2, R: tR2, F: tF2, births: bR, cas: cas, acid: sumR > 1e-9 ? acidLoss / sumR : 0, rate: sumR > 1e-9 ? bR / sumR : 0, nrate: sumN > 1e-9 ? bN / sumN : 0 };
     s.attackEma += Pe.attackAlpha * ((killR * killTf + bustDeath * bustTf) - s.attackEma);
 
     if (D.suspicion === false) {
@@ -376,6 +384,7 @@ var LookAlive = (function () {
     s.regSrc = [rT, rM, rF, rD, rR];
     var S = 0;
     for (k = 0; k < 4; k++) {
+      if (!s.chOn[k]) { raw[k] = 0; s.fast[k] = s.slow[k] = s.lvl[k] = 0; continue; }
       var ex = raw[k] - Ps.deadzone[k]; if (ex < 0) ex = 0;
       ex = Ps.cap[k] * Math.tanh(ex / Ps.cap[k]);
       s.fast[k] = s.fast[k] * Ps.fastKeep + (1 - Ps.fastKeep) * ex;
@@ -406,7 +415,7 @@ var LookAlive = (function () {
     H.lead[t] = best; H.total[t] = s.S; H.stage[t] = s.stage; H.kill[t] = s.killNow; H.fires[t] = s.fireNow;
     H.rawG[t] = s.raw[0]; H.rawW[t] = s.raw[1]; H.rawC[t] = s.raw[2]; H.rawR[t] = s.raw[3];
     if (s.regSrc) { H.regT[t] = s.regSrc[0]; H.regM[t] = s.regSrc[1]; H.regF[t] = s.regSrc[2]; H.regD[t] = s.regSrc[3]; H.regR[t] = s.regSrc[4]; }
-    if (sm) { H.births[t] = sm.births / nn; H.rate[t] = s.emaBR; H.nrate[t] = sm.nrate; }
+    if (sm) { H.acid[t] = sm.acid; H.births[t] = sm.births / nn; H.rate[t] = s.emaBR; H.nrate[t] = sm.nrate; }
     H.qsig[t] = s.qNow || 0; H.radioMult[t] = s.radioNow || 1; H.sloppy[t] = s.sloppyFrac;
   }
 
@@ -440,7 +449,7 @@ var LookAlive = (function () {
 
   function finish(s, extra) {
     while (s.tick < s.T) step(s);
-    var run = { P: s.P, dish: s.D, build: s.build, bp: s.bp, n: s.n, T: s.T, H: s.H, snaps: s.snaps, _s: s };
+    var run = { P: s.P, dish: s.D, channels: channelsOn(s.D), build: s.build, bp: s.bp, n: s.n, T: s.T, H: s.H, snaps: s.snaps, _s: s };
     if (extra) for (var key in extra) run[key] = extra[key];
     run.v = s.H ? verdict(run) : null;
     return run;
@@ -477,7 +486,7 @@ var LookAlive = (function () {
     }
     var alive = H.rob[T] > P.extinct && H.nat[T] > P.extinct;
     var frac = cnt ? inBand / cnt : 0;
-    var win = D.cannotFail ? alive : (alive && frac >= band.need && maxStage < 3);
+    var win = D.aliveOnly ? alive : (alive && frac >= band.need && maxStage < 3);
     return { win: win, alive: alive, bandFrac: frac, maxStage: maxStage, peakS: peakS, finalShare: H.share[T], exposedAt: exposedAt };
   }
 
@@ -486,8 +495,7 @@ var LookAlive = (function () {
     opts = opts || {};
     var n = opts.n || 64;
     var s = newState(P, D, DEFAULT_BUILD, { n: n, history: true, noRobots: true }, baseState(P, n));
-    s.D = D; s.bp = params(P, { cannotFail: true }, DEFAULT_BUILD);
-    var guard = D.suspicion === false;
+    s.D = D; s.bp = params(P, {}, DEFAULT_BUILD);
     while (s.tick < s.T) step(s);
     var H = s.H, T = s.T, t, pre = D.event.tick > 0 ? D.event.announce : T;
     var rates = [];
@@ -519,6 +527,7 @@ var LookAlive = (function () {
     radio: function (f) { return 'your Radio mesh held your share perfectly flat from tick ' + f + ', and nothing natural does that'; },
     copier: function (f) { return 'your Perfect copier meant nothing ever died from tick ' + f; },
     repair: function (f) { return 'your Self-repair rebuilt damaged units in a way no cell can, from tick ' + f; },
+    shell: function (f) { return 'your Sealed shell is plainly a machine part, from tick ' + f; },
     fuelcell: function (f) { return 'your Fuel cell is plainly a machine part, from tick ' + f; }
   };
   // The build's biggest births lever (up) or drag (down), as a card name, for growth and size explanations.
@@ -538,6 +547,17 @@ var LookAlive = (function () {
     var v = run.v || verdict(run), H = run.H, T = run.T, D = run.dish, band = D.band, bp = run.bp, b = run.build, t, k;
     if (v.win) return null;
     var res = { cause: '', channel: -1, from: 0, to: 0, text: '', second: null, dominance: 1, card: null };
+    // The acid: an unprotected (or half-protected) colony that dies out has been dissolved.
+    if ((D.acid || 0) > 0 && bp.acidRate >= 0.03 && !v.alive) {
+      var td = T; for (t = 1; t <= T; t++) if (H.rob[t] <= run.P.extinct) { td = t; break; }
+      var prot = (b.parts || []).filter(function (id) { var c = Cards.part(id); return c && c.fx.acid; });
+      res.cause = 'acid'; res.from = 1; res.to = td; res.dominance = 1;
+      if (prot.length) {
+        res.card = prot[0];
+        res.text = 'Dissolved by tick ' + td + ': your ' + nm(prot[0]) + ' keeps out most of the acid, but not enough of it, and the colony could not replace what the acid took.';
+      } else res.text = 'Dissolved by tick ' + td + ': nothing in your build keeps the acid out.';
+      return res;
+    }
     var te = v.exposedAt, E = D.event, below = 0, above = 0, tf = -1;
     for (t = band.warm; t <= T; t++) { if (H.share[t] < band.lo) below++; else if (H.share[t] > band.hi) above++; }
     for (t = T; t >= band.warm; t--) { if (H.share[t] < band.lo) tf = t; else break; }
@@ -564,7 +584,7 @@ var LookAlive = (function () {
         var bs = 0; for (k = 1; k < 5; k++) if (src[k] > src[bs]) bs = k;
         // the timing term is always present; only blame it when nothing else is bigger
         if (bp.isDefault || (bs === 3 && src[3] > 0)) { why = 'you changed nothing, so every unit divides on the factory schedule from tick 1'; res.card = 'factory'; }
-        else if (bs === 1 && mach) { why = REG_PHRASE[mach](from); res.card = mach; }
+        else if (bs === 1 && mach) { why = REG_PHRASE[mach] ? REG_PHRASE[mach](from) : 'your ' + nm(mach) + ' is plainly a machine part, from tick ' + from; res.card = mach; }
         else if (bs === 2 && src[2] > 0.3) { why = 'your share line was too flat' + (bp.radio ? ' (your Radio mesh)' : '') + ' from tick ' + from; res.card = bp.radio ? 'radio' : null; }
         else if (bs === 4 && src[4] > 0) { why = 'your rule "' + Cards.ruleText(bp.rule) + '" fired in ' + pct(avg(H.fires, from, span)) + ' of units, which no cell could do, from tick ' + from; res.card = 'rule'; }
         else { why = 'every unit divided on a near-perfect schedule from tick ' + from + ' (Sloppiness only ' + b.slop + ')'; res.card = 'slop'; }
@@ -575,7 +595,11 @@ var LookAlive = (function () {
         res.card = cul ? cul.name : null;
       } else if (best === 1) {
         if (bp.wasteAmt === 0) { why = 'your Fuel cell left no waste on a planet where everyone leaves a trail, from tick ' + from; res.card = 'fuelcell'; }
-        else { why = 'your ' + nm(bp.metabolism) + ' waste has the wrong chemical mix (' + pct(bp.wasteGap) + ' off the natives\') from tick ' + from; res.card = bp.metabolism; }
+        else { why = 'your ' + nm(bp.metabolism) + ' leaves a different waste trail from the natives\' (' + pct(bp.wasteGap) + ' off), and on Acidica everyone smells the same'; res.card = bp.metabolism; }
+      } else if (D.abundance) {
+        var pk = 0; for (t = 1; t <= te; t++) if (H.share[t] > pk) pk = H.share[t];
+        why = 'with this much food and nothing eating you, your share passed ' + pct(pk >= 0.3 ? 0.3 : band.hi) + ' and the lab noticed';
+        res.card = null; res.takeover = true;
       } else {
         var cu2 = growthCulprit(run, true);
         why = 'you took too much food from the natives (your share reached ' + pct(avg(H.share, from, span)) + ') from tick ' + from + (cu2 ? ', mostly from ' + cu2.name : '');
@@ -591,7 +615,7 @@ var LookAlive = (function () {
       for (var cid in cs) if (!topId || cs[cid] > cs[topId]) topId = cid;
       res.cardShare = tot > 0 ? cs[topId] / tot : 1; res.topCard = topId;
       if (res.cardShare > res.dominance) res.dominance = res.cardShare;
-      res.text = (v.exposedAt > 0 ? 'Exposed at tick ' + te : 'The immune system closed in from tick ' + te) + ': ' + why + '.';
+      res.text = (res.takeover ? 'Took over the dish by tick ' + te : v.exposedAt > 0 ? 'Exposed at tick ' + te : 'The immune system closed in from tick ' + te) + ': ' + why + '.';
       if (second >= 0 && tot > 0 && sums[second] / tot >= 0.25) {
         res.second = { channel: second, cause: 'exposed:' + ck[second], text: 'It was also adding to ' + ck[second] + ' suspicion (' + pct(sums[second] / tot) + ' of the total).' };
       }
@@ -601,7 +625,8 @@ var LookAlive = (function () {
       var cu = growthCulprit(run, true);
       res.cause = 'overgrew'; res.from = ta; res.to = T; res.dominance = above / Math.max(1, above + below);
       res.card = cu ? cu.name : null;
-      res.text = 'Over the band from tick ' + ta + ': your share reached ' + pct(peak) + ' (ceiling ' + pct(band.hi) + ')' + (cu ? ', pushed up by ' + cu.name : '') + '.';
+      if (D.abundance) res.text = 'Took over the dish by tick ' + ta + ': with this much food and nothing eating you, your share passed ' + pct(peak >= 0.3 ? 0.3 : band.hi) + ' and the lab noticed.';
+      else res.text = 'Over the band from tick ' + ta + ': your share reached ' + pct(peak) + ' (ceiling ' + pct(band.hi) + ')' + (cu ? ', pushed up by ' + cu.name : '') + '.';
     } else if (below > 0) {
       var inEv = E.tick > 0 && tf > 0 && tf >= E.tick - 5 && tf <= E.tick + E.dur + 40;
       // first tick of the final slide below the floor
@@ -621,7 +646,7 @@ var LookAlive = (function () {
         res.cause = dead ? 'starved' : 'below'; res.card = cl ? cl.name : null;
         var ratio2 = avg(H.rate, Math.max(1, ts), Math.min(T, ts + 10)) / (avg(H.nrate, Math.max(1, ts - 3), ts + 3) || 1);
         res.text = (dead ? 'Starved out' : 'Below the band') + ' from tick ' + ts + ': you divided ' + (ratio2 < 0.97 ? pct(1 - ratio2) + ' slower than the natives' : 'about as fast as the natives, but not fast enough to replace losses') +
-          (cl ? ', held back by ' + cl.name : '') + ' (final share ' + pct(H.share[T]) + ').';
+          (cl ? ', held back by ' + cl.name : '') + (bp.acidRate >= 0.03 ? ', and the acid is still getting in' : '') + ' (final share ' + pct(H.share[T]) + ').';
       }
     } else {
       res.cause = 'band'; res.from = band.warm; res.to = T; res.dominance = 0.5;
@@ -633,55 +658,64 @@ var LookAlive = (function () {
   // ================================================================ predict (chips)
   function sgn(x) { return (x >= 0 ? '+' : '-') + Math.abs(Math.round(x * 100)) + '%'; }
   function regWord(r) { return r >= 1.2 ? 'Regularity up strongly' : r >= 0.6 ? 'Regularity up' : 'Regularity up a little'; }
-  function cardChips(c) {
+  function cardChips(c, ch) {
     var f = c.fx, o = [];
     if (f.yield != null && c.kind === 'metabolism') o.push('Yield ' + sgn(f.yield - 1));
-    if (c.kind === 'metabolism') o.push(f.waste === 0 ? 'No waste: Waste up strongly' : Math.abs(f.mix - 0.7) < 0.01 ? 'Waste matches natives' : 'Waste differs from natives');
+    if (c.kind === 'metabolism' && ch.waste) o.push(f.waste === 0 ? 'No waste: Waste up strongly' : Math.abs(f.mix - 0.7) < 0.01 ? 'Waste matches natives' : 'Waste differs from natives');
+    if (f.acid) o.push(f.acid >= 1 ? 'Keeps the acid out' : 'Blocks most acid');
     if (f.births && f.births !== 1) o.push('Births ' + sgn(f.births - 1));
     if (f.tough) o.push('Toughness +' + f.tough);
     if (f.quorum) o.push('Births fall where crowded', 'Signal lags and diffuses');
     if (f.radio) o.push('Holds share near ' + pct(0.10));
-    if (f.sigma) o.push('Regularity down');
+    if (f.sigma && ch.regularity) o.push('Regularity down');
     if (f.deathAdd) o.push('Deaths up slightly');
     if (f.deathMult != null && f.deathMult < 0.5) o.push('Almost nothing dies');
     if (f.moveFood) o.push('Drifts toward food');
-    if (f.reg) o.push(regWord(f.reg));
-    if (f.radio) o.push('Regularity up more when the share line is flat');
+    if (f.reg && ch.regularity) o.push(regWord(f.reg));
+    if (f.radio && ch.regularity) o.push('Regularity up more when the share line is flat');
     return o;
   }
   function predict(D, build, P) {
     P = P || (typeof LookAliveLevels !== 'undefined' ? LookAliveLevels.PLANET : require('./levels.js').PLANET);
-    var bp = params(P, D, build), Pr = P.robot, cards = [], out = { energy: { used: 0, max: D.energy }, pace: [], slop: [], cards: cards, totals: [], chips: [] };
+    var bp = params(P, D, build), Pr = P.robot, cards = [], ch = channelsOn(D);
+    var out = { energy: { used: 0, max: D.energy }, pace: [], slop: [], cards: cards, totals: [], chips: [], channels: ch, acid: null };
     function add(src, label, chips) { chips.forEach(function (c) { out.chips.push({ source: src, text: c }); }); cards.push({ id: src, label: label, chips: chips }); }
     out.pace = [Math.abs(bp.paceMult - 1) < 0.005 ? 'Births at the native rate' : 'Births ' + sgn(bp.paceMult - 1) + ' vs natives'];
-    out.slop = build.slop === 0 ? ['Perfectly regular'] : ['Births ' + sgn(bp.slopMult - 1), 'Regularity down', 'Timing variance ' + pct(bp.sigma / P.native.sigma) + ' of natives'];
+    out.slop = build.slop === 0 ? ['Perfectly regular'] : ['Births ' + sgn(bp.slopMult - 1)].concat(ch.regularity ? ['Regularity down', 'Timing variance ' + pct(bp.sigma / P.native.sigma) + ' of natives'] : []);
     var met = Cards.part(build.metabolism);
-    if (met) { out.energy.used += met.energy; add(met.id, met.name, cardChips(met)); }
-    (build.parts || []).forEach(function (id) { var c = Cards.part(id); if (c) { out.energy.used += c.energy; add(c.id, c.name, cardChips(c)); } });
+    if (met) { out.energy.used += met.energy; add(met.id, met.name, cardChips(met, ch)); }
+    (build.parts || []).forEach(function (id) { var c = Cards.part(id); if (c) { out.energy.used += c.energy; add(c.id, c.name, cardChips(c, ch)); } });
     var rf = build.reflex;
     if (rf && rf.kind === 'bio') {
       var bc = Cards.bio(rf.id);
       if (bc) add(bc.id, bc.name, [bc.sentence, 'Senses locally, a few ticks late, with noise', 'No suspicion']);
     } else if (rf && rf.kind === 'machine') {
-      var sn = Cards.sensor(rf.sensor), ch = ['Reads exact values instantly', 'Regularity up while installed and each tick it fires'];
-      if (sn && sn.global) ch.unshift('Reads something no cell could know');
-      if (rf.action === 'fast') ch.push('Births +50% where it fires', 'Growth suspicion up');
-      if (rf.action === 'pause') ch.push('Births stop where it fires');
-      add('rule', Cards.ruleText(rf), ch);
+      var sn = Cards.sensor(rf.sensor), rc = ['Reads exact values instantly'];
+      if (ch.regularity) rc.push('Regularity up while installed and each tick it fires');
+      if (sn && sn.global) rc.unshift('Reads something no cell could know');
+      if (rf.action === 'fast') rc.push('Births +50% where it fires'); if (rf.action === 'fast' && ch.growth) rc.push('Growth suspicion up');
+      if (rf.action === 'pause') rc.push('Births stop where it fires');
+      add('rule', Cards.ruleText(rf), rc);
     }
     var net = bp.births;
+    if (D.acid > 0) {
+      out.acid = bp.acidBlock >= 0.999 ? { state: 'full', text: 'Keeps the acid out' } : bp.acidBlock > 0.05 ? { state: 'most', text: 'Blocks most acid' } : { state: 'none', text: 'Nothing keeps the acid out' };
+      out.totals.push(out.acid.state === 'none' ? 'Acid: nothing keeps it out, you will dissolve' : out.acid.state === 'most' ? 'Acid: most of it is kept out, some still gets in' : 'Acid: kept out');
+    }
     out.totals.push('Births ' + sgn(net - 1) + ' vs natives');
-    if (net > 1.15) out.totals.push('Growth suspicion up: dividing ' + pct(net - 1) + ' faster than natives');
+    if (net > 1.15) out.totals.push(ch.growth ? 'Growth suspicion up: dividing ' + pct(net - 1) + ' faster than natives' : 'Divides faster than the natives: more of you');
     else if (net < 0.85) out.totals.push('Slower than natives: may not replace losses');
     if (bp.tough) out.totals.push('Toughness +' + bp.tough);
-    out.totals.push(bp.wasteAmt === 0 ? 'Waste: none' : bp.wasteGap < 0.01 ? 'Waste matches natives' : 'Waste differs from natives');
-    out.totals.push('Timing variance ' + pct(bp.sigma / P.native.sigma) + ' of natives');
-    if (bp.regMachine > 0 || bp.rule) out.totals.push('Machine parts raise Regularity');
-    if (bp.isDefault) out.totals.push('Factory Defaults: an unchanged build is a tell');
+    if (ch.waste) out.totals.push(bp.wasteAmt === 0 ? 'Waste: none' : bp.wasteGap < 0.01 ? 'Waste matches natives' : 'Waste differs from natives');
+    if (ch.regularity) {
+      out.totals.push('Timing variance ' + pct(bp.sigma / P.native.sigma) + ' of natives');
+      if (bp.regMachine > 0 || bp.rule) out.totals.push('Machine parts raise Regularity');
+      if (bp.isDefault) out.totals.push('Factory Defaults: an unchanged build is a tell');
+    }
     return out;
   }
 
   return { CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
-    restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { newState: newState, step: step, HK: HK } };
+    channelsOn: channelsOn, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { newState: newState, step: step, HK: HK } };
 })();
 if (typeof module !== 'undefined') module.exports = LookAlive;

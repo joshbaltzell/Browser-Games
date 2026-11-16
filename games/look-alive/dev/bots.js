@@ -17,7 +17,7 @@ var LookAliveBots = (function () {
     };
   }
   function build(pace, slop, metabolism, parts, reflex) { return { pace: pace, slop: slop, metabolism: metabolism, parts: parts || [], reflex: reflex || null }; }
-  function dflt() { return build(4, 0, 'respiration', [], null); }
+  function dflt() { return JSON.parse(JSON.stringify(Sim.DEFAULT_BUILD)); }   // the Factory unit
   function machineRule(sensor, cmp, value, action) { return { kind: 'machine', sensor: sensor, cmp: cmp, value: value, action: action }; }
   function bioRef(id) { return { kind: 'bio', id: id }; }
   function label(b) {
@@ -93,6 +93,20 @@ var LookAliveBots = (function () {
     return dflt();
   }
 
+  // Apply a level fix (see levels.js) to a build, and play it.
+  function fixed(b, fix) { return Lv.applyFix(b, fix); }
+  // First tick at which a failed run is plainly failing: exposure, extinction, or a share that sits below the band for 5 ticks.
+  function failTick(run, aut) {
+    var v = run.v, H = run.H, T = run.T, D = run.dish, t, k;
+    if (aut && aut.cause === 'acid') return aut.to;
+    var best = v.exposedAt > 0 ? v.exposedAt : -1;
+    for (t = D.band.warm; t <= T - 4; t++) {
+      var ok = true; for (k = 0; k < 5; k++) if (H.share[t + k] >= D.band.lo && H.share[t + k] <= D.band.hi) ok = false;
+      if (ok) { if (best < 0 || t < best) best = t; break; }
+    }
+    return best;
+  }
+
   function play(D, b, n, opts) { return Sim.play(P, D, b, Object.assign({ n: n || 16 }, opts)); }
   function sum(r) { var v = r.v; return { win: v.win, alive: v.alive, bandFrac: v.bandFrac, maxStage: v.maxStage, finalShare: v.finalShare, peakS: v.peakS }; }
 
@@ -127,6 +141,6 @@ var LookAliveBots = (function () {
 
   return { rng: rng, build: build, dflt: dflt, machineRule: machineRule, bioRef: bioRef, label: label, key: key, shelfOf: shelfOf, isMachineBuild: isMachineBuild,
     isBioBuild: isBioBuild, configs: configs, sampleRules: sampleRules, allRules: allRules, randomBuild: randomBuild, play: play, sum: sum, dialSweep: dialSweep,
-    sameCards: sameCards, neighbours: neighbours };
+    sameCards: sameCards, neighbours: neighbours, fixed: fixed, failTick: failTick };
 })();
 if (typeof module !== 'undefined') module.exports = LookAliveBots;
