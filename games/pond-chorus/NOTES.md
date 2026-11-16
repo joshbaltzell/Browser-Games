@@ -39,9 +39,23 @@ Rows are fixed per night (no placement tray). Random win rate = 400 seeded rando
 
 Nights 4 to 6 were 0.7%, 3.7%, 0%; they are now 3.3%, 4.8%, 12.5%. Every stored solution is Groovy, wins with 5 lilies and meets the goal.
 
+## Compose first, then play (every night and the finale; Just Jam stays free-form)
+The sim rules did not change; only the presentation did.
+1. **Compose**: no enemies, no lily danger, the loop plays all the time. Place notes on the pads within the Hush budget. Shown live: the goal line (ticks as met), the Groove meter with a tip that names a step or voice (`PondSim.grooveTip`, e.g. "Try a rest before step 5", "Put the owl on a strong beat, step 1 or 5"), the budget dots, and each row's reach (a number badge on the row icon, stones covered). A "Wave preview" box (top right of the pond) lists the enemy types in order of arrival with counts and armor; faint ghost enemies walk the lane, and the lane is drawn as a faint dotted trail. Selecting or hovering a row draws its range ring and tints the lane segments it covers.
+   - **Hint (n)**: places the next note of the stored solution (`PondSim.nextHint`, row by row; repeat presses reveal the next). Hinted pads get an amber dot. If the budget is full it asks the player to tap a note off first.
+   - **Test**: a dry run. Runs the current pattern against the wave (optionally 2x), no commitment, no stars or progress. It ends when the wave is done or the lilies are gone, then drops back to compose with the pattern untouched. A banner and red marks show who got through ("Got through: 2 shellbacks. Never in reach of a singer: ...") and where (red dots at the last stone a leaker was in reach, red dashed rings on stones nobody reaches). The goal does not have to be met for a Test.
+   - **Ready: let it rip**: disabled, with the reason beside it ("Add 1 more chirp to meet the goal", "Reach Steady groove to meet the goal"), until `goalProgress(...).met` (`PondSim.readyState`).
+   - Clear empties the pattern.
+2. **Watch** (Ready): the pattern is locked (pads dimmed, taps just say it is locked), a fresh sim runs the wave with one loop of lead-in, the loop keeps playing. Speed 2x toggle. Stop returns to compose with the pattern kept. On a win: stars and the results card (finale: the dawn song as before). On a loss: straight back to compose, pattern kept, a gentle line ("The shellbacks slipped past the owl. Adjust and try again."), plus the same who/where marks as the dry run.
+3. **Night 1** reads as three steps in the caption: "Step 1 of 3: tap the glowing pads...", "Step 2 of 3: press Ready", "Step 3 of 3: watch". Intro cards and demos play in compose. Demo end clears the pattern.
+4. Dry run and real play go through the same `PondSim.runReport` path (fresh sim, arm at a loop boundary, lead-in loop); the game steps `PondSim.step` itself and feeds `PondSim.observe`. The loop position when Ready is pressed does not change the result (checked).
+
+### Star rule (changed)
+Stars from lilies kept as before (5 = 3, 3 or 4 = 2, 1 or 2 = 1). New: pressing Hint at least once on a night caps that night at 2 stars; the stars are still saved and unlock the next night. The night chip shows "hint" when the best result used hints (`progress.hinted[id]`); a later hint-free clear at the same or better stars clears the mark. Test runs never touch stars. The quiet-night mark is unchanged. The results card says "Hints used: N (three stars need none)".
+
 ## Full loop
 - **Night select**: title chips with the night name and saved stars (`Kit.store`, key `bg.pond-chorus.progress`: stars, quiet nights, best groove, seen cards, Jam). A night unlocks when the one before has a star.
-- **Cards and demos**: a creature's first night shows a one-time card with its sound ("Hear it" replays it). Demos play the first time a night is played, and tapping a pad or Skip demo ends them.
+- **Cards and demos**: a creature's first night shows a one-time card with its sound ("Hear it" replays it). Demos play (in the compose phase) the first time a night is played, and tapping a pad or Skip demo ends them.
 - **Finale**: winning night 9 turns the screen to dawn: warm light, the lilies open, your pattern plays four loops with every creature singing and the groove layers under it, then the results card with Copy song code. The song keeps looping behind the card.
 - **Just Jam**: all four creatures on six rows (2 crickets, 2 frogs, jar, owl), no slugs, budget 16, Groove meter live. Copy code and Load (paste) buttons. Song code: `PC1-C04-F11-F00-J00-O02-C00`, one chunk per row, type letter plus two hex digits (step 0 is the low bit). Loading assigns each chunk to the first free row of that type, so a finale song loads into Jam.
 
@@ -56,6 +70,7 @@ Frog: breathing (0.01) and throat bulge on a croak (0.7, Josh's value from `demo
   - night 3: neither frog alone nor cricket alone clears it (exhaustive). Night 4: no owl-only and no frog-only pattern clears it (exhaustive, 256 each); frog+owl clears it in 4182 of 26 332 patterns. Night 5: of all 65 535 cricket+frog patterns none clears it without the jar. Owl or jar alone never clears any night.
   - every night: empty loses, solution in budget, meets the goal, wins with 5 lilies (3+ required), is at least Steady, loses without its goal's last note and without any creature type, random win rate printed and between 3% and 70% (finale 0.3% floor).
   - groove-gated nights 7, 8, 9: the stored solution with groove forced off loses; groove adds over 15% damage; a seeded hill climb with groove off and two extra notes finds no clear; random win rate with groove vs without is printed (5.8/5.5/3.0% vs 0%). The search is evidence, not a proof; the other checks are exact.
+  - compose phase (every night): hints applied one by one rebuild the stored solution and win; Ready is enabled exactly when the goal is met (300 random patterns each) and always has a reason when not; the locked pattern replays with identical events, from any loop position; a dry run equals the real play (events, lilies, leaks) on 20 random patterns; wave preview counts; groove tips name a step.
   - song codes round-trip 60 random songs, bad text decodes to null; teaching data (intro cards are exactly the new creatures, demos are well formed, night 2 demo shows a weaker clumped note and a stronger gapped one, night 3 demo is call and response); audio names exist.
 - Sound levels, offline render in headless Chrome (`Kit.audio.measure`), peak dB: croak -6.7, chirp -9.2, hoot -4.3 (all pitches), glow -11.7, pop -16.0, bite -7.5, hush -23.0, dawn -5.4, tap -12.3, bass -15.7, pad -16.0, hat -26.3, tierUp -9.4. None above -3 dB.
 - `node tools/pages-check.js games/pond-chorus` and `node tools/cdp-smoke.js games/pond-chorus/index.html`: 0 errors.
@@ -101,3 +116,9 @@ Frog: breathing (0.01) and throat bulge on a croak (0.7, Josh's value from `demo
 - Is the Groove meter tip enough to find a Groovy pattern on nights 3 to 6 without the solution?
 - Are nights 4 to 6 easy enough, and 7 to 9 hard in the right way?
 - Mesh animation feel: frog throat puff, cricket squash, owl sway, jar pulse. If anything looks wrong, `TUNE.bulge`, `breathe` and `sway` are the knobs; a failure falls back to plain sprites.
+
+## Judge by hand (compose-first flow)
+- Does composing first feel like solving, not waiting? Is the Hint button too generous or too hidden?
+- Is the 2-star cap for hints fair, and is "Test" clear enough that nothing is saved?
+- Does the panel (now 414 px tall) fit small windows? Only two screenshots at 1280x577 were taken, and the real wave was not watched end to end in headless (the audio clock and timers barely advance in one-shot runs).
+- Ghost enemies, the wave preview box and the red leak marks on the pond: readable or cluttered?

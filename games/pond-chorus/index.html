@@ -28,6 +28,15 @@
       <button type="button" id="btnRestart" class="small">Restart</button>
     </div>
   </div>
+  <div class="action-row" id="actionRow">
+    <div class="act-l">
+      <button type="button" id="btnHint" class="small act-compose" title="Show one note of a good song">Hint</button>
+      <button type="button" id="btnTest" class="small act-compose" title="Try your song against the wave. Nothing is saved.">Test</button>
+      <button type="button" id="btnSpeed" class="small act-watch" aria-pressed="false">Speed 2x</button>
+    </div>
+    <span id="readyWhy" class="ready-why" aria-live="polite"></span>
+    <button type="button" id="btnReady" class="ready act-compose">Ready: let it rip</button>
+  </div>
   <div class="grid" id="grid"><div class="playhead" id="playhead"></div></div>
 </div>
 
@@ -38,7 +47,7 @@
     <div class="deco frogwrap"><i class="ring r1"></i><i class="ring r2"></i><i class="ring r3"></i><img src="assets/frog-sing.png" alt="" onerror="this.style.display='none'"></div>
   </div>
   <h1>Pond Chorus</h1>
-  <p class="goal">Tap pads to make a rhythm the pond plays on a loop. A good groove hits harder.</p>
+  <p class="goal">Make your song first, then watch it defend the pond. A good groove hits harder.</p>
   <p class="controls">Tap or click a pad to switch a note. Space plays and pauses.</p>
   <div class="title-buttons">
     <button id="start" type="button" class="big">Start</button>

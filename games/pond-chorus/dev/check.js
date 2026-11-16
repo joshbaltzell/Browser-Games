@@ -323,6 +323,86 @@ ok(Sim.hints(LEVELS[0])[0].some(x => x), 'night 1 has hint pads');
   ok(dawnSong && dawnSong.length === fin.fixed.length, 'finale: the winning pattern becomes a song code');
 }
 
+
+// ---------- compose first, then play ----------
+{
+  const rng = Kit.rng(2026);
+  const randomPls = lv => {
+    const pls = empty(lv), k = 1 + Math.floor(rng() * lv.budget);
+    for (let j = 0; j < k; j++) pls[Math.floor(rng() * pls.length)].pattern[Math.floor(rng() * 8)] = 1;
+    return pls;
+  };
+  LEVELS.forEach(lv => {
+    const id = 'night ' + lv.id;
+    // (a) the hint button: pressing it again and again reveals the stored solution, note by note, and that wins the night
+    let pls = empty(lv), n = 0, last = Sim.hintsLeft(lv, pls), mono = true;
+    ok(last === Sim.notes(lv.solution), id + ': hints left at the start equals the solution notes');
+    for (let h; (h = Sim.nextHint(lv, pls)); n++) {
+      ok(lv.solution[h.row].pattern[h.step] === 1 && !pls[h.row].pattern[h.step], id + ': a hint is a solution note not yet placed');
+      pls[h.row].pattern[h.step] = 1;
+      const left = Sim.hintsLeft(lv, pls); if (left !== last - 1) mono = false; last = left;
+      if (n > 40) break;
+    }
+    ok(mono && n === Sim.notes(lv.solution) && Sim.hintsLeft(lv, pls) === 0, id + ': each hint reveals exactly one more note (' + n + ' hints)');
+    ok(Sim.notes(pls) <= lv.budget && pls.every((p, i) => p.pattern.join('') === lv.solution[i].pattern.join('')), id + ': all hints applied give the stored solution');
+    ok(Sim.run(lv, pls).won && Sim.readyState(lv, pls).ok, id + ': the pattern built from the hints wins the night and is ready');
+    // hints still finish the solution when the player placed other notes first
+    const extra = empty(lv); extra[0].pattern[Sim.nextHint(lv, empty(lv)) ? (Sim.nextHint(lv, empty(lv)).step + 1) % 8 : 0] = 1;
+    for (let h, g = 0; (h = Sim.nextHint(lv, extra)) && g < 40; g++) extra[h.row].pattern[h.step] = 1;
+    ok(Sim.hintsLeft(lv, extra) === 0 && lv.solution.every((p, i) => p.pattern.every((v, s2) => !v || extra[i].pattern[s2])), id + ': hints complete the solution even over other notes');
+
+    // (b) the Ready button is enabled exactly when the goal checker says the goal is met, with a reason when it is not
+    let agree = true, reasons = true, yes = 0;
+    for (let i = 0; i < 300; i++) {
+      const p = randomPls(lv), rs = Sim.readyState(lv, p), gm = Sim.goalProgress(lv, p).met;
+      if (rs.ok !== gm) agree = false;
+      if (!rs.ok && !/to meet the goal$/.test(rs.reason)) reasons = false;
+      if (rs.ok) yes++;
+    }
+    ok(agree, id + ': ready is enabled exactly when the goal is met (300 random patterns, ' + yes + ' ready)');
+    ok(reasons, id + ': a disabled ready button always says what is missing');
+    ok(Sim.readyState(lv, lv.solution).ok && !Sim.readyState(lv, empty(lv)).ok && Sim.readyState(lv, empty(lv)).reason.length > 5, id + ': the solution is ready, an empty song is not');
+
+    // (c) the locked pattern replays identically: same events, whatever point of the loop the player pressed Ready at,
+    // and the dry run (Test) gives the same result as the real play
+    const base = Sim.runReport(lv, lv.solution, { lead: 8 }), again = Sim.runReport(lv, lv.solution, { lead: 8 });
+    ok(base.log === again.log && base.log.length > 0, id + ': the same locked pattern replays with identical events');
+    let same = true;
+    [3, 5, 11].forEach(t0 => { const r = Sim.runReport(lv, lv.solution, { lead: 8, t0: t0 }); if (r.log !== base.log || r.lilies !== base.lilies || r.won !== base.won) same = false; });
+    ok(same, id + ': pressing Ready at any point of the loop gives the same replay');
+    const plain = Sim.run(lv, lv.solution);
+    ok(base.won === plain.won && base.lilies === plain.lilies && base.won, id + ': the real play matches the plain run (won=' + base.won + ', lilies ' + base.lilies + ')');
+    let dryOk = true;
+    for (let i = 0; i < 20; i++) {
+      const p = randomPls(lv), d = Sim.runReport(lv, p, { lead: 8 }), real = Sim.runReport(lv, p, { lead: 8, t0: 5 });
+      const ref = Sim.run(Object.assign({}, lv, { goal: null }), p);
+      const refWon = ref.won;
+      if (d.log !== real.log || d.lilies !== real.lilies || d.cleared !== real.cleared) dryOk = false;
+      if (d.lilies !== ref.lilies || (d.cleared && d.lilies > 0) !== refWon) dryOk = false;
+      if (Sim.goalProgress(lv, p).met && d.won !== Sim.run(lv, p).won) dryOk = false;
+    }
+    ok(dryOk, id + ': a dry run (Test) gives the same lilies, leaks and events as the real play for the same pattern (20 random patterns)');
+    // the preview lists every enemy of the wave
+    ok(Sim.wavePreview(lv).reduce((a, e) => a + e.count, 0) === lv.wave.length, id + ': the wave preview counts every enemy');
+  });
+  // the dry run says who got through and whether they were ever in reach
+  const n1 = night(1);
+  const lone = Sim.runReport(n1, (() => { const e = empty(n1); e[0].pattern[7] = 1; return e; })(), { lead: 8 });
+  ok(!lone.cleared || lone.leaks.length > 0, 'night 1: a dry run of a note nobody can use reports leaks');
+  const gap = Sim.runReport(night(5), empty(night(5)), { lead: 8 });
+  ok(!gap.cleared || gap.lilies < 5, 'night 5: a silent pond lets shellbacks through (lilies ' + gap.lilies + ')');
+  ok(gap.leaks.length > 0 && gap.leaks.every(l => l.type === 'shellback' && typeof l.covered === 'boolean' && l.lastCov >= -1), 'dry run: leaks name the enemy type and where it was last in reach');
+  // reasons read well
+  const oneCroak = empty(n1); oneCroak[0].pattern[0] = 1;
+  ok(Sim.readyState(n1, oneCroak).reason === 'Add 1 more croak to meet the goal', 'ready reason: "' + Sim.readyState(n1, oneCroak).reason + '"');
+  // groove tips name a step or a voice
+  const tipA = Sim.grooveTip([row('frog', [0, 1, 1, 0, 0, 0, 0, 0])]), tipB = Sim.grooveTip([row('owl', [0, 0, 1, 0, 0, 0, 0, 1], 3), row('frog', [1, 0, 0, 0, 1, 0, 0, 0])]);
+  ok(/step/.test(tipA) && /step/.test(tipB), 'groove tips name a specific step: "' + tipA + '" / "' + tipB + '"');
+  ok(Sim.grooveTip([row('frog', [1, 0, 0, 0, 1, 0, 0, 0])]).indexOf('harder') > 0 && Sim.grooveTip([row('frog', [0, 0, 0, 0, 0, 0, 0, 0])]).length > 5, 'groove tips: Groovy and silent messages');
+  const a1 = JSON.stringify(Sim.grooveTip(probe)); ok(a1 === JSON.stringify(Sim.grooveTip(probe)) && JSON.stringify(probe) === snap, 'groove tips are pure');
+}
+lap('compose phase: hints, ready gating, replay, dry run');
+
 // ---------- sounds: every creature has its own voice, groove layers exist ----------
 try {
   global.Kit = Kit;

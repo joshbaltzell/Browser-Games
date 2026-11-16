@@ -335,6 +335,150 @@ var PondSim = (function () {
     return { won: st.over === 'win', lilies: st.lilies, steps: st.t, dealt: st.dealt };
   }
 
+
+  // ---------- compose phase helpers (pure; none of these change the rules above) ----------
+  var NAMES = { frog: 'frog', cricket: 'cricket', owl: 'owl', jar: 'firefly jar' };
+  var VOICE_NAMES = { frog: ['croak', 'croaks'], cricket: ['chirp', 'chirps'], owl: ['hoot', 'hoots'], jar: ['glow', 'glows'], harmony: ['harmony step', 'harmony steps'] };
+
+  // Can the player press "Ready"? Exactly when the goal is met. reason says what is missing, in one plain line.
+  function readyState(level, placements) {
+    var gp = goalProgress(level, placements);
+    if (gp.met) return { ok: true, reason: '' };
+    for (var i = 0; i < gp.parts.length; i++) {
+      var pt = gp.parts[i], miss = pt.need - pt.have;
+      if (miss <= 0) continue;
+      if (pt.key === 'groove') return { ok: false, reason: 'Reach ' + TIER_NAMES[pt.need] + ' groove to meet the goal' };
+      if (pt.key === 'harmony') return { ok: false, reason: 'Add ' + miss + ' more harmony ' + (miss === 1 ? 'step' : 'steps') + ' to meet the goal' };
+      var nm = VOICE_NAMES[pt.key] || [pt.key, pt.key + 's'];
+      return { ok: false, reason: 'Add ' + miss + ' more ' + nm[miss === 1 ? 0 : 1] + ' to meet the goal' };
+    }
+    return { ok: false, reason: 'Meet the goal first' };
+  }
+
+  // The next hint: the first note of the stored solution that is not on the pond yet (row by row). null when all are shown.
+  function nextHint(level, placements) {
+    var sol = level.solution;
+    if (!sol) return null;
+    for (var r = 0; r < sol.length; r++) for (var s = 0; s < STEPS; s++) if (sol[r].pattern[s] && !(placements[r] && placements[r].pattern[s])) return { row: r, step: s };
+    return null;
+  }
+  function hintsLeft(level, placements) {
+    var n = 0, sol = level.solution;
+    if (!sol) return 0;
+    for (var r = 0; r < sol.length; r++) for (var s = 0; s < STEPS; s++) if (sol[r].pattern[s] && !(placements[r] && placements[r].pattern[s])) n++;
+    return n;
+  }
+
+  // Which enemy types come, in the order they first appear: [{type, count, first}]
+  function wavePreview(level) {
+    var out = [], idx = {};
+    for (var i = 0; i < level.wave.length; i++) {
+      var t = level.wave[i].type;
+      if (idx[t] === undefined) { idx[t] = out.length; out.push({ type: t, count: 0, first: level.wave[i].step }); }
+      out[idx[t]].count++;
+      if (level.wave[i].step < out[idx[t]].first) out[idx[t]].first = level.wave[i].step;
+    }
+    return out.sort(function (a, b) { return a.first - b.first; });
+  }
+
+  // Stones (indices) a creature at this perch reaches.
+  function reach(perch, type) {
+    var g = geometry(), out = [];
+    for (var i = 0; i < STONES; i++) if (Math.hypot(g.stones[i].x - g.perches[perch].x, g.stones[i].y - g.perches[perch].y) <= RULES.range[type]) out.push(i);
+    return out;
+  }
+
+  // One tip for the weakest groove rule, naming a step (1 to 8) when it can.
+  function grooveTip(placements) {
+    var gv = groove(placements);
+    if (!gv.notes) return 'Make a pattern to hear the groove.';
+    if (gv.tier >= 2) return 'Every note hits ' + Math.round((gv.mult - 1) * 100) + '% harder.';
+    var multi = gv.voices >= 2, w = multi ? { beat: 0.26, pulse: 0.18, rest: 0.26, call: 0.15, harmony: 0.15 } : { beat: 0.4, pulse: 0.2, rest: 0.4 };
+    var best = 'beat', bd = -1, key, i, s;
+    for (key in w) { var d = (1 - gv.parts[key]) * w[key]; if (d > bd) { bd = d; best = key; } }
+    var notesList = [];
+    for (i = 0; i < placements.length; i++) for (s = 0; s < STEPS; s++) if (placements[i].pattern[s]) notesList.push({ row: i, step: s, type: placements[i].type });
+    if (best === 'beat') {
+      var worst = null;
+      for (i = 0; i < notesList.length; i++) if (!worst || BEAT_W[notesList[i].step] < BEAT_W[worst.step]) worst = notesList[i];
+      if (worst && BEAT_W[worst.step] < 1) return 'Put the ' + NAMES[worst.type] + ' on a strong beat, step 1 or 5.';
+      return 'Try the bright steps, 1 and 5.';
+    }
+    if (best === 'rest') {
+      var crowd = null;
+      for (i = 0; i < notesList.length; i++) {
+        var n = notesList[i], pat = placements[n.row].pattern;
+        if (pat[(n.step + STEPS - 1) % STEPS]) { crowd = n; break; }
+      }
+      if (crowd) return 'Try a rest before step ' + (crowd.step + 1) + '.';
+      return 'Leave two gaps before each note.';
+    }
+    if (best === 'pulse') {
+      var un = [];
+      for (s = 0; s < STEPS; s++) for (i = 0; i < placements.length; i++) if (placements[i].pattern[s]) { un.push(s); break; }
+      var mg = 99, a = 0, b = 0;
+      for (i = 0; i < un.length; i++) {
+        var nx = un[(i + 1) % un.length], gp = ((nx - un[i]) + STEPS) % STEPS || STEPS;
+        if (gp < mg) { mg = gp; a = un[i]; b = nx; }
+      }
+      return 'Steps ' + (a + 1) + ' and ' + (b + 1) + ' are close together. Spread them out.';
+    }
+    if (best === 'call') {
+      var first = notesList[0], other = null, order = ['frog', 'cricket', 'owl', 'jar'];
+      for (i = 0; i < placements.length; i++) if (placements[i].type !== first.type) { other = placements[i].type; break; }
+      return other ? 'Let the ' + NAMES[other] + ' answer the ' + NAMES[first.type] + ', one after the other.' : 'Let two voices take turns.';
+    }
+    // harmony: stack a different voice on a step that has one voice
+    var solo = null;
+    for (i = 0; i < notesList.length; i++) {
+      var cnt = 0;
+      for (var j = 0; j < notesList.length; j++) if (notesList[j].step === notesList[i].step && notesList[j].type !== notesList[i].type) cnt++;
+      if (!cnt) { solo = notesList[i]; break; }
+    }
+    if (solo) {
+      var partner = null;
+      for (i = 0; i < placements.length; i++) if (placements[i].type !== solo.type && placements[i].type !== 'jar') { partner = placements[i].type; break; }
+      if (partner) return 'Put the ' + NAMES[partner] + ' on step ' + (solo.step + 1) + ' with the ' + NAMES[solo.type] + '.';
+    }
+    return 'Put two voices on one step.';
+  }
+
+  // Observation for the play phase and the dry run: which enemies were ever in a creature's reach, and who got through.
+  // Reads the state only; the rules never look at it.
+  function newRec() { return { kind: {}, cov: {}, lastCov: {}, leaks: [] }; }
+  function observe(state, events, rec) {
+    var i, e;
+    for (i = 0; i < state.enemies.length; i++) {
+      e = state.enemies[i];
+      rec.kind[e.id] = e.type;
+      for (var k = 0; k < state.placements.length; k++) {
+        if (enemiesInRange(state, state.placements[k]).indexOf(e) >= 0) { rec.cov[e.id] = true; rec.lastCov[e.id] = Math.max(rec.lastCov[e.id] === undefined ? -1 : rec.lastCov[e.id], e.stone); break; }
+      }
+    }
+    for (i = 0; i < events.length; i++) if (events[i].type === 'bite') {
+      var id = events[i].enemy;
+      rec.leaks.push({ type: rec.kind[id], covered: !!rec.cov[id], lastCov: rec.lastCov[id] === undefined ? -1 : rec.lastCov[id] });
+    }
+  }
+  // The real play phase and the dry run both come through here: a fresh sim from the pattern, wave armed at a loop
+  // boundary after `lead` extra steps, run to the end. t0 is where the loop happens to be (it must not matter).
+  function runReport(level, placements, o) {
+    o = o || {};
+    var st = create(level, placements, o), rec = newRec(), log = [];
+    st.t = o.t0 || 0; arm(st); st.base += (o.lead || 0);
+    var cap = st.t + 8 * 400;
+    var cleared = false;
+    while (!st.over && st.t < cap) {
+      var ev = step(st);
+      observe(st, ev, rec);
+      if (st.t > st.base) log.push(JSON.stringify(ev));
+      // a dry run may have a goal that is not met yet: it ends when the wave is done
+      if (!st.over && st.spawned >= level.wave.length && st.enemies.length === 0) { cleared = true; break; }
+    }
+    cleared = cleared || st.over === 'win';
+    return { won: st.over === 'win', cleared: cleared, lilies: st.lilies, steps: st.t - (o.t0 || 0), dealt: st.dealt, leaks: rec.leaks, log: log.join('|') };
+  }
+
   // ---------- song codes ----------
   // PC1-F1a-C44-O80-J01 : one chunk per row, a type letter then the pattern as two hex digits (step 0 is the low bit).
   var LETTER = { frog: 'F', cricket: 'C', owl: 'O', jar: 'J' };
@@ -383,6 +527,7 @@ var PondSim = (function () {
     STEPS: STEPS, STONES: STONES, LILIES: LILIES, RULES: RULES,
     power: power, groove: groove, padPower: padPower, perchDist: perchDist, encode: encode, decode: decode, TIERS: TIER_NAMES,
     geometry: geometry, create: create, arm: arm, step: step,
+    readyState: readyState, nextHint: nextHint, hintsLeft: hintsLeft, wavePreview: wavePreview, reach: reach, grooveTip: grooveTip, newRec: newRec, observe: observe, runReport: runReport, NAMES: NAMES, VOICE_NAMES: VOICE_NAMES,
     inRange: inRange, goalProgress: goalProgress, enemiesInRange: enemiesInRange, run: run, hints: hints, notes: notes, stars: stars
   };
 })();

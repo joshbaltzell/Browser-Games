@@ -2,7 +2,7 @@
   'use strict';
   var P = PondSim;
   var W = 1280, H = 600;          // pond world. The sequencer panel is DOM below it.
-  var PANEL_W = 720, PANEL_H = 358;
+  var PANEL_W = 720, PANEL_H = 414;
   var STORE = 'bg.pond-chorus.progress';
 
   // Every feel constant lives here. Press ` in the game to tune it live.
@@ -44,11 +44,11 @@
   };
   // [line when the night opens, line a few loops into the wave]
   var CAPTION = {
-    1: ['Your turn. Tap a glowing pad to add a croak.', 'Slugs hop on the beat. Sing while one is on your stones.'],
-    2: ['Leave a gap, then hit. A rest before a note makes it louder.', 'Snails shrug off soft notes. Rings on a pad show its power.'],
+    1: ['Step 1 of 3: tap the glowing pads to make a pattern. The loop plays it.', 'Step 3 of 3: watch. Your song does the work.'],
+    2: ['Leave a gap, then hit. A rest before a note makes it louder.', 'Snails shrug off soft notes. Your gaps made the hits stronger.'],
     3: ['Let the frog and the cricket take turns. Call and answer sounds good.', 'Good sound hits harder. Watch the Groove meter.'],
     4: ['The owl hoots long and low. It slows everything in its wide reach.', 'The owl hurts nobody. It buys the frog time on the snails.'],
-    5: ['The jar lights its friends for three steps. Shellbacks hate the light.', 'Sing the jar, then a creature right after it.'],
+    5: ['The jar lights its friends for three steps. Shellbacks hate the light.', 'The jar lights them, then your singers hit.'],
     6: ['Four voices. Two on one step sing in harmony.', 'Keep a steady pulse and the pond sounds fuller.'],
     7: ['Old Shellbacks. Light them, then hit them with a groovy rhythm.', 'Groovy notes hit 50% harder. Rough ones will not get through.'],
     8: ['A swarm. Keep a steady pulse and let the voices answer each other.', 'The more it sounds like music, the harder it hits.'],
@@ -63,13 +63,7 @@
   };
   var VOICE = { frog: ['croak', 'croaks'], cricket: ['chirp', 'chirps'], owl: ['hoot', 'hoots'], jar: ['glow', 'glows'], harmony: ['harmony beat', 'harmony beats'] };
   var TIER_COLOR = ['#c9b99a', '#f4c95d', '#8fe3a0'];
-  var TIPS = {
-    beat: 'Try the bright steps, 1 and 5.',
-    pulse: 'Space your notes evenly.',
-    rest: 'Leave a gap before each note.',
-    call: 'Let two voices take turns.',
-    harmony: 'Put two voices on one step.'
-  };
+  var ENEMY_NAMES = { slug: ['slug', 'slugs'], slugling: ['slugling', 'sluglings'], snail: ['snail', 'snails'], shellback: ['shellback', 'shellbacks'] };
   var WHY = { harmony: 'harmony', firefly: 'firefly glow', rest: 'after a rest', beat: 'on the beat' };
   // One-time cards for the creatures that arrive after night 2.
   var INTRO = {
@@ -81,12 +75,12 @@
   var T = TUNE;                   // replaced by the live tuning object after boot
   var progress = Kit.store.get(STORE, null) || {};
   progress.stars = progress.stars || {}; progress.quiet = progress.quiet || {}; progress.seen = progress.seen || {};
-  progress.groove = progress.groove || {}; progress.jam = !!progress.jam;
+  progress.groove = progress.groove || {}; progress.jam = !!progress.jam; progress.hinted = progress.hinted || {};
 
   var el = {};
   ['panel', 'caption', 'hush', 'hushDots', 'btnPlay', 'btnRestart', 'grid', 'playhead', 'title', 'start', 'jam', 'chips', 'nightof',
     'btnSkip', 'results', 'resTitle', 'resStars', 'resLine', 'resQuiet', 'resGroove', 'resNext', 'resAgain', 'resTitleBtn', 'resCode',
-    'intro', 'introImg', 'introName', 'introRole', 'introLine', 'introHear', 'introGo', 'codeIn', 'btnLoad', 'btnCopy'].forEach(function (id) { el[id] = document.getElementById(id); });
+    'btnReady', 'readyWhy', 'btnHint', 'btnTest', 'btnSpeed', 'intro', 'introImg', 'introName', 'introRole', 'introLine', 'introHear', 'introGo', 'codeIn', 'btnLoad', 'btnCopy'].forEach(function (id) { el[id] = document.getElementById(id); });
 
   var geo = P.geometry();
   var rs = [];                    // radius scale of each stone, for drawing size
@@ -110,6 +104,8 @@
   var introOpen = false, introQueue = [], introDone = null;
   var gvNow = P.groove([]), lastTier = 0, tierFlashT = -99999;
   var dawn = null;                // {step, t0, song, tier, lilies, shown}
+  // compose first, then play: 'compose' (edit, loop plays, no enemies) | 'watch' (pattern locked, wave runs) | 'jam' (free)
+  var phase = 'compose', dry = false, speed = 1, hintsUsed = 0, hinted = {}, lossInfo = null, rec = null, hoverRow = -1;
 
   // Ambient fireflies are fixed at load from a seeded rng.
   var flies = [];
@@ -160,8 +156,8 @@
     if (ctx) {
       Kit.audio.reverb(2.2);
       pondBed.start();
-      clock = Kit.audio.clock({ bpm: T.bpm, stepsPerBeat: 2, onStep: onStep });
-      lastBpm = T.bpm;
+      clock = Kit.audio.clock({ bpm: T.bpm * curSpeed(), stepsPerBeat: 2, onStep: onStep });
+      lastBpm = T.bpm * curSpeed();
       clock.start();
     }
     // If audio is blocked or stalls, a plain timer drives the steps so the game still plays.
@@ -170,14 +166,19 @@
       if (timer) { clearInterval(dog); return; }
       if ((screen === 'play' || screen === 'dawn') && !paused && !introOpen && !(g && g.paused) && stepCount === seen) {
         if (clock) clock.stop();
-        timer = setInterval(function () { onStep(0, null); }, 60000 / T.bpm / 2);
+        startTimer();
         clearInterval(dog);
       }
       seen = stepCount;
     }, 1500);
   }
 
-  function stepMs() { return 60000 / T.bpm / 2; }
+  function curSpeed() { return phase === 'watch' ? speed : 1; }
+  function stepMs() { return 60000 / T.bpm / 2 / curSpeed(); }
+  function startTimer() {
+    if (timer) clearInterval(timer);
+    timer = setInterval(function () { onStep(0, null); }, stepMs());
+  }
 
   function queue(when, fn) { pending.push({ when: when, fn: fn }); }
   function runPending(now) {
@@ -226,6 +227,11 @@
     var st = stamp(audioTime), when = st.when, at = st.at;
     var loopStep = sim.t % P.STEPS;
     var events = P.step(sim);
+    if (phase === 'watch') P.observe(sim, events, rec);
+    if (phase === 'watch' && dry && !sim.over && sim.spawned >= level.wave.length && sim.enemies.length === 0) {
+      sim.over = 'win';   // a dry run need not meet the goal: it ends when the wave is done
+      queue(when + stepMs() * 4, finishRun);
+    }
 
     queue(when, function () {
       setPlayhead(loopStep);
@@ -242,7 +248,7 @@
       }
     }
     // the first time the loop plays the player's own pattern
-    if (!demo && !playedFirst && started && (level.id === 1 || level.id === 'jam')) {
+    if (!demo && !playedFirst && started && level.id === 'jam') {
       for (var ei = 0; ei < events.length; ei++) if (events[ei].type === 'sing') {
         playedFirst = true;
         queue(when, function () { setCaption(TEACH.rhythm, 5200, true); });
@@ -251,12 +257,8 @@
     }
     // the second caption, a few loops into the wave
     var cap = CAPTION[level.id];
-    if (cap && cap[1] && capPhase === 0 && !demo && started && sim.base !== null && sim.t >= sim.base + 12 && captionFree()) {
+    if (cap && cap[1] && capPhase === 0 && phase === 'watch' && !dry && sim.base !== null && sim.t >= sim.base + 12 && captionFree()) {
       capPhase = 1; setCaption(cap[1]);
-    }
-    // every slug is dealt with but the goal is not met yet
-    if (capPhase < 2 && level.goal && sim.base !== null && !sim.over && sim.spawned >= level.wave.length && sim.enemies.length === 0 && !P.goalProgress(level, sim.placements).met) {
-      capPhase = 2; setCaption(TEACH.done, 0, true);
     }
     // lamps
     var lamps = sim.placements.map(function (p, k) { return P.inRange(sim, k); });
@@ -317,10 +319,11 @@
       });
     } else if (e.type === 'win') {
       play('dawn', { time: at != null ? at + 0.1 : undefined });
-      if (level.finale) queue(when + 1400, function () { startDawn(e.lilies); });
+      if (dry) queue(when + 1400, function () { finishRun(); });
+      else if (level.finale) queue(when + 1400, function () { startDawn(e.lilies); });
       else queue(when + 1400, function () { showResults(true, e.lilies); });
     } else if (e.type === 'lose') {
-      queue(when + 1000, function () { showResults(false, 0); });
+      queue(when + 1000, function () { finishRun(); });
     }
   }
 
@@ -373,13 +376,15 @@
     rows = [];
     for (var r = 0; r < 6; r++) {
       var row = document.createElement('div');
-      row.className = 'row'; row.style.top = (r * 44) + 'px';
+      row.className = 'row'; row.dataset.r = r; row.style.top = (r * 44) + 'px';
       if (r >= sim.placements.length) { row.classList.add('empty'); gridEl.appendChild(row); continue; }
       var tp = TYPES[sim.placements[r].type];
       row.style.setProperty('--c', tp.color);
       var icon = document.createElement('button');
       icon.type = 'button'; icon.className = 'icon'; icon.dataset.row = r;
-      icon.setAttribute('aria-label', tp.name + ' row, shows what it can reach');
+      var reachN = P.reach(sim.placements[r].perch, sim.placements[r].type).length;
+      icon.setAttribute('aria-label', tp.name + ' row, reaches ' + reachN + ' stones');
+      icon.title = tp.name + ' reaches ' + reachN + ' stones';
       var src = typeof ASSETS !== 'undefined' && ASSETS[tp.idle] ? ASSETS[tp.idle].src : '';
       if (src) { var im = document.createElement('img'); im.src = src; im.alt = ''; im.draggable = false; icon.appendChild(im); } else icon.textContent = tp.name[0];
       var pads = document.createElement('div'); pads.className = 'pads';
@@ -390,6 +395,7 @@
         b.innerHTML = '<span class="r1"></span><span class="r2"></span>';
         pads.appendChild(b); arr.push(b);
       }
+      var rb = document.createElement('span'); rb.className = 'reach'; rb.textContent = reachN; icon.appendChild(rb);
       row.appendChild(icon); row.appendChild(pads); gridEl.appendChild(row);
       rows.push({ row: row, icon: icon, pads: arr });
     }
@@ -407,7 +413,8 @@
         var b = rows[r].pads[s], on = !!pl.pattern[s], p = P.padPower(sim.placements, r, s);
         b.classList.toggle('on', on);
         if (on) b.dataset.p = p; else delete b.dataset.p;
-        b.classList.toggle('hint', !!(hints && hints[r] && hints[r][s] && !on));
+        b.classList.toggle('hint', !!(hints && phase === 'compose' && hints[r] && hints[r][s] && !on));
+        b.classList.toggle('hinted', on && !!hinted[r + ',' + s]);
         b.setAttribute('aria-label', tp.name + ' step ' + (s + 1) + (on ? ', note, power ' + p : ', rest'));
         b.setAttribute('aria-pressed', on ? 'true' : 'false');
       }
@@ -415,6 +422,30 @@
     var used = P.notes(sim.placements), dots = el.hushDots.children;
     for (var d = 0; d < dots.length; d++) dots[d].classList.toggle('spent', d >= level.budget - used);
     el.hush.setAttribute('aria-label', 'Hush: ' + (level.budget - used) + ' notes left');
+    updateUi();
+  }
+
+  // Buttons and reasons for the current phase. Ready is enabled exactly when the goal is met.
+  function updateUi() {
+    if (!level || !sim) return;
+    var comp = phase === 'compose', watch = phase === 'watch';
+    el.panel.classList.toggle('locked', watch);
+    el.panel.classList.toggle('watching', watch);
+    el.panel.classList.toggle('composing', comp);
+    var rs = P.readyState(level, sim.placements), n = P.notes(sim.placements), left = P.hintsLeft(level, sim.placements);
+    el.btnReady.disabled = !comp || demo || !rs.ok;
+    el.readyWhy.textContent = comp ? (demo ? 'Demo playing. Tap a pad to start composing.' : rs.ok ? 'Goal met. Ready when you are.' : rs.reason) : watch ? (dry ? 'Test run: nothing is saved.' : 'Locked. The song plays against the wave.') : '';
+    el.readyWhy.classList.toggle('ok', comp && !demo && rs.ok);
+    el.btnTest.disabled = !comp || demo || n === 0;
+    el.btnHint.disabled = !comp || left === 0;
+    el.btnHint.textContent = left === 0 ? 'No hints left' : 'Hint (' + left + ')';
+    el.btnSpeed.textContent = 'Speed 2x';
+    el.btnSpeed.setAttribute('aria-pressed', speed === 2 ? 'true' : 'false');
+    el.btnSpeed.classList.toggle('on', speed === 2);
+    el.btnRestart.textContent = watch ? 'Stop' : 'Clear';
+    if (level.id === 1 && !demo && !introOpen && captionFree() && (comp || (watch && !dry))) {
+      setCaption(watch ? CAPTION[1][1] : rs.ok ? 'Step 2 of 3: press "Ready: let it rip".' : CAPTION[1][0], 0, true);
+    }
   }
 
   function setPlayhead(step) {
@@ -432,7 +463,9 @@
 
   function tapPad(r, s) {
     if (screen !== 'play' || !sim || !sim.placements[r] || introOpen) return;
+    if (phase === 'watch') { selected = r; setCaption('The song is locked while the wave runs. Press Stop to change it.', 2600, true); renderPads(); return; }
     if (demo) endDemo();
+    lossInfo = null;
     var pl = sim.placements[r];
     selected = r;
     if (!pl.pattern[s]) {
@@ -445,7 +478,6 @@
     rings.push({ x: pp.x, y: pp.y - 8, color: TYPES[pl.type].color, t0: performance.now(), range: 40, power: 1 });
     if (!started) {
       started = true;
-      if (level.wave.length) P.arm(sim);   // the countdown to the first slug starts here
       if (level.id === 1 && pl.pattern[s]) {
         heardFirst = true; setCaption(TEACH.first, 4200, true);
         var tb = rows[r].pads[s]; tb.classList.remove('first'); void tb.offsetWidth; tb.classList.add('first');
@@ -462,6 +494,109 @@
     if (icon) { selected = +icon.dataset.row; renderPads(); if (e.detail > 0) icon.blur(); }
   });
 
+  el.grid.addEventListener('mouseover', function (e) {
+    var rw = e.target.closest ? e.target.closest('.row') : null;
+    var h = rw && rw.dataset.r !== undefined ? +rw.dataset.r : -1;
+    if (h >= 0 && sim && !sim.placements[h]) h = -1;
+    hoverRow = h;
+  });
+  el.grid.addEventListener('mouseleave', function () { hoverRow = -1; });
+
+  // ----- hint: reveal the next note of the stored solution
+  function useHint() {
+    if (phase !== 'compose' || screen !== 'play' || introOpen) return;
+    if (demo) endDemo();
+    var h = P.nextHint(level, sim.placements);
+    if (!h) return;
+    if (P.notes(sim.placements) >= level.budget) { setCaption('No notes left. Tap a note off, then ask for a hint.', 3600, true); refuse(); return; }
+    var pl = sim.placements[h.row];
+    pl.pattern[h.step] = 1; hinted[h.row + ',' + h.step] = true; hintsUsed++; lossInfo = null;
+    selected = h.row; started = true;
+    play('tap', { kind: pl.type, midi: pl.type === 'owl' ? OWL_NOTES[h.step] : undefined });
+    var pp = geo.perches[pl.perch];
+    pv[h.row] = { singT: performance.now(), power: 1, lightUntil: 0 };
+    rings.push({ x: pp.x, y: pp.y - 8, color: TYPES[pl.type].color, t0: performance.now(), range: 40, power: 1 });
+    setCaption('Hint: the ' + P.NAMES[pl.type] + ' sings on step ' + (h.step + 1) + '. A hinted night keeps two stars at most.', 4200, true);
+    renderPads();
+  }
+  el.btnHint.addEventListener('click', function (e) { useHint(); if (e.detail > 0) el.btnHint.blur(); });
+
+  // ----- the two phases. Compose: no wave, the loop plays. Watch: pattern locked, a fresh sim runs the wave.
+  // A dry run (Test) is the same watch with nothing saved. Both go through the same sim (see P.runReport in sim.js).
+  function beginWatch(isDry) {
+    if (phase !== 'compose' || screen !== 'play' || introOpen) return;
+    if (demo) { endDemo(); return; }
+    var rs = P.readyState(level, sim.placements);
+    if (!isDry && !rs.ok) return;
+    if (isDry && P.notes(sim.placements) === 0) return;
+    var pls = sim.placements.map(function (p) { return { perch: p.perch, type: p.type, pattern: p.pattern.slice() }; });
+    var t = sim.t;
+    sim = P.create(level, pls); sim.t = t; P.arm(sim); sim.base += P.STEPS;   // one loop of lead-in
+    rec = P.newRec(); dry = !!isDry; phase = 'watch'; finished = false; capPhase = 0; lossInfo = null;
+    vis = {}; pv = []; rings = []; labels = []; pending = [];
+    lilyShown = P.LILIES; lilyWiltT = [0, 0, 0, 0, 0];
+    if (isDry) setCaption('Test run: your song against the wave. Nothing is saved.', 0, true); else setCaption(CAPTION[level.id] ? CAPTION[level.id][1] || '' : '', 0, level.id === 1);
+    capHold = 0;
+    if (clock) { lastBpm = T.bpm * curSpeed(); clock.setBpm(lastBpm); }
+    if (timer) startTimer();
+    renderPads();
+  }
+  function backToCompose(info, line) {
+    var pls = level.fixed.map(function (f, i) { return { perch: f.perch, type: f.type, pattern: sim.placements[i].pattern.slice() }; });
+    var t = sim.t;
+    sim = P.create(level, pls); sim.t = t;
+    phase = 'compose'; dry = false; finished = false; lossInfo = info || null;
+    vis = {}; pv = []; rings = []; labels = []; pending = [];
+    lilyShown = P.LILIES; lilyWiltT = [0, 0, 0, 0, 0];
+    if (clock) { lastBpm = T.bpm; clock.setBpm(lastBpm); }
+    if (timer) startTimer();
+    el.playhead.classList.remove('live');
+    setCaption(line || '', line ? 0 : 0, true);
+    capHold = 0;
+    renderPads();
+  }
+  // Who got through, and where: a gentle line, a detail line, and the stones to mark.
+  function describeRun(won) {
+    var leaks = rec ? rec.leaks : [], byType = {}, i, k, parts = [], unc = {}, line, detail = '', marks = [];
+    for (i = 0; i < leaks.length; i++) { byType[leaks[i].type] = (byType[leaks[i].type] || 0) + 1; if (!leaks[i].covered) unc[leaks[i].type] = (unc[leaks[i].type] || 0) + 1; if (leaks[i].lastCov >= 0) marks.push(leaks[i].lastCov); }
+    function list(o) { var out = []; for (var t in o) out.push(o[t] + ' ' + ENEMY_NAMES[t][o[t] === 1 ? 0 : 1]); return out.join(', '); }
+    if (leaks.length) detail = 'Got through: ' + list(byType) + '.';
+    var uncN = 0; for (k in unc) uncN += unc[k];
+    if (uncN) detail += ' Never in reach of a singer: ' + list(unc) + '.';
+    // the worst offender
+    var top = null; for (k in byType) if (!top || byType[k] > byType[top]) top = k;
+    if (won) line = leaks.length ? 'It holds, but ' + list(byType) + ' got by. Press Ready to make it real.' : 'It holds with every lily. Press Ready to make it real.';
+    else if (!top) line = 'The lilies wilted. Adjust and try again.';
+    else {
+      var top1 = null, cov = 0;
+      for (i = 0; i < leaks.length; i++) if (leaks[i].type === top) { if (leaks[i].covered) cov++; }
+      var plural = ENEMY_NAMES[top][1], cap = plural.charAt(0).toUpperCase() + plural.slice(1);
+      if (cov > 0) {
+        var guard = null, stone = -1;
+        for (i = 0; i < leaks.length; i++) if (leaks[i].type === top && leaks[i].covered && leaks[i].lastCov > stone) stone = leaks[i].lastCov;
+        sim.placements.forEach(function (p) { if (P.reach(p.perch, p.type).indexOf(stone) >= 0 && (!guard || p.perch > guard.perch)) guard = p; });
+        line = 'The ' + plural + ' slipped past the ' + (guard ? P.NAMES[guard.type] : 'singers') + '. Adjust and try again.';
+      } else line = cap + ' never came within reach of a singer. Adjust and try again.';
+    }
+    return { won: won, line: line, detail: detail, marks: marks };
+  }
+  function finishRun() {
+    if (phase !== 'watch' || !sim || !sim.over || finished) return;
+    var won = sim.over === 'win', info = describeRun(won);
+    if (!dry && won) return;
+    info.dry = dry;
+    backToCompose(info, dry ? (won ? 'Test passed. ' : 'Test: ') + info.line : info.line);
+  }
+  el.btnReady.addEventListener('click', function (e) { beginWatch(false); if (e.detail > 0) el.btnReady.blur(); });
+  el.btnTest.addEventListener('click', function (e) { beginWatch(true); if (e.detail > 0) el.btnTest.blur(); });
+  el.btnSpeed.addEventListener('click', function (e) {
+    speed = speed === 2 ? 1 : 2;
+    if (clock) { lastBpm = T.bpm * curSpeed(); clock.setBpm(lastBpm); }
+    if (timer) startTimer();
+    updateUi();
+    if (e.detail > 0) el.btnSpeed.blur();
+  });
+
   function togglePause() {
     if (screen !== 'play' || introOpen) return;
     paused = !paused;
@@ -469,7 +604,15 @@
     if (paused) { el.playhead.classList.remove('live'); pondBed.setGain(0.3); } else pondBed.setGain(1);
   }
   el.btnPlay.addEventListener('click', function (e) { togglePause(); if (e.detail > 0) el.btnPlay.blur(); });
-  el.btnRestart.addEventListener('click', function (e) { restart(); if (e.detail > 0) el.btnRestart.blur(); });
+  el.btnRestart.addEventListener('click', function (e) {
+    if (!sim || screen !== 'play') return;
+    if (phase === 'watch') backToCompose(null, 'Stopped. Your song is still here.');
+    else {
+      sim.placements.forEach(function (p) { p.pattern = EMPTY8.slice(); });
+      hinted = {}; lossInfo = null; renderPads();
+    }
+    if (e.detail > 0) el.btnRestart.blur();
+  });
 
   window.addEventListener('keydown', function (e) {
     if (e.target && e.target.tagName === 'INPUT') return;
@@ -601,6 +744,7 @@
     vis = {}; pv = []; rings = []; labels = []; pending = []; dawn = null;
     lilyShown = P.LILIES; lilyWiltT = [0, 0, 0, 0, 0];
     started = false; capPhase = 0; finished = false; paused = false;
+    phase = lv.id === 'jam' ? 'jam' : 'compose'; dry = false; hintsUsed = 0; hinted = {}; lossInfo = null; rec = null; hoverRow = -1;
     demo = false; heardFirst = false; playedFirst = false; capHold = 0; introOpen = false;
     el.panel.classList.remove('demoing', 'off');
     el.panel.classList.toggle('jam', lv.id === 'jam');
@@ -644,9 +788,7 @@
     screen = 'play';
     loadLevel(level, true);
     layout(true);
-    if (level.wave.length && P.notes(sim.placements) > 0) {
-      started = true; P.arm(sim); sim.base += P.STEPS;   // restarting counts as input; one loop of lead-in
-    } else if (!level.wave.length) started = true;
+    if (!level.wave.length || P.notes(sim.placements) > 0) started = true;
   }
 
   function resumeNight() {
@@ -668,7 +810,7 @@
       b.type = 'button'; b.className = 'chip'; b.disabled = !unlocked(i);
       b.title = lv.name;
       var st = progress.stars[lv.id] || 0;
-      b.innerHTML = 'Night ' + lv.id + (st ? ' <span class="st">' + new Array(st + 1).join('★') + '</span>' : '') + '<span class="nm">' + lv.name + '</span>';
+      b.innerHTML = 'Night ' + lv.id + (st ? ' <span class="st">' + new Array(st + 1).join('★') + '</span>' + (progress.hinted[lv.id] ? '<span class="hn" title="cleared with hints"> hint</span>' : '') : '') + '<span class="nm">' + lv.name + '</span>';
       b.addEventListener('click', function () { startNight(i); });
       el.chips.appendChild(b);
     });
@@ -700,7 +842,10 @@
     el.resCode.style.display = won && level.finale ? '' : 'none';
     if (won) {
       var st = P.stars(lilies), id = level.id;
-      progress.stars[id] = Math.max(progress.stars[id] || 0, st);
+      if (hintsUsed > 0) st = Math.min(st, 2);   // star rule: any hint caps the night at two stars; the stars are still saved
+      var oldSt = progress.stars[id] || 0;
+      if (st > oldSt || (st === oldSt && hintsUsed === 0)) progress.hinted[id] = hintsUsed > 0;
+      progress.stars[id] = Math.max(oldSt, st);
       progress.groove[id] = Math.max(progress.groove[id] || 0, gv.tier);
       if (quiet) progress.quiet[id] = true;
       Kit.store.set(STORE, progress);
@@ -713,7 +858,7 @@
         : lilies + (lilies === 1 ? ' lily' : ' lilies') + ' still blooming.';
       el.resGroove.textContent = 'Groove: ' + gv.name;
       el.resGroove.style.color = TIER_COLOR[gv.tier];
-      el.resQuiet.textContent = quiet ? 'Quiet night: ' + unspent + ' notes unspent' : '';
+      el.resQuiet.textContent = [quiet ? 'Quiet night: ' + unspent + ' notes unspent' : '', hintsUsed > 0 ? 'Hints used: ' + hintsUsed + ' (three stars need none)' : ''].filter(Boolean).join(' · ');
       el.resNext.style.display = '';
       el.resNext.textContent = mode.idx < LEVELS.length - 1 ? 'Next night' : 'Back to title';
       el.resAgain.textContent = level.finale ? 'Play the night again' : 'Replay night';
@@ -767,7 +912,7 @@
     var ctx = game.ctx, now = performance.now();
     T = game.tune;
     P.RULES.range.frog = T.rangeFrog; P.RULES.range.cricket = T.rangeCricket; P.RULES.range.owl = T.rangeOwl; P.RULES.range.jar = T.rangeJar;
-    if (clock && lastBpm !== T.bpm) { clock.setBpm(T.bpm); lastBpm = T.bpm; }
+    if (clock && lastBpm !== T.bpm * curSpeed()) { lastBpm = T.bpm * curSpeed(); clock.setBpm(lastBpm); }
     runPending(now);
     if (screen === 'play' && sim) trackGroove(now);
     ctx.save();
@@ -813,6 +958,7 @@
       ctx.restore();
       if (level.goal && sim && !demo && !dawn) drawGoal(ctx);
       if (sim && !dawn) drawGroove(ctx, now);
+      if (sim && !dawn && level.wave.length && !demo) { drawPreview(ctx, now); drawBanner(ctx, now); }
     }
     ctx.restore();
   }
@@ -862,7 +1008,7 @@
     var gv = gvNow, x = 30, y = 134, bw = 210, bh = 14, k, flash = Math.max(0, 1 - (now - tierFlashT) / 600);
     ctx.save();
     ctx.fillStyle = 'rgba(11,18,32,.62)';
-    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - 14, y - 34, bw + 130, 86, 16) : ctx.rect(x - 14, y - 34, bw + 130, 86); ctx.fill();
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - 14, y - 34, bw + 230, 86, 16) : ctx.rect(x - 14, y - 34, bw + 230, 86); ctx.fill();
     ctx.font = '600 18px Fredoka, system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = '#aab6cf';
     ctx.fillText('Groove', x, y - 12);
     ctx.fillStyle = '#1d2740'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, bw, bh, 7) : ctx.rect(x, y, bw, bh); ctx.fill();
@@ -878,15 +1024,80 @@
     ctx.fillStyle = TIER_COLOR[gv.tier];
     ctx.fillText(gv.name + (gv.mult > 1 ? '  ×' + gv.mult : ''), x + bw + 10, y + 13);
     ctx.font = '400 15px Nunito, system-ui, sans-serif'; ctx.fillStyle = '#cfd6e6';
-    var tip = gv.notes === 0 ? 'Make a pattern to hear the groove.' : gv.tier >= 2 ? 'Every note hits ' + Math.round((gv.mult - 1) * 100) + '% harder.' : TIPS[weakest(gv)];
+    var tip = P.grooveTip(sim.placements);
     ctx.fillText(tip, x, y + 40);
     ctx.restore();
   }
-  function weakest(gv) {
-    var multi = gv.voices >= 2, w = multi ? { beat: 0.26, pulse: 0.18, rest: 0.26, call: 0.15, harmony: 0.15 } : { beat: 0.4, pulse: 0.2, rest: 0.4 };
-    var best = 'beat', bd = -1;
-    for (var key in w) { var d = (1 - gv.parts[key]) * w[key]; if (d > bd) { bd = d; best = key; } }
-    return best;
+
+  // The enemy lane as a faint ghost trail. The focused creature's reach tints the segments it covers.
+  // After a run, stones nobody reaches show as red rings, and where enemies slipped through is marked.
+  function drawLane(ctx, now, selP, selPerch, selRange, selColor) {
+    var i, S = geo.stones;
+    if (!level.wave.length) return;
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(232,241,255,' + (phase === 'compose' ? 0.2 : 0.1) + ')'; ctx.lineWidth = 9; ctx.setLineDash([2, 16]);
+    ctx.beginPath(); ctx.moveTo(S[0].x, S[0].y); for (i = 1; i < S.length; i++) ctx.lineTo(S[i].x, S[i].y); ctx.stroke();
+    ctx.setLineDash([]);
+    if (selPerch) {
+      ctx.strokeStyle = selColor; ctx.lineWidth = 9; ctx.globalAlpha = 0.55 + 0.1 * Math.sin(now / 400);
+      for (i = 0; i < S.length - 1; i++) {
+        var a = Math.hypot(S[i].x - selPerch.x, S[i].y - selPerch.y) <= selRange, b = Math.hypot(S[i + 1].x - selPerch.x, S[i + 1].y - selPerch.y) <= selRange;
+        if (a && b) { ctx.beginPath(); ctx.moveTo(S[i].x, S[i].y); ctx.lineTo(S[i + 1].x, S[i + 1].y); ctx.stroke(); }
+      }
+    }
+    if (lossInfo && phase === 'compose') {
+      var cov = {};
+      sim.placements.forEach(function (p) { P.reach(p.perch, p.type).forEach(function (st) { cov[st] = true; }); });
+      ctx.globalAlpha = 0.5 + 0.2 * Math.sin(now / 300); ctx.strokeStyle = '#ff8a7a'; ctx.lineWidth = 3; ctx.setLineDash([4, 5]);
+      for (i = 0; i < S.length; i++) if (!cov[i]) { ctx.beginPath(); ctx.ellipse(S[i].x, S[i].y, 20, 13, 0, 0, 6.2832); ctx.stroke(); }
+      ctx.setLineDash([]); ctx.fillStyle = '#ff6f5e'; ctx.globalAlpha = 0.85;
+      lossInfo.marks.forEach(function (st) { ctx.beginPath(); ctx.arc(S[st].x, S[st].y - 6, 6 + 2 * Math.sin(now / 250), 0, 6.2832); ctx.fill(); });
+    }
+    ctx.restore();
+  }
+  // Faint ghosts of each enemy type walking the lane, so the player can see what is coming.
+  function drawGhosts(ctx, now) {
+    var pv2 = P.wavePreview(level), S = geo.stones;
+    for (var k = 0; k < pv2.length; k++) {
+      var u = ((now / 9000 + k / pv2.length) % 1) * (S.length - 1), i0 = Math.floor(u), f = u - i0, a = S[i0], b = S[Math.min(i0 + 1, S.length - 1)];
+      var sp = ENEMY[pv2[k].type];
+      Kit.draw(ctx, sp.sprite, a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f + 8, { h: sp.h, alpha: 0.26, flipX: b.x < a.x, multiply: NIGHT_TINT, multiplyAmount: 0.4 });
+    }
+  }
+  // "Wave preview": which enemies are coming, in order of arrival.
+  function drawPreview(ctx, now) {
+    var list = P.wavePreview(level), w = 236, x = W - 30 - w, y = 100, h = 34 + list.length * 38;
+    ctx.save();
+    ctx.fillStyle = 'rgba(11,18,32,.62)';
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, 16) : ctx.rect(x, y, w, h); ctx.fill();
+    ctx.font = '600 18px Fredoka, system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = '#aab6cf';
+    ctx.fillText('Wave preview', x + 14, y + 24);
+    for (var i = 0; i < list.length; i++) {
+      var en = list[i], sp = ENEMY[en.type], ry = y + 34 + i * 38 + 19;
+      Kit.draw(ctx, sp.sprite, x + 30, ry + 2, { h: Math.min(32, sp.h), ay: 0.5, multiply: NIGHT_TINT, multiplyAmount: 0.3 });
+      ctx.font = '600 16px Fredoka, system-ui, sans-serif'; ctx.fillStyle = '#f6e7bd';
+      ctx.fillText(en.count + ' ' + ENEMY_NAMES[en.type][en.count === 1 ? 0 : 1], x + 60, ry - 2);
+      ctx.font = '400 13px Nunito, system-ui, sans-serif'; ctx.fillStyle = '#aab6cf';
+      var ar = P.RULES.enemy[en.type].armor;
+      ctx.fillText(ar ? 'armor ' + ar + (ar >= 6 ? ', needs light and groove' : '') : 'no armor', x + 60, ry + 14);
+    }
+    ctx.restore();
+  }
+  // After a run: who got through (red) or a passed test (green).
+  function drawBanner(ctx, now) {
+    var txt = null, col = '#ffb4a2';
+    if (phase === 'watch' && dry) { txt = 'Test run: nothing is saved'; col = '#cfd6e6'; }
+    else if (lossInfo && lossInfo.detail) { txt = lossInfo.detail; col = lossInfo.won ? '#8fe3a0' : '#ffb4a2'; }
+    else if (lossInfo && lossInfo.won) { txt = 'Test passed: every lily kept'; col = '#8fe3a0'; }
+    if (!txt) return;
+    ctx.save();
+    ctx.font = '600 16px Fredoka, system-ui, sans-serif'; ctx.textAlign = 'center';
+    var tw = Math.min(560, ctx.measureText(txt).width), bx = W / 2 - tw / 2 - 16;
+    ctx.fillStyle = 'rgba(11,18,32,.7)';
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, 96, tw + 32, 32, 16) : ctx.rect(bx, 96, tw + 32, 32); ctx.fill();
+    ctx.fillStyle = col; ctx.fillText(txt, W / 2, 118, 560);
+    ctx.restore();
   }
 
   // Dawn: warm light over the pond, the lilies open, every creature sings.
@@ -901,13 +1112,15 @@
   function drawPond(ctx, now, night, t4, dk) {
     var i, v, id, k;
     // stones, lit when the selected creature covers them
-    var selP = dawn ? null : sim.placements[selected], selPerch = selP ? geo.perches[selP.perch] : null;
+    var focus = hoverRow >= 0 ? hoverRow : selected;
+    var selP = dawn ? null : sim.placements[focus], selPerch = selP ? geo.perches[selP.perch] : null;
     var selRange = selP ? (P.RULES.range[selP.type] || 0) : 0, selColor = selP ? TYPES[selP.type].color : '#fff';
     for (i = 0; i < P.STONES; i++) {
       var s = geo.stones[i], sz = 58 * (0.7 + 0.3 * rs[i]);
       if (selPerch && Math.hypot(s.x - selPerch.x, s.y - selPerch.y) <= selRange) glow(ctx, s.x, s.y, sz * 0.9, selColor, 0.38);
       Kit.draw(ctx, 'stone', s.x, s.y, { w: sz, ay: 0.5, multiply: NIGHT_TINT, multiplyAmount: night });
     }
+    drawLane(ctx, now, selP, selPerch, selRange, selColor);
     // lilies
     var order = [0, 1, 2, 3, 4].sort(function (a, b) { return LILY_POS[a][1] - LILY_POS[b][1]; });
     glow(ctx, 650, 316, 150, '#e8f1ff', 0.07 + 0.02 * t4);
@@ -928,6 +1141,7 @@
       ctx.save(); ctx.strokeStyle = selColor; ctx.globalAlpha = 0.28 + 0.06 * t4; ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
       ctx.beginPath(); ctx.ellipse(selPerch.x, selPerch.y, selRange, selRange * 0.62, 0, 0, 6.2832); ctx.stroke(); ctx.restore();
     }
+    if (phase === 'compose' && !dawn && level.wave.length) drawGhosts(ctx, now);
     // creatures and enemies, back to front
     var items = [];
     pls.forEach(function (pl, idx) { items.push({ y: geo.perches[pl.perch].y + 20, kind: 'c', idx: idx }); });
@@ -1065,16 +1279,17 @@
     isRunning: function () { return screen === 'play'; },
     state: function () {
       return { screen: screen, t: sim && sim.t, lilies: sim && sim.lilies, enemies: sim && sim.enemies.length, steps: stepCount, started: started,
-        tier: gvNow.name, dawn: !!dawn, introOpen: introOpen, demo: demo, meshBroken: meshBroken };
+        tier: gvNow.name, dawn: !!dawn, introOpen: introOpen, demo: demo, meshBroken: meshBroken,
+        phase: phase, dry: dry, speed: speed, hintsUsed: hintsUsed, ready: !el.btnReady.disabled, why: el.readyWhy.textContent };
     },
-    tap: tapPad, startNight: startNight, startJam: startJam, jam: startJam,
+    tap: tapPad, hint: useHint, ready: function () { beginWatch(false); }, test: function () { beginWatch(true); }, back: function () { backToCompose(null); }, startNight: startNight, startJam: startJam, jam: startJam,
     // dev: play a night's stored solution straight away (skips cards and demo), or finish it at once
     solve: function (idx) {
       startNight(idx);
       introQueue = []; introOpen = false; el.intro.classList.add('hidden'); endDemo();
       sim.placements.forEach(function (p, k) { p.pattern = LEVELS[idx].solution[k].pattern.slice(); });
       renderPads();
-      started = true; P.arm(sim);
+      started = true; beginWatch(false);
     },
     finish: function () {
       if (!sim) return;
