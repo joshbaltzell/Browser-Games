@@ -259,3 +259,46 @@ dish.stats                // which stats are shown on this dish, in order
 ```
 
 Check: for every dish, a build whose shown stats are all "safe" must win, and the carried build must have exactly the dish's new stat outside its safe zone.
+
+## 14. Exam dishes 6 to 10, and trade-off fixes (17 Nov)
+
+Josh played dishes 1 to 5 with the stat bars and found the situation clear. Dishes 1 to 5 are the tutorial: one new problem, one obvious fix. The next five test whether the game is fun once it is understood. They add no mechanics. Each one makes two stats pull against each other, or makes energy too tight to fix everything the obvious way.
+
+### Trade-off fixes that come first
+
+1. **Growth is a visible stat from dish 1.** On dish 1 it is drawn with no safe zone and the note "Not checked on this dish". That way each acid defence shows its real cost.
+2. **Effects are worded as plain directions:** "Growth slower", "Growth faster", "Smell closer", "Naturalness lower". The colour says whether that helps this cell right now: green if it moves the stat toward or keeps it in the safe zone, red if it moves it out, grey if the stat is not checked on this dish.
+3. **Cards have one row, "Changes:",** listing every stat the card moves, plus energy. A fitted card shows what it is doing ("Fitted. Doing: Acid defence up") in place of "nothing here".
+4. **"Growth safe" tells the truth.** A cell that spends more than a quarter of the run outside the band shows a warning state, "Close to the edge", between safe and unsafe.
+
+### The five exam dishes
+
+| Dish | Title | The squeeze | What makes it a choice |
+|---|---|---|---|
+| 6 | Strong Acid | The acid is stronger. Tight membrane alone fails. | Full protection costs more energy: Proton pump (2), two layers (3), Acid-proof insides (3), or the Sealed shell (1, and it costs Naturalness). Something else has to give. |
+| 7 | Lean Times | The energy limit is cut. | You must drop a part and cover its job another way: the Pace dial in place of Head count, Sloppiness in place of Random naps. |
+| 8 | Twice Bitten | Two food crashes, close together. | Sporulate recovers too slowly for the second crash. Stringent and SOS behave differently. Random naps helps. |
+| 9 | The Inspector | The Naturalness line is stricter, and energy is tight, so Machine parts are the cheap way to fit everything. | Cheap and risky against safe and expensive. |
+| 10 | Greetings from Acidica | Strong acid, a crash, a strict inspector. | Two or three clearly different builds win. |
+
+### Rules for exam dishes
+
+- **No answer tips.** The Tip button is replaced by "What changes this?", which lists the slots and dials that move the failing stat, without ranking them.
+- **The stat bars and forecast stay.**
+- **You start from your own cell** (the build that won the previous dish). You can also press "Start from the standard cell", which loads a known-legal build for that dish, so a bad carried build never traps you.
+- **Every slot opened on Acidica is open.** Motor stays locked.
+- **Each exam dish awards a notebook page.** Topics: 6, how acid-lovers trade energy for safety. 7, why real cells cannot have everything (the cost of protein and membrane). 8, bet-hedging: sleepers and spores. 9, why variation is normal in living things. 10, a summary page from the lab.
+- **A result grade** on exam dishes: Passable, Convincing, Benign. Benign means every stat stayed in its safe zone for the whole run with energy to spare.
+
+### Checks
+
+For each exam dish:
+
+1. The standard cell for that dish is legal and loses, and the stats show why.
+2. At least three different builds win, and at least two of them differ in which slots they use, not only in dial settings.
+3. No single build wins all five exam dishes.
+4. The winning build of each previous dish, carried in unchanged, does not win.
+5. The cheapest obvious fix alone does not win where the table says so: Tight membrane alone on dish 6; the dish 5 carried build on dish 7; Sporulate alone on dish 8; an all-Machine build on dish 9.
+6. All shown stats safe still means a win, at least 95% of the time.
+7. Random legal builds win less than 10% of the time.
+8. Dishes 1 to 5 still pass every existing check.
