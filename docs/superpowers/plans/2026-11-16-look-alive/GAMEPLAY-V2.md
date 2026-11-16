@@ -198,3 +198,64 @@ build.slots = { power: id, envelope: [id, id?], insides: id|null, division: id|n
 ```
 
 `validate` enforces the slot rules and the energy limit. Old saved builds with a flat `parts` list are converted.
+
+## 13. Stat bars: what each skill does, and what it costs (Josh, 17 Nov)
+
+Josh's playtest: "I see when I am being caught or they all die, but I am unclear on how to fix things and what the trade-offs are." The fix is the other half of the weapon-customising idea: a small set of named stats for your cell, shown as bars, that change when you hover a part.
+
+### The five stats
+
+Each stat is one thing that can get you caught or killed. Each has a safe zone drawn on its bar for the current dish.
+
+| Stat | Plain meaning | Bad when | Safe zone |
+|---|---|---|---|
+| **Acid defence** | How much acid you keep out | Too low: you dissolve | Above the dish's acid line |
+| **Growth** | How fast you multiply next to the locals | Too high: you take over. Too low: you fade out | A band around the locals' rate |
+| **Smell** | How closely your waste matches the locals' | Mismatch: they smell you | Close to the locals |
+| **Naturalness** | How messy and alive you look | Too perfect: you look like a machine | Above the line |
+| **Crash survival** | How well you ride out a food crash | Too low: the crash wipes you out | Above the line |
+
+- A stat only appears once its dish has introduced it: Acid defence on dish 1, Growth on 2, Smell on 3, Naturalness on 4, Crash survival on 5.
+- Bars come from a quick forecast run of the real simulation, so they cannot disagree with the result. They are labelled "Forecast".
+- Energy stays as its own meter.
+
+### On the Adapt screen
+
+- The stat bars sit beside the cell, always visible, replacing the plain-words prediction list.
+- Each bar shows: the name, your marker, the safe zone, and one short verdict in words ("Too low: you will dissolve", "Safe", "Too fast: you will take over").
+- **Hover a part and the bars preview the change:** a ghost marker shows where each stat would move, with a green arrow where it gets safer and a red arrow where it gets worse. The preview line says the same in words: "Acid defence: safe. Growth: a little slower. Energy 2 of 4."
+- This is where trade-offs become visible: the Proton pump moves Acid defence into the safe zone and nudges Growth down.
+
+### On every part card
+
+Replace the Game line and the loose chips with two fixed rows:
+
+- **Helps:** the stats it improves, with arrows. "Acid defence ▲▲"
+- **Costs:** the stats it worsens, and its energy. "Growth ▼ · Energy 2"
+
+The Real line stays, behind the "Real biology" toggle. The Game sentence moves into the card's tooltip or expanded view.
+
+### After a failure
+
+- The verdict names the stat: "Acid defence was too low. You dissolved by tick 12."
+- The failing bar is marked in red on the Adapt screen.
+- Under it, a line lists what can change that stat on this dish: "Changes Acid defence: Envelope slot, Insides slot." Those slots are highlighted on the cell.
+- The Tip button stays. Level 1 is now redundant with the above, so it has one level: it names one part to try.
+
+### In the replay
+
+Each stat has a matching live readout, in the same order and colours as the bars, so the forecast and the result can be compared. Where a suspicion channel already shows the same thing, relabel it to the stat's name (Waste becomes Smell, Regularity becomes Naturalness, shown inverted so that higher is better).
+
+### Data and rules
+
+```js
+LookAlive.stats(dish, build)
+// -> [{ id: 'acid' | 'growth' | 'smell' | 'natural' | 'crash',
+//       name, value: 0..1, safe: [lo, hi], state: 'low' | 'safe' | 'high',
+//       verdict: text }]   // only the stats this dish shows
+LookAlive.statDiff(dish, buildA, buildB)   // per stat: { from, to, better: true | false | null }
+card.helps, card.costs    // filled per dish from statDiff against the bare carried cell
+dish.stats                // which stats are shown on this dish, in order
+```
+
+Check: for every dish, a build whose shown stats are all "safe" must win, and the carried build must have exactly the dish's new stat outside its safe zone.
