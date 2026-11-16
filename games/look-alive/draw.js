@@ -38,44 +38,76 @@ var LAD = (function () {
     return ctx.createPattern(pats[key], 'repeat');
   }
 
-  // ---------------------------------------------------------------- the dish
-  var off = null, offCtx = null, img = null, SUB = 3;
-  function rnd(x, y, s) { var h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + s; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
-  // The dish: every field cell becomes SUB x SUB specks, lit with probability set by that cell's density, so cells read as a dark-field speckle.
-  function drawDish(c, A, B, f, opt) {
-    var v = fit(c); if (!v) return;
-    var ctx = v.ctx, n = opt.n, m = n * SUB;
-    if (!off || off.width !== m) { off = document.createElement('canvas'); off.width = off.height = m; offCtx = off.getContext('2d'); img = offCtx.createImageData(m, m); }
-    var d = img.data, x, y, o, i;
-    var An = A.native, Ar = A.robot, Aw = A.waste, Af = A.food;
-    var Bn = B ? B.native : An, Br = B ? B.robot : Ar, Bw = B ? B.waste : Aw, Bf = B ? B.food : Af;
-    var stage = opt.stage || 0, kill = opt.kill || 0, tm = opt.time || 0, nd = opt.nativeScale || 1;
-    var gAmt = stage >= 1 ? (0.3 + 0.2 * stage) * (0.7 + 0.3 * Math.sin(tm * 5)) : 0;
-    if (kill > 0.002) gAmt += Math.min(0.5, kill * 6);
-    for (y = 0; y < m; y++) {
-      for (x = 0; x < m; x++) {
-        i = ((y / SUB) | 0) * n + ((x / SUB) | 0); o = (y * m + x) * 4;
-        var nat = (An[i] + (Bn[i] - An[i]) * f) * nd, rob = Ar[i] + (Br[i] - Ar[i]) * f, wa = Aw[i] + (Bw[i] - Aw[i]) * f, fo = Af[i] + (Bf[i] - Af[i]) * f;
-        var r = 0, g = 0, b = 0, k;
-        // faint chemistry wash: food (blue-grey) and waste (amber)
-        k = Math.min(1, wa * 1.6) * 0.20; r += 245 * k; g += 165 * k; b += 36 * k;
-        k = Math.min(1, fo) * 0.07; g += 90 * k; b += 100 * k;
-        var q = rnd(x, y, 11), q2 = rnd(x, y, 97);
-        if (q < nat * 0.2) { k = 0.55 + 0.45 * q2; r += 167 * k; g += 139 * k; b += 250 * k; }
-        if (q2 < rob * 5) {
-          k = 0.8 + 0.2 * q; var gm = rnd(x, y, 5) < gAmt * 0.55 ? 1 : 0;
-          r = (255 * (1 - gm) + 45 * gm) * k; g = (107 * (1 - gm) + 212 * gm) * k; b = (149 * (1 - gm) + 167 * gm) * k;
-        }
-        d[o] = r > 255 ? 255 : r; d[o + 1] = g > 255 ? 255 : g; d[o + 2] = b > 255 ? 255 : b; d[o + 3] = 255;
-      }
+  // ---------------------------------------------------------------- the dish, drawn as cells
+  // A fixed pool of candidate blobs per kind. Each has a fixed spot in the dish and a fixed threshold. A blob is shown when the
+  // density field at its spot (interpolated between two snapshots) is above its threshold, so the number of blobs follows the
+  // population, positions never change between frames, and falling density makes blobs shrink and disappear one by one.
+  var pools = null, sprites = {};
+  function mul(seed) { return function () { seed = (seed + 0x6D2B79F5) | 0; var t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  function makePool(count, seed) {
+    var r = mul(seed), out = [], u, v;
+    while (out.length < count) {
+      u = r(); v = r();
+      if ((u - 0.5) * (u - 0.5) + (v - 0.5) * (v - 0.5) <= 0.2) out.push({ u: u, v: v, th: r(), p1: r() * 6.283, p2: r() * 6.283, sz: 0.75 + r() * 0.5, sp: 0.5 + r() * 0.9, tint: r() });
     }
-    offCtx.putImageData(img, 0, 0);
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, v.w, v.h);
-    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(off, 0, 0, v.w, v.h);
-    var gr = ctx.createRadialGradient(v.w / 2, v.h / 2, v.w * 0.40, v.w / 2, v.h / 2, v.w * 0.5);
+    return out;
+  }
+  function sprite(color) {
+    if (sprites[color]) return sprites[color];
+    var c = document.createElement('canvas'); c.width = c.height = 48; var g = c.getContext('2d');
+    var gr = g.createRadialGradient(20, 19, 2, 24, 24, 23);
+    gr.addColorStop(0, 'rgba(255,255,255,.75)'); gr.addColorStop(0.25, color); gr.addColorStop(0.75, color); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.globalAlpha = 0.9; g.fillStyle = gr; g.beginPath(); g.arc(24, 24, 23, 0, 7); g.fill();
+    sprites[color] = c; return c;
+  }
+  function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+  // opt: n (field size), nativeRef (mean native density at the start), stage, kill, time, stress (0..1, acid loss), acid (dish has acid)
+  function drawCells(c, A, B, f, opt) {
+    var v = fit(c); if (!v) return;
+    var ctx = v.ctx, W = v.w, H = v.h, n = opt.n, tm = opt.time || 0, ref = opt.nativeRef || 0.9;
+    if (!pools) pools = { nat: makePool(950, 11), rob: makePool(1050, 23), waste: makePool(420, 37) };
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    var bg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W / 2);
+    bg.addColorStop(0, opt.acid ? '#1a1604' : '#0b0d16'); bg.addColorStop(1, opt.acid ? '#0b0a02' : '#05060b');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    var Bn = B || A, An = A.native, Ar = A.robot, Aw = A.waste, Bnn = Bn.native, Br = Bn.robot, Bw = Bn.waste;
+    var stage = opt.stage || 0, kill = opt.kill || 0, gAmt = stage >= 1 ? Math.min(0.9, 0.25 + 0.2 * stage + Math.min(0.4, kill * 6)) : 0;
+    var stress = opt.stress || 0, i, k, q, idx, p, s, x, y, base, spr, drift;
+    var pv = sprite('#a78bfa'), pp = sprite('#ff6b95'), pa = sprite('#f5a524'), pg = sprite('#2dd4a7');
+    ctx.globalCompositeOperation = 'lighter';
+    // waste wisps: small, amber, only where waste is dense
+    for (i = 0; i < pools.waste.length; i++) {
+      q = pools.waste[i]; idx = ((q.v * n) | 0) * n + ((q.u * n) | 0);
+      p = clamp01(((Aw[idx] + (Bw[idx] - Aw[idx]) * f) - 0.095) / 0.06) * 0.7;
+      if (p <= q.th) continue;
+      s = (2.2 + 2 * q.sz) * clamp01((p - q.th) / 0.1);
+      x = (q.u + 0.006 * Math.sin(tm * 0.5 * q.sp + q.p1)) * W; y = (q.v + 0.006 * Math.cos(tm * 0.45 * q.sp + q.p2)) * H;
+      ctx.globalAlpha = 0.55; ctx.drawImage(pa, x - s, y - s, s * 2, s * 2);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    // natives
+    for (i = 0; i < pools.nat.length; i++) {
+      q = pools.nat[i]; idx = ((q.v * n) | 0) * n + ((q.u * n) | 0);
+      p = clamp01((An[idx] + (Bnn[idx] - An[idx]) * f) / ref * 0.5);
+      if (p <= q.th) continue;
+      s = (4.4 * q.sz) * (0.55 + 0.45 * clamp01((p - q.th) / 0.1));
+      x = (q.u + 0.005 * Math.sin(tm * 0.6 * q.sp + q.p1)) * W; y = (q.v + 0.005 * Math.cos(tm * 0.5 * q.sp + q.p2)) * H;
+      ctx.globalAlpha = 0.85; ctx.drawImage(pv, x - s, y - s, s * 2, s * 2);
+    }
+    // you: pink, green-tinted only while the immune stage is active
+    for (i = 0; i < pools.rob.length; i++) {
+      q = pools.rob[i]; idx = ((q.v * n) | 0) * n + ((q.u * n) | 0);
+      p = clamp01((Ar[idx] + (Br[idx] - Ar[idx]) * f) / ref * 0.9);
+      if (p <= q.th) continue;
+      s = (5.2 * q.sz) * (0.35 + 0.65 * clamp01((p - q.th) / 0.12)) * (1 - 0.55 * stress);
+      if (s < 0.6) continue;
+      x = (q.u + 0.007 * Math.sin(tm * 0.8 * q.sp + q.p1)) * W; y = (q.v + 0.007 * Math.cos(tm * 0.7 * q.sp + q.p2)) * H;
+      ctx.globalAlpha = 0.95; ctx.drawImage(gAmt > 0 && q.tint < gAmt * 0.55 ? pg : pp, x - s, y - s, s * 2, s * 2);
+    }
+    ctx.globalAlpha = 1;
+    var gr = ctx.createRadialGradient(W / 2, H / 2, W * 0.40, W / 2, H / 2, W * 0.5);
     gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.85)');
-    ctx.fillStyle = gr; ctx.fillRect(0, 0, v.w, v.h);
+    ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
   }
 
   // ---------------------------------------------------------------- generic line chart
@@ -158,7 +190,7 @@ var LAD = (function () {
     var x = 0.5 + 0.5 * Math.max(-1, Math.min(1, (reg - alien) / 9));
     return x;  // Too Alien on the left: more alien suspicion moves the needle left, Regularity moves it right
   }
-  function instruments(c, vals) {
+  function instruments(c, vals, on) {
     var v = fit(c); if (!v) return;
     var ctx = v.ctx, W = v.w, H = v.h; ctx.clearRect(0, 0, W, H);
     var gx = 8, gw = W - 16, gy = 30, gh = 18;
@@ -178,10 +210,11 @@ var LAD = (function () {
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(px, gy - 2); ctx.lineTo(px - 6, gy - 11); ctx.lineTo(px + 6, gy - 11); ctx.closePath(); ctx.fill();
     ctx.fillRect(px - 1, gy - 2, 2, gh + 4);
     // four needles
-    var top = gy + gh + 22, cw = W / 4, R = Math.min(cw / 2 - 12, (H - top - 30));
-    for (var k = 0; k < 4; k++) {
-      var ch = CH[k], val = vals[ch.id], frac = Math.max(0, Math.min(1, val / 8));
-      var cxk = cw * k + cw / 2, cyk = top + R + 4;
+    var lst = []; for (var kk = 0; kk < 4; kk++) if (!on || on[CH[kk].id]) lst.push(kk);
+    var top = gy + gh + 22, cw = W / Math.max(1, lst.length), R = Math.min(cw / 2 - 12, (H - top - 30), 60);
+    for (var li = 0; li < lst.length; li++) {
+      var k = lst[li], ch = CH[k], val = vals[ch.id], frac = Math.max(0, Math.min(1, val / 8));
+      var cxk = cw * li + cw / 2, cyk = top + R + 4;
       ctx.lineWidth = 9; ctx.lineCap = 'butt';
       ctx.strokeStyle = '#161a27'; ctx.beginPath(); ctx.arc(cxk, cyk, R, Math.PI, 2 * Math.PI); ctx.stroke();
       if (frac > 0.005) { ctx.strokeStyle = pattern(ctx, ch.pat, ch.color); ctx.beginPath(); ctx.arc(cxk, cyk, R, Math.PI, Math.PI + Math.PI * frac); ctx.stroke(); }
@@ -255,5 +288,5 @@ var LAD = (function () {
     }
   }
 
-  return { VIO: VIO, PINK: PINK, AMB: AMB, GRN: GRN, CY: CY, RED: RED, CH: CH, MACH: MACH, fit: fit, pattern: pattern, drawDish: drawDish, chart: chart, ribbon: ribbon, instruments: instruments, portrait: portrait, hash: hash };
+  return { VIO: VIO, PINK: PINK, AMB: AMB, GRN: GRN, CY: CY, RED: RED, CH: CH, MACH: MACH, fit: fit, pattern: pattern, drawCells: drawCells, chart: chart, ribbon: ribbon, instruments: instruments, portrait: portrait, hash: hash };
 })();
