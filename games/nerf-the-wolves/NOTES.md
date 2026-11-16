@@ -37,3 +37,21 @@ Slice 1 (Tasks 1 to 4, minus the `hub.js` step) is built: three puzzles, season 
 3. Did you notice the hands change, and did it make you smile?
 4. Did you solve puzzle 2 by thinking or by trying everything?
 5. Did you read the prayers?
+
+## Flow revision (empty start, watch the defaults, then try)
+
+Every level (three puzzles and the Sandbox) now plays like this:
+
+1. Opening a level starts a baseline run at once: empty meadow, a beat of birdsong (`dawn` sound, `birdMs` 1200), then every animal walks, hops or flies in (`arrive` pluck each), about 5.5 s in all. Rabbits come out of the burrows, wolves, deer and giraffes walk in from the left edge, hawks and bees fly in from the top. Order is fixed (rabbit, deer, giraffe, bee, hawk, wolf) with seeded jitter. Skip jumps to the end of the entrance.
+2. The 30-encounter season plays with no skills bought. Bars slide from 50 to the baseline win rates.
+3. The result holds for `settleMs` (2.6 s), the meadow resets to empty and the game waits. The top bar keeps the one-line summary, e.g. "Wolves won 67% of encounters, Rabbits won 35%; the target is 43 to 57%." (the band is 43 to 57, the code's solved band, not 45 to 55). Puzzle 1 then adds "Now fix it: spend your points, then press Try it."; other puzzles add their brief.
+4. While waiting, buying or refunding moves the win-rate bars live (same sim rates). Buttons: Try it (entrance, hands, season, result, no auto-run), Reset (clears skills, empties meadow; key R), Watch again (replays the baseline; key W). Enter/Space is Try it, S skips.
+5. A Try it run goes: empty, entrance, hands, season, result with prayers and stars. The result stays on screen (no ambient fights any more) until the next run, which starts from empty again.
+
+Code: `sim.js` gained `roster`, `arrivals`, `meadowAt`, `seedFor`, `summary` and `combos` exports; `puzzle()` now also returns `roster` and `arrivals` (own rng, so encounters and prayers are unchanged). Run seeds are now `seedFor(level, bought)`, so the same skills always give the identical run (buying order ignored); before they varied per click. Prayers compare against the baseline, not the previous run.
+
+`dev/check.js` now also checks: baseline determinism and summary numbers equal `S.start` win rates; zero animals before arrivals and arrivals fill the roster exactly; every animal in every encounter has an arrival event; same skills twice give identical runs; arrivals finish within 4.5 s. In the game, `__game.state().violations` counts any fighter that appeared without arriving (0 in the headless run); `here`, `appeared` and `baselineDone` are exposed too.
+
+Rules, budgets, pars and solutions are unchanged. Timings added: birdMs, walkMs, settleMs (TUNE panel). Sounds: `arrive` (peak about -19 dB) and `dawn` (-13 dB), measured offline with `Kit.audio.measure`, both under -3 dB. Not listened to.
+
+Verified headless over CDP: puzzle 1 baseline, reset to empty (here = 0), buying four skills (bars update), Try it solves with `violations` 0. Two screenshots looked at (mid-arrivals, empty meadow waiting).

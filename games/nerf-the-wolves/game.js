@@ -9,7 +9,9 @@
     handHoldMs:  { v: 650, min: 200, max: 2000, step: 25 },
     handUpMs:    { v: 400, min: 150, max: 1200, step: 25 },
     barSlide:    { v: 0.006, min: 0.002, max: 0.02, step: 0.001 },
-    ambientGapMs: { v: 1100, min: 400, max: 3000, step: 50 },
+    birdMs:      { v: 1200, min: 300, max: 3000, step: 100 },     // birdsong beat before the first arrival
+    walkMs:      { v: 1100, min: 500, max: 2500, step: 50 },      // one animal walking in
+    settleMs:    { v: 2600, min: 800, max: 6000, step: 200 },     // baseline result stays up before the reset
     prayerMs:    { v: 6000, min: 2500, max: 10000, step: 250 },
     bobAmount:   { v: 3, min: 0, max: 8, step: 0.5 }
   };
@@ -35,7 +37,7 @@
   var screen = 'title';           // title | levels | play
   var level = null, levelKey = '';
   var bought = [];
-  var phase = 'idle';             // idle | hands | season
+  var phase = 'idle';             // idle | entrance | hands | season | settle
   var committed = null;           // last result shown (or the opening meadow)
   var barVals = {}, barTarget = {};
   var rest = {};
@@ -48,7 +50,9 @@
   var card = null;                // result card
   var actors = [], ghosts = [], prayers = [], popups = [];
   var hid = {}, slotCursor = {}, pulse = {};
-  var hands = null, season = null, pending = null, ambient = { t: 0, idx: 0 };
+  var hands = null, season = null, pending = null;
+  var baseline = null, baselineDone = false, tried = false, runMode = 'baseline', runBought = [];
+  var summaryMsg = '', here = {}, walkers = [], entr = null, settleT = 0, violations = 0, appeared = [], watched = 0;
   var handCount = 0, lastHand = '';
   var tutorial = true;            // pulse the skill buttons until the first purchase
   var bloom = { k: 0 };
@@ -64,7 +68,7 @@
   function inRect(r, x, y) { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
 
   // ---------- levels ----------
-  var SANDBOX = { id: 'sandbox', kind: 'sandbox', free: true, name: 'Sandbox', brief: 'Every skill is free and nothing can be lost. Poke the meadow and run the season.',
+  var SANDBOX = { id: 'sandbox', kind: 'sandbox', free: true, name: 'Sandbox', brief: 'Every skill is free and nothing can be lost. Watch the meadow, poke it, then press Try it.',
     wolf: 'plain', setup: [], offers: D.COUNTER_OFFERS.concat(['teeth']), budget: 0, par: 0 };
   function allLevels() { return D.PUZZLES.concat([SANDBOX]); }
   function keyOf(l) { return String(l.id); }
@@ -73,29 +77,39 @@
   function sky(s) { return FLYER[s] ? 1 : 0; }
 
   function startLevel(l) {
-    level = l; levelKey = keyOf(l); bought = []; phase = 'idle'; card = null; message = ''; messageKind = '';
-    actors = []; ghosts = []; prayers = []; popups = []; hands = null; season = null; pending = null;
-    hid = {}; slotCursor = {}; pulse = {}; tallyNow = {}; ambient = { t: 0, idx: 0 };
+    level = l; levelKey = keyOf(l); bought = []; phase = 'idle'; message = ''; messageKind = '';
+    pending = null; summaryMsg = ''; violations = 0; appeared = []; watched = 0; baselineDone = false; tried = false; runBought = [];
     wolfSprite = l.wolf === 'plain' || l.wolf === 'build' ? 'wolf' : D.WOLF_VARIANTS[l.wolf].sprite;
-    committed = W.puzzle(l, [], Kit.hash('open' + levelKey));
-    ORDER.forEach(function (s) { barVals[s] = barTarget[s] = committed.wr[s]; });
-    computeRest();
-    bloom.k = committed.solved ? 1 : 0;
+    baseline = W.puzzle(l, [], W.seedFor(l, []));
+    committed = baseline;
+    ORDER.forEach(function (s) { barVals[s] = barTarget[s] = 50; });
+    clearMeadow();
     tutorial = l.id === 1 && !Kit.store.get('bg.' + SLUG + '.tutorialDone', false);
     screen = 'play';
+    beginRun('baseline');
+  }
+  // The meadow with nobody in it: burrows, nests and trees only.
+  function clearMeadow() {
+    actors = []; ghosts = []; prayers = []; popups = []; walkers = []; here = {}; hid = {}; slotCursor = {}; pulse = {}; tallyNow = {};
+    hands = null; season = null; entr = null; card = null; bloom.k = 0;
+    computeRest(baseline || committed, true);
+  }
+  function hereCount() { var n = 0; for (var k in here) if (here[k]) n++; return n; }
+  function syncLive() {
+    var b = W.build(level, bought), r = W.rates(b.sp, b.M);
+    ORDER.forEach(function (s) { barTarget[s] = r.wr[s]; });
   }
 
-  function pickCount(p) { return p < 0.05 ? 1 : p < 0.12 ? 2 : p < 0.2 ? 3 : p < 0.3 ? 4 : 5; }
-  function computeRest() {
-    var res = committed;
+  // neutral: crowd sizes and layout only (no sad faces, crowns or bones until the season has played out)
+  function computeRest(res, neutral) {
     ORDER.forEach(function (s) {
       var wr = res.wr[s], p = res.picks[s];
       var lonely = p < 0.05, spill = p > 0.30;
-      rest[s] = { n: lonely ? 1 : pickCount(p), upset: wr < 47, crown: wr > 58, bones: wr > 58, flag: wr < 42, shake: wr < 42,
-        spill: spill, lonely: lonely, eaten: (s === 'deer' || s === 'rabbit') && wr > 58 };
+      rest[s] = { n: res.roster[s], spill: spill, lonely: lonely,
+        upset: !neutral && wr < 47, crown: !neutral && wr > 58, bones: !neutral && wr > 58, flag: !neutral && wr < 42, shake: !neutral && wr < 42,
+        eaten: !neutral && (s === 'deer' || s === 'rabbit') && wr > 58 };
     });
   }
-  function bandsOk() { return ORDER.every(function (s) { return committed.wr[s] >= 43 && committed.wr[s] <= 57; }); }
 
   // ---------- sprites ----------
   function spriteFor(s, upset) {
@@ -211,7 +225,7 @@
     ctx.fillStyle = 'rgba(247,243,227,.92)'; ctx.strokeStyle = COL.ink; ctx.lineWidth = 3;
     rrect(ctx, 330, 540, 620, 44, 22); ctx.fill(); ctx.stroke(); ctx.restore();
     ctx.font = '800 18px ' + F_BODY; ctx.fillStyle = COL.ink;
-    ctx.fillText('Buy skills for the animals, then press Run the season. Tap a skill again to refund it.', 640, 563);
+    ctx.fillText('Watch the meadow first, then spend points on skills and press Try it.', 640, 563);
     button(ctx, BTN_PUZZLES, 'Puzzles', { fill: COL.orange, dark: '#c98a1e', font: '34px ' + F_TITLE });
     button(ctx, BTN_SANDBOX, 'Sandbox', { fill: COL.pink, dark: '#c93d7c', font: '34px ' + F_TITLE });
   }
@@ -251,7 +265,8 @@
 
   // ---------- play screen layout ----------
   function skillRect(i) { return { x: 16 + (i % 6) * 148, y: 574 + Math.floor(i / 6) * 74, w: 140, h: 66 }; }
-  var RUN = { x: 930, y: 632, w: 332, h: 68 };
+  var RUN = { x: 930, y: 646, w: 332, h: 62 };
+  var BTN_RESET = { x: 930, y: 600, w: 120, h: 36 }, BTN_WATCH = { x: 1062, y: 600, w: 200, h: 36 };
   var SKIP = { x: 670, y: 492, w: 116, h: 46 };
   var BTN_LEVELS = { x: 676, y: 14, w: 110, h: 44 };
   var CARD_NEXT = { x: 208, y: 420, w: 184, h: 52 }, CARD_STAY = { x: 208, y: 484, w: 184, h: 44 };
@@ -304,7 +319,7 @@
       var id = level.offers[i], sk = SK[id], r = skillRect(i), c = count(id), on = c > 0;
       var afford = on || level.free || sk.cost <= pts, locked = phase !== 'idle';
       var hover = !locked && afford && inRect(r, mouse.x, mouse.y);
-      var pul = tutorial && bought.length === 0 && phase === 'idle' ? 1 + Math.sin(clock * 0.008 + i * 0.5) * 0.04 : 1;
+      var pul = tutorial && baselineDone && bought.length === 0 && phase === 'idle' ? 1 + Math.sin(clock * 0.008 + i * 0.5) * 0.04 : 1;
       var shakeX = denyId === id && denyT > 0 ? Math.sin(denyT * 0.06) * 5 : 0;
       ctx.save();
       ctx.translate(r.x + r.w / 2 + shakeX, r.y + r.h / 2 + (hover ? -3 : 0)); ctx.scale(pul, pul);
@@ -336,17 +351,24 @@
     }
   }
 
+  // The next step to take, in order: watch, fix, try.
+  function guide() {
+    if (phase !== 'idle' || !baselineDone || tried) return '';
+    if (level.id === 1) return 'Now fix it: spend your points, then press Try it.';
+    return level.kind === 'sandbox' ? '' : level.brief;
+  }
   function drawTopBar(ctx) {
     ctx.save();
     ctx.fillStyle = 'rgba(246,227,180,.94)'; ctx.strokeStyle = COL.ink; ctx.lineWidth = 3;
-    rrect(ctx, 182, 8, 482, 84, 16); ctx.fill(); ctx.stroke();
+    rrect(ctx, 182, 8, 482, 90, 16); ctx.fill(); ctx.stroke();
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.font = '28px ' + F_TITLE; ctx.fillStyle = COL.ink;
-    ctx.fillText(level.kind === 'sandbox' ? 'Sandbox' : 'Puzzle ' + level.id + ': ' + level.name, 198, 29);
+    ctx.fillText(level.kind === 'sandbox' ? 'Sandbox' : 'Puzzle ' + level.id + ': ' + level.name, 198, 26);
     ctx.font = '800 16px ' + F_BODY;
     ctx.fillStyle = messageKind === 'bad' ? '#b0306a' : (messageKind === 'good' ? '#2f7a2a' : COL.ink);
-    var txt = message || level.brief, lines = wrap(ctx, txt, 450);
-    lines.slice(0, 2).forEach(function (t, k) { ctx.fillText(t, 198, 56 + k * 20); });
+    ctx.font = '800 15px ' + F_BODY;
+    var txt = [message, guide()].filter(Boolean).join(' ') || level.brief, lines = wrap(ctx, txt, 452);
+    lines.slice(0, 3).forEach(function (t, k) { ctx.fillText(t, 198, 52 + k * 18); });
     ctx.restore();
     button(ctx, BTN_LEVELS, 'Levels', { fill: COL.pink, dark: '#c93d7c', font: '22px ' + F_TITLE, disabled: phase !== 'idle' });
   }
@@ -354,13 +376,16 @@
   function drawControls(ctx) {
     var pts = points();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    var label = level.free ? 'Free play' : 'Points ' + (level.budget - pts) + ' / ' + level.budget;
-    // Points are spent, so "Points 3 / 6" shows points left over total.
-    if (!level.free) label = 'Points ' + pts + ' / ' + level.budget;
-    outlineText(ctx, label, 1096, 596, '40px ' + F_TITLE, '#fff8e6', 8);
+    var label = level.free ? 'Free play' : 'Points ' + pts + ' / ' + level.budget;
+    outlineText(ctx, label, 1096, 580, '34px ' + F_TITLE, '#fff8e6', 8);
     var busy = phase !== 'idle';
-    button(ctx, RUN, 'Run the season', { fill: COL.orange, dark: '#c98a1e', font: '34px ' + F_TITLE, disabled: busy });
-    if (phase === 'season') button(ctx, SKIP, 'Skip', { fill: COL.pink, dark: '#c93d7c', font: '24px ' + F_TITLE });
+    button(ctx, BTN_RESET, 'Reset', { fill: COL.pink, dark: '#c93d7c', font: '22px ' + F_TITLE, disabled: busy });
+    button(ctx, BTN_WATCH, 'Watch again', { fill: COL.pink, dark: '#c93d7c', font: '22px ' + F_TITLE, disabled: busy });
+    var hint = baselineDone && !busy && !tried && bought.length > 0 ? 1 + Math.sin(clock * 0.008) * 0.025 : 1;
+    ctx.save(); ctx.translate(RUN.x + RUN.w / 2, RUN.y + RUN.h / 2); ctx.scale(hint, hint); ctx.translate(-RUN.x - RUN.w / 2, -RUN.y - RUN.h / 2);
+    button(ctx, RUN, 'Try it', { fill: COL.orange, dark: '#c98a1e', font: '36px ' + F_TITLE, disabled: busy });
+    ctx.restore();
+    if (phase === 'entrance' || phase === 'season' || phase === 'settle') button(ctx, SKIP, 'Skip', { fill: COL.pink, dark: '#c93d7c', font: '24px ' + F_TITLE });
   }
 
   // ---------- meadow scene ----------
@@ -409,7 +434,7 @@
 
   function drawLinks(ctx) {
     var drawn = {};
-    bought.forEach(function (id) {
+    (phase === 'idle' ? bought : runBought).forEach(function (id) {
       var sk = SK[id];
       if (drawn[id]) return; drawn[id] = 1;
       if (sk.species.length === 2) {
@@ -437,12 +462,13 @@
       var r = rest[s], n = r.n;
       if (r.bones) [[-70, 18], [64, 22], [0, 40]].forEach(function (p, bi) { items.push({ y: HOME[s].y + p[1] - 1, f: function () { Kit.draw(ctx, 'bone', HOME[s].x + p[0], HOME[s].y + p[1], { h: 26, rot: bi * 0.7 }); } }); });
       if (r.flag && s === 'rabbit') items.push({ y: HOME[s].y + 20, f: function () { Kit.draw(ctx, 'flag', HOME[s].x + 84, HOME[s].y - 10, { h: 74, rot: Math.sin(clock * 0.005) * 0.06 }); } });
-      if (r.lonely) items.push({ y: HOME[s].y + 30, f: function () {
+      if (r.lonely && here[s + '#0']) items.push({ y: HOME[s].y + 30, f: function () {
         var tx = HOME[s].x - 110 + ((clock * 0.04) % 220);
         Kit.draw(ctx, 'tumbleweed', tx, HOME[s].y + 28, { h: 40, rot: clock * 0.01 }); } });
       for (var i = 0; i < n; i++) {
         (function (i) {
           if (hid[s] && hid[s][i] > 0) return;
+          if (!here[s + '#' + i]) return;
           var p = layoutPos(s, i), bobA = tn('bobAmount'), seed = i * 1.7 + s.length;
           var by = Math.sin(clock * 0.004 + seed) * bobA * (FLYER[s] ? 2 : 1);
           var pl = pulse[s] ? pulse[s] : 0;
@@ -458,6 +484,10 @@
           } });
         })(i);
       }
+    });
+    walkers.forEach(function (w) {
+      items.push({ y: w.y, f: function () {
+        animalDraw(ctx, spriteFor(w.s, false), w.s, w.x, w.y, { flip: w.flip, air: w.air + (FLYER[w.s] ? Math.sin(clock * 0.012 + w.x) * 4 : 0), sy: w.sy }); } });
     });
     actors.forEach(function (ac) {
       var pa = ac.pa, pb = ac.pb, a = ac.enc.a, b = ac.enc.b;
@@ -494,7 +524,7 @@
       if (gh.state === 'queue') Kit.draw(ctx, spriteFor(gh.next, false), gx, gy - 52, { h: 24 });
     });
     // tally pills (this season)
-    if (phase === 'season' || season) {
+    if (phase === 'season' || phase === 'settle' || season) {
       ORDER.forEach(function (s) {
         var n = tallyNow[s] || 0; if (!n) return;
         var x = HOME[s].x, y = HOME[s].y - HEIGHT[s] * 1.15 - (FLYER[s] ? 10 : 6);
@@ -567,6 +597,8 @@
   function nearestBurrow(p) { return BURROWS.reduce(function (best, b) { return Math.abs(b.x - p.x) + Math.abs(b.y - p.y) < Math.abs(best.x - p.x) + Math.abs(best.y - p.y) ? b : best; }, BURROWS[0]); }
   function spawnActor(enc, amb) {
     var A = slotPos(enc.a), T = slotPos(enc.b);
+    // every fighter must have walked in through an arrival event
+    if (!here[enc.a + '#' + A.slot] || !here[enc.b + '#' + T.slot]) violations++;
     var f = enc.kind === 'hunt' ? 1 : enc.kind === 'escape' ? 1.5 : 1.4;
     actors.push({ enc: enc, amb: amb, t: 0, dur: tn('encMs') * f, A: A, T: T, flags: {}, kind: enc.kind,
       aUpset: false, bUpset: enc.kind === 'hunt',
@@ -662,8 +694,8 @@
   function computeTouches() {
     var list = [], seen = {};
     function add(species, tool, label) { var key = species + tool; if (seen[key]) return; seen[key] = 1; list.push({ species: species, tool: tool, label: label }); }
-    for (var i = bought.length - 1; i >= 0; i--) {
-      var sk = SK[bought[i]];
+    for (var i = runBought.length - 1; i >= 0; i--) {
+      var sk = SK[runBought[i]];
       if (sk.kind === 'team') { add(sk.species[0], 'tweezers', sk.name); add(sk.species[1], 'wrench', sk.name); }
       else sk.fx.forEach(function (e) {
         var inc = e.t === 'stat' ? e.d > 0 : e.x > 1, sp = e.t === 'stat' ? e.s : e.a;
@@ -680,19 +712,81 @@
     else { do { pick = names[Math.floor(Math.random() * names.length)]; } while (pick === lastHand); }
     handCount++; lastHand = pick; return pick;
   }
+  // Try it: run the chosen skills from an empty meadow.
   function run() {
-    if (phase !== 'idle' || screen !== 'play' || card) { if (phase === 'idle' && card) card = null; else return; }
     if (phase !== 'idle') return;
-    phase = 'hands'; card = null; message = ''; messageKind = '';
-    tutorial = false; Kit.store.set('bg.' + SLUG + '.tutorialDone', true);
+    card = null; tutorial = false; Kit.store.set('bg.' + SLUG + '.tutorialDone', true);
+    beginRun('try');
+  }
+  function watchAgain() { if (phase === 'idle') beginRun('baseline'); }
+  function resetAll() {
+    if (phase !== 'idle') return;
+    bought = []; message = tried ? '' : summaryMsg; messageKind = ''; play('refund'); clearMeadow();
+    if (baselineDone) syncLive();
+  }
+  // Every run: empty meadow, a beat of birdsong, the arrivals, (hands), the season.
+  function beginRun(mode) {
+    if (phase !== 'idle') return;
+    runMode = mode; runBought = mode === 'baseline' ? [] : bought.slice();
     var rerun = (runCounts[levelKey] || 0) > 0;
     runCounts[levelKey] = (runCounts[levelKey] || 0) + 1; runTotal++;
-    pending = W.puzzle(level, bought, (Kit.hash('run' + levelKey) + runTotal * 7919) >>> 0, committed.wr);
+    if (mode === 'baseline') { watched++; pending = baseline; }
+    else pending = W.puzzle(level, runBought, W.seedFor(level, runBought), baseline.wr);
     pending.rerun = rerun;
-    prayers = []; ghosts = []; actors = []; hid = {}; slotCursor = {}; tallyNow = {}; popups = [];
+    clearMeadow(); computeRest(pending, true);
+    ORDER.forEach(function (s) { barTarget[s] = 50; });
+    messageKind = '';
+    message = mode === 'baseline' ? (level.id === 1 ? 'Watch the meadow as it is.' : 'Watching the meadow as it is.') : 'Trying your skills.';
+    phase = 'entrance';
+    entr = { t: 0, idx: 0, bird: false, events: pending.arrivals };
     play('run');
-    var touches = computeTouches();
-    if (touches.length) startHands(touches); else startSeason();
+  }
+
+  // ---------- the entrance ----------
+  var ENTRY = { wolf: { x: -120, dy: 0 }, deer: { x: -120, dy: 0 }, giraffe: { x: -150, dy: 0 } };
+  function spawnWalker(ev) {
+    var s = ev.species, to = layoutPos(s, ev.slot), from;
+    if (ev.from === 'burrow') { var bu = BURROWS[ev.slot % BURROWS.length]; from = { x: bu.x, y: bu.y }; }
+    else if (ev.from === 'sky') from = { x: to.x + (ev.slot % 2 ? 260 : -220), y: -90 };
+    else from = { x: ENTRY[s].x, y: to.y + (ev.slot % 2 ? 14 : -10) };
+    var dur = tn('walkMs') * (s === 'giraffe' ? 1.5 : s === 'deer' ? 1.15 : s === 'rabbit' ? 0.8 : s === 'hawk' ? 0.9 : s === 'bee' ? 1.2 : 1);
+    walkers.push({ ev: ev, s: s, key: ev.id, x0: from.x, y0: from.y, x1: to.x, y1: to.y, t: 0, dur: dur, x: from.x, y: from.y, flip: to.x < from.x, air: 0, sy: 1 });
+    appeared.push(ev.id);
+    play('arrive', { midi: appeared.length });
+  }
+  function stepWalker(w, dt) {
+    w.t += dt;
+    var k = clamp(w.t / w.dur, 0, 1), e = FLYER[w.s] ? easeOut(k) : k;
+    w.x = lerp(w.x0, w.x1, e); w.y = lerp(w.y0, w.y1, e); w.air = 0; w.sy = 1;
+    if (w.s === 'rabbit') w.air = Math.abs(Math.sin(k * Math.PI * 4)) * 26 * (k < 1 ? 1 : 0);
+    else if (w.s === 'bee') { w.x += Math.sin(k * 18) * 26 * (1 - k); w.y += Math.sin(k * 11) * 12 * (1 - k); }
+    else if (w.s === 'hawk') w.x += Math.sin(k * Math.PI) * (w.ev.slot % 2 ? -50 : 50) * (1 - k);
+    else w.air = Math.abs(Math.sin(k * Math.PI * (w.s === 'giraffe' ? 5 : w.s === 'deer' ? 7 : 9))) * (w.s === 'giraffe' ? 5 : 9);
+    w.sy = 1 + Math.sin(k * 40) * 0.015;
+    return k >= 1;
+  }
+  function settle(w) {
+    here[w.key] = true;
+    if (!FLYER[w.s]) Kit.burst(w.x1, w.y1 - 6, { n: 4, color: '#e6d3a0', speed: 90, life: 350, gravity: 100, size: 4 });
+  }
+  function stepEntrance(dt) {
+    entr.t += dt;
+    if (!entr.bird) { entr.bird = true; play('dawn'); }
+    var tt = entr.t - tn('birdMs');
+    while (entr.idx < entr.events.length && tt >= entr.events[entr.idx].t) { spawnWalker(entr.events[entr.idx]); entr.idx++; }
+    if (entr.idx >= entr.events.length && walkers.length === 0) endEntrance();
+  }
+  function skipEntrance() {
+    if (phase !== 'entrance') return;
+    for (; entr.idx < entr.events.length; entr.idx++) { appeared.push(entr.events[entr.idx].id); here[entr.events[entr.idx].id] = true; }
+    walkers.forEach(function (w) { here[w.key] = true; });
+    walkers = []; endEntrance();
+  }
+  function endEntrance() {
+    entr = null;
+    var touches = runMode === 'try' ? computeTouches() : [];
+    message = runMode === 'baseline' ? message : '';
+    if (touches.length) { phase = 'hands'; startHands(touches); } else startSeason();
   }
   function startHands(touches) {
     var pair = nextHandPair(), list = [];
@@ -722,7 +816,6 @@
     var rerun = pending.rerun;
     season = { t: 0, idx: 0, span: tn('seasonMs') * 0.8, speed: rerun ? tn('fastMult') : 1, resolved: 0, from: {}, to: pending.wr };
     ORDER.forEach(function (s) { season.from[s] = barVals[s]; });
-    ambient = { t: 0, idx: 0 };
   }
   function stepSeason(dt) {
     var dtS = dt * season.speed;
@@ -740,10 +833,28 @@
     for (var j = season.idx; j < pending.encounters.length; j++) if (pending.encounters[j].kind === 'hunt') ghosts.push({ x0: SIGN.x, y0: SIGN.y, t: 1500, state: 'queue', next: pickNext(), cx: null });
     actors = []; hid = {}; endSeason();
   }
+  function skipSettle() { if (phase === 'settle') finishSettle(); }
+  function skipAny() { if (phase === 'entrance') skipEntrance(); else if (phase === 'season') skipSeason(); else if (phase === 'settle') skipSettle(); }
+  // After the baseline: the meadow resets to empty and the game waits for the player.
+  function finishSettle() {
+    clearMeadow(); phase = 'idle'; baselineDone = true; syncLive();
+  }
   function endSeason() {
-    phase = 'idle'; var res = pending; committed = res; season = null; ambient = { t: 0, idx: 0 };
+    var res = pending; committed = res; season = null;
     ORDER.forEach(function (s) { barTarget[s] = res.wr[s]; });
-    computeRest(); hid = {};
+    computeRest(res); hid = {};
+    if (runMode === 'baseline') {
+      // Show how it ended for a moment, then reset to empty (finishSettle) and wait.
+      phase = 'settle'; settleT = tn('settleMs');
+      messageKind = 'bad';
+      message = level.kind === 'sandbox' ? 'That is the meadow as it is. Every skill is free: pick some, then press Try it. ' + W.summary(level, res.wr)
+        : W.summary(level, res.wr);
+      if (level.kind === 'sandbox') messageKind = '';
+      summaryMsg = message;
+      play('notyet', { gain: 0.6 });
+      return;
+    }
+    phase = 'idle'; tried = true;
     var sol = res.solved;
     if (sol) {
       message = level.free ? 'Balanced! Every animal is in the green.' : 'Balanced!'; messageKind = 'good';
@@ -756,15 +867,14 @@
       for (var q = 0; q < 14; q++) Kit.burst(100 + Math.random() * 600, 200 + Math.random() * 150, { n: 4, color: ['#ffd23f', '#ff5fa2', '#7bd552', '#5cc3f2'][q % 4], speed: 220, life: 900, gravity: 300, size: 5 });
     } else {
       var worst = ORDER.slice().sort(function (p, q2) { return Math.abs(res.wr[q2] - 50) - Math.abs(res.wr[p] - 50); })[0];
-      message = PLURAL[worst] + ' are still at ' + Math.round(res.wr[worst]) + '%. Refund a skill and try another.'; messageKind = 'bad';
-      if (level.free) message = PLURAL[worst] + ' are at ' + Math.round(res.wr[worst]) + '%. Keep poking.';
+      message = PLURAL[worst] + ' are still at ' + Math.round(res.wr[worst]) + '%. Change your skills, then Try it again.'; messageKind = 'bad';
+      if (level.free) { message = PLURAL[worst] + ' are at ' + Math.round(res.wr[worst]) + '%. Keep poking.'; messageKind = ''; }
       play('notyet'); bloom.k = 0;
     }
     res.prayers.forEach(function (p, i) {
       var hp = HOME[p.species];
       prayers.push({ x: clamp(hp.x + (i ? 40 : 0), 130, 660), y: clamp(hp.y - HEIGHT[p.species] - 24, 190, 470), t: 0, delay: 300 + i * 1100, text: p.text, species: p.species, played: false });
     });
-    if (level.free) { /* sandbox: no card */ }
   }
 
   // ---------- frame update ----------
@@ -775,8 +885,10 @@
     if (screen === 'play') {
       ORDER.forEach(function (s) { barVals[s] += (barTarget[s] - barVals[s]) * clamp(dt * tn('barSlide'), 0, 1); });
       if (hands) stepHands(dt);
+      else if (phase === 'entrance') stepEntrance(dt);
       else if (phase === 'season') stepSeason(dt);
-      else if (phase === 'idle') stepAmbient(dt);
+      else if (phase === 'settle') { settleT -= dt; if (settleT <= 0) finishSettle(); }
+      for (var wi = walkers.length - 1; wi >= 0; wi--) if (stepWalker(walkers[wi], dt)) { settle(walkers[wi]); walkers.splice(wi, 1); }
       var dtS = phase === 'season' && season ? dt * season.speed : dt;
       for (var i = actors.length - 1; i >= 0; i--) if (stepActor(actors[i], dtS)) { finishActor(actors[i]); actors.splice(i, 1); }
       ghosts.forEach(function (gh) { gh.t += dt; });
@@ -792,14 +904,6 @@
       if (nextBird <= 0) { play('bird', { midi: Math.floor(Math.random() * 4) }); nextBird = 3000 + Math.random() * 3000; }
     }
   }
-  function stepAmbient(dt) {
-    var enc = committed.encounters;
-    ambient.t += dt;
-    if (ambient.t >= tn('ambientGapMs') && actors.length < 3) {
-      ambient.t = 0; spawnActor(enc[ambient.idx % enc.length], true); ambient.idx++;
-    }
-  }
-
   // ---------- input ----------
   function ensureAudio() {
     if (bedStarted) return;
@@ -811,12 +915,12 @@
     var sk = SK[id], c = count(id);
     if (!sk.repeat && c > 0) { refund(id); return; }
     if (!level.free && sk.cost > points()) { denyId = id; denyT = 300; play('click', { gain: 0.5 }); return; }
-    bought.push(id); card = null; tutorial = false; play('buy'); message = '';
+    bought.push(id); card = null; tutorial = false; play('buy'); message = tried ? '' : summaryMsg; if (baselineDone) syncLive();
   }
   function refund(id) {
     if (phase !== 'idle') return;
     var i = bought.lastIndexOf(id); if (i < 0) return;
-    bought.splice(i, 1); card = null; play('refund'); message = '';
+    bought.splice(i, 1); card = null; play('refund'); message = tried ? '' : summaryMsg; if (baselineDone) syncLive();
   }
   function onDown(x, y) {
     ensureAudio();
@@ -836,10 +940,12 @@
       if (inRect(CARD_NEXT, x, y)) { play('click'); var n = nextLevel(); if (n) startLevel(n); else screen = 'levels'; return; }
       if (inRect(CARD_STAY, x, y)) { play('click'); card = null; return; }
     }
-    if (phase === 'season' && inRect(SKIP, x, y)) { skipSeason(); return; }
+    if (phase !== 'idle' && inRect(SKIP, x, y)) { skipAny(); return; }
     if (phase !== 'idle') return;
     if (inRect(BTN_LEVELS, x, y)) { play('click'); screen = 'levels'; return; }
     if (inRect(RUN, x, y)) { run(); return; }
+    if (inRect(BTN_RESET, x, y)) { resetAll(); return; }
+    if (inRect(BTN_WATCH, x, y)) { play('click'); watchAgain(); return; }
     for (var j = 0; j < level.offers.length; j++) {
       var r = skillRect(j);
       if (inRect(r, x, y)) {
@@ -860,7 +966,9 @@
       return;
     }
     if (code === 'Escape') { if (phase === 'idle') screen = 'levels'; return; }
-    if (code === 'KeyS' && phase === 'season') { skipSeason(); return; }
+    if (code === 'KeyS' && phase !== 'idle') { skipAny(); return; }
+    if (code === 'KeyR' && phase === 'idle') { resetAll(); return; }
+    if (code === 'KeyW' && phase === 'idle') { watchAgain(); return; }
     if (code === 'Enter' || code === 'Space') { if (card) { var n = nextLevel(); card = null; if (n && code === 'Enter') startLevel(n); } else run(); e.preventDefault(); return; }
     var dm = /^Digit(\d)$/.exec(code), idx2 = -1;
     if (dm) idx2 = dm[1] === '0' ? 9 : +dm[1] - 1;
@@ -908,10 +1016,11 @@
   window.__game = {
     g: g,
     isRunning: function () { return screen === 'play'; },
-    state: function () { return { screen: screen, phase: phase, bought: bought.slice(), wr: committed ? committed.wr : null, solved: committed ? committed.solved : null, actors: actors.length, ghosts: ghosts.length, message: message }; },
+    state: function () { return { screen: screen, phase: phase, bought: bought.slice(), wr: committed ? committed.wr : null, solved: committed ? committed.solved : null, actors: actors.length, ghosts: ghosts.length, message: message,
+      here: hereCount(), walkers: walkers.length, baselineDone: baselineDone, tried: tried, runMode: runMode, violations: violations, appeared: appeared.slice(), roster: pending ? pending.roster : null, guide: guide() }; },
     goPuzzles: function () { screen = 'levels'; },
     start: function (i) { startLevel(allLevels()[i]); },
-    buy: buy, refund: refund, run: run, skip: skipSeason,
+    buy: buy, refund: refund, run: run, skip: skipAny, reset: resetAll, watch: watchAgain,
     click: onDown
   };
 })();

@@ -127,9 +127,51 @@ var WolfSim = (function () {
     var b = build(level, bought), r = rates(b.sp, b.M), rng = seed && seed.call ? seed : makeRng(seed | 0);
     var enc = encounters(b.sp, r.basePicks, r.P, rng, 30);
     var prev = prevWr || rates(build(level, []).sp, build(level, []).M).wr;
+    var pr = prayers(level, r.wr, prev, rng);
+    // Arrivals use their own rng so the encounters and prayers above never change.
+    var ros = roster(r.picks), arr = arrivals(ros, makeRng((seed && seed.call ? 7 : (seed | 0)) ^ 0x51ed270b));
     return { wr: r.wr, picks: r.picks, settled: r.settled, solved: isSolved(r.wr), cost: costOf(bought), encounters: enc,
-      prayers: prayers(level, r.wr, prev, rng), sp: b.sp };
+      prayers: pr, sp: b.sp, roster: ros, arrivals: arr };
   }
+  // ---- the entrance: the meadow starts empty and every animal walks, hops or flies in ----
+  var ARRIVE = { groupGap: 520, within: 180, jitter: 60 };   // ms
+  var ARRIVE_ORDER = ['rabbit', 'deer', 'giraffe', 'bee', 'hawk', 'wolf'];
+  var ARRIVE_FROM = { rabbit: 'burrow', hawk: 'sky', bee: 'sky', wolf: 'edge', deer: 'edge', giraffe: 'edge' };
+  var PLURAL = { wolf: 'Wolves', rabbit: 'Rabbits', deer: 'Deer', hawk: 'Hawks', bee: 'Bees', giraffe: 'Giraffes' };
+  function pickCount(p) { return p < 0.05 ? 1 : p < 0.12 ? 2 : p < 0.2 ? 3 : p < 0.3 ? 4 : 5; }
+  function roster(picks) { var r = {}; ORDER.forEach(function (s) { r[s] = pickCount(picks[s]); }); return r; }
+  // One event per animal: {id, species, slot, from, t}. t is ms after the entrance starts.
+  function arrivals(ros, rng) {
+    var out = [];
+    ARRIVE_ORDER.forEach(function (s, gi) {
+      for (var i = 0; i < ros[s]; i++) out.push({ id: s + '#' + i, species: s, slot: i, from: ARRIVE_FROM[s],
+        t: Math.round(gi * ARRIVE.groupGap + i * ARRIVE.within + rng() * ARRIVE.jitter) });
+    });
+    out.sort(function (p, q) { return p.t - q.t || (p.id < q.id ? -1 : 1); });
+    return out;
+  }
+  // How many of each species have settled in by time t (walkMs is how long a walk takes).
+  function meadowAt(arr, t, walkMs) {
+    var m = {}; ORDER.forEach(function (s) { m[s] = 0; });
+    arr.forEach(function (e) { if (e.t + walkMs <= t) m[e.species]++; });
+    return m;
+  }
+  function hash(str) {
+    var h = 2166136261;
+    for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  // The same chosen skills always give the same run.
+  function seedFor(level, bought) { return hash('nw|' + level.id + '|' + bought.slice().sort().join(',')); }
+  function summary(level, wr) {
+    var out = ORDER.filter(function (s) { return wr[s] < 43 || wr[s] > 57; })
+      .sort(function (p, q) { return Math.abs(wr[q] - 50) - Math.abs(wr[p] - 50); }).slice(0, 2);
+    if (!out.length) return 'Everyone is inside the target of 43 to 57%.';
+    var t = PLURAL[out[0]] + ' won ' + Math.round(wr[out[0]]) + '% of encounters';
+    if (out[1]) t += ', ' + PLURAL[out[1]] + ' won ' + Math.round(wr[out[1]]) + '%';
+    return t + '; the target is 43 to 57%.';
+  }
+
   function makeRng(a) {
     return function () {
       a |= 0; a = a + 0x6D2B79F5 | 0;
@@ -166,6 +208,7 @@ var WolfSim = (function () {
   function start(level) { var b = build(level, []); return rates(b.sp, b.M); }
 
   return { rates: rates, puzzle: puzzle, solve: solve, solvedWith: solvedWith, start: start, build: build, costOf: costOf,
-    isSolved: isSolved, makeRng: makeRng, baseMults: baseMults };
+    isSolved: isSolved, makeRng: makeRng, baseMults: baseMults, combos: combos, roster: roster, arrivals: arrivals,
+    meadowAt: meadowAt, seedFor: seedFor, summary: summary, ARRIVE: ARRIVE };
 })();
 if (typeof module !== 'undefined') module.exports = WolfSim;

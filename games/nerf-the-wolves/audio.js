@@ -55,6 +55,17 @@ var SOUNDS = {
     Kit.audio.pluck(t, { midi: 76, gain: 0.3 * g, dur: 0.3, send: SEND });
     Kit.audio.pluck(t + 0.2, { midi: 69, gain: 0.3 * g, dur: 0.5, send: SEND });
   },
+  // an animal wanders in: one soft pentatonic pluck (the game passes a rising midi counter)
+  arrive: function (t, o) {
+    var g = nwGain(o), m = [72, 74, 76, 79, 81][Math.floor(o && o.midi != null ? o.midi : 0) % 5];
+    Kit.audio.pluck(t, { midi: m, gain: 0.14 * g, dur: 0.22, send: SEND });
+  },
+  // the dawn beat before the arrivals: three rising chirps and a soft bell
+  dawn: function (t, o) {
+    var g = nwGain(o), n = [88, 91, 95];
+    for (var i = 0; i < n.length; i++) Kit.audio.chirp(t + i * 0.16, { midi: n[i], gain: 0.09 * g, dur: 0.1, send: SEND });
+    Kit.audio.bell(t + 0.5, { midi: 84, gain: 0.1 * g, dur: 0.9, send: SEND });
+  },
   click: { voice: 'tick', freq: 1500, gain: 0.25, dur: 0.04, send: SEND },
   // bed pieces: birdsong blip (the game schedules these 3 to 6 s apart)
   bird: function (t, o) {

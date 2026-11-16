@@ -73,5 +73,40 @@ D.PUZZLES.forEach(p => {
   console.log('puzzle ' + p.id + ' start: ' + f(none.wr) + (sol ? ' | par ' + sol.cost + ': ' + sol.bought.join('+') : ''));
 });
 
+// ---- Flow: baseline run, empty start, arrivals, determinism ----
+const WALK = 1100;
+const levels = D.PUZZLES.concat([{ id: 'sandbox', wolf: 'plain', setup: [], offers: D.COUNTER_OFFERS.concat(['teeth']), budget: 0, par: 0 }]);
+levels.forEach(p => {
+  const name = 'level ' + p.id;
+  // (a) the baseline (no skills) is deterministic and its summary numbers are the sim's win rates
+  const b1 = S.puzzle(p, [], S.seedFor(p, [])), b2 = S.puzzle(p, [], S.seedFor(p, []));
+  ok(JSON.stringify(b1) === JSON.stringify(b2), name + ': baseline run is deterministic');
+  const sw = S.start(p).wr;
+  ORDER_EQ(b1.wr, sw, name + ': baseline wr equals S.start');
+  const text = S.summary(p, b1.wr);
+  const off = D.SPECIES_ORDER.filter(k => sw[k] < 43 || sw[k] > 57).sort((x, y) => Math.abs(sw[y] - 50) - Math.abs(sw[x] - 50)).slice(0, 2);
+  ok(text === S.summary(p, sw), name + ': summary uses the sim win rates');
+  off.forEach(k => ok(text.indexOf(Math.round(sw[k]) + '%') >= 0, name + ': summary mentions ' + k + ' ' + Math.round(sw[k]) + '% in "' + text + '"'));
+  ok(off.length === 0 || /the target is 43 to 57%/.test(text), name + ': summary states the target');
+  // (b) the meadow starts with zero animals; arrivals fill it exactly to the roster
+  const z = S.meadowAt(b1.arrivals, 0, WALK), full = S.meadowAt(b1.arrivals, 1e6, WALK);
+  ok(D.SPECIES_ORDER.every(k => z[k] === 0), name + ': zero animals before arrivals');
+  ok(D.SPECIES_ORDER.every(k => full[k] === b1.roster[k] && b1.roster[k] >= 1), name + ': arrivals fill the roster');
+  ok(b1.arrivals.every(e => e.t >= 0), name + ': no arrival before the start');
+  ok(Math.max.apply(null, b1.arrivals.map(e => e.t)) < 4500, name + ': arrivals finish within 4.5 s');
+  // (c) every animal in a run came through an arrival event; (d) same skills, same run
+  const sol = S.solve(p), sets = [[], p.offers.slice(0, 3), sol ? sol.bought : []];
+  let n2 = 0; if (S.combos) S.combos(p, c => { if (n2++ % 37 === 0 && sets.length < 40) sets.push(c); });
+  sets.forEach(bought => {
+    const r1 = S.puzzle(p, bought, S.seedFor(p, bought)), r2 = S.puzzle(p, bought, S.seedFor(p, bought));
+    ok(JSON.stringify(r1) === JSON.stringify(r2), name + ': same skills twice gives the same run (' + bought.join('+') + ')');
+    ok(S.seedFor(p, bought) === S.seedFor(p, bought.slice().reverse()), name + ': seed ignores buying order');
+    const ids = {}; r1.arrivals.forEach(e => { ok(!ids[e.id], 'arrival ids are unique'); ids[e.id] = 1; });
+    ok(r1.arrivals.length === D.SPECIES_ORDER.reduce((a, k) => a + r1.roster[k], 0), name + ': one arrival per animal');
+    r1.encounters.forEach(e => [e.a, e.b].forEach(k => ok(r1.roster[k] >= 1 && !!ids[k + '#0'], name + ': ' + k + ' fought without arriving')));
+  });
+});
+function ORDER_EQ(a, b, msg) { ok(D.SPECIES_ORDER.every(k => Math.abs(a[k] - b[k]) < 1e-9), msg); }
+
 if (fails.length) { fails.forEach(m => console.log('FAIL ' + m)); process.exit(1); }
 console.log('wolf sim ok: ' + n + ' puzzles');
