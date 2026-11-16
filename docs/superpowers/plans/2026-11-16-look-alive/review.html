@@ -79,7 +79,7 @@ summary:focus-visible, a:focus-visible { outline: 2px solid var(--violet); outli
 
 <header class="hero">
   <div class="col">
-    <div class="label">Game plan v2 &middot; for review &middot; 16 Nov 2026</div>
+    <div class="label">Game plan v2.1 &middot; for review &middot; 16 Nov 2026</div>
     <h1>Look Alive</h1>
     <p class="lede">Plague Inc in reverse. You are a robot swarm pretending to be native microbes on an alien planet, and you win by passing as native.</p>
     <div class="status">
@@ -90,7 +90,7 @@ summary:focus-visible, a:focus-visible { outline: 2px solid var(--violet); outli
       <span class="pill">30 reference images, $1.18</span>
     </div>
     <nav class="toc" aria-label="Sections">
-      <a href="#decisions">Decisions for you</a><a href="#game">The game</a><a href="#spikes">Spikes</a><a href="#design">Design</a><a href="#teaching">Teaching</a><a href="#mvp">MVP</a><a href="#full">Full game</a><a href="#art">Art</a><a href="#build">Build order</a><a href="#ideas">Ideas</a><a href="#risks">Risks</a>
+      <a href="#decisions">Decisions for you</a><a href="#game">The game</a><a href="#mission">Mission and parts</a><a href="#spikes">Spikes</a><a href="#design">Design</a><a href="#teaching">Teaching</a><a href="#mvp">MVP</a><a href="#full">Full game</a><a href="#art">Art</a><a href="#build">Build order</a><a href="#ideas">Ideas</a><a href="#risks">Risks</a>
     </nav>
   </div>
   <figure><img src="refs/02-title-screen.jpg" alt="Title screen: LOOK ALIVE spelled in glowing pink cells among purple native bacteria, with a specimen label reading Bacillus normalis, not a robot"><figcaption><b>02</b>Title screen concept. The specimen label reads "Bacillus normalis - not a robot".</figcaption></figure>
@@ -106,6 +106,8 @@ summary:focus-visible, a:focus-visible { outline: 2px solid var(--violet); outli
       <li>Are the six pass criteria the right bar for go or no-go?</li>
       <li>Which reference images are on target, and which are off? Use the plate numbers.</li>
       <li>Should build step 1, retuning the simulation, start now?</li>
+      <li>Who catches you: the native cells, the lab's researcher, or both? The plan assumes both.</li>
+      <li>Is the Biology and Machine split right, with rule cards priced in suspicion?</li>
     </ol>
   </div>
   <p class="col dim">Nothing is built except the two spikes. Everything is on the local <code>proto/all</code> branch, and nothing has been pushed.</p>
@@ -122,6 +124,45 @@ summary:focus-visible, a:focus-visible { outline: 2px solid var(--violet); outli
     <figure><img src="refs/01-style-frame.jpg" alt="Dark-field dish of purple native rods with a neat pink colony"><figcaption><b>01</b>Style frame. The pink colony is a little too neat.</figcaption></figure>
     <figure><img src="refs/05-closeup-native-vs-robot.jpg" alt="Close-up of a lumpy purple native cell beside a pink robot cell with a tidy grid inside"><figcaption><b>05</b>Native beside robot. The grid inside is the joke.</figcaption></figure>
   </div>
+</section>
+
+<section id="mission">
+  <h2>New: the mission and two kinds of parts</h2>
+  <div class="col">
+    <p class="label">Added after your feedback, 16 Nov</p>
+    <h3>The mission: infiltrate the labs</h3>
+    <p>Each planet has a research lab that studies its own life. You are a sample in their dishes. Your goal is to get deeper into the lab and read what they have learned.</p>
+    <ul>
+      <li><b>The dish is the lab's dish, and the view is the lab's microscope.</b> The dark-field picture is what their researcher sees.</li>
+      <li><b>Progress is depth into the lab:</b> bench dish, incubator, cold room, culture collection, and finally the lab notebook.</li>
+      <li><b>The reward for each dish is a stolen notebook page.</b> Each page teaches one real idea from cell biology, then says how this planet differs.</li>
+      <li><b>Two things can catch you.</b> The native cells react inside the dish. The researcher reacts from above: a closer look, then a stain test, then the dish is sterilised.</li>
+    </ul>
+    <h3>Two kinds of parts: Biology and Machine</h3>
+  </div>
+  <div class="tablebox"><table>
+    <tr><th>Shelf</th><th>What it is</th><th>Examples</th><th>Cost</th></tr>
+    <tr><td><b>Biology</b><br><span class="dim">copied from life</span></td><td>Real cell parts that behave as they do in real cells</td><td>Membrane, cell wall, flagellum, pili, ribosomes, fermentation or respiration, chemical quorum signal, spores</td><td>Slow, leaky, imperfect. Safe from suspicion.</td></tr>
+    <tr><td><b>Machine</b><br><span class="dim">only a machine can do it</span></td><td>Abilities no cell has</td><td>Perfect clock, radio between cells, exact counting, memory, self-repair, perfect copying, reflex rule cards</td><td>Powerful. Each one raises the regularity channel.</td></tr>
+  </table></div>
+  <div class="col">
+    <ul>
+      <li>Every Machine part has a Biology counterpart that does the same job worse. Radio is instant. A chemical quorum signal is slow and fades with distance.</li>
+      <li>You learn real biology as the honest, slower way to solve a problem, and why life does it that way.</li>
+      <li><b>Rule cards are Machine parts.</b> Their price is suspicion in the regularity channel. This fixes the "free rule card" problem from the spike in a way that fits the story.</li>
+      <li>Each part's card has two lines: what the real thing does, and what the game changed.</li>
+    </ul>
+    <h3>What the MVP teaches</h3>
+  </div>
+  <div class="tablebox"><table>
+    <tr><th>Dish</th><th>Stolen notebook page</th></tr>
+    <tr><td class="num">0</td><td>Binary fission and the growth curve: lag, log, plateau</td></tr>
+    <tr><td class="num">1</td><td>Carrying capacity and competition for food</td></tr>
+    <tr><td class="num">2</td><td>Metabolism: cells must eat, and waste is a signature</td></tr>
+    <tr><td class="num">3</td><td>Variation: no two cells divide at the same moment</td></tr>
+    <tr><td class="num">4</td><td>Sensing and response: how cells react to change</td></tr>
+    <tr><td class="num">5</td><td>Fermentation and respiration, and Acidica's sour version</td></tr>
+  </table></div>
 </section>
 
 <section id="spikes">

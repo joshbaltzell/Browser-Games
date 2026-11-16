@@ -14,6 +14,42 @@ Status: for Josh's review. Nothing here is built except two spikes. This version
 
 **Look:** dark-field microscope. Black field, glowing cells, four stain colours.
 
+## 1a. The mission and the two kinds of parts (added after Josh's feedback, 16 Nov)
+
+### The mission: infiltrate the labs
+
+Each planet has a research lab that studies its own life. You are a sample in their dishes. Your goal is to get deeper into the lab and read what they have learned.
+
+- **The dish is the lab's dish, and the view is the lab's microscope.** The dark-field picture is what their researcher sees.
+- **Progress is depth into the lab:** bench dish, incubator, cold room, culture collection, and finally the lab notebook.
+- **The reward for each dish is a stolen notebook page.** Each page teaches one real idea from cell biology, then says how this planet differs.
+- **Two things can catch you.** The native cells react inside the dish (the immune stages). The researcher reacts from above: a closer look, then a stain test, then the dish is sterilised. Open question: see decision 6.
+
+### Two kinds of parts: Biology and Machine
+
+The build screen has two shelves.
+
+| Shelf | What it is | Examples | Cost |
+|---|---|---|---|
+| **Biology** (copied from life) | Real cell parts that behave as they do in real cells | Membrane, cell wall, flagellum, pili, ribosomes, fermentation or respiration, chemical quorum signal, spores | Slow, leaky, imperfect. Safe from suspicion. |
+| **Machine** (things only a machine can do) | Abilities no cell has | Perfect clock, radio between cells, exact counting, memory, self-repair, perfect copying, reflex rule cards | Powerful. Each one raises the regularity channel. |
+
+- Every Machine part has a Biology counterpart that does the same job worse. Radio is instant, and a chemical quorum signal is slow and fades with distance. Perfect copying never mutates, and real division makes errors.
+- The player learns real biology as the honest, slower way to solve a problem, and learns why life does it that way.
+- **Rule cards are Machine parts.** Their price is suspicion in the regularity channel. This replaces the "cards cost budget points" fix from the spike with something that fits the story.
+- Each part's card has two lines: what the real thing does, and what the game changed.
+
+### What the MVP teaches (one page per dish)
+
+| Dish | Notebook page |
+|---|---|
+| 0 | Binary fission and the growth curve: lag, log, plateau |
+| 1 | Carrying capacity and competition for food |
+| 2 | Metabolism: cells must eat, and waste is a signature |
+| 3 | Variation: no two cells divide at the same moment |
+| 4 | Sensing and response: how cells react to change |
+| 5 | Fermentation and respiration, and Acidica's sour version |
+
 ## 2. What the spikes proved
 
 ### Rules spike
@@ -51,7 +87,7 @@ Slower machines, phones, Safari and Firefox are unmeasured.
 3. **Decoupled channels.** Waste suspicion depends on chemistry mismatch, not on colony size. Casualties depend on food taken from natives.
 4. **The immune response weakens, then removes.** Stage 3 cuts the colony down over time and shows its kill rate. It is not an instant delete.
 5. **Every rule action needs an event that makes it matter.** In the spike only "divide faster" ever won. Each dish with a rule slot gets an authored event: a bust rewards "pause", a food migration rewards "move", a chemistry shift rewards "switch waste".
-6. **Rule cards cost budget points.** An always-on card is otherwise a free attribute point.
+6. **Rule cards have a price.** An always-on card is otherwise a free attribute point. Section 1a sets the price as regularity suspicion.
 7. **Toughness gets a job:** it is what survives the planet's events.
 
 ## 3. Core design
@@ -295,3 +331,5 @@ Six agents produced 112 ideas (`brainstorm-all.md`). Thirty were kept.
 3. Are the six pass criteria the right bar for go or no-go?
 4. Which reference images are on target, and which are off?
 5. Should build step 1 (retuning the simulation) start now?
+6. Who catches you: the native cells, the lab's researcher, or both? The plan assumes both, with the researcher as the later stages.
+7. Is the Biology and Machine split right, with rule cards priced in suspicion?
