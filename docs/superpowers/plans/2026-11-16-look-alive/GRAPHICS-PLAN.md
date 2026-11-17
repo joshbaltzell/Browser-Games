@@ -135,3 +135,13 @@ U1 can start before G1 finishes, since the chrome does not depend on the dish re
 - Performance floor: 5,000 cells on a phone, 20,000 on a laptop, 50,000 on request. Needs a real-device check.
 - Should the depth number become simulation data, so scouting by focus plane is a real mechanic?
 - Do the build, result and list screens get fresh screenshots for before-and-after?
+
+## Owner decisions (17 Nov)
+
+1. **Default look:** B, dark field with depth and haze.
+2. **Focus strength:** blur strength 1.0, with the heavy blur only in the rack-focus moments.
+3. **Lens modes as a game feature:** maybe later. Not in this build.
+4. **Performance floor:** 5,000 cells on a phone, 20,000 by default on a laptop, 50,000 on request, flat dots as the automatic fallback.
+5. **UI chrome brought up to the agreed mock-ups:** yes, as its own phase (U1).
+
+Build order: the dish renderer in the real game first (G1 to G5 together, driven by the real simulation), then U1.
