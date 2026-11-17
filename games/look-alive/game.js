@@ -10,6 +10,56 @@
   function copy(o) { return JSON.parse(JSON.stringify(o)); }
   var reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
+  // ---------------------------------------------------------------- the WebGL dish and cell portrait (render-gl.js), with the 2D drawing in draw.js as the fallback
+  // A canvas that has had a WebGL context cannot give a 2D one, so the dish keeps two canvases: #runDish (2D, the fallback) and a GL canvas made on demand.
+  var GL = { r: null, canvas: null, failed: false, forced: false, reason: '', p: null, pfailed: false };
+  function glNote(msg) {
+    var n = $('dishFbNote'), w = $('dishWrap');
+    if (!msg) { if (n) n.hidden = true; return; }
+    if (!n) { n = el('div', 'dnote fb'); n.id = 'dishFbNote'; w.appendChild(n); }
+    n.textContent = msg; n.hidden = false;
+  }
+  function glDestroy() {
+    if (GL.r) { try { GL.r.destroy(); } catch (e) { /* ignore */ } GL.r = null; }
+    if (GL.canvas && GL.canvas.parentNode) GL.canvas.parentNode.removeChild(GL.canvas);
+    GL.canvas = null; $('runDish').style.display = '';
+  }
+  function glFailed(why) { GL.failed = true; GL.reason = why; glDestroy(); glNote('Simple dish view: the detailed view is not available here (' + why + ').'); }
+  function dishGL() {
+    if (GL.forced || GL.failed || !window.LookAliveRender) return null;
+    if (!GL.r) {
+      var c = document.createElement('canvas'); c.id = 'runDishGL'; c.className = 'dishcanvas gl'; c.setAttribute('role', 'img'); c.setAttribute('aria-label', 'The dish: purple natives, pink you, amber waste');
+      $('dishWrap').appendChild(c);
+      var r = window.LookAliveRender.create(c, { host: $('dishWrap'), reduced: reduced, onfail: glFailed });
+      if (!r.supported) { if (c.parentNode) c.parentNode.removeChild(c); GL.failed = true; GL.reason = r.err || 'no WebGL2'; glNote('Simple dish view: the detailed view is not available here (' + GL.reason + ').'); return null; }
+      GL.r = r; GL.canvas = c; glNote('');
+    }
+    return GL.r.supported ? GL.r : null;
+  }
+  function setGLRun(g, run) {
+    g.setRun(run, run.dish, run.build, { slots: Sim.toSlots(run.build), machine: machineCount(run.build) });
+  }
+  function glJump() { var g = GL.r; if (g && g.supported && S.run) { g.setTick(S.t); g.rackFocus('jump'); } }
+  function portraitGL() {
+    if (GL.pfailed || GL.forced || !window.LookAliveRender) return null;
+    if (!GL.p) {
+      var c = $('cellGL'); c.hidden = false;
+      var p = window.LookAliveRender.portrait(c);
+      if (!p.supported) { GL.pfailed = true; c.hidden = true; return null; }
+      p.onfail = function () { GL.pfailed = true; $('cellWrap').classList.remove('cellglon'); c.hidden = true; };
+      GL.p = p;
+    }
+    return GL.p.supported ? GL.p : null;
+  }
+  function drawPortrait(sl, gh) {
+    var p = portraitGL(), wrap = $('cellWrap');
+    if (!p) { wrap.classList.remove('cellglon'); $('cellGL').hidden = true; return; }
+    $('cellGL').hidden = false; wrap.classList.add('cellglon');
+    var eff = sl;
+    if (gh && gh.slot) { eff = {}; for (var k in sl) eff[k] = sl[k]; var gs = Sim.toSlots(gh.build); eff[gh.slot] = gs[gh.slot]; }
+    p.draw(eff);
+  }
+
   var ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   var GRADE_RANK = { Passable: 1, Convincing: 2, Benign: 3 };
   var GRADE_NEXT = { Passable: 'Convincing needs the lab never to reach Inspection.', Convincing: 'Benign needs every stat inside its zone the whole run, with 1 energy spare.', Benign: 'That is the best grade. Nothing more to earn here.' };
@@ -196,7 +246,7 @@
     var run = simulate(S.carried);
     S.mode = 'watch'; S.run = run; S.ghost = null; S.stopAt = watchStop(run); S.watchDone = false; S.runFinished = false;
     S.lastAutopsy = run.autopsy; S.lastRunLost = false; S.tipLevel = 0; setFail(run, S.carried);
-    S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = 4; setSpeedUI();
+    S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = d.aliveOnly ? 1 : 4; setSpeedUI();   // dish 1: the colony is gone in 12 ticks, so it is watched at 1x
     closeOverlay(); show('run');
   }
   function watchFinished() { S.watchDone = true; S.playing = false; setPlayLabel(); renderVerdict(); refresh(); }
@@ -353,6 +403,7 @@
     });
     var fi = fixInfo(), fixSlots = fi.slots;
     $('cellSvg').innerHTML = D.cellArt(sl, { state: state, sel: S.slot, nw: nw, fix: fixSlots, ghost: gh && gh.slot ? gh.slot : null, ghostSlots: gh && gh.slot ? Sim.toSlots(gh.build) : null }) + lead;
+    drawPortrait(sl, gh);
     var box = $('tagLayer'), carried = S.carried;
     if (!box.firstChild) {
       SLOT_ORDER.forEach(function (k) {
@@ -766,7 +817,8 @@
   function anyChannel(run) { return D.CH.some(function (c) { return run.channels[c.id]; }); }
   function enterRun() {
     var run = S.run, d = dishObj(); if (!run) return;
-    $('scrub').max = run.T; stripCards(run); $('runFig').innerHTML = figHtml(S.mode === 'watch' ? S.carried : run.build);
+    $('scrub').max = run.T; stripCards(run);
+    var g0 = dishGL(); if (g0) { setGLRun(g0, run); g0.rackFocus(S.mode === 'watch' ? 'watch' : 'run'); S.holdUntil = reduced ? 0 : performance.now() + 1100; } else S.holdUntil = 0; $('runFig').innerHTML = figHtml(S.mode === 'watch' ? S.carried : run.build);
     var any = anyChannel(run), keyHtml = '';
     D.CH.forEach(function (c) {
       if (!run.channels[c.id]) return;
@@ -820,15 +872,16 @@
   }
   function skip() {
     var run = S.run; if (!run) return;
-    if (S.mode === 'watch') { S.t = S.stopAt; S.playing = false; setPlayLabel(); watchFinished(); return; }
+    if (S.mode === 'watch') { S.t = S.stopAt; S.playing = false; setPlayLabel(); glJump(); watchFinished(); return; }
     var t = S.troubleTick;
     if (t < 0) { if (run.autopsy && run.autopsy.from) t = run.autopsy.from; else { flashSkip('No trouble in this run'); return; } }
-    S.playing = false; S.t = t; setPlayLabel();
+    S.playing = false; S.t = t; setPlayLabel(); glJump();
   }
   function flashSkip(msg) { var b = $('skipBtn'), old = 'Skip to trouble'; b.textContent = msg; setTimeout(function () { b.textContent = old; }, 1600); }
   // Advance playback by dt seconds (also callable from the debug hook).
   function advance(dt) {
     var run = S.run; if (!run || !S.playing) return;
+    if (S.holdUntil && performance.now() < S.holdUntil) return;   // the rack focus plays before the action starts
     S.t += dt * 12 * S.speed;
     var lim = S.mode === 'watch' && S.stopAt != null ? S.stopAt : run.T;
     if (S.t >= lim) {
@@ -865,7 +918,15 @@
     var si = Math.min(run.snaps.length - 1, Math.floor(S.t / 10)), A = run.snaps[si], B = run.snaps[Math.min(run.snaps.length - 1, si + 1)];
     var f = si >= run.snaps.length - 1 ? 0 : (S.t - si * 10) / 10;
     var tm = reduced ? 0 : ts / 1000, acidNow = H.acid[ti] || 0;
-    D.drawCells($('runDish'), A, B, f, { n: run.n, nativeRef: H.nat[0], stage: any ? H.stage[ti] : 0, kill: any ? H.kill[ti] : 0, time: tm, stress: d.acid ? Math.min(1, acidNow * 3) : 0, acid: !!d.acid });
+    var gdish = dishGL();
+    if (gdish) {
+      if (gdish.run !== run) setGLRun(gdish, run);
+      $('runDish').style.display = 'none'; GL.canvas.style.display = '';
+      gdish.setTick(S.t); gdish.frame(ts);
+    } else {
+      $('runDish').style.display = '';
+      D.drawCells($('runDish'), A, B, f, { n: run.n, nativeRef: H.nat[0], stage: any ? H.stage[ti] : 0, kill: any ? H.kill[ti] : 0, time: tm, stress: d.acid ? Math.min(1, acidNow * 3) : 0, acid: !!d.acid });
+    }
     var rl = d.aliveOnly ? 'Colony alive: ' + Math.round(H.rob[ti] / H.rob[0] * 100) + '%   Lost to acid: ' + (acidNow * 100).toFixed(0) + '% per tick'
       : 'Your share of the dish: ' + (H.share[ti] * 100).toFixed(1) + '%' + (acidNow > 0.005 ? '   Lost to acid: ' + (acidNow * 100).toFixed(0) + '% per tick' : '');
     var marks = [], evs = eventsOf(d), crashNow = false;
@@ -983,7 +1044,7 @@
     if (a === 'tip') pressTip();
     else if (a === 'adapt') { closeOverlay(); show('adapt'); }
     else if (a === 'watch') { closeOverlay(); }
-    else if (a === 'jump') { closeOverlay(); S.playing = false; S.t = S.run.autopsy.from; setPlayLabel(); }
+    else if (a === 'jump') { closeOverlay(); S.playing = false; S.t = S.run.autopsy.from; setPlayLabel(); glJump(); }
     else if (a === 'next') { closeOverlay(); selectDish(ORDER[ORDER.indexOf(S.dish) + 1]); }
     else if (a === 'list') { closeOverlay(); show('list'); }
     else if (a === 'complete') completeCard();
@@ -995,6 +1056,7 @@
     var dt = Math.min(0.1, (ts - last) / 1000); last = ts;
     try {
       if (S.screen === 'adapt') {
+        if (GL.p && GL.p.supported) GL.p.tick(ts);
         if (S.note && performance.now() > S.noteUntil) { S.note = ''; renderProblems(); }
       } else if (S.screen === 'run' && S.run) { advance(dt); drawRun(ts); }
     } catch (err) { if (window.console) console.error(err && err.stack || err); }
@@ -1052,6 +1114,10 @@
 
   // ---------------------------------------------------------------- debug hook
   window.__la = {
+    gl: function () { return GL.r; }, glStats: function () { return GL.r ? GL.r.stats() : { supported: false, failed: GL.failed, forced: GL.forced, reason: GL.reason }; },
+    glSig: function (t) { return GL.r ? GL.r.signature(t) : null; },
+    glPortrait: function () { return GL.p; },
+    forceFallback: function (on) { GL.forced = !!on; if (on) { glDestroy(); glNote('Simple dish view: forced for testing.'); if (GL.p) { $('cellWrap').classList.remove('cellglon'); $('cellGL').hidden = true; } } else { GL.failed = false; glNote(''); GL.pfailed = false; if (S.screen === 'adapt') renderCell(); } return { forced: GL.forced }; },
     S: S, show: show, selectDish: selectDish, enterWatch: enterWatch, run: doRun, seek: seek, skip: skip, showResult: showResult, advance: advance,
     worldContinue: worldContinue, verdictAction: verdictAction, pressTip: pressTip,
     selectSlot: selectSlot, fit: function (id, layer) { var k = (Cards.part(id) || Cards.bio(id)).slot; if (layer != null) S.layer = layer; if (!selectable(k)) return { ok: false, reason: Sim.lockedReason(dishObj(), k) }; S.slot = k; return doFit(k, id); },

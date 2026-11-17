@@ -74,7 +74,18 @@ canvas { display: block; }
 
 /* shared run/dish bits */
 .dishpanel { display: flex; flex-direction: column; gap: 4px; position: relative; }
-.dishcanvas { width: 292px; height: 292px; background: #000; border-radius: 50%; border: 1px solid var(--line2); box-shadow: 0 0 40px rgba(167,139,250,.12) inset; align-self: center; }
+.dishwrap { position: relative; width: 320px; height: 320px; align-self: center; }
+.dishcanvas { width: 100%; height: 100%; display: block; background: #000; border-radius: 50%; border: 1px solid var(--line2); box-shadow: 0 0 40px rgba(167,139,250,.12) inset; box-sizing: border-box; }
+.dishcanvas.gl { border-radius: 14px; border: 0; box-shadow: none; background: #02030a; }
+.dishui { position: absolute; inset: 0; pointer-events: none; font-family: var(--mono); }
+.dscale { position: absolute; left: 8px; bottom: 7px; display: flex; flex-direction: column; gap: 2px; color: rgba(200,205,230,.75); font-size: 9px; letter-spacing: .04em; }
+.dscale i { display: block; height: 4px; border: 1px solid rgba(200,205,230,.7); border-top: 0; width: 40px; }
+.dq { position: absolute; right: 6px; bottom: 6px; pointer-events: auto; display: flex; align-items: center; gap: 4px; font-size: 9px; color: rgba(200,205,230,.7); text-transform: uppercase; letter-spacing: .08em; }
+.dq select { background: rgba(8,10,18,.85); color: var(--ink); border: 1px solid var(--line2); border-radius: 5px; font: inherit; font-size: 10px; padding: 1px 2px; text-transform: none; letter-spacing: 0; }
+.dhint { position: absolute; left: 0; right: 0; top: 8px; text-align: center; font-size: 9px; color: rgba(200,205,230,.55); transition: opacity 1.2s; letter-spacing: .03em; }
+.dnote { position: absolute; left: 8px; right: 8px; top: 6px; text-align: center; font-size: 10px; color: var(--amb); background: rgba(6,8,14,.8); border-radius: 6px; padding: 3px 6px; }
+.dnote.fb { top: auto; bottom: 6px; }
+.dnote[hidden] { display: none; }
 .legend { color: var(--dim); font-size: 11px; text-align: center; min-height: 16px; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 0 4px 0 10px; vertical-align: -1px; }
 .sw.vio { background: var(--vio); } .sw.pink { background: var(--pink); } .sw.amb { background: var(--amb); } .sw.grn { background: var(--grn); }
@@ -87,7 +98,10 @@ canvas { display: block; }
 .colL, .colC, .colR { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
 .cellpanel { padding: 0; flex: none; height: 412px; overflow: hidden; background: radial-gradient(circle at 50% 50%, #0d0f1c 0, #04050a 75%); }
 .cellwrap { position: relative; width: 100%; height: 410px; }
-#cellSvg { width: 100%; height: 100%; display: block; }
+#cellSvg { width: 100%; height: 100%; display: block; position: relative; }
+#cellGL { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* with the GL portrait on, the SVG keeps its slot targets, highlights and empty-slot outlines; the fitted parts are drawn by the shader */
+.cellglon .slotg:not(.s-division) .art > *:not(.emptyring):not(.emptyline):not(.emptydot) { visibility: hidden; }
 #tagLayer { position: absolute; inset: 0; pointer-events: none; }
 .tag { position: absolute; width: 26.7%; height: 62px; pointer-events: auto; display: flex; flex-direction: column; justify-content: center; gap: 1px; text-align: left; padding: 3px 8px; border-radius: 8px; background: rgba(9,11,18,.94); border: 1px solid var(--line2); min-height: 0; }
 .tag .tn { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); display: flex; align-items: center; gap: 5px; height: 14px; }
