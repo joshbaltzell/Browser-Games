@@ -76,7 +76,9 @@ canvas { display: block; }
 .dishpanel { display: flex; flex-direction: column; gap: 4px; position: relative; }
 .dishwrap { position: relative; width: 320px; height: 320px; align-self: center; }
 .dishcanvas { width: 100%; height: 100%; display: block; background: #000; border-radius: 50%; border: 1px solid var(--line2); box-shadow: 0 0 40px rgba(167,139,250,.12) inset; box-sizing: border-box; }
-.dishcanvas.gl { border-radius: 14px; border: 0; box-shadow: none; background: #02030a; }
+.dishcanvas.gl { border-radius: 50%; border: 0; background: #02030a; box-shadow: 0 0 0 3px #1b1f3a, 0 0 0 4px #4b4f86, 0 0 22px 4px rgba(120,100,230,.28); }
+.dthin { position: absolute; left: 50%; bottom: 36px; transform: translateX(-50%); white-space: nowrap; font-size: 9px; color: rgba(200,205,230,.6); letter-spacing: .03em; }
+.dthin[hidden] { display: none; }
 .dishui { position: absolute; inset: 0; pointer-events: none; font-family: var(--mono); }
 .dscale { position: absolute; left: 8px; bottom: 7px; display: flex; flex-direction: column; gap: 2px; color: rgba(200,205,230,.75); font-size: 9px; letter-spacing: .04em; }
 .dscale i { display: block; height: 4px; border: 1px solid rgba(200,205,230,.7); border-top: 0; width: 40px; }

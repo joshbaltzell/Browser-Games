@@ -15,11 +15,12 @@ var LookAliveRender = (function () {
     topP: 1.3,                                          // density (as a multiple of the starting native density) that shows every candidate
     voidFloor: 0.0, voidLo: 0.46, voidHi: 0.63, voidFreq: 4.2,        // visual colony mask: smoothstep of low-frequency noise (natives)
     robotMask: 0.45,                                    // how strongly robots follow the colony mask (0 = ignore, 1 = same as natives)
-    blur: 1.0, focus: 0.5, tol: 0.09,                   // blur strength, focal plane, in-focus half band
+    blur: 0.6, focus: 0.5, tol: 0.17,                   // blur strength, focal plane, in-focus half band
     rackBoost: 1.6, rackDur: 2.0, rackFreq: 0.6, rackDecay: 3.0, rackStart: -1.35, rackExposure: 0.45,
-    screenCells: { phone: 1500, laptop: 3600, high: 7000 }, robotBoost: 2.4, cellR: 0.0050, minPxN: 1.4, minPxR: 2.3,
+    screenCells: { phone: 150, laptop: 300, high: 520 }, robotBoost: 1.7, boostLo: 0.06, boostUntil: 0.22, cellR: 0.0050, minPxN: 3.1, minPxR: 3.7, cloud: 0.25,
+    glint: 1.0, pulseSize: 0.22, pulseGlow: 0.9,
     zoomMax: 16, jumpZoom: 2.1,
-    bloom: 1, vignette: 1, chroma: 1, grain: 1,
+    bloom: 0.35, bloomThr: 0.8, vignette: 1, chroma: 1, grain: 1,
     slowMs: 30, slowFrames: 50
   };
 
@@ -76,7 +77,7 @@ var LookAliveRender = (function () {
     '    float hz=fbm(q*1.3+warp*1.8+tt*.5);',
     '    float bf=clamp(uBgBlur/18.,0.,.85); hz=mix(hz,.5,bf);',
     '    float haze=smoothstep(.12,.92,hz);',
-    '    vec3 hc=C_AMB*wst*(.10+1.15*haze*haze)*.85+C_IMM*imu*(.08+.9*haze)*.6;',
+    '    vec3 hc=C_AMB*wst*(.06+1.0*haze*haze)*.5+C_IMM*imu*(.08+.9*haze)*.6;',
     '    float ac=uAcid;',
     '    hc+=vec3(.78,.82,.18)*ac*(.012+.28*haze*haze)*inside;',
     '    vec2 gq=w*46.; vec2 id=floor(gq); vec2 fq=fract(gq)-.5; float hh=h21(id);',
@@ -124,14 +125,14 @@ var LookAliveRender = (function () {
   var FS_CELL = [
     '#version 300 es', 'precision highp float; precision highp int;',
     'in vec2 vP; in float vR,vHs,vBlur,vDep,vPh; flat in float vSp; in vec4 vC,vD;',
-    'uniform float uTime,uGranK,uEnv,uCloud,uScale,uEE,uTight,uPump,uShell,uAcidIn,uSync,uHead,uReflex,uCore,uRefA,uPulse,uPort;',
+    'uniform float uTime,uGranK,uEnv,uCloud,uScale,uEE,uTight,uPump,uShell,uAcidIn,uSync,uHead,uReflex,uCore,uRefA,uPulse,uPort,uPG,uGlint;',
     'out vec4 o;', GL_COMMON,
     'float hexd(vec2 p,float r){p=abs(p);return max(p.x*.8660254+p.y*.5,p.y)-r*.8660254;}',
     'void main(){',
     '  float sp=vSp;',
     '  bool rob=sp>.5&&sp<1.5, imm=sp>1.5&&sp<2.5;',
     '  vec3 col=sp<.5?C_NAT:(rob?C_ROB:(imm?C_IMM:C_AMB));',
-    '  col=pow(col,vec3(1.5))*(sp<.5?.88:(rob?1.2:1.12));',
+    '  col=pow(col,vec3(1.5))*(sp<.5?1.12:(rob?1.5:1.12));',
     '  float r=vR, bl=vBlur;',
     '  float pin=vC.x, dis=max(vC.y,0.), seam=vC.z, tailF=vC.w, fade=vD.x, eng=vD.y, dorm=vD.z;',
     '  vec3 colI=col;',
@@ -160,7 +161,7 @@ var LookAliveRender = (function () {
     '    vec3 cs=col*(fill*.2+rm*.6)*(1.-.45*dorm);',
     '    float vs=1.; if(uCloud>.5) vs=smoothstep(2.,4.5,rr+h2);',
     '    float kp=1.-dis;',
-    '    o=vec4(cs*(1.-fade)*vs*kp*(1.+.3*uPulse*float(rob)),1.);return;',
+    '    o=vec4(cs*(1.-fade)*vs*kp*(1.+uPG*.6*uPulse*float(rob)),1.);return;',
     '  }',
     '  float lodv=smoothstep(2.5,7.,rr);',
     '  float big=smoothstep(12.,45.,rr);',
@@ -178,7 +179,7 @@ var LookAliveRender = (function () {
     '  }',
     '  float latt=0.,seamLine=0.;',
     '  if(rob){',
-    '    float u=max(rr*.36,.5); vec2 hp=vP/u; vec2 rv=vec2(1.,1.732); vec2 hh=rv*.5;',
+    '    float u=max(rr*.36,2.0); vec2 hp=vP/u; vec2 rv=vec2(1.,1.732); vec2 hh=rv*.5;',
     '    vec2 a=mod(hp,rv)-hh; vec2 b2=mod(hp-hh,rv)-hh; vec2 gv=dot(a,a)<dot(b2,b2)?a:b2;',
     '    vec2 aa=abs(gv); float hd=max(dot(aa,normalize(vec2(1.,1.732))),aa.x); float e=.5-hd;',
     '    latt=exp(-dot(gv,gv)*10.);',
@@ -199,12 +200,13 @@ var LookAliveRender = (function () {
     '  float dk=1.-dorm;',
     '  vec3 s=col*fill*.07',
     '   +(rimc*(rim*.78*(1.+.5*dorm+1.1*uPort)+edgeGlow*.7)+vec3(spec)*.22)',
-    '   +colI*fill*(.03+.12*pow(1.-t,1.5))*mix(.45+1.1*mot,.75+.45*mot,uPort)*mix(.6,1.,lodv)*(1.+1.3*big)*(1.-.65*dorm)',
+    '   +colI*fill*(.03+.12*pow(1.-t,1.5))*mix(.45+1.1*mot,.75+.45*mot,uPort)*mix(.6,1.,lodv)*(1.+1.3*big+(rob?0.:1.6)*smoothstep(4.,10.,rr))*(1.-.65*dorm)',
     '   +mix(rob?vec3(1.,.62,.2):col,vec3(1.),.4)*(gran*(.55+.6*big))*fill*lodv*uGranK',
     '   +col*fill*exp(-sq(vP.y/(rr*.55)))*sq(sq(clamp(1.-abs(vP.x)/(h2+rr*.9),0.,1.)))*.07*big*(rob?0.:1.);',
     '  if(rob){',
     '    s+=mix(col,vec3(1.),.3)*latt*fill*(.55+.5*uSync-.35*uPort)*lodv*uGranK*dk*(1.+.6*uSync*uPulse);',
     '    s+=mix(col,vec3(1.),.55)*seamLine*(seam+.55*uSync+.16*uPort)*fill*1.25*lodv*dk;',
+    '    s+=vec3(.75,1.,1.)*exp(-sq(hexd(vP,rr*1.05)/(.9+.03*rr)))*seam*uGlint*(.55+1.6*uPulse)*smoothstep(2.5,4.5,rr)*dk;',
     '    float ee=uEE>0.?uEE:max(2.,.07*rr);',
     '    if(uShell>.5){',
     '      float hx=hexd(vP,rr*1.16);',
@@ -232,7 +234,7 @@ var LookAliveRender = (function () {
     '      float cdd=length(vP)-rr*.24;',
     '      s+=cc*(exp(-dot(vP,vP)/(rr*rr*.05))*.55+(1.-smoothstep(-1.,1.,cdd))*.8+exp(-sq(cdd/(1.+.012*rr)))*.6)*smoothstep(14.,40.,rr)*fill;',
     '    }',
-    '    s*=1.+.3*uPulse;',
+    '    s*=1.+uPG*uPulse;',
     '  }',
     '  vec3 bok=col*(fillB*.30+ringB*.55)*areaK*.42;',
     '  if(tailF>.5){',
@@ -261,7 +263,7 @@ var LookAliveRender = (function () {
   var VS_CLOUD = [
     '#version 300 es', 'precision highp float; precision highp int;',
     'layout(location=0) in vec2 aCorner; layout(location=1) in vec4 aA; layout(location=2) in vec4 aB; layout(location=3) in vec4 aC; layout(location=4) in vec4 aD;',
-    'uniform vec2 uRes,uCen; uniform float uScale,uFocus,uK,uTol,uZoom,uDepth;',
+    'uniform vec2 uRes,uCen; uniform float uScale,uFocus,uK,uTol,uZoom,uDepth,uCloudK;',
     'out vec2 vP; out float vSig,vAmp; flat out float vSp; out float vFade;',
     'void main(){',
     '  float rpx=aA.z*uScale, hpx=rpx*aB.w;',
@@ -274,7 +276,7 @@ var LookAliveRender = (function () {
     '  gl_Position=vec4(pos.x/uRes.x*2.-1.,1.-pos.y/uRes.y*2.,0.,1.);',
     '  vP=p; vSig=sig;',
     '  float s1=rpx+hpx+1.;',
-    '  vAmp=(1.-vis)*clamp(.32*s1*s1/(sig*sig),.01,.2)*(1.-aD.x)*(1.-.5*clamp(aC.y,0.,1.))*(1.-.35*aD.z)*(1.-.3*aD.y);',
+    '  vAmp=(1.-vis)*clamp(.32*s1*s1/(sig*sig),.01,.2)*(1.-aD.x)*(1.-.5*clamp(aC.y,0.,1.))*(1.-.35*aD.z)*(1.-.3*aD.y)*uCloudK;',
     '  vSp=aB.x; vFade=aD.x;',
     '}'].join('\n');
   var FS_CLOUD = [
@@ -476,10 +478,10 @@ var LookAliveRender = (function () {
     gl.bindVertexArray(this.vaoEmpty); gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
     gl.bindVertexArray(this.vaoCell);
-    if (P.cloud && n) { this.U(this.pCloud, common); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n); }
+    if (P.cloud && n) { this.U(this.pCloud, Object.assign({}, common, { uCloudK: P.cloudK })); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n); }
     this.U(this.pCell, Object.assign({}, common, {
       uGranK: 1, uEnv: b.env || 0, uCloud: P.cloud ? 1 : 0, uEE: b.ee || 0, uTight: b.tight || 0, uPump: b.pump || 0, uShell: b.shell || 0, uAcidIn: b.acidIn || 0, uSync: b.sync || 0,
-      uHead: b.head || 0, uReflex: b.reflex || 0, uCore: b.core || 0, uRefA: b.refA || 0, uPulse: P.pulse || 0, uPort: this.mode === 'portrait' ? 1 : 0
+      uHead: b.head || 0, uReflex: b.reflex || 0, uCore: b.core || 0, uRefA: b.refA || 0, uPulse: P.pulse || 0, uPG: P.pulseGlow == null ? 0.3 : P.pulseGlow, uGlint: P.glint || 0, uPort: this.mode === 'portrait' ? 1 : 0
     }));
     if (n) gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
     if (ns) { gl.bindVertexArray(this.vaoSpeck); this.U(this.pSpeck, common); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, ns); }
@@ -489,7 +491,7 @@ var LookAliveRender = (function () {
     if (bloomOn) {
       var bind = function (tg, src) { gl.bindFramebuffer(gl.FRAMEBUFFER, tg.fb); gl.viewport(0, 0, tg.w, tg.h); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex); };
       var self = this, blur = function (dst, src, dx, dy) { bind(dst, src); self.pBlur.tx = { uS: 0 }; self.U(self.pBlur, { uPx: [1 / dst.w, 1 / dst.h], uDir: [dx / dst.w, dy / dst.h] }); gl.drawArrays(gl.TRIANGLES, 0, 3); };
-      bind(T.a, T.scene); this.pBright.tx = { uS: 0 }; this.U(this.pBright, { uPx: [1 / W, 1 / H], uThr: 0.6 }); gl.drawArrays(gl.TRIANGLES, 0, 3);
+      bind(T.a, T.scene); this.pBright.tx = { uS: 0 }; this.U(this.pBright, { uPx: [1 / W, 1 / H], uThr: P.bloomThr || 0.6 }); gl.drawArrays(gl.TRIANGLES, 0, 3);
       blur(T.b, T.a, 1, 0); blur(T.a, T.b, 0, 1);
       bind(T.c, T.a); this.pDown.tx = { uS: 0 }; this.U(this.pDown, { uPx: [1 / T.a.w, 1 / T.a.h] }); gl.drawArrays(gl.TRIANGLES, 0, 3);
       blur(T.d, T.c, 1.8, 0); blur(T.c, T.d, 0, 1.8);
@@ -500,7 +502,7 @@ var LookAliveRender = (function () {
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, T.a.tex);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, T.c.tex);
     this.pComp.tx = { uS: 0, uB1: 1, uB2: 2 };
-    this.U(this.pComp, { uRes: [W, H], uBloom: bloomOn ? 1 : 0, uVig: P.vig, uChroma: P.chroma, uGrain: P.grain, uExp: P.exposure, uTime: P.time });
+    this.U(this.pComp, { uRes: [W, H], uBloom: bloomOn ? P.bloom : 0, uVig: P.vig, uChroma: P.chroma, uGrain: P.grain, uExp: P.exposure, uTime: P.time });
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.activeTexture(gl.TEXTURE0);
     if (q) { gl.endQuery(this.timer.TIME_ELAPSED_EXT); this.qBusy = q; }
@@ -570,9 +572,9 @@ var LookAliveRender = (function () {
     var box = document.createElement('div'); box.className = 'dishui';
     box.innerHTML = '<div class="dscale" aria-hidden="true"><i></i><span></span></div>' +
       '<label class="dq" title="Cells drawn: Phone 5,000, Laptop 20,000, High 50,000. Steps down by itself if frames are slow."><span class="dqk">Detail</span><select aria-label="Dish detail"><option value="phone">5k</option><option value="laptop">20k</option><option value="high">50k</option></select></label>' +
-      '<div class="dhint" aria-hidden="true">scroll to zoom, drag to move, double-click to reset</div><div class="dnote" role="status" hidden></div>';
+      '<div class="dhint" aria-hidden="true">scroll to zoom, drag to move, double-click to reset</div><div class="dnote" role="status" hidden></div><div class="dthin" aria-hidden="true" hidden>Thinned view. Zoom in for every cell.</div>';
     host.appendChild(box); this.ui = box;
-    this.uiScale = box.querySelector('.dscale'); this.uiSel = box.querySelector('select'); this.uiHint = box.querySelector('.dhint'); this.uiNote = box.querySelector('.dnote');
+    this.uiScale = box.querySelector('.dscale'); this.uiSel = box.querySelector('select'); this.uiHint = box.querySelector('.dhint'); this.uiNote = box.querySelector('.dnote'); this.uiThin = box.querySelector('.dthin');
     this.uiSel.value = this.tierName;
     this.uiSel.addEventListener('change', function () { self.setQuality(self.uiSel.value); });
     this.hintTimer = setTimeout(function () { if (self.uiHint) self.uiHint.style.opacity = '0'; }, 6000);
@@ -728,7 +730,7 @@ var LookAliveRender = (function () {
     var lim = Math.max(0, 1 - 0.9 / v.zoom), d = Math.sqrt(v.cx * v.cx + v.cy * v.cy);
     if (d > lim) { v.cx *= lim / d; v.cy *= lim / d; }
   };
-  Dish.prototype.baseScale = function () { return Math.min(this.eng.W, this.eng.H) * 0.46; };
+  Dish.prototype.baseScale = function () { return Math.min(this.eng.W, this.eng.H) * 0.475; };
   Dish.prototype.bindInput = function () {
     var self = this, cv = this.cv, ptrs = {}, last = null, pinch = 0;
     cv.style.touchAction = 'none';
@@ -796,7 +798,7 @@ var LookAliveRender = (function () {
     var seamS = this.seamS[ti] + (this.seamS[tj] - this.seamS[ti]) * tf;
     var pulse = this.reduced ? 0 : seamS > 0.18 ? seamS * (0.5 + 0.5 * Math.sin(tm * 5.5)) : 0;
     this.lastPulse = pulse;
-    var jit = this.reduced || noCull ? 0 : 1, rN0 = TUNE.cellR / Math.sqrt(this.C / 20000), minN = TUNE.minPxN / sc, minR = TUNE.minPxR / sc, rN = Math.max(rN0, minN), rR = Math.max(rN0 * 1.7, minR), bf = this.bf, napF = bf.naps ? 0.14 : 0;
+    var jit = this.reduced || noCull ? 0 : 1, rN0 = TUNE.cellR / Math.sqrt(this.C / 20000), minN = TUNE.minPxN * eng.px / sc, minR = TUNE.minPxR * eng.px / sc, rN = Math.max(rN0, minN), rR = Math.max(rN0 * 1.7, minR), bf = this.bf, napF = bf.naps ? 0.14 : 0;
     var colX = this.colonyAt(t), self = this, bubbles = 0, S = this.nat, q, th, vis, x, y, j;
     var pad = 0.04, X0 = cx - hw - pad - 0.1, X1 = cx + hw + pad + 0.1, Y0 = cy - hh - pad - 0.1, Y1 = cy + hh + pad + 0.1;
     // level of detail: when more individuals would be on screen than the tier shows legibly, a fixed subset (by identity) is drawn, a little larger
@@ -804,7 +806,7 @@ var LookAliveRender = (function () {
     if (!noCull) {
       for (j = 0; j < this.nat.n; j++) if (this.pN[this.nat.ci[j]] > this.nat.th[j]) cntN++;
       for (j = 0; j < this.rob.n; j++) if (this.pR[this.rob.ci[j]] > this.rob.th[j]) cntR++;
-      thinN = clamp(sCap / Math.max(1, cntN + cntR), 0.04, 1); thinR = Math.min(1, thinN * TUNE.robotBoost);   // robots are thinned less (you must stay findable); the on-screen pink share is overstated by robotBoost only while zoomed out
+      thinN = clamp(sCap / Math.max(1, cntN + cntR), 0.04, 1); var rsh = cntR / Math.max(1, cntN + cntR), bst = 1 + (TUNE.robotBoost - 1) * (1 - smooth(TUNE.boostLo, TUNE.boostUntil, rsh)); thinR = Math.min(1, thinN * bst);   // robots are thinned less (you must stay findable); the on-screen pink share is overstated by robotBoost only while zoomed out
     }
     this.thin = [thinN, thinR]; this.vis = [cntN, cntR];
     var compN = 1, compR = 1;
@@ -834,7 +836,7 @@ var LookAliveRender = (function () {
       var rd = Math.sqrt((x - colX[0]) * (x - colX[0]) + (y - colX[1]) * (y - colX[1])), eg = engK > 0 ? clamp((engK - (S.g2[j] * 0.65 + rd * 0.25)) * 5, 0, 1) : 0;
       var sm = seamS > 0 ? clamp(seamS * 1.5 - 0.5 * S.g1[j], 0, 1) : 0;
       o = n * 16; inst[o] = x; inst[o + 1] = y;
-      inst[o + 2] = rR * compR * (0.8 + 0.4 * S.sz[j]) * (0.5 + 0.5 * vis) * (dormant ? 0.72 : 1) * (1 + 0.14 * pulse) * (1 - 0.35 * stress); inst[o + 3] = S.ang[j];
+      inst[o + 2] = rR * compR * (0.8 + 0.4 * S.sz[j]) * (0.5 + 0.5 * vis) * (dormant ? 0.72 : 1) * (1 + TUNE.pulseSize * pulse) * (1 - 0.35 * stress); inst[o + 3] = S.ang[j];
       inst[o + 4] = 1; inst[o + 5] = S.dep[j]; inst[o + 6] = S.ph[j]; inst[o + 7] = dormant ? 0.55 : S.hl[j];
       inst[o + 8] = 0; inst[o + 9] = dis; inst[o + 10] = sm; inst[o + 11] = bf.motor && !dormant && S.g1[j] < 0.35 ? 1 : 0;
       inst[o + 12] = crashFade * (0.6 + 0.4 * S.g3[j]); inst[o + 13] = eg; inst[o + 14] = dormant; inst[o + 15] = 0;
@@ -912,12 +914,13 @@ var LookAliveRender = (function () {
     var expo = this.exposure * (r.n > 1500 ? Math.max(0.55, 1 - 0.3 * Math.log(r.n / 1500) / Math.LN10) : 1);
     eng.render({
       n: r.n, ns: r.ns, cx: this.view.cx, cy: this.view.cy, sc: sc, zoom: zoom, focus: focus, K: K, tol: TUNE.tol, depth: 1, bgBlur: bgBlur,
-      acid: acidAmb, fizz: clamp(fx.acidLoss * 2.5, 0, 1), time: tm, exposure: expo, cloud: cloud, dish: 1, haze: 1, bloom: TUNE.bloom, vig: TUNE.vignette, chroma: TUNE.chroma, grain: TUNE.grain,
+      acid: acidAmb, fizz: clamp(fx.acidLoss * 2.5, 0, 1), time: tm, exposure: expo, cloud: cloud, dish: 1, haze: 1, bloom: TUNE.bloom, bloomThr: TUNE.bloomThr, cloudK: TUNE.cloud, vig: TUNE.vignette, chroma: TUNE.chroma, grain: TUNE.grain,
       field: this.field, bld: { env: this.bf.env, ee: 0, tight: this.bf.tight, pump: this.bf.pump, shell: this.bf.shell, acidIn: this.bf.acidIn, sync: this.bf.sync, head: this.bf.head, reflex: this.bf.reflex, core: this.bf.core, refA: -2.356 },
-      pulse: fx.pulse, lowBloom: this.tierName === 'phone'
+      pulse: fx.pulse, lowBloom: this.tierName === 'phone', pulseGlow: TUNE.pulseGlow, glint: TUNE.glint
     });
     this.drawn = r.n; this.focusNow = focus; this.bgBlur = bgBlur; this.scNow = sc;
     this.updateScale(sc);
+    if (this.uiThin) { var th = this.thin && this.thin[0] < 0.97 && this.vis && this.vis[1] > 0; if (th !== this.thinShown) { this.thinShown = th; this.uiThin.hidden = !th; } }
     this.jsMs = (this.jsMs || 0) + ((performance.now() - tJs) - (this.jsMs || 0)) * 0.1;
     this.autoTier(raw);
   };
