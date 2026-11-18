@@ -18,7 +18,7 @@ var LookAliveRender = (function () {
     blur: 0.6, focus: 0.5, tol: 0.17,                   // blur strength, focal plane, in-focus half band
     rackBoost: 1.6, rackDur: 2.0, rackFreq: 0.6, rackDecay: 3.0, rackStart: -1.35, rackExposure: 0.45,
     screenCells: { phone: 150, laptop: 300, high: 520 }, robotBoost: 1.7, boostLo: 0.06, boostUntil: 0.22, cellR: 0.0050, minPxN: 3.1, minPxR: 3.7, cloud: 0.25,
-    immSpread: 0.6, immOrbit: 0.35, immRadius: 0.04,   // immune cells: how tightly they converge on the colony, orbit speed (rad/s), orbit radius
+    immSpread: 0.6, immOrbit: 0.35, immRadius: 0.04, immRate: 0.16, immRoam: 0.35,   // immune cells: how tightly they converge on the colony, orbit speed (rad/s), orbit radius
     glint: 1.0, pulseSize: 0.22, pulseGlow: 0.9,
     zoomMax: 16, jumpZoom: 2.1,
     bloom: 0.35, bloomThr: 0.8, vignette: 1, chroma: 1, grain: 1,
@@ -669,6 +669,15 @@ var LookAliveRender = (function () {
       this.imm.a[i] = RI() * 6.2832; this.imm.tx[i] = (RI() + RI() + RI() - 1.5) * 0.45; this.imm.ty[i] = (RI() + RI() + RI() - 1.5) * 0.45;
       this.imm.ph[i] = RI(); this.imm.h[i] = RI(); this.imm.sz[i] = 0.9 + 0.3 * RI(); this.imm.dep[i] = clamp(0.62 + (RI() - 0.5) * 0.2, 0, 1);
     }
+    // guard routes: a slow meander through the dish per cell (two slow sinusoids with their own rates, phases, amplitudes and home point), deterministic in time
+    var RW = mul(5150); this.imm.rw = new Float32Array(NI * 8);
+    for (i = 0; i < NI; i++) {
+      var hr = Math.sqrt(RW()) * 0.62, ha = RW() * 6.2832, b8 = i * 8;
+      this.imm.rw[b8] = TUNE.immRate * (0.55 + 0.9 * RW()); this.imm.rw[b8 + 1] = TUNE.immRate * (0.55 + 0.9 * RW());
+      this.imm.rw[b8 + 2] = RW() * 6.2832; this.imm.rw[b8 + 3] = RW() * 6.2832;
+      this.imm.rw[b8 + 4] = Math.cos(ha) * hr; this.imm.rw[b8 + 5] = Math.sin(ha) * hr;
+      this.imm.rw[b8 + 6] = TUNE.immRoam * (0.6 + 0.8 * RW()); this.imm.rw[b8 + 7] = TUNE.immRoam * (0.6 + 0.8 * RW());
+    }
     this.cellCount = this.nat.n + this.rob.n;
     this.fieldBuf = { N: new Float32Array(n * n), R: new Float32Array(n * n), W: new Float32Array(n * n), F: new Float32Array(n * n), Z: new Float32Array(n * n) };
     this.pN = new Float32Array(n * n); this.pR = new Float32Array(n * n); this.pF = new Float32Array(n * n); this.dz = new Float32Array(n * n);
@@ -875,12 +884,17 @@ var LookAliveRender = (function () {
     for (ii = 0; ii < im.n && ii < mNow + 1 && n < cap; ii++) {
       var al = clamp(mNow - ii, 0, 1); if (al <= 0.01) continue;
       var e = clamp(cl * 1.3 - 0.3 * im.h[ii], 0, 1); e = e * e * (3 - 2 * e);
-      var sx = Math.cos(im.a[ii]) * 0.97, sy = Math.sin(im.a[ii]) * 0.97, tx = colX[0] + im.tx[ii], ty = colX[1] + im.ty[ii];
-      tx = colX[0] + im.tx[ii] * TUNE.immSpread; ty = colX[1] + im.ty[ii] * TUNE.immSpread;
-      x = sx + (tx - sx) * e; y = sy + (ty - sy) * e;
-      // purposeful motion: straight in toward the colony, then all circle it the same way (no independent random wobble)
-      var ob = tm * TUNE.immOrbit + im.ph[ii] * 6.2832, ho = Math.atan2(ty - sy, tx - sx);
-      if (jit) { x += TUNE.immRadius * e * Math.cos(ob); y += TUNE.immRadius * e * Math.sin(ob); ho = Math.atan2(Math.sin(ho) * (1 - e) + Math.cos(ob) * e, Math.cos(ho) * (1 - e) - Math.sin(ob) * e); }
+      var sx = Math.cos(im.a[ii]) * 0.97, sy = Math.sin(im.a[ii]) * 0.97, tx = colX[0] + im.tx[ii] * TUNE.immSpread, ty = colX[1] + im.ty[ii] * TUNE.immSpread;
+      // guard: enters from the rim, then patrols a slow meandering route; the stage pulls the route toward the colony (e), where the cells mill around it together
+      var rw = im.rw, b8 = ii * 8, tt = jit ? tm : 0, q = al * al * (3 - 2 * al);
+      var p1 = rw[b8] * tt + rw[b8 + 2], p2 = rw[b8 + 1] * tt + rw[b8 + 3];
+      var rx = rw[b8 + 4] + rw[b8 + 6] * Math.sin(p1), ry = rw[b8 + 5] + rw[b8 + 7] * Math.sin(p2);
+      var vx = rw[b8 + 6] * rw[b8] * Math.cos(p1), vy = rw[b8 + 7] * rw[b8 + 1] * Math.cos(p2), rr0 = Math.sqrt(rx * rx + ry * ry);
+      if (rr0 > 0.9) { rx *= 0.9 / rr0; ry *= 0.9 / rr0; }
+      var bx = sx + (rx - sx) * q, by = sy + (ry - sy) * q;
+      x = bx + (tx - bx) * e; y = by + (ty - by) * e;
+      var ob = tm * TUNE.immOrbit + im.ph[ii] * 6.2832, vl = Math.sqrt(vx * vx + vy * vy) + 1e-6, ho = Math.atan2(vy / vl * (1 - e) + (ty - by) * e, vx / vl * (1 - e) + (tx - bx) * e);
+      if (jit) { x += TUNE.immRadius * e * Math.cos(ob); y += TUNE.immRadius * e * Math.sin(ob); }
       var gx = ((x + 1) / 2 * FG) | 0, gy = ((y + 1) / 2 * FG) | 0;
       if (gx >= 0 && gx < FG && gy >= 0 && gy < FG) fieldG[(gy * FG + gx) * 4 + 1] = Math.min(255, fieldG[(gy * FG + gx) * 4 + 1] + 70 * al);
       if (!noCull && (x < X0 || x > X1 || y < Y0 || y > Y1)) { this.immVisible++; continue; }
