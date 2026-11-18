@@ -8,7 +8,7 @@ var LookAliveCards = (function () {
     // ---- Biology shelf (safe from suspicion) ----
     { id: 'respiration', slot: 'power', name: 'Respiration', shelf: 'biology', kind: 'metabolism', energy: 0, counterpart: 'fuelcell',
       real: 'Cells that use oxygen break sugar down completely and get far more energy from it than fermentation does.',
-      game: 'High yield. On Acidica the waste is wrong, so it raises Waste.',
+      game: 'High yield. In Gastropolis the waste is wrong, so it raises Waste.',
       effect: 'Metabolism. Yield +20%. Waste mix differs from natives.',
       fx: { yield: 1.20, mix: 0.2, waste: 1 } },
     { id: 'fermentation', slot: 'power', name: 'Fermentation', shelf: 'biology', kind: 'metabolism', energy: 0, counterpart: 'fuelcell',
@@ -18,7 +18,7 @@ var LookAliveCards = (function () {
       fx: { yield: 0.85, mix: 0.7, waste: 1 } },
     { id: 'wall', slot: 'envelope', name: 'Cell wall', shelf: 'biology', kind: 'part', energy: 2, counterpart: 'repair',
       real: 'A stiff mesh around the membrane that stops the cell bursting.',
-      game: 'You survive the planet\'s events better. It costs energy to build, so you divide a little slower.',
+      game: 'You survive the city\'s events better. It costs energy to build, so you divide a little slower.',
       effect: 'Toughness +2. Births -6%.',
       fx: { births: 0.94, tough: 2 } },
     { id: 'quorum', slot: 'signal', name: 'Head count (quorum signal)', shelf: 'biology', kind: 'part', energy: 2, counterpart: 'radio',
@@ -57,7 +57,7 @@ var LookAliveCards = (function () {
     // ---- Machine shelf (powerful, raises Regularity) ----
     { id: 'fuelcell', slot: 'power', name: 'Fuel cell', shelf: 'machine', kind: 'metabolism', energy: 1, counterpart: 'respiration',
       real: 'No cell does this. It burns sugar completely and leaves nothing.',
-      game: 'Best yield. You leave no trail, and on Acidica everyone leaves a trail.',
+      game: 'Best yield. You leave no trail, and in Gastropolis everyone leaves a trail.',
       effect: 'Metabolism. Yield +35%. No waste: raises Waste strongly.',
       fx: { yield: 1.35, mix: 0.7, waste: 0, reg: 0.5 } },
     { id: 'clock', slot: 'division', name: 'Sync pulse', shelf: 'machine', kind: 'part', energy: 1, counterpart: null,
@@ -82,7 +82,7 @@ var LookAliveCards = (function () {
       fx: { deathMult: 0.1, reg: 1.6 } },
     { id: 'repair', slot: 'insides', name: 'Self-repair', shelf: 'machine', kind: 'part', energy: 2, counterpart: 'wall',
       real: 'No cell does this so well. Damaged units rebuild themselves.',
-      game: 'You shrug off the planet\'s events.',
+      game: 'You shrug off the city\'s events.',
       effect: 'Toughness +4. Regularity up.',
       fx: { tough: 4, reg: 0.8 } }
   ];

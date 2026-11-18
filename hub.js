@@ -330,7 +330,7 @@ const GAMES = [
   {
     title: "Look Alive",
     description:
-      "You are a robot swarm in disguise on an alien planet. Design a cell that survives the acid, grows without taking over, and passes for a native. Ten dishes, one cell to build.",
+      "You are a tiny alien that mistook a mammal's stomach for a city. Design a cell that survives the acid, grows without taking over, and passes for a local microbe. Ten dishes, one cell to build.",
     path: "games/look-alive/index.html",
     tags: ["Puzzle", "Simulation", "Prototype"],
     accent: "#ff6b95",
