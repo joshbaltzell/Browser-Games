@@ -80,9 +80,9 @@ var LookAliveRender = (function () {
     '    vec3 hc=C_AMB*wst*(.06+1.0*haze*haze)*.5+C_IMM*imu*(.08+.9*haze)*.6;',
     '    float ac=uAcid;',
     '    hc+=vec3(.78,.82,.18)*ac*(.012+.28*haze*haze)*inside;',
-    '    vec2 gq=w*46.; vec2 id=floor(gq); vec2 fq=fract(gq)-.5; float hh=h21(id);',
+    '    vec2 gq=mat2(.8,.6,-.6,.8)*w*38.; vec2 id=floor(gq); float hh=h21(id); vec2 fq=fract(gq)-.5-(vec2(h21(id+3.1),h21(id+7.7))-.5)*.5;',
     '    float ph=fract(uTime*(.4+hh)+hh*7.);',
-    '    float fz=exp(-sq((length(fq)-ph*.38)/.05))*(1.-ph)*step(.4,hh)*uFizz*min(1.,fzl*4.)*inside;',
+    '    float fz=exp(-sq((length(fq)-ph*(.2+.28*h21(id+1.7)))/.05))*(1.-ph)*step(.55,hh)*uFizz*min(1.,fzl*4.)*inside;',
     '    hc+=vec3(1.,.85,.45)*fz*1.4;',
     '    c+=hc*inside;',
     '  }',
@@ -792,7 +792,7 @@ var LookAliveRender = (function () {
     var fx = this.fieldsAt(t), H = this.run.H, ti = fx.ti, tj = Math.min(this.T, ti + 1), tf = fx.tf;
     function hs(arr) { return arr[ti] + (arr[tj] - arr[ti]) * tf; }
     var W = eng.W, Hh = eng.H, cx = this.view.cx, cy = this.view.cy, hw = W * 0.5 / sc, hh = Hh * 0.5 / sc, ss = this.ss;
-    var acidLoss = hs(H.acid), stress = clamp((acidLoss - 0.03) * 4, 0, 1), foodRatio = clamp(hs(H.food) / this.food0, 0, 1.3);
+    var acidLoss = hs(H.acid), stress = clamp((acidLoss - 0.03) * 4, 0, 1) * smooth(0, 0.55, 1 - (this.lag[Math.min(this.T, Math.floor(t))] + (this.lag[Math.min(this.T, Math.floor(t) + 1)] - this.lag[Math.min(this.T, Math.floor(t))]) * (t - Math.floor(t))) / Math.max(1e-6, this.lag[0])), foodRatio = clamp(hs(H.food) / this.food0, 0, 1.3);
     var crash = clamp((0.72 - foodRatio) / 0.45, 0, 1), crashFade = crash * 0.5;
     var kill = hs(H.kill), stage = clamp(Math.round(hs(H.stage)), 0, 3), engK = stage >= 3 ? clamp(kill * 9, 0, 0.85) : 0;
     var seamS = this.seamS[ti] + (this.seamS[tj] - this.seamS[ti]) * tf;
