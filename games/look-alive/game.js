@@ -87,7 +87,7 @@
 
   var S = {
     screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null },
-    cleared: load('cleared2', {}), grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), unlocked: load('unlocked2', false),
+    cleared: load('cleared2', {}), grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro1', false), unlocked: load('unlocked2', false),
     slot: null, layer: 0, preview: null, pointed: false,
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
@@ -128,9 +128,10 @@
   function refresh() {
     var step = 0, text = '', d = dishObj(), a = S.lastAutopsy;
     var sc = S.screen;
-    if (sc === 'list') text = 'Pick a dish. Each one gives your cell a new problem to solve.';
+    if (sc === 'intro') text = 'Read the premise, then press Begin.';
+    else if (sc === 'list') text = 'Pick a dish. Each one gives your cell a new problem to solve.';
     else if (sc === 'world') { step = 1; text = 'Read about the world your cell has landed in, then press Continue.'; }
-    else if (sc === 'brief') { step = 1; text = 'Read the problem and your goal, then press Continue to watch your cell try it.'; }
+    else if (sc === 'brief') { step = 1; text = 'Read the environment report, then press Start the test to watch your cell try it.'; }
     else if (sc === 'adapt') {
       step = 3;
       if (isExam(d)) text = a ? (S.lastRunLost ? 'That did not work: ' : 'Your cell failed: ') + failSentence(a).toLowerCase() + '. Exam: no tips. Press "What changes this?", change your cell, then Run.' : 'Exam dish: no answer tips, and several different cells can pass. Change your cell, then press Run.';
@@ -156,12 +157,12 @@
 
   // ---------------------------------------------------------------- screens
   function show(name) {
-    if (name !== 'list' && name !== 'world' && S.dish == null) name = 'list';
+    if (name !== 'list' && name !== 'world' && name !== 'intro' && S.dish == null) name = 'list';
     if (name === 'run' && !S.run) name = 'adapt';
     S.screen = name; hidePop();
-    ['list', 'world', 'brief', 'adapt', 'run'].forEach(function (s) { $('screen-' + s).classList.toggle('on', s === name); });
+    ['intro', 'list', 'world', 'brief', 'adapt', 'run'].forEach(function (s) { $('screen-' + s).classList.toggle('on', s === name); });
     var d = dishObj();
-    $('dishTitle').textContent = d && name !== 'list' && name !== 'world' ? 'Dish ' + d.id + ': ' + d.title : '';
+    $('dishTitle').textContent = d && name !== 'list' && name !== 'world' && name !== 'intro' ? 'Dish ' + d.id + ': ' + d.title : '';
     if (name === 'list') renderList();
     if (name === 'world') renderWorld();
     if (name === 'brief') renderBrief();
@@ -210,8 +211,33 @@
     S.seenWorld = true; save('world2', true);
     if (S.worldBack === 'brief' && S.dish != null) show('brief'); else show(S.worldBack || 'list');
   }
+  // Environment analysis report: readings come from the dish's own parameters. Lines appear one by one (all at once with reduced motion).
+  var CH_WORDS = { growth: 'growth rate', waste: 'smell (waste trail)', casualties: 'casualties', regularity: 'regularity' };
+  function reportLines(d) {
+    var acid = d.acid || 0, ph = Math.max(0.5, 3.2 - 2.6 * acid), strength = acid < 0.25 ? 'moderate' : acid < 0.45 ? 'strong' : acid < 0.65 ? 'very strong' : 'extreme';
+    var evs = eventsOf(d), warn = evs.length ? evs[0].tick - evs[0].announce : 0, food = (d.abundance ? 'plentiful' : 'steady') + (evs.length ? '; ' + (evs.length > 1 ? 'crashes' : 'a crash') + ' at tick ' + evs.map(function (e) { return e.tick; }).join(' and ') + ', each warned ' + warn + ' ticks ahead' : '');
+    var insp = !d.suspicion ? 'none in this dish' : (d.channels || []).map(function (c) { return CH_WORDS[c] || c; }).join(', ') + (d.regWeight > 1 ? ' (strict)' : '');
+    return [
+      ['Acidity', 'pH about ' + ph.toFixed(1) + ' (' + strength + ')'],
+      ['Food supply', food],
+      ['Inspectors', insp],
+      ['Energy budget', d.energy + ' of 5 units for your cell']
+    ];
+  }
+  function renderReport(d) {
+    var box = $('briefReport'), rows = reportLines(d), html = '<div class="rh">Environment analysis · ' + esc(W.name) + ' · site ' + d.id + ' of ' + ORDER.length + '</div>';
+    rows.forEach(function (r) { html += '<div class="rl pending"><span class="rk">' + esc(r[0]) + '</span><span>' + esc(r[1]) + '</span></div>'; });
+    html += '<div class="rl status pending">Building petri dish… ready. Your artificial microbe is loaded for a compatibility test.</div>';
+    box.innerHTML = html;
+    (S.briefTimers || []).forEach(clearTimeout); S.briefTimers = [];
+    var els = box.querySelectorAll('.rl');
+    Array.prototype.forEach.call(els, function (e, i) {
+      if (reduced) { e.classList.remove('pending'); return; }
+      S.briefTimers.push(setTimeout(function () { e.classList.remove('pending'); }, 250 + i * 380));
+    });
+  }
   function renderBrief() {
-    var d = dishObj();
+    var d = dishObj(); renderReport(d);
     $('briefKicker').textContent = 'Dish ' + d.id + ' of ' + ORDER.length;
     $('briefTitle').textContent = d.title;
     $('briefProblem').textContent = d.problem; $('briefGoal').textContent = d.goal;
@@ -1069,9 +1095,11 @@
   $('navWorld').addEventListener('click', function () { closeOverlay(); S.worldBack = S.screen === 'world' ? S.worldBack : S.screen; show('world'); });
   $('worldGo').addEventListener('click', worldContinue);
   $('briefGo').addEventListener('click', enterWatch);
+  $('introGo').addEventListener('click', function () { S.seenIntro = true; save('intro1', true); show('list'); });
+  $('replayIntro').addEventListener('click', function () { show('intro'); });
   $('unlockAll').addEventListener('click', function () { S.unlocked = true; save('unlocked2', true); renderList(); });
   $('resetProgress').addEventListener('click', function () {
-    S.cleared = {}; S.wins = {}; S.grades = {}; save('grades2', {}); S.unlocked = false; S.seenWorld = false;
+    S.cleared = {}; S.wins = {}; S.grades = {}; save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro1', false);
     save('cleared2', {}); save('wins2', {}); save('unlocked2', false); save('world2', false); renderList();
   });
   $('undo').addEventListener('click', function () { if (!S.undo.length) return; S.build = S.undo.pop(); S.preview = null; syncRuleFromBuild(); renderAdapt(false); });
@@ -1142,6 +1170,6 @@
     }
   };
 
-  renderList(); show('list');
+  renderList(); show(S.seenIntro ? 'list' : 'intro');
   requestAnimationFrame(frame);
 })();

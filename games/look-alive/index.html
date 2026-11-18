@@ -29,12 +29,24 @@
 
 <main id="app">
 
+  <section class="screen" id="screen-intro">
+    <div class="briefwrap introwrap">
+      <div class="kicker">Look Alive</div>
+      <h1>You are very small.</h1>
+      <p class="introp">So is everyone you know, and you have always assumed that anything clever must be small too.</p>
+      <p class="introp">Then your scouts found a place that was crowded, busy and warm: the inside of a mammal's stomach. They took it for a city.</p>
+      <p class="introp">You cannot walk in. You can build one artificial microbe and send it to live among the citizens. If it looks and behaves like a local, it is allowed to stay.</p>
+      <p class="introp">First, each stretch of the city is copied into a petri dish. You test your microbe there, see why it fails, and rebuild it until it passes.</p>
+      <button type="button" class="big" id="introGo">Begin</button>
+    </div>
+  </section>
+
   <section class="screen" id="screen-list">
     <div class="listwrap">
       <h1>Pass as a native.</h1>
       <p class="lede">Your people took a mammal's stomach for a city, and your cell has gone in to blend in. Watch it fail, change it, and try again. The cell that wins a dish is the cell you start the next one with.</p>
       <div id="dishList"></div>
-      <div class="listfoot"><button type="button" class="ghost" id="unlockAll">Unlock all dishes</button><button type="button" class="ghost" id="resetProgress">Clear saved progress</button></div>
+      <div class="listfoot"><button type="button" class="ghost" id="replayIntro">Replay intro</button><button type="button" class="ghost" id="unlockAll">Unlock all dishes</button><button type="button" class="ghost" id="resetProgress">Clear saved progress</button></div>
     </div>
   </section>
 
@@ -54,11 +66,12 @@
     <div class="briefwrap">
       <div class="kicker" id="briefKicker"></div>
       <h1 id="briefTitle"></h1>
+      <div class="report" id="briefReport" aria-live="polite"></div>
       <div class="briefrow"><b>The problem</b><span id="briefProblem"></span></div>
       <div class="briefrow"><b>Your goal</b><span id="briefGoal"></span></div>
       <div class="briefrow" id="briefExam"><b>This is an exam</b><span>There are no answer tips, and several different cells can pass. You are graded: Passable, Convincing or Benign.</span></div>
       <div class="briefrow"><b>Your cell</b><span class="briefcell"><span class="cellfig" id="briefFig"></span><span id="briefCell"></span></span></div>
-      <button type="button" class="big" id="briefGo">Continue</button>
+      <button type="button" class="big" id="briefGo">Start the test</button>
     </div>
   </section>
 

@@ -68,7 +68,7 @@ canvas { display: block; }
 .fact p { margin: 0; font-size: 15px; line-height: 1.35; }
 .badge { font-size: 15px; line-height: 1.45; color: var(--dim); max-width: 70ch; height: 46px; margin: 0 0 10px; }
 .mission { font-size: 16px; line-height: 1.5; color: var(--dim); max-width: 70ch; height: 50px; margin: 0 0 14px; }
-.briefrow { display: grid; grid-template-columns: 130px 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 17px; line-height: 1.4; min-height: 64px; }
+.briefrow { display: grid; grid-template-columns: 130px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 16px; line-height: 1.35; min-height: 46px; }
 .briefrow b { font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); padding-top: 4px; font-weight: 400; }
 #briefGo { margin-top: 22px; }
 
@@ -440,3 +440,15 @@ canvas { display: block; }
 
 .exhint { color: var(--dim); font-style: italic; margin-bottom: 6px; }
 .exhint b { font-style: normal; color: var(--ink); }
+
+.introwrap { max-width: 640px; padding-top: 48px; }
+.introwrap h1 { font-size: 44px; margin-bottom: 18px; }
+.introp { font-size: 19px; line-height: 1.55; margin: 0 0 14px; }
+.introwrap .big { margin-top: 12px; }
+.report { font-family: var(--mono); font-size: 13px; background: #05060b; border: 1px solid var(--line2); border-radius: 8px; padding: 10px 14px; margin: 0 0 8px; }
+.report .rh { color: var(--dim); letter-spacing: .1em; text-transform: uppercase; font-size: 11px; margin-bottom: 4px; }
+.report .rl { display: grid; grid-template-columns: 120px 1fr; gap: 10px; line-height: 1.55; transition: opacity .25s; }
+.report .rl.pending { opacity: 0; }
+.report .rk { color: var(--amb); text-transform: uppercase; letter-spacing: .06em; font-size: 11px; padding-top: 1px; }
+.report .rl.status { grid-template-columns: 1fr; color: var(--grn); }
+@media (max-width: 560px) { .report .rl { grid-template-columns: 1fr; gap: 0; margin-bottom: 4px; } .introwrap h1 { font-size: 32px; } }
