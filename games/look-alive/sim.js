@@ -195,7 +195,7 @@ var LookAlive = (function () {
       seen[id] = true; energy += c.energy;
       if (A.parts.indexOf(id) < 0) pr.push(c.name + ' is not available on this dish.');
       var fac = factoryOf(D, c.slot) === id;
-      if (!isOpen(D, c.slot) && !fac) pr.push(c.slot === 'motor' ? 'The Motor slot is locked in this city.' : 'The ' + slotName(c.slot) + ' slot is locked on this dish.');
+      if (!isOpen(D, c.slot) && !fac) pr.push(c.slot === 'motor' ? 'The Motor slot is locked here.' : 'The ' + slotName(c.slot) + ' slot is locked on this dish.');
       (bySlot[c.slot] = bySlot[c.slot] || []).push(c);
       if (c.slot === 'envelope') { layers += Cards.layersOf(c); if (Cards.layersOf(c) > 1) shellIn = true; }
     });
@@ -236,7 +236,7 @@ var LookAlive = (function () {
   }
   function lockedReason(D, slotId) {
     if (isOpen(D, slotId)) return null;
-    if (slotId === 'motor') return 'The Motor slot is locked in this city.';
+    if (slotId === 'motor') return 'The Motor slot is locked here.';
     var f = factoryOf(D, slotId), on = opensOn(slotId);
     return f ? 'Factory fitted. Opens on dish ' + on + '.' : 'Opens on dish ' + on + '.';
   }
@@ -751,8 +751,8 @@ var LookAlive = (function () {
         why = 'you were dividing ' + pct(Math.abs(ratio - 1)) + (ratio >= 1 ? ' faster' : ' slower') + ' than the natives from tick ' + from + (cul ? ', mostly from ' + cul.name : '');
         res.card = cul ? cul.name : null;
       } else if (best === 1) {
-        if (bp.wasteAmt === 0) { why = 'your Fuel cell left no waste in a city where everyone leaves a trail, from tick ' + from; res.card = 'fuelcell'; }
-        else { why = 'your ' + nm(bp.metabolism) + ' leaves a different waste trail from the natives\' (' + pct(bp.wasteGap) + ' off), and in Gastropolis everyone smells the same'; res.card = bp.metabolism; }
+        if (bp.wasteAmt === 0) { why = 'your Fuel cell left no waste in a place where everyone leaves a trail, from tick ' + from; res.card = 'fuelcell'; }
+        else { why = 'your ' + nm(bp.metabolism) + ' leaves a different waste trail from the natives\' (' + pct(bp.wasteGap) + ' off), and here everyone smells the same'; res.card = bp.metabolism; }
       } else if (D.abundance) {
         var pk = 0; for (t = 1; t <= te; t++) if (H.share[t] > pk) pk = H.share[t];
         why = 'your share passed ' + passed(H, band) + ' and the lab noticed';

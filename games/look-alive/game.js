@@ -177,8 +177,8 @@
     ['Arrival', 'You are very small.', 'So is everyone you know. You travelled a long way to find this: a blue and green world, thick with life.'],
     ['Landing', 'The ground is mountains.', 'We went down to the surface. Our eyes are small, so every grain of soil is a mountain and one drop of water is a lake.'],
     ['Sensors', 'Something enormous and warm.', 'Our sensors found it nearby, and inside it a crowd of life, denser than anything we have ever seen.'],
-    ['The city', 'A civilization.', 'So many, so close, so busy. It must be a city. We will call it Gastropolis.'],
-    ['The plan', 'We must blend in.', 'Our scouts took samples. Before we go in, we have to look like the citizens, so first we test our disguise in a petri dish.']
+    ['The crowd', 'It must be a civilization.', 'So many, so close, so busy. Where we come from, a crowd like this means a civilization. We think this is a city, so we will treat it as one.'],
+    ['The plan', 'We must blend in.', 'Our scouts took samples. Before we go in, we have to look like the locals, so first we test our disguise in a petri dish.']
   ];
   function renderIntro() {
     var n = S.introAt, b = INTRO[n], img = $('introImg');
@@ -1062,7 +1062,7 @@
       html = '<div class="winwrap"><div class="paper memo"><h2>CLEARED</h2><div class="stampbox"><div class="stamp' + (reduced ? '' : ' slam') + '" id="stamp">' + stamp + '</div></div>' +
         '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' + gradeHtml +
         '<div class="row"><b>Dish</b><span>' + d.id + ': ' + esc(d.title) + '</span></div>' + recordRow(run, d) +
-        '<div class="pbtns">' + (next != null ? '<button type="button" data-act="next">Next dish</button>' : last ? '<button type="button" data-act="complete">Gastropolis complete</button>' : '') + '<button type="button" data-act="watch">Watch replay</button><button type="button" data-act="list">Dish list</button></div></div>' +
+        '<div class="pbtns">' + (next != null ? '<button type="button" data-act="next">Next dish</button>' : last ? '<button type="button" data-act="complete">Sampling complete</button>' : '') + '<button type="button" data-act="watch">Watch replay</button><button type="button" data-act="list">Dish list</button></div></div>' +
         '<div class="paper notebook"><h3>Stolen from the lab: notebook page ' + (ORDER.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id]) + '</h4><p>' + esc(d.notebook) + '</p><div class="scrawl">(Do not let them see you have read this.)</div></div></div>';
     } else {
       var a = run.autopsy;
@@ -1081,8 +1081,8 @@
       var d = Lv.dish(id), g = S.grades[id];
       return '<div class="crow2"><span class="cn">' + id + '</span><span class="ct">' + esc(d.title) + '</span><span class="cg ' + (g ? 'g-' + g.toLowerCase() : '') + '">' + (S.cleared[id] ? (d.exam ? (g || 'Cleared') : '\u2713 Cleared') : 'Not cleared') + '</span></div>';
     }).join('');
-    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>GASTROPOLIS COMPLETE</h2><div class="covercap">The ten dishes</div><div class="clist">' + rows + '</div>' +
-      '<div class="row"><b>Next</b><span>A new city, with one rule turned upside down.</span></div><div class="pbtns"><button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
+    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>SAMPLING COMPLETE</h2><div class="covercap">The ten dishes</div><div class="clist">' + rows + '</div>' +
+      '<div class="row"><b>Next</b><span>A new site, with one rule turned upside down.</span></div><div class="pbtns"><button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
     $('overlay').hidden = false; S.overlayOpen = true;
   }
   $('overlay').addEventListener('click', function (e) {
