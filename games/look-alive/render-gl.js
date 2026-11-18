@@ -18,6 +18,7 @@ var LookAliveRender = (function () {
     blur: 0.6, focus: 0.5, tol: 0.17,                   // blur strength, focal plane, in-focus half band
     rackBoost: 1.6, rackDur: 2.0, rackFreq: 0.6, rackDecay: 3.0, rackStart: -1.35, rackExposure: 0.45,
     screenCells: { phone: 150, laptop: 300, high: 520 }, robotBoost: 1.7, boostLo: 0.06, boostUntil: 0.22, cellR: 0.0050, minPxN: 3.1, minPxR: 3.7, cloud: 0.25,
+    immSpread: 0.6, immOrbit: 0.35, immRadius: 0.04,   // immune cells: how tightly they converge on the colony, orbit speed (rad/s), orbit radius
     glint: 1.0, pulseSize: 0.22, pulseGlow: 0.9,
     zoomMax: 16, jumpZoom: 2.1,
     bloom: 0.35, bloomThr: 0.8, vignette: 1, chroma: 1, grain: 1,
@@ -875,12 +876,15 @@ var LookAliveRender = (function () {
       var al = clamp(mNow - ii, 0, 1); if (al <= 0.01) continue;
       var e = clamp(cl * 1.3 - 0.3 * im.h[ii], 0, 1); e = e * e * (3 - 2 * e);
       var sx = Math.cos(im.a[ii]) * 0.97, sy = Math.sin(im.a[ii]) * 0.97, tx = colX[0] + im.tx[ii], ty = colX[1] + im.ty[ii];
+      tx = colX[0] + im.tx[ii] * TUNE.immSpread; ty = colX[1] + im.ty[ii] * TUNE.immSpread;
       x = sx + (tx - sx) * e; y = sy + (ty - sy) * e;
-      if (jit) { x += 0.012 * Math.sin(tm * 0.9 + im.ph[ii] * 40); y += 0.012 * Math.cos(tm * 0.8 + im.h[ii] * 40); }
+      // purposeful motion: straight in toward the colony, then all circle it the same way (no independent random wobble)
+      var ob = tm * TUNE.immOrbit + im.ph[ii] * 6.2832, ho = Math.atan2(ty - sy, tx - sx);
+      if (jit) { x += TUNE.immRadius * e * Math.cos(ob); y += TUNE.immRadius * e * Math.sin(ob); ho = Math.atan2(Math.sin(ho) * (1 - e) + Math.cos(ob) * e, Math.cos(ho) * (1 - e) - Math.sin(ob) * e); }
       var gx = ((x + 1) / 2 * FG) | 0, gy = ((y + 1) / 2 * FG) | 0;
       if (gx >= 0 && gx < FG && gy >= 0 && gy < FG) fieldG[(gy * FG + gx) * 4 + 1] = Math.min(255, fieldG[(gy * FG + gx) * 4 + 1] + 70 * al);
       if (!noCull && (x < X0 || x > X1 || y < Y0 || y > Y1)) { this.immVisible++; continue; }
-      o = n * 16; inst[o] = x; inst[o + 1] = y; inst[o + 2] = 0.034 * im.sz[ii] * Math.sqrt(0.6 + 0.4 * Math.min(1, zz)) * (0.4 + 0.6 * al); inst[o + 3] = im.a[ii] + tm * 0.2;
+      o = n * 16; inst[o] = x; inst[o + 1] = y; inst[o + 2] = 0.034 * im.sz[ii] * Math.sqrt(0.6 + 0.4 * Math.min(1, zz)) * (0.4 + 0.6 * al); inst[o + 3] = ho;
       inst[o + 4] = 2; inst[o + 5] = im.dep[ii]; inst[o + 6] = im.ph[ii]; inst[o + 7] = 0; inst[o + 8] = 0; inst[o + 9] = 0; inst[o + 10] = 0; inst[o + 11] = 0; inst[o + 12] = 1 - al * 0.95 + (1 - al) * 0; inst[o + 13] = 0; inst[o + 14] = 0; inst[o + 15] = 0;
       inst[o + 12] = 0; n++; this.immVisible++;
     }
