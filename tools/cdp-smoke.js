@@ -45,7 +45,7 @@ function freePort() {
   const port = await freePort();
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cdp-smoke-'));
   const chrome = spawn(findChrome(), [
-    '--headless=new', '--remote-debugging-port=' + port, '--user-data-dir=' + profile,
+    '--headless=new', '--use-mock-keychain', '--password-store=basic', '--remote-debugging-port=' + port, '--user-data-dir=' + profile,
     '--no-first-run', '--no-default-browser-check', '--window-size=1280,720', 'about:blank'
   ], { stdio: 'ignore' });
   const errors = [];

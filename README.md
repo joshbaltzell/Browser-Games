@@ -45,6 +45,7 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 | **[Knit One](games/knit-one/)** | You are the yarn. Lay it around the posts, tie a real knot, then drop the ball and see if it holds. |
 | **[Notary of the Damned](games/notary-of-the-damned/)** | The underworld's paperwork clerk: check each ghost's dossier against a shifting rulebook and stamp APPROVED or DENIED. |
 | **[Last Words](games/last-words/)** | Chain word cards into a sentence and it happens, literally. Each page deals 12 fresh random words. Careful: the last noun takes the blow. |
+| **[Look Alive](games/look-alive/)** | *Prototype.* You are a robot swarm in disguise on an alien planet. Build a cell that survives the acid, grows without taking over, and passes for a native, across ten dishes. WebGL2 dish with a 2D fallback. |
 
 ### Stealth
 

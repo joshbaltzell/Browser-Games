@@ -327,6 +327,24 @@ const GAMES = [
         <rect width="120" height="80" fill="#2a2140"/><circle cx="60" cy="42" r="30" fill="#f08a4b" opacity="0.35"/><circle cx="60" cy="34" r="9" fill="#f08a4b"/><rect x="50" y="44" width="20" height="18" rx="6" fill="#f08a4b"/><circle cx="30" cy="48" r="6" fill="#f08a4b" opacity="0.6"/><circle cx="90" cy="48" r="6" fill="#f08a4b" opacity="0.6"/>
       </svg>`,
   },
+  {
+    title: "Look Alive",
+    description:
+      "You are a robot swarm in disguise on an alien planet. Design a cell that survives the acid, grows without taking over, and passes for a native. Ten dishes, one cell to build.",
+    path: "games/look-alive/index.html",
+    tags: ["Puzzle", "Simulation", "Prototype"],
+    accent: "#ff6b95",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="60" cy="40" r="34" fill="#05060b" stroke="#6a6fb8" stroke-width="2" />
+        <g fill="none" stroke="#a78bfa" stroke-width="3" stroke-linecap="round">
+          <path d="M38 30 l8 -5" /><path d="M70 22 l9 4" /><path d="M44 52 l9 3" /><path d="M76 50 l6 -7" /><path d="M58 36 l5 7" /><path d="M32 42 l5 3" />
+        </g>
+        <g fill="#05060b" stroke="#ff6b95" stroke-width="2.2">
+          <circle cx="54" cy="28" r="4" /><circle cx="66" cy="54" r="4" /><circle cx="82" cy="36" r="3.2" /><circle cx="42" cy="44" r="3.2" />
+        </g>
+      </svg>`,
+  },
 ];
 
 function buildCard(game) {
