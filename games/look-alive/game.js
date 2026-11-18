@@ -556,10 +556,6 @@
     Sim.offered(d, k).forEach(function (c) { list.appendChild(optionEl(k, c)); });
     if (info.empty) list.appendChild(emptyOptionEl(k));
     if (k === 'reflex' && d.allowed.sensors.length) { var rb = el('div', 'rulebox'); rb.id = 'ruleBox'; list.appendChild(rb); renderRuleBox(); }
-    if (k === 'division' && d.dials.indexOf('slop') >= 0) {
-      var tn = el('div', 'tune'); tn.id = 'slopBox'; tn.innerHTML = '<div class="ptitle">Tuning <span class="dim">how messy the timing is</span></div>'; tn.appendChild(dialEl('slop'));
-      list.appendChild(tn);
-    }
     list.classList.toggle('showreal', !!S.real);
     list.scrollTop = S.lastOptSlot === k ? keepTop : 0; S.lastOptSlot = k;
     if (S.focusId) { var ft = list.querySelector('[data-id="' + S.focusId + '"]'); S.focusId = null; if (ft) ft.focus({ preventScroll: true }); }
@@ -759,6 +755,8 @@
       S.shownDish = d.id; $('tagLayer').innerHTML = '';
       var pb = $('paceBox'); pb.innerHTML = ''; pb.style.display = d.dials.indexOf('pace') >= 0 ? '' : 'none';
       if (d.dials.indexOf('pace') >= 0) pb.appendChild(dialEl('pace'));
+      var sb = $('slopBox'), sh = $('slopHint'), hasSlop = d.dials.indexOf('slop') >= 0; sb.innerHTML = ''; sb.style.display = hasSlop ? '' : 'none'; sh.style.display = hasSlop ? '' : 'none';
+      if (hasSlop) { sb.appendChild(dialEl('slop')); sh.textContent = 'Sloppy = random timing: looks more natural, grows a bit slower.'; }
       if (!selectable(S.slot)) S.slot = d.opens[0] || d.slots[0];
       var ex = isExam(d); $('stdBtn').style.display = ex ? '' : 'none'; $('tipBtn').textContent = ex ? 'What changes this?' : 'Tip'; $('tipbox').classList.toggle('exam', ex);
       showPreviewText(PV_HINT, false);
@@ -766,7 +764,7 @@
     var pr = Sim.predict(d, S.build);
     renderCell(); renderOptions(); renderEnergy(d, pr); renderBars();
     if (d.dials.indexOf('pace') >= 0) updateDial($('paceBox').firstChild, 'pace', pr);
-    if ($('slopBox')) updateDial($('slopBox').querySelector('.dialrow'), 'slop', pr);
+    if (d.dials.indexOf('slop') >= 0) updateDial($('slopBox').firstChild, 'slop', pr);
     renderProblems(); renderTips();
     $('undo').disabled = !S.undo.length;
     $('reset').disabled = JSON.stringify(S.build) === JSON.stringify(S.carried);
@@ -956,6 +954,9 @@
       var m = D.chart($('gShare'), { T: T, y0: 0, y1: ymax, yTicks: [0, 0.1, 0.2, 0.3].filter(function (v) { return v <= ymax; }), yFmt: function (v) { return Math.round(v * 100) + '%'; },
         bands: [{ lo: band.lo, hi: band.hi, fill: 'rgba(207,227,255,.09)', line: '#9fb4d8', label: 'band ' + Math.round(band.lo * 100) + '% to ' + Math.round(band.hi * 100) + '%' }], vmarks: marks, series: ser, head: S.t, pin: pin, padB: 14 });
       if (m) D.ribbon($('ribbon'), run, m.L, m.R);
+      var fsOn = false; if (m) { var f0 = H.food[0] || 1, fr = 0, q; for (q = 0; q <= T; q++) fr = Math.max(fr, Math.abs(H.food[q] / f0 - 1)); fsOn = evs.length > 0 || fr > 0.25; }
+      $('foodStrip').style.display = fsOn ? '' : 'none';
+      if (fsOn) D.foodStrip($('foodStrip'), run, m.L, m.R, { events: evs, head: S.t });
       var sy = 10; for (t = 0; t <= T; t++) if (H.total[t] > sy) sy = Math.ceil(H.total[t]);
       var ser2 = [{ data: function (i) { return H.total[i]; }, n: T + 1, color: D.GRN, dimTail: true, upTo: S.t, width: 2 }];
       if (g) ser2.unshift({ data: function (i) { return g.total[i]; }, n: T + 1, color: D.GRN, dash: [4, 4], alpha: 0.45, width: 1.2 });

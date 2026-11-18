@@ -167,6 +167,27 @@ var LAD = (function () {
     return { X: X, Y: Y, L: L, R: R, pw: pw };
   }
 
+  // Food strip under the share chart: the real food level (as a share of the starting level), crash periods shaded, same time axis as the chart.
+  function foodStrip(c, run, padL, padR, o) {
+    var v = fit(c); if (!v) return;
+    var ctx = v.ctx, W = v.w, H = v.h; ctx.clearRect(0, 0, W, H);
+    var L = padL, pw = W - L - padR, T = run.T, f = run.H.food, f0 = f[0] || 1, top = 1.2, t, rel;
+    for (t = 0; t <= T; t++) { rel = f[t] / f0; if (rel > top) top = Math.ceil(rel * 5) / 5; }
+    function X(tt) { return L + pw * tt / T; }
+    function Y(r) { return 2 + (H - 4) * (1 - r / top); }
+    ctx.fillStyle = '#05060b'; ctx.fillRect(L, 0, pw, H);
+    (o.events || []).forEach(function (E) { ctx.fillStyle = 'rgba(245,165,36,.10)'; ctx.fillRect(X(E.tick), 0, Math.max(2, X(Math.min(T, E.tick + E.dur)) - X(E.tick)), H); });
+    ctx.strokeStyle = '#4a4220'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(L, Math.round(Y(1)) + .5); ctx.lineTo(L + pw, Math.round(Y(1)) + .5); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(X(0), H);
+    for (t = 0; t <= T; t++) ctx.lineTo(X(t), Y(f[t] / f0));
+    ctx.lineTo(X(T), H); ctx.closePath(); ctx.fillStyle = 'rgba(245,165,36,.32)'; ctx.fill();
+    ctx.strokeStyle = AMB; ctx.lineWidth = 1.6; ctx.beginPath();
+    for (t = 0; t <= T; t++) { if (t === 0) ctx.moveTo(X(t), Y(f[t] / f0)); else ctx.lineTo(X(t), Y(f[t] / f0)); }
+    ctx.stroke();
+    ctx.fillStyle = AMB; ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText('food', L - 4, H / 2);
+    if (o.head != null) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; var hx = Math.round(X(o.head)) + .5; ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, H); ctx.stroke(); }
+  }
+
   function ribbon(c, run, padL, padR) {
     var v = fit(c); if (!v) return;
     var ctx = v.ctx, W = v.w, H = v.h; ctx.clearRect(0, 0, W, H);
@@ -348,5 +369,5 @@ var LAD = (function () {
       g('envelope', function (s) { return envelopeArt(s.envelope); }) + g('signal', function (s) { return signalArt(s.signal); }) + g('motor', function (s) { return motorArt(s.motor); }) + g('reflex', function (s) { return reflexArt(s.reflex); });
   }
 
-  return { cellArt: cellArt, ANCHOR: ANCHOR, CG: CG, VIO: VIO, PINK: PINK, AMB: AMB, GRN: GRN, CY: CY, RED: RED, CH: CH, MACH: MACH, fit: fit, pattern: pattern, drawCells: drawCells, chart: chart, ribbon: ribbon, portrait: portrait, hash: hash };
+  return { cellArt: cellArt, ANCHOR: ANCHOR, CG: CG, VIO: VIO, PINK: PINK, AMB: AMB, GRN: GRN, CY: CY, RED: RED, CH: CH, MACH: MACH, fit: fit, pattern: pattern, drawCells: drawCells, chart: chart, ribbon: ribbon, foodStrip: foodStrip, portrait: portrait, hash: hash };
 })();
