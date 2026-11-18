@@ -18,6 +18,7 @@ var LookAliveRender = (function () {
     blur: 0.6, focus: 0.5, tol: 0.17,                   // blur strength, focal plane, in-focus half band
     rackBoost: 1.6, rackDur: 2.0, rackFreq: 0.6, rackDecay: 3.0, rackStart: -1.35, rackExposure: 0.45,
     screenCells: { phone: 150, laptop: 300, high: 520 }, robotBoost: 1.7, boostLo: 0.06, boostUntil: 0.22, cellR: 0.0050, minPxN: 3.1, minPxR: 3.7, cloud: 0.25,
+    driftAmp: 0.03, deathMargin: 0.03,                  // natives and yours: slow drift (dish units), and how long a dying individual lingers while it shrinks
     crowd: 3.5,                                         // extra on-screen cells as your share passes 30% to 85% (a take-over must look crowded)
     immSpread: 0.6, immOrbit: 0.35, immRadius: 0.04, immRate: 0.16, immRoam: 0.35,   // immune cells: how tightly they converge on the colony, orbit speed (rad/s), orbit radius
     glint: 1.0, pulseSize: 0.22, pulseGlow: 0.9,
@@ -831,6 +832,12 @@ var LookAliveRender = (function () {
     this.lastPulse = pulse;
     var jit = this.reduced || noCull ? 0 : 1, rN0 = TUNE.cellR / Math.sqrt(this.C / 20000), minN = TUNE.minPxN * eng.px / sc, minR = TUNE.minPxR * eng.px / sc, rN = Math.max(rN0, minN), rR = Math.max(rN0 * 1.7, minR), bf = this.bf, napF = bf.naps ? 0.14 : 0;
     var colX = this.colonyAt(t), self = this, bubbles = 0, S = this.nat, q, th, vis, x, y, j;
+    var DX = 0, DY = 0;
+    function wander(Sp, jj) {   // slow drift plus a faint jiggle, the same for natives and for you (so it is no tell)
+      var a1 = 0.2 + 0.5 * Sp.g1[jj], a2 = 0.8 + 1.7 * Sp.g2[jj];
+      DX = TUNE.driftAmp * Math.sin(a1 * tm + Sp.ph[jj] * 40) + 0.004 * Math.sin(a2 * tm + Sp.g1[jj] * 30);
+      DY = TUNE.driftAmp * Math.cos(a1 * 1.13 * tm + Sp.g3[jj] * 40) + 0.004 * Math.cos(a2 * 0.9 * tm + Sp.ph[jj] * 23);
+    }
     var pad = 0.04, X0 = cx - hw - pad - 0.1, X1 = cx + hw + pad + 0.1, Y0 = cy - hh - pad - 0.1, Y1 = cy + hh + pad + 0.1;
     // level of detail: when more individuals would be on screen than the tier shows legibly, a fixed subset (by identity) is drawn, a little larger
     var zz = this.view.zoom, cntN = 0, cntR = 0, thinN = 1, thinR = 1, sCap = TUNE.screenCells[this.tierName] * zz * zz * Math.pow(Math.min(eng.W, eng.H) / eng.px / 320, 2);
@@ -843,12 +850,14 @@ var LookAliveRender = (function () {
     var compN = 1, compR = 1;
     // natives
     for (j = 0; j < S.n && n < cap; j++) {
-      q = this.pN[S.ci[j]]; th = S.th[j]; if (q <= th || S.g4[j] > thinN) continue;
+      q = this.pN[S.ci[j]]; th = S.th[j]; vis = clamp((q - th + TUNE.deathMargin) / (0.22 * q + 0.004 + TUNE.deathMargin), 0, 1); if (vis <= 0.04 || S.g4[j] > thinN) continue;
       x = S.x[j]; y = S.y[j];
-      if (jit) { x += 0.0045 * Math.sin(tm * 0.31 + S.ph[j] * 40) + 0.003 * Math.sin(tm * 0.77 + S.g1[j] * 30); y += 0.0045 * Math.cos(tm * 0.27 + S.g2[j] * 40) + 0.003 * Math.cos(tm * 0.71 + S.ph[j] * 23); }
+      // multiplying and dying: a newborn comes out of its parent (the previous individual in the same cell, if alive) and settles at its own place; a dying one shrinks back toward the parent
+      if (j > 0 && S.ci[j - 1] === S.ci[j] && this.pN[S.ci[j]] > S.th[j - 1]) { var bud = smooth(0, 1, clamp((q - th) / (0.22 * q + 0.004), 0, 1)); x = S.x[j - 1] + (x - S.x[j - 1]) * bud; y = S.y[j - 1] + (y - S.y[j - 1]) * bud; }
+      if (jit) { wander(S, j); x += DX; y += DY; }
       if (!noCull && (x < X0 || x > X1 || y < Y0 || y > Y1)) continue;
       vis = Math.min(1, (q - th) / (0.22 * q + 0.004));
-      o = n * 16; inst[o] = x; inst[o + 1] = y; inst[o + 2] = rN * compN * (0.8 + 0.5 * S.sz[j]) * (0.55 + 0.45 * vis) * clamp((thinN - S.g4[j]) / 0.08 + 0.3, 0.3, 1); inst[o + 3] = S.ang[j] + (jit ? 0.25 * Math.sin(tm * 0.2 + S.ph[j] * 30) : 0);
+      o = n * 16; inst[o] = x; inst[o + 1] = y; inst[o + 2] = rN * compN * (0.8 + 0.5 * S.sz[j]) * (0.12 + 0.88 * Math.pow(vis, 0.7)) * clamp((thinN - S.g4[j]) / 0.08 + 0.3, 0.3, 1); inst[o + 3] = S.ang[j] + (jit ? 0.25 * Math.sin(tm * 0.2 + S.ph[j] * 30) : 0);
       inst[o + 4] = 0; inst[o + 5] = S.dep[j]; inst[o + 6] = S.ph[j]; inst[o + 7] = S.hl[j];
       inst[o + 8] = 0; inst[o + 9] = 0; inst[o + 10] = 0; inst[o + 11] = S.tail[j]; inst[o + 12] = crashFade * (0.6 + 0.4 * S.g3[j]); inst[o + 13] = 0; inst[o + 14] = 0; inst[o + 15] = 0;
       n++;
@@ -858,7 +867,7 @@ var LookAliveRender = (function () {
     for (j = 0; j < S.n && n < cap; j++) {
       q = this.pR[S.ci[j]]; th = S.th[j]; if (q <= th || S.g4[j] > thinR) continue;
       x = S.x[j]; y = S.y[j];
-      if (jit) { x += 0.0035 * Math.sin(tm * 0.37 + S.ph[j] * 40); y += 0.0035 * Math.cos(tm * 0.33 + S.g2[j] * 40); }
+      if (jit) { wander(S, j); x += DX; y += DY; }
       if (!noCull && (x < X0 || x > X1 || y < Y0 || y > Y1)) continue;
       vis = Math.min(1, (q - th) / (0.22 * q + 0.004));
       var dis = Math.max(0, 1 - (q - th) / (0.3 * q + 0.004)), dormant = (S.g1[j] < this.dz[S.ci[j]] || S.g3[j] < napF) ? 1 : 0;
