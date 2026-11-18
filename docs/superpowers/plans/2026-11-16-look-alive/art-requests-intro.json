@@ -1,0 +1,38 @@
+{
+ "slug": "look-alive",
+ "outDir": "games/look-alive/art-src/intro",
+ "cap": 10,
+ "style": "STYLE (applies to every image): a dark, elegant, slightly cute science-fiction storybook illustration, as a stylised video game cutscene. Mostly black or deep-navy background with soft glowing light and gentle bloom, and a subtle circular lens vignette at the edges. Limited palette: crystal violet (#8B5CF6) for native microbes, safranin pink (#FF5C8A) for the small alien scout craft and the player's disguised cells, iodine amber (#F5A524) for warm light and chemicals, malachite green (#2DD4A7) for guardian immune cells. Never gory or frightening. No text, no letters, no numbers, no watermark, no signature, no user interface.",
+ "requests": [
+  {
+   "id": "IN-1",
+   "file": "intro-1-arrival.png",
+   "size": "1536x864",
+   "prompt": "The planet Earth seen from orbit, a beautiful blue and green world with swirling white clouds and thin glowing atmosphere, dark space behind it with faint stars. In the lower foreground, small and sharp, a tiny pink glowing alien scout craft shaped like a round pod with a few thin antennae, drifting toward the planet. Wide, calm, awe-inspiring composition."
+  },
+  {
+   "id": "IN-2",
+   "file": "intro-2-landing.png",
+   "size": "1536x864",
+   "prompt": "A farm field seen from the scale of a single bacterium, as if the viewer is a microscopic alien standing on the ground. Giant rounded soil grains the size of mountains, a huge glistening water droplet like a dome-shaped lake, enormous blades of grass towering overhead like green cliffs, a few oversized root hairs. Small violet rod-shaped microbes drift past in the air and the droplet. In the foreground a tiny pink landing pod rests on a soil grain. Warm amber low sunlight rakes across the scene, shallow depth of field with soft blurred background."
+  },
+  {
+   "id": "IN-3",
+   "file": "intro-3-sensors.png",
+   "size": "1536x864",
+   "prompt": "A microscopic alien's sensor view across a farm field. In the far distance, vast and blurry, looms an enormous warm dark animal shape, many times larger than anything near the viewer, seen as an unfamiliar giant silhouette standing on four legs in the grass, with a warm amber heat glow around it. Over the image, a thin circular sensor overlay: faint concentric rings and tick marks, and inside the giant shape one dense bright cluster glowing violet and amber where an extraordinary concentration of tiny life is detected. Calm, mysterious, a little eerie but not scary."
+  },
+  {
+   "id": "IN-4",
+   "file": "intro-4-city.png",
+   "size": "1536x864",
+   "prompt": "A glowing night city made of living microbes, seen up close in a deep warm cavern with towering curved ridged walls like skyscrapers and avenues. Thousands of violet rod-shaped and round bacteria pack the avenues and cling to the walls like crowds of citizens, with warm amber lights glowing like windows and amber haze drifting like fog. A few small green immune guard cells patrol far along an avenue. A single small pink scout pod hovers at the edge of the frame, looking in. Dense, busy, beautiful, like a bioluminescent metropolis seen from a balcony."
+  },
+  {
+   "id": "IN-5",
+   "file": "intro-5-scouts.png",
+   "size": "1536x864",
+   "prompt": "Several small pink alien scout pods drifting down among a crowd of glowing violet bacteria, each pod extending a thin tendril that collects a tiny glowing droplet sample from a native cell. In the soft background, a round glass petri dish glows faintly, ready and empty, as if being prepared to test a disguise. A distant green guard cell watches. Hopeful and quiet, a sense of beginning an infiltration."
+  }
+ ]
+}

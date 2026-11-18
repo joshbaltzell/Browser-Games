@@ -87,7 +87,7 @@
 
   var S = {
     screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null },
-    cleared: load('cleared2', {}), grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro1', false), unlocked: load('unlocked2', false),
+    cleared: load('cleared2', {}), grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, unlocked: load('unlocked2', false),
     slot: null, layer: 0, preview: null, pointed: false,
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
@@ -128,7 +128,7 @@
   function refresh() {
     var step = 0, text = '', d = dishObj(), a = S.lastAutopsy;
     var sc = S.screen;
-    if (sc === 'intro') text = 'Read the premise, then press Begin.';
+    if (sc === 'intro') text = 'The story so far. Press Next, or Skip to go straight to the dishes.';
     else if (sc === 'list') text = 'Pick a dish. Each one gives your cell a new problem to solve.';
     else if (sc === 'world') { step = 1; text = 'Read about the world your cell has landed in, then press Continue.'; }
     else if (sc === 'brief') { step = 1; text = 'Read the environment report, then press Start the test to watch your cell try it.'; }
@@ -163,6 +163,7 @@
     ['intro', 'list', 'world', 'brief', 'adapt', 'run'].forEach(function (s) { $('screen-' + s).classList.toggle('on', s === name); });
     var d = dishObj();
     $('dishTitle').textContent = d && name !== 'list' && name !== 'world' && name !== 'intro' ? 'Dish ' + d.id + ': ' + d.title : '';
+    if (name === 'intro') renderIntro();
     if (name === 'list') renderList();
     if (name === 'world') renderWorld();
     if (name === 'brief') renderBrief();
@@ -170,6 +171,26 @@
     if (name === 'run') enterRun();
     refresh();
   }
+
+  // ---------------------------------------------------------------- intro: five picture beats (the aliens never name a cow or a stomach; they only see what they see)
+  var INTRO = [
+    ['Arrival', 'You are very small.', 'So is everyone you know. You travelled a long way to find this: a blue and green world, thick with life.'],
+    ['Landing', 'The ground is mountains.', 'We went down to the surface. Our eyes are small, so every grain of soil is a mountain and one drop of water is a lake.'],
+    ['Sensors', 'Something enormous and warm.', 'Our sensors found it nearby, and inside it a crowd of life, denser than anything we have ever seen.'],
+    ['The city', 'A civilization.', 'So many, so close, so busy. It must be a city. We will call it Gastropolis.'],
+    ['The plan', 'We must blend in.', 'Our scouts took samples. Before we go in, we have to look like the citizens, so first we test our disguise in a petri dish.']
+  ];
+  function renderIntro() {
+    var n = S.introAt, b = INTRO[n], img = $('introImg');
+    $('introKicker').textContent = b[0] + ' · ' + (n + 1) + ' of ' + INTRO.length; $('introTitle').textContent = b[1]; $('introText').textContent = b[2];
+    var src = 'assets/intro/intro-' + (n + 1) + '.jpg';
+    if (img.getAttribute('src') !== src) { img.style.visibility = ''; if (reduced) img.src = src; else { img.classList.add('fade'); setTimeout(function () { img.src = src; img.classList.remove('fade'); }, 180); } }
+    var dots = ''; for (var i = 0; i < INTRO.length; i++) dots += '<i' + (i === n ? ' class="on"' : '') + '></i>';
+    $('introDots').innerHTML = dots;
+    $('introBack').disabled = n === 0; $('introGo').textContent = n === INTRO.length - 1 ? 'Begin' : 'Next';
+  }
+  function introNext() { if (S.introAt < INTRO.length - 1) { S.introAt++; renderIntro(); } else introDone(); }
+  function introDone() { S.seenIntro = true; save('intro2', true); show('list'); }
 
   // ---------------------------------------------------------------- dish list
   function isLocked(id) {
@@ -1095,11 +1116,13 @@
   $('navWorld').addEventListener('click', function () { closeOverlay(); S.worldBack = S.screen === 'world' ? S.worldBack : S.screen; show('world'); });
   $('worldGo').addEventListener('click', worldContinue);
   $('briefGo').addEventListener('click', enterWatch);
-  $('introGo').addEventListener('click', function () { S.seenIntro = true; save('intro1', true); show('list'); });
-  $('replayIntro').addEventListener('click', function () { show('intro'); });
+  $('introGo').addEventListener('click', introNext);
+  $('introBack').addEventListener('click', function () { if (S.introAt > 0) { S.introAt--; renderIntro(); } });
+  $('introSkip').addEventListener('click', introDone);
+  $('replayIntro').addEventListener('click', function () { S.introAt = 0; show('intro'); });
   $('unlockAll').addEventListener('click', function () { S.unlocked = true; save('unlocked2', true); renderList(); });
   $('resetProgress').addEventListener('click', function () {
-    S.cleared = {}; S.wins = {}; S.grades = {}; save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro1', false);
+    S.cleared = {}; S.wins = {}; S.grades = {}; save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro2', false);
     save('cleared2', {}); save('wins2', {}); save('unlocked2', false); save('world2', false); renderList();
   });
   $('undo').addEventListener('click', function () { if (!S.undo.length) return; S.build = S.undo.pop(); S.preview = null; syncRuleFromBuild(); renderAdapt(false); });
@@ -1131,7 +1154,7 @@
       if (tg === 'BUTTON') return;
       e.preventDefault();
       if (ovOpen) return;
-      if (S.screen === 'world') worldContinue(); else if (S.screen === 'brief') enterWatch();
+      if (S.screen === 'intro') introNext(); else if (S.screen === 'world') worldContinue(); else if (S.screen === 'brief') enterWatch();
       else if (S.screen === 'adapt') doRun(); else if (S.screen === 'run') setPlaying(!S.playing);
     } else if ((e.key === 'r' || e.key === 'R') && S.screen === 'run' && S.dish != null) {
       if (S.mode === 'watch') enterWatch(); else doRun();

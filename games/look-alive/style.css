@@ -441,10 +441,6 @@ canvas { display: block; }
 .exhint { color: var(--dim); font-style: italic; margin-bottom: 6px; }
 .exhint b { font-style: normal; color: var(--ink); }
 
-.introwrap { max-width: 640px; padding-top: 48px; }
-.introwrap h1 { font-size: 44px; margin-bottom: 18px; }
-.introp { font-size: 19px; line-height: 1.55; margin: 0 0 14px; }
-.introwrap .big { margin-top: 12px; }
 .report { font-family: var(--mono); font-size: 13px; background: #05060b; border: 1px solid var(--line2); border-radius: 8px; padding: 10px 14px; margin: 0 0 8px; }
 .report .rh { color: var(--dim); letter-spacing: .1em; text-transform: uppercase; font-size: 11px; margin-bottom: 4px; }
 .report .rl { display: grid; grid-template-columns: 120px 1fr; gap: 10px; line-height: 1.55; transition: opacity .25s; }
@@ -452,3 +448,16 @@ canvas { display: block; }
 .report .rk { color: var(--amb); text-transform: uppercase; letter-spacing: .06em; font-size: 11px; padding-top: 1px; }
 .report .rl.status { grid-template-columns: 1fr; color: var(--grn); }
 @media (max-width: 560px) { .report .rl { grid-template-columns: 1fr; gap: 0; margin-bottom: 4px; } .introwrap h1 { font-size: 32px; } }
+
+.introwrap { max-width: 640px; padding-top: 14px; }
+.introimg { aspect-ratio: 16 / 9; max-height: 360px; margin: 0 auto 10px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line2); background: #02030a; }
+.introimg img { display: block; width: 100%; height: 100%; object-fit: cover; transition: opacity .35s; }
+.introimg img.fade { opacity: 0; }
+.introwrap h1 { font-size: 30px; margin: 2px 0 6px; min-height: 36px; }
+.introp { font-size: 18px; line-height: 1.5; margin: 0 0 10px; min-height: 81px; }
+.introbar { display: flex; align-items: center; gap: 10px; }
+.introdots { flex: 1; display: flex; gap: 7px; justify-content: center; }
+.introdots i { width: 9px; height: 9px; border-radius: 50%; background: var(--line2); }
+.introdots i.on { background: var(--pink); }
+.introbar button[disabled] { visibility: hidden; }
+@media (max-width: 560px) { .introimg { max-height: 220px; } .introp { font-size: 16px; min-height: 96px; } }

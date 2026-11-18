@@ -54,15 +54,15 @@ var LookAliveLevels = (function () {
   var WORLD = {
     name: 'Gastropolis',
     facts: [
-      'You took a mammal\'s stomach for a city. The microbes are its citizens.',
-      'The water is acid, as in any stomach. Anything unprotected dissolves.',
+      'You took the inside of a huge warm creature for a city. The microbes are its citizens.',
+      'The water is acid. Anything unprotected dissolves.',
       'Food pours in with every meal. The citizens keep their own numbers down.',
       'The city\'s guards leave citizens alone and inspect anyone who stands out.',
       'Everyone leaves a sour trail. The wrong waste, or none, stands out.',
-      'Citizens: Lactobacillus, Streptococcus, Helicobacter pylori. Copy them.'
+      'Our samples name the citizens: Lactobacillus, Streptococcus, Helicobacter pylori.'
     ],
     badge: 'The locals can tell you apart because real colonies can: Proteus mirabilis swarms check each other\'s identity proteins, and a visible border line forms between strangers.',
-    mission: 'A lab in Gastropolis, the stomach city, keeps these dishes. Pass as a citizen and you get a page of their notebook.'
+    mission: 'A lab in Gastropolis, the city inside the creature, keeps these dishes. Pass as a citizen and you get a page of their notebook.'
   };
 
 
