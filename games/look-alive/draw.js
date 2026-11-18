@@ -121,7 +121,7 @@ var LAD = (function () {
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#05060b'; ctx.fillRect(L, T, pw, ph);
     ctx.strokeStyle = '#1a1e2c'; ctx.lineWidth = 1; ctx.fillStyle = '#6a7088'; ctx.font = '10px ' + 'ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
-    (o.yTicks || []).forEach(function (yv) { var y = Math.round(Y(yv)) + .5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + pw, y); ctx.stroke(); ctx.fillText(o.yFmt ? o.yFmt(yv) : yv, L - 4, y); });
+    var kept = []; (o.yTicks || []).slice().sort(function (p, q) { return p - q; }).filter(function (yv) { var yy = Y(yv); if (kept.every(function (k) { return Math.abs(k - yy) >= 15; })) { kept.push(yy); return true; } return false; }).forEach(function (yv) { var y = Math.round(Y(yv)) + .5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + pw, y); ctx.stroke(); ctx.fillText(o.yFmt ? o.yFmt(yv) : yv, L - 4, y); });
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     for (var tt = 0; tt <= o.T; tt += o.T > 150 ? 50 : 20) { ctx.fillText(tt, X(tt), T + ph + 2); }
     if (o.bands) o.bands.forEach(function (bd) {
@@ -130,14 +130,15 @@ var LAD = (function () {
       ctx.moveTo(L, Y(bd.hi)); ctx.lineTo(L + pw, Y(bd.hi)); ctx.moveTo(L, Y(bd.lo)); ctx.lineTo(L + pw, Y(bd.lo)); ctx.stroke(); ctx.setLineDash([]);
       if (bd.label) { ctx.fillStyle = bd.line; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(bd.label, L + 4, Y(bd.hi) - 1); }
     });
-    if (o.hlines) o.hlines.forEach(function (h) {
+    var hl = []; if (o.hlines) o.hlines.slice().sort(function (p, q) { return q.y - p.y; }).forEach(function (h) {
+      var ly = Y(h.y), showLbl = hl.every(function (z) { return Math.abs(z - ly) >= 11; }); if (showLbl) hl.push(ly);
       ctx.strokeStyle = h.color; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(L, Y(h.y)); ctx.lineTo(L + pw, Y(h.y)); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = h.color; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(h.label, L + 4, Y(h.y) - 1);
+      if (showLbl) { ctx.fillStyle = h.color; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(h.label, L + 4, Y(h.y) - 1); }
     });
-    if (o.vmarks) o.vmarks.forEach(function (m) {
+    var vlast = -1e9; if (o.vmarks) o.vmarks.slice().sort(function (p, q) { return p.t - q.t; }).forEach(function (m) {
       ctx.strokeStyle = m.color; ctx.setLineDash(m.dash || []); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(Math.round(X(m.t)) + .5, T); ctx.lineTo(Math.round(X(m.t)) + .5, T + ph); ctx.stroke(); ctx.setLineDash([]);
-      if (m.label) { ctx.fillStyle = m.color; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(m.label, X(m.t) + 3, T + 2); }
+      if (m.label && X(m.t) + 3 >= vlast) { ctx.fillStyle = m.color; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(m.label, X(m.t) + 3, T + 2); vlast = X(m.t) + 3 + ctx.measureText(m.label).width + 4; }
     });
     ctx.save(); ctx.beginPath(); ctx.rect(L, T, pw, ph); ctx.clip();
     (o.series || []).forEach(function (s) {

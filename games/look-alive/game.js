@@ -722,7 +722,7 @@
   function renderTips() {
     var d = dishObj(), a = S.lastAutopsy, txt = '', btn = $('tipBtn'), ex = isExam(d);
     if (ex) {
-      if (S.whyOpen) txt = whyHtml();
+      if (S.whyOpen) txt = (a ? '<div class="exhint"><b>Last loss:</b> ' + esc(Lv.tip(d, a.cause)[1]) + '</div>' : '') + whyHtml();
       btn.disabled = false; btn.textContent = S.whyOpen ? 'Hide: what changes this?' : 'What changes this?';
       $('tipHint').textContent = S.whyOpen ? '' : 'Exam: no answer tips. Lists what moves a stat, unranked.';
       $('tipText').innerHTML = txt;
