@@ -18,6 +18,7 @@ var LookAliveRender = (function () {
     blur: 0.6, focus: 0.5, tol: 0.17,                   // blur strength, focal plane, in-focus half band
     rackBoost: 1.6, rackDur: 2.0, rackFreq: 0.6, rackDecay: 3.0, rackStart: -1.35, rackExposure: 0.45,
     screenCells: { phone: 150, laptop: 300, high: 520 }, robotBoost: 1.7, boostLo: 0.06, boostUntil: 0.22, cellR: 0.0050, minPxN: 3.1, minPxR: 3.7, cloud: 0.25,
+    crowd: 3.5,                                         // extra on-screen cells as your share passes 30% to 85% (a take-over must look crowded)
     immSpread: 0.6, immOrbit: 0.35, immRadius: 0.04, immRate: 0.16, immRoam: 0.35,   // immune cells: how tightly they converge on the colony, orbit speed (rad/s), orbit radius
     glint: 1.0, pulseSize: 0.22, pulseGlow: 0.9,
     zoomMax: 16, jumpZoom: 2.1,
@@ -836,7 +837,7 @@ var LookAliveRender = (function () {
     if (!noCull) {
       for (j = 0; j < this.nat.n; j++) if (this.pN[this.nat.ci[j]] > this.nat.th[j]) cntN++;
       for (j = 0; j < this.rob.n; j++) if (this.pR[this.rob.ci[j]] > this.rob.th[j]) cntR++;
-      thinN = clamp(sCap / Math.max(1, cntN + cntR), 0.04, 1); var rsh = cntR / Math.max(1, cntN + cntR), bst = 1 + (TUNE.robotBoost - 1) * (1 - smooth(TUNE.boostLo, TUNE.boostUntil, rsh)); thinR = Math.min(1, thinN * bst);   // robots are thinned less (you must stay findable); the on-screen pink share is overstated by robotBoost only while zoomed out
+      var rsh = cntR / Math.max(1, cntN + cntR); sCap *= 1 + TUNE.crowd * smooth(0.3, 0.85, rsh); thinN = clamp(sCap / Math.max(1, cntN + cntR), 0.04, 1); var bst = 1 + (TUNE.robotBoost - 1) * (1 - smooth(TUNE.boostLo, TUNE.boostUntil, rsh)); thinR = Math.min(1, thinN * bst);   // robots are thinned less (you must stay findable); the on-screen pink share is overstated by robotBoost only while zoomed out
     }
     this.thin = [thinN, thinR]; this.vis = [cntN, cntR];
     var compN = 1, compR = 1;
