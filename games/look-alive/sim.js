@@ -676,7 +676,7 @@ var LookAlive = (function () {
   // ================================================================ autopsy
   function pct(x) { return Math.round(x * 100) + '%'; }
   function avg(a, f, t) { var s = 0, c = 0; f = Math.max(1, f); for (var i = f; i <= t; i++) { s += a[i]; c++; } return c ? s / c : 0; }
-  // The figure the lab reports for a take-over: the peak share, rounded down to a whole 10% (never below the band ceiling).
+  // The figure the guards report for a take-over: the peak share, rounded down to a whole 10% (never below the band ceiling).
   function passed(H, band) { var pk = 0; for (var i = 0; i < H.share.length; i++) if (H.share[i] > pk) pk = H.share[i]; return pct(pk >= 0.2 ? Math.floor(pk * 10 + 1e-9) / 10 : band.hi); }
   function nm(id) { var c = Cards.part(id); return c ? c.name : id; }
   var REG_PHRASE = {
@@ -755,7 +755,7 @@ var LookAlive = (function () {
         else { why = 'your ' + nm(bp.metabolism) + ' leaves a different waste trail from the natives\' (' + pct(bp.wasteGap) + ' off), and here everyone smells the same'; res.card = bp.metabolism; }
       } else if (D.abundance) {
         var pk = 0; for (t = 1; t <= te; t++) if (H.share[t] > pk) pk = H.share[t];
-        why = 'your share passed ' + passed(H, band) + ' and the lab noticed';
+        why = 'your share passed ' + passed(H, band) + ' and the guards noticed';
         res.card = null; res.takeover = true;
       } else {
         var cu2 = growthCulprit(run, true);
@@ -783,7 +783,7 @@ var LookAlive = (function () {
       var cu = growthCulprit(run, true);
       res.cause = 'overgrew'; res.from = ta; res.to = T; res.dominance = above / Math.max(1, above + below);
       res.card = cu ? cu.name : null;
-      if (D.abundance) res.text = 'Took over the dish by tick ' + ta + ': your share passed ' + passed(H, band) + ' and the lab noticed.';
+      if (D.abundance) res.text = 'Took over the dish by tick ' + ta + ': your share passed ' + passed(H, band) + ' and the guards noticed.';
       else res.text = 'Over the band from tick ' + ta + ': your share reached ' + pct(peak) + ' (ceiling ' + pct(band.hi) + ')' + (cu ? ', pushed up by ' + cu.name : '') + '.';
     } else if (below > 0) {
       var evs = evList(D), which = 0;
@@ -837,7 +837,7 @@ var LookAlive = (function () {
     var high = a.cause === 'overgrew' || a.cause === 'exposed:casualties' || (a.cause === 'exposed:growth' && /faster/.test(a.text));
     var tail = {
       acid: 'You dissolved by tick ' + t + '.',
-      growth: a.cause === 'acid' ? 'The acid took more than you could replace, and you died out by tick ' + t + '.' : high ? 'You took over the dish' + (a.cause === 'overgrew' ? ' by tick ' + a.from : ' and the lab noticed by tick ' + t) + '.' : 'You faded out of the band by tick ' + a.from + '.',
+      growth: a.cause === 'acid' ? 'The acid took more than you could replace, and you died out by tick ' + t + '.' : high ? 'You took over the dish' + (a.cause === 'overgrew' ? ' by tick ' + a.from : ' and the guards noticed by tick ' + t) + '.' : 'You faded out of the band by tick ' + a.from + '.',
       smell: 'The locals smelled you by tick ' + t + '.',
       natural: 'You looked like a machine, and were caught by tick ' + t + '.',
       crash: 'The food crash wiped you out' + (a.from ? ' (below the band from tick ' + a.from + ')' : '') + '.'

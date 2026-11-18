@@ -62,7 +62,7 @@
 
   var ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   var GRADE_RANK = { Passable: 1, Convincing: 2, Benign: 3 };
-  var GRADE_NEXT = { Passable: 'Convincing needs the lab never to reach Inspection.', Convincing: 'Benign needs every stat inside its zone the whole run, with 1 energy spare.', Benign: 'That is the best grade. Nothing more to earn here.' };
+  var GRADE_NEXT = { Passable: 'Convincing needs the guards never to reach Inspection.', Convincing: 'Benign needs every stat inside its zone the whole run, with 1 energy spare.', Benign: 'That is the best grade. Nothing more to earn here.' };
   var NB_TITLE = { 1: 'How acid-loving microbes keep acid out', 2: 'The growth curve and carrying capacity', 3: 'Fermentation and respiration', 4: 'Variation between cells', 5: 'Sensing and response', 6: 'How acid-lovers trade energy for safety', 7: 'Why real cells cannot have everything', 8: 'Bet-hedging: sleepers and spores', 9: 'Why variation is normal in living things', 10: 'A summary page from the lab' };
   var PACE_NAMES = ['Glacial', 'Sluggish', 'Slow', 'Unhurried', 'Native rate', 'Brisk', 'Quick', 'Eager', 'Frantic'];
   var SLOP_NAMES = ['Spreadsheet', 'Ledger', 'Tidy', 'Careful', 'Casual', 'Relaxed', 'Messy', 'Chaotic', 'Teenager'];
@@ -897,7 +897,7 @@
       else if (run.v.win) { text = 'Your carried cell already survives this dish.'; btn = 'Continue'; }
       else { text = run.autopsy.headline + ' ' + run.autopsy.text; btn = 'Adapt your cell'; }
     } else if (!S.runFinished) text = 'Running your changed cell...';
-    else if (run.v.win) { text = 'Your cell made it. The lab did not notice.'; btn = 'See result'; }
+    else if (run.v.win) { text = 'Your cell made it. The guards did not notice.'; btn = 'See result'; }
     else { text = run.autopsy.headline + ' ' + run.autopsy.text; btn = 'Back to Adapt'; }
     var key = text + '|' + btn; if (key === S.vcache) return; S.vcache = key;
     $('verdictText').textContent = text;
@@ -1063,7 +1063,7 @@
         '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' + gradeHtml +
         '<div class="row"><b>Dish</b><span>' + d.id + ': ' + esc(d.title) + '</span></div>' + recordRow(run, d) +
         '<div class="pbtns">' + (next != null ? '<button type="button" data-act="next">Next dish</button>' : last ? '<button type="button" data-act="complete">Sampling complete</button>' : '') + '<button type="button" data-act="watch">Watch replay</button><button type="button" data-act="list">Dish list</button></div></div>' +
-        '<div class="paper notebook"><h3>Stolen from the lab: notebook page ' + (ORDER.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id]) + '</h4><p>' + esc(d.notebook) + '</p><div class="scrawl">(Do not let them see you have read this.)</div></div></div>';
+        '<div class="paper notebook"><h3>From our samples: notebook page ' + (ORDER.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id]) + '</h4><p>' + esc(d.notebook) + '</p><div class="scrawl">(Copied from the locals. Keep it secret from the guards.)</div></div></div>';
     } else {
       var a = run.autopsy;
       html = '<div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span>Office of the Immune Coroner</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +

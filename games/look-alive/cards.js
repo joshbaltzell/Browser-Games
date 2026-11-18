@@ -62,7 +62,7 @@ var LookAliveCards = (function () {
       fx: { yield: 1.35, mix: 0.7, waste: 0, reg: 0.5 } },
     { id: 'clock', slot: 'division', name: 'Sync pulse', shelf: 'machine', kind: 'part', energy: 1, counterpart: null,
       real: 'Real cells can keep time. One cyanobacterium runs a 24-hour clock on three proteins. Each cell still divides on its own schedule.',
-      game: 'Every unit divides at the same instant. No wasted cycles, and dividing in unison is a tell.',
+      game: 'Every unit divides at the same instant, the way your colony thinks as one. No wasted cycles, but dividing in unison is a tell: the locals never do.',
       effect: 'Births +15%. Regularity up.',
       fx: { births: 1.15, reg: 0.8 } },
     { id: 'shell', slot: 'envelope', layers: 2, name: 'Sealed shell', shelf: 'machine', kind: 'part', energy: 1, counterpart: 'pump',

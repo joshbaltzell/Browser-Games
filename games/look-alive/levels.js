@@ -41,7 +41,7 @@ var LookAliveLevels = (function () {
 
   var NONE = { type: 'none', tick: -1, announce: -1, rMult: 0, aMult: 0, depth: 0, dur: 0, bustDeath: 0 };
   var BAND = { lo: 0.05, hi: 0.15, need: 0.7, warm: 30 };
-  var BAND_GOAL = 'Stay between 5% and 15% of the dish, without the lab noticing you.';
+  var BAND_GOAL = 'Stay between 5% and 15% of the dish, without the guards noticing you.';
   var ALL_PARTS = ['wall', 'quorum', 'naps', 'clock', 'radio', 'copier', 'repair', 'pump', 'lipids', 'acidproof', 'shell'];
   // The Motor slot is locked here, so the Flagellum is not offered. Offered cards = this list, intersected with the open slots.
   var BIO_REFLEX = ['stringent', 'sporulate', 'sos'];
@@ -62,7 +62,7 @@ var LookAliveLevels = (function () {
       'Our samples name the locals: Lactobacillus, Streptococcus, Helicobacter pylori.'
     ],
     badge: 'The locals can tell you apart because real colonies can: Proteus mirabilis swarms check each other\'s identity proteins, and a visible border line forms between strangers.',
-    mission: 'A lab here keeps these dishes. Pass as a local and you get a page of their notebook.'
+    mission: 'Our lab grows each dish from the scouts\' samples and tests your microbe in it. Pass as a local and we add a page to our notes.'
   };
 
 
@@ -184,9 +184,9 @@ var LookAliveLevels = (function () {
   // each dish adds its own through the `tips` option of exam(), which is merged over EXAM_TIPS.
   var EXAM_TIPS = {
     other: ['One of the stat bars went out of its zone, and that lost the dish.', 'This is an exam, so there is no answer here: find the bar that is out of its zone and open "What changes this?" under it.'],
-    'exposed:casualties': ['Too many of your cells died, and the lab noticed the bodies.', 'Find what is killing them: the acid getting in, or a food crash. The stat bar that is out of its zone says which, and "What changes this?" lists the levers.'],
+    'exposed:casualties': ['Too many of your cells died, and the guards noticed the bodies.', 'Find what is killing them: the acid getting in, or a food crash. The stat bar that is out of its zone says which, and "What changes this?" lists the levers.'],
     'exposed:waste': ['Your waste trail did not match the natives\', and here everyone smells the same.', 'Look at the Power slot: the energy cards leave different trails, and the Smell bar shows which one is off.'],
-    'exposed:growth': ['You were dividing at a rate the natives do not, and the lab noticed.', 'Open "What changes this?" under Growth. Pace, Sloppiness and several cards all move your births, up or down.'],
+    'exposed:growth': ['You were dividing at a rate the natives do not, and the guards noticed.', 'Open "What changes this?" under Growth. Pace, Sloppiness and several cards all move your births, up or down.'],
     overgrew: ['Your colony outgrew the band and took over the dish.', 'Something has to hold your births down: Pace, Sloppiness, or a card on the Biology shelf that makes cells count each other.'],
     band: ['You drifted in and out of the band and never stayed in it long enough.', 'Open "What changes this?" under Growth: the goal is a steady share, not a fast or slow one.']
   };
@@ -217,10 +217,10 @@ var LookAliveLevels = (function () {
         below: ['Your colony was too slow to last. A defence plus a tight energy budget left you with too few births.', 'Check what each card takes from Growth. The Pace dial, and your Power card, change how many births the same energy buys.'],
         starved: ['Your colony was too slow to last. A defence plus a tight energy budget left you with too few births.', 'Check what each card takes from Growth. The Pace dial, and your Power card, change how many births the same energy buys.'],
         'exposed:regularity': ['Your cells divided in step, and the inspector read that as a machine.', 'A cheap card can be a machine part. Look at the Division slot and the Sloppiness dial before you trust a cheap card.'],
-        'exposed:growth': ['You were dividing at a rate the natives do not, and the lab noticed.', 'Open "What changes this?" under Growth. With energy this tight, what you cut changes your births as much as the Pace dial does.']
+        'exposed:growth': ['You were dividing at a rate the natives do not, and the guards noticed.', 'Open "What changes this?" under Growth. With energy this tight, what you cut changes your births as much as the Pace dial does.']
       }, title: 'Lean Times', energy: 2, acid: 0.5, acidLoad: 1.8, checked: ['acid', 'growth', 'smell', 'natural'],
       abundance: { food: 13, crowd: 2.8, death: 0.02, cross: 6, run: 15, runFrom: 0.8 },
-      problem: 'Food is plentiful again, but your energy budget has been cut.', notebook: "Everything a cell builds has to be paid for out of the energy it can make, so a cell cannot have every defence at once. Picrophilus shows the price of going all in: it is so specialised for acid that it cannot grow above pH 4.0, trapped in its niche. A bigger protein set and a tighter membrane mean less energy for everything else. Here the lab has cut your energy, and the cells that pass are the ones that cover a missing part's job some other way." }),
+      problem: 'Food is plentiful again, but your energy budget has been cut.', notebook: "Everything a cell builds has to be paid for out of the energy it can make, so a cell cannot have every defence at once. Picrophilus shows the price of going all in: it is so specialised for acid that it cannot grow above pH 4.0, trapped in its niche. A bigger protein set and a tighter membrane mean less energy for everything else. For this dish our lab has cut your energy, and the cells that pass are the ones that cover a missing part's job some other way." }),
     exam({ id: 8, tips: {
         acid: ['The acid dissolved you before the crashes even mattered.', 'The acid is not strong, but it is still there. Look at the Envelope and Insides slots for something that keeps it out, then deal with the crashes.'],
         bust: ['The food crashed and your share fell out of the band: your cell did not react in time.', 'The Reflex slot decides this. A cell with no reflex rides the crash down. If you have one, ask whether it senses hunger and acts before the share drops, and whether it does so for both crashes.'],
@@ -244,7 +244,7 @@ var LookAliveLevels = (function () {
         'exposed:regularity': ['Your cells divided too neatly, and this inspector reads even a little order as a machine.', 'Perfect timing is the tell. Look at the Sloppiness dial, at your Division card, and at any Machine card, including a reflex rule that fires everywhere at once.']
       }, title: 'Greetings from the Warm Crowd', energy: 5, acid: 0.8, acidLoad: 2.4, regWeight: 2, checked: ALL_STATS, events: [crash(50, 85, 0.05)],
       abundance: { food: 13, crowd: 2.8, death: 0.02, cross: 6, run: 15, runFrom: 0.8 },
-      problem: 'Strong acid, plentiful food, a food crash and a strict inspector, all at once.', goal: 'Stay in the band through the food crash.', notebook: 'A summary from the lab. Acid-lovers such as Picrophilus pay energy or build a whole acid-proof set of proteins. Escherichia coli and Bacillus subtilis hedge against hunger with sleepers and spores. Aliivibrio fischeri in a bobtail squid count their neighbours, and the squid vents about 90% of them every dawn so the colony never grows without limit. No living cell has everything: each defence costs energy, growth, or a place in the dish. A passing local is one that balanced them.' })
+      problem: 'Strong acid, plentiful food, a food crash and a strict inspector, all at once.', goal: 'Stay in the band through the food crash.', notebook: 'A summary of our notes from the samples. Acid-lovers such as Picrophilus pay energy or build a whole acid-proof set of proteins. Escherichia coli and Bacillus subtilis hedge against hunger with sleepers and spores. Aliivibrio fischeri in a bobtail squid count their neighbours, and the squid vents about 90% of them every dawn so the colony never grows without limit. No living cell has everything: each defence costs energy, growth, or a place in the dish. A passing local is one that balanced them.' })
   );
 
   function dish(id) { for (var i = 0; i < DISHES.length; i++) if (DISHES[i].id === id) return DISHES[i]; return null; }
