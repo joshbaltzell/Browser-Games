@@ -176,8 +176,8 @@
   var INTRO = [
     ['Arrival', 'You are very small.', 'So is everyone you know. You travelled a long way to find this: a blue and green world, thick with life.'],
     ['Landing', 'The ground is mountains.', 'We went down to the surface. Our eyes are small, so every grain of soil is a mountain and one drop of water is a lake.'],
-    ['Sensors', 'Something enormous and warm.', 'Our sensors found it nearby, and inside it a crowd of life, denser than anything we have ever seen.'],
-    ['The crowd', 'It must be a civilization.', 'So many, so close, so busy. Where we come from, a crowd like this means a civilization. We think this is a city, so we will treat it as one.'],
+    ['Sensors', 'A warm mountain.', 'Our sensors found a mountain nearby that gives off heat. It is far too big and too still to be alive. But inside it, there is a crowd of life, denser than anything we have ever seen.'],
+    ['The crowd', 'It must be a civilization.', 'So many, so close, so busy. Where we come from, a crowd like this means a civilization. We think a city lives inside the warm mountain, so we will treat it as one.'],
     ['The plan', 'We must blend in.', 'Our scouts took samples. Before we go in, we have to look like the locals, so first we test our disguise in a petri dish.']
   ];
   function renderIntro() {

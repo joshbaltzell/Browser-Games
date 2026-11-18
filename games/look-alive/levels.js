@@ -54,9 +54,9 @@ var LookAliveLevels = (function () {
   var WORLD = {
     name: 'The warm crowd',
     facts: [
-      'We think it is a city: warm, wet and more crowded than anything we know.',
+      'We think a city lives inside a warm mountain: wet, crowded, busy.',
       'The water is acid. Anything unprotected dissolves.',
-      'Food comes in bursts. The locals just eat, divide and die, on instinct.',
+      'Food comes in bursts. The locals feed, divide and die. We cannot tell why.',
       'Green guards attack anything that does not belong, once they notice it.',
       'Everyone leaves a sour trail. The wrong waste, or none, stands out.',
       'Our samples name the locals: Lactobacillus, Streptococcus, Helicobacter pylori.'
