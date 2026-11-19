@@ -3,7 +3,7 @@
 // Flow: dish list -> (world) -> dish briefing -> Watch (carried cell, unchanged) -> Adapt (loadout) -> Run (replay) -> Result.
 (function () {
   'use strict';
-  var Cards = LookAliveCards, Lv = LookAliveLevels, Sim = LookAlive, P = Lv.PLANET, D = LAD, W = Lv.WORLD;
+  var Cards = LookAliveCards, Lv = LookAliveLevels, Sim = LookAlive, P = Lv.PLANET, D = LAD, W = Lv.WORLD, Lv2 = window.LookAliveLevels2 || null;
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -60,7 +60,15 @@
     p.draw(eff);
   }
 
-  var ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  var ORDER1 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], ORDER = ORDER1;
+  var ORDER2 = Lv2 ? Lv2.ORDER : [];
+  // Habitat 2 (levels2.js): world of a dish id, its order, its world object. World 1 stays the default everywhere.
+  function worldNo(id) { return ORDER2.indexOf(id) >= 0 ? 2 : 1; }
+  function orderOf(w) { return w === 2 ? ORDER2 : ORDER1; }
+  function orderForDish(d) { return orderOf(d && d.world === 2 ? 2 : 1); }
+  function worldObj(w) { return w === 2 && Lv2 ? Lv2.WORLD : W; }
+  // Which dish pages may show the second tab's pictures: switch these on once the thumbnails exist (assets/thumbs/dish-N.jpg).
+  var THUMBS2 = { 11: true, 12: true, 13: true, 14: true };
   var GRADE_RANK = { Passable: 1, Convincing: 2, Benign: 3 };
   var GRADE_NEXT = { Passable: 'Convincing needs the guards never to reach Inspection.', Convincing: 'Benign needs every stat inside its zone the whole run, with 1 energy spare.', Benign: 'That is the best grade. Nothing more to earn here.' };
   var NB_TITLE = { 1: 'How acid-loving microbes keep acid out', 2: 'The growth curve and carrying capacity', 3: 'Fermentation and respiration', 4: 'Variation between cells', 5: 'Sensing and response', 6: 'How acid-lovers trade energy for safety', 7: 'Why real cells cannot have everything', 8: 'Bet-hedging: sleepers and spores', 9: 'Why variation is normal in living things', 10: 'A summary page from the lab' };
@@ -69,7 +77,7 @@
   var STAMPS = ['SUFFICIENTLY BACTERIAL', 'PASSES AS NATIVE', 'NOTHING TO SEE HERE', 'OF NO INTEREST TO THE GUARDS', 'UNREMARKABLE', 'CLEARED FOR COLONISATION'];
   var STAGE_NAMES = ['Calm', 'Curiosity', 'Inspection', 'Response'];
   var CAUSE_WORDS = { acid: 'Dissolved by the acid', 'exposed:growth': 'Cover blown: Growth (speed)', 'exposed:waste': 'Cover blown: Smell', 'exposed:casualties': 'Cover blown: Growth (share)', 'exposed:regularity': 'Cover blown: Naturalness',
-    overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band' };
+    overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band', cooked: 'Cooked by the heat', grazed: 'Eaten at the cool edge' };
   // Memo "from" line per loss cause (M5). Unknown causes fall back to the sample lab.
   var MEMO_FROM = { acid: 'Desk of Dissolved Samples', 'exposed:growth': 'Guard-watch desk', 'exposed:waste': 'Guard-watch desk', 'exposed:casualties': 'Guard-watch desk', 'exposed:regularity': 'Guard-watch desk',
     overgrew: 'Head-count desk', below: 'Head-count desk', starved: 'Head-count desk', band: 'Head-count desk', bust: 'Meal-schedule desk', bloom: 'Meal-schedule desk' };
@@ -92,7 +100,7 @@
 
   var S = {
     screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null },
-    cleared: load('cleared2', {}), grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, unlocked: load('unlocked2', false),
+    cleared: load('cleared2', {}), grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, introWorld: 1, afterIntro: 'list', worldView: 1, worldTab: load('worldTab', 1) === 2 ? 2 : 1, seenIntroB: load('introB', false), seenWorldB: load('worldB', false), unlocked: load('unlocked2', false),
     slot: null, layer: 0, preview: null, pointed: false,
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
@@ -190,72 +198,126 @@
     ['The plan', 'We must blend in.', 'Our scouts took samples. Every local is about our size, which is the size minds come in, so the crowd is full of them. Individuals can join another group: we will send one of ours to join theirs, once its disguise passes a test dish.']
   ];
   function renderIntro() {
-    var n = S.introAt, b = INTRO[n], img = $('introImg');
-    $('introKicker').textContent = b[0] + ' · ' + (n + 1) + ' of ' + INTRO.length; $('introTitle').textContent = b[1]; $('introText').textContent = b[2];
-    var src = 'assets/intro/intro-' + (n + 1) + '.jpg';
+    var IL = S.introWorld === 2 && Lv2 ? Lv2.INTRO : INTRO, n = S.introAt, b = IL[n], img = $('introImg');
+    $('introKicker').textContent = b[0] + ' · ' + (n + 1) + ' of ' + IL.length; $('introTitle').textContent = b[1]; $('introText').textContent = b[2];
+    var src = 'assets/intro/' + (S.introWorld === 2 ? 'h2-' : 'intro-') + (n + 1) + '.jpg';
     if (img.getAttribute('src') !== src) { img.style.visibility = ''; if (reduced) img.src = src; else { img.classList.add('fade'); setTimeout(function () { img.src = src; img.classList.remove('fade'); }, 180); } }
-    var dots = ''; for (var i = 0; i < INTRO.length; i++) dots += '<i' + (i === n ? ' class="on"' : '') + '></i>';
+    var dots = ''; for (var i = 0; i < IL.length; i++) dots += '<i' + (i === n ? ' class="on"' : '') + '></i>';
     $('introDots').innerHTML = dots;
-    $('introBack').disabled = n === 0; $('introGo').textContent = n === INTRO.length - 1 ? 'Begin' : 'Next';
+    $('introBack').disabled = n === 0; $('introGo').textContent = n === IL.length - 1 ? 'Begin' : 'Next';
   }
-  function introNext() { if (S.introAt < INTRO.length - 1) { S.introAt++; renderIntro(); } else introDone(); }
-  function introDone() { S.seenIntro = true; save('intro2', true); show('list'); }
+  function introLen() { return S.introWorld === 2 && Lv2 ? Lv2.INTRO.length : INTRO.length; }
+  function introNext() { if (S.introAt < introLen() - 1) { S.introAt++; renderIntro(); } else introDone(); }
+  function introDone() {
+    if (S.introWorld === 2) {   // habitat 2 mini-intro, then its world facts (first visit only), then where the player was headed
+      S.seenIntroB = true; save('introB', true); S.introWorld = 1;
+      if (!S.seenWorldB) { S.worldView = 2; S.worldBack = S.afterIntro; show('world'); } else show(S.afterIntro);
+      return;
+    }
+    S.seenIntro = true; save('intro2', true); show('list');
+  }
+  // First time the second world is opened (tab or dish 11): mini-intro, then world facts. Returns true when it took over the screen.
+  function firstVisit2(back) {
+    if (!Lv2 || (S.seenIntroB && S.seenWorldB)) return false;
+    S.afterIntro = back; S.introAt = 0;
+    if (!S.seenIntroB) { S.introWorld = 2; show('intro'); } else { S.worldView = 2; S.worldBack = back; show('world'); }
+    return true;
+  }
 
   // ---------------------------------------------------------------- dish list
   function isLocked(id) {
     if (S.unlocked) return false;
-    var i = ORDER.indexOf(id); return i > 0 && !S.cleared[ORDER[i - 1]];
+    var w = worldNo(id), o = orderOf(w), i = o.indexOf(id);
+    if (w === 2 && i === 0) return !S.cleared[ORDER1[ORDER1.length - 1]];
+    return i > 0 && !S.cleared[o[i - 1]];
+  }
+  function tabLocked(w) { return w === 2 && (!Lv2 || (!S.unlocked && !S.cleared[ORDER1[ORDER1.length - 1]])); }
+  function setTab(w) {
+    if (tabLocked(w)) return;
+    S.worldTab = w; save('worldTab', w); renderList();
+    if (w === 2) firstVisit2('list');
   }
   // The Scale of Mind strip: the state after the highest dish cleared (WORLD.scale in levels.js).
-  function scaleIndex() { var n = 0; ORDER.forEach(function (id) { if (S.cleared[id]) n = Math.max(n, id); }); return Math.min(n, W.scale.length - 1); }
-  function renderScale(boxId) {
-    var box = $(boxId); if (!box || !W.scale) return;
+  function scaleIndex() { var n = 0; ORDER1.forEach(function (id) { if (S.cleared[id]) n = Math.max(n, id); }); return Math.min(n, W.scale.length - 1); }
+  function renderScale(boxId, w) {
+    var box = $(boxId); if (!box) return;
+    var show2 = worldObj(w || 1); box.style.display = show2.scale ? '' : 'none'; if (!show2.scale) { box.innerHTML = ''; return; }
     var i = scaleIndex(), s = W.scale[i];
     box.innerHTML = '<div class="sp">' + (STORY_ART.cell ? '<img src="assets/story/scale-cell.jpg" alt="">' : '') + (i >= 10 && STORY_ART.crowd ? '<img src="assets/story/scale-crowd.jpg" alt="">' : '') + '</div>' +
       '<div class="st"><div class="sk">' + esc(W.scaleLabel) + '</div><p class="sv">' + esc(s.state) + '</p><div class="ss"><span>' + esc(W.sizeLabel) + ':</span> ' + esc(s.size) + '</div></div>';
   }
+  function renderTabs() {
+    var box = $('worldTabs'); if (!box) return;
+    if (!Lv2) { box.style.display = 'none'; return; }
+    box.style.display = ''; box.innerHTML = '';
+    [1, 2].forEach(function (w) {
+      var lk = tabLocked(w), b = el('button', 'wtab' + (S.worldTab === w ? ' on' : '') + (lk ? ' locked' : ''), '<span class="wt">' + (w === 1 ? 'The warm crowd' : esc(Lv2.WORLD.name)) + '</span>' + (lk ? '<span class="wl">Locked: clear dish 10 first</span>' : ''));
+      b.type = 'button'; b.setAttribute('data-world', w); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', S.worldTab === w ? 'true' : 'false'); b.disabled = lk;
+      b.addEventListener('click', function () { setTab(w); }); box.appendChild(b);
+    });
+  }
   function renderList() {
-    var box = $('dishList'); box.innerHTML = ''; var wall = null;
-    ORDER.forEach(function (id) {
+    var box = $('dishList'); box.innerHTML = ''; var wall = null, tw = Lv2 ? S.worldTab : 1;
+    if (tw === 2 && tabLocked(2)) tw = S.worldTab = 1;
+    renderTabs();
+    orderOf(tw).forEach(function (id) {
       var d = Lv.dish(id), locked = isLocked(id), cleared = !!S.cleared[id], gr = S.grades[id];
+      if (id === 11) { box.appendChild(el('div', 'grouph', esc(Lv2.WORLD.name) + ' <span class="dim">dishes 11 to 14: heat, the cool edge, the night, then an exam</span>')); wall = el('div', 'wall'); box.appendChild(wall); }
       if (id === 1 || id === 6) {
         box.appendChild(el('div', 'grouph', id === 1 ? 'Learning the cell <span class="dim">dishes 1 to 5: one new problem each</span>' : 'Exams <span class="dim">dishes 6 to 10: no answer tips, several cells can pass</span>'));
         wall = el('div', 'wall'); box.appendChild(wall);
       }
       var st = locked ? 'Locked' : cleared ? (d.exam && gr ? gr : 'Cleared') : 'Open';
       var tile = el('div', 'dtile' + (locked ? ' locked' : cleared ? ' cleared' : ' open'));
-      tile.innerHTML = '<div class="dthumb">' + (locked ? '' : '<img alt="" src="assets/thumbs/dish-' + id + '.jpg">') + (cleared ? '<span class="dstamp' + (gr ? ' g-' + gr.toLowerCase() : '') + '">' + esc(st) + '</span>' : '') + '</div>' +
+      tile.innerHTML = '<div class="dthumb">' + (locked || (tw === 2 && !THUMBS2[id]) ? '' : '<img alt="" src="assets/thumbs/dish-' + id + '.jpg">') + (cleared ? '<span class="dstamp' + (gr ? ' g-' + gr.toLowerCase() : '') + '">' + esc(st) + '</span>' : '') + '</div>' +
         '<div class="dmeta"><span class="num">' + id + '</span><span class="t">' + esc(d.title) + '</span></div><div class="g">' + esc(d.problem) + '</div>' +
         '<div class="c">You start with: ' + esc(buildWords(carriedFor(id))) + '</div>';
       var im = tile.querySelector('img'); if (im) im.addEventListener('error', function () { im.remove(); });
       var b = el('button', 'big', locked ? 'Locked' : cleared ? 'Again' : 'Start'); b.disabled = locked; b.setAttribute('data-dish', id);
       b.addEventListener('click', function () { selectDish(id); }); tile.appendChild(b); wall.appendChild(tile);
     });
-    renderScale('scaleList');
+    renderScale('scaleList', tw);
   }
   function selectDish(id) {
     S.dish = id; S.carried = carriedFor(id); S.build = copy(S.carried); S.undo = []; S.rule = { sensor: null, cmp: null, value: null, action: null };
     S.slot = Lv.dish(id).opens[0] || Lv.dish(id).slots[0]; S.layer = 0; S.pointed = Lv.dish(id).opens.length > 0; S.whyOpen = false; S.runGrade = null; S.note = ''; S.preview = null; S.run = null; S.ghost = null; S.shownDish = -1; S.lastAutopsy = null; S.lastRunLost = false; S.tipLevel = 0; S.runCount = 0; S.overlayOpen = false; S.fail = null;
     closeOverlay();
-    if (id === 1 && !S.seenWorld) { S.worldBack = 'brief'; show('world'); } else show('brief');
+    if (id === 1 && !S.seenWorld) { S.worldView = 1; S.worldBack = 'brief'; show('world'); }
+    else if (id === ORDER2[0] && firstVisit2('brief')) { /* mini-intro, then the world facts, then this briefing */ }
+    else show('brief');
   }
 
   // ---------------------------------------------------------------- world and dish briefing
   function renderWorld() {
-    $('worldName').textContent = W.name;
+    var w2 = S.worldView === 2 && Lv2, WW = worldObj(w2 ? 2 : 1), wimg = $('worldImg'), lk = $('localsKey');
+    $('worldName').textContent = WW.name;
+    if (lk) lk.style.display = w2 ? 'none' : '';
+    if (wimg) { var ws = w2 ? 'assets/cards/world-banded.jpg' : 'assets/cards/world-acidica.jpg'; if (wimg.getAttribute('src') !== ws) { wimg.style.display = ''; wimg.src = ws; } if (w2) wimg.alt = ''; }
     var box = $('worldFacts'); box.innerHTML = '';
-    W.facts.forEach(function (f, i) { box.appendChild(el('div', 'fact', '<div class="fn">' + (i + 1) + '</div><p>' + esc(f) + '</p>')); });
-    $('worldBadge').textContent = W.badge || '';
-    $('worldMission').textContent = W.mission;
-    renderScale('scaleWorld');
+    WW.facts.forEach(function (f, i) { box.appendChild(el('div', 'fact', '<div class="fn">' + (i + 1) + '</div><p>' + esc(f) + '</p>')); });
+    $('worldBadge').textContent = WW.badge || '';
+    $('worldMission').textContent = WW.mission;
+    renderScale('scaleWorld', w2 ? 2 : 1);
   }
   function worldContinue() {
-    S.seenWorld = true; save('world2', true);
+    if (S.worldView === 2) { S.seenWorldB = true; save('worldB', true); S.worldView = 1; } else { S.seenWorld = true; save('world2', true); }
     if (S.worldBack === 'brief' && S.dish != null) show('brief'); else show(S.worldBack || 'list');
   }
   // Environment analysis report: readings come from the dish's own parameters. Lines appear one by one (all at once with reduced motion).
   var CH_WORDS = { growth: 'growth rate', waste: 'smell (waste trail)', casualties: 'casualties', regularity: 'regularity' };
   function reportLines(d) {
+    if (d.temp) {
+      var T = d.temp, ev = eventsOf(d), nights = ev.length > 0 && !!T.o2Night, gap = T.hot - T.cool;
+      var u40 = T.cool >= 40 ? 0 : Math.acos(1 - 2 * (40 - T.cool) / (T.hot - T.cool)) / (2 * Math.PI), pct40 = Math.round(200 * u40);
+      return [
+        ['Temperature', T.hot + ' C at the source, ' + T.cool + ' C at the edges (' + (gap >= 30 ? 'a strong gradient' : gap >= 15 ? 'a moderate gradient' : 'a gentle gradient') + ')'],
+        ['Light', nights ? 'bright by day; dark from tick ' + ev[0].tick + ' for ' + ev[0].dur + ' ticks, every ' + (ev.length > 1 ? ev[1].tick - ev[0].tick : '80') + ' ticks' : 'bright all run'],
+        ['Oxygen', nights ? 'high by day, none at night' : 'high'],
+        ['Erosion', T.graze > 0 ? 'a slow shadow below 40 C, about ' + pct40 + '% of the dish' : 'none: the water stays above 40 C'],
+        ['Inspectors', !d.suspicion ? 'none in this dish' : (d.channels || []).map(function (c) { return CH_WORDS[c] || c; }).join(', ') + (d.regWeight > 1 ? ' (strict)' : '')],
+        ['Energy budget', d.energy + ' of 5 units for your cell']
+      ];
+    }
     var acid = d.acid || 0, ph = Math.max(0.5, 3.2 - 2.6 * acid), strength = acid < 0.25 ? 'moderate' : acid < 0.45 ? 'strong' : acid < 0.65 ? 'very strong' : 'extreme';
     var evs = eventsOf(d), warn = evs.length ? evs[0].tick - evs[0].announce : 0, food = (d.abundance ? 'plentiful' : 'steady') + (evs.length ? '; ' + (evs.length > 1 ? 'crashes' : 'a crash') + ' at tick ' + evs.map(function (e) { return e.tick; }).join(' and ') + ', each warned ' + warn + ' ticks ahead' : '');
     var insp = !d.suspicion ? 'none in this dish' : (d.channels || []).map(function (c) { return CH_WORDS[c] || c; }).join(', ') + (d.regWeight > 1 ? ' (strict)' : '');
@@ -267,7 +329,7 @@
     ];
   }
   function renderReport(d) {
-    var box = $('briefReport'), rows = reportLines(d), html = '<div class="rh">Environment analysis · ' + esc(W.name) + ' · site ' + d.id + ' of ' + ORDER.length + '</div>';
+    var box = $('briefReport'), rows = reportLines(d), html = '<div class="rh">Environment analysis · ' + esc(worldObj(d.world === 2 ? 2 : 1).name) + ' · site ' + (orderForDish(d).indexOf(d.id) + 1) + ' of ' + orderForDish(d).length + '</div>';
     rows.forEach(function (r) { html += '<div class="rl pending"><span class="rk">' + esc(r[0]) + '</span><span>' + esc(r[1]) + '</span></div>'; });
     html += '<div class="rl status pending">Building petri dish… ready. Your artificial microbe is loaded for a compatibility test.</div>';
     box.innerHTML = html;
@@ -280,11 +342,11 @@
   }
   function renderBrief() {
     var d = dishObj(); renderReport(d);
-    $('briefKicker').textContent = 'Dish ' + d.id + ' of ' + ORDER.length;
+    $('briefKicker').textContent = 'Dish ' + d.id + ' of ' + orderForDish(d).length;
     $('briefTitle').textContent = d.title;
     $('briefProblem').textContent = d.problem; $('briefGoal').textContent = d.goal;
     var fn = d.fieldNote || ['', ''], fps = $('briefNote').querySelectorAll('p');
-    fps[0].textContent = fn[0]; fps[1].textContent = fn[1]; $('briefNote').style.display = d.fieldNote ? '' : 'none';
+    fps[0].textContent = fn[0] || ''; fps[1].textContent = fn[1] || ''; $('briefNote').style.display = d.fieldNote ? '' : 'none';
     $('briefExam').style.display = d.exam ? '' : 'none';
     $('briefFig').innerHTML = figHtml(S.carried);
     $('briefCover').innerHTML = coverName(S.carried);
@@ -370,7 +432,8 @@
   // ---------------------------------------------------------------- Adapt: body-slot loadout
   var SLOT_ORDER = Sim.SLOT_ORDER;
   var NEW_SLOT_HINT = { 1: 'New slots: Envelope and Insides. Pick what keeps the acid out.', 2: 'New slot: Signal. Pick how your cells hold their own numbers down.',
-    3: 'New slot: Power. Your waste depends on how you make energy.', 4: 'New slot: Division. Dividing in step is the tell.', 5: 'New slot: Reflex. Pick how your cell reacts to the crash.' };
+    3: 'New slot: Power. Your waste depends on how you make energy.', 4: 'New slot: Division. Dividing in step is the tell.', 5: 'New slot: Reflex. Pick how your cell reacts to the crash.',
+    11: 'Hot water. Find the slots that hold a heat card.', 12: 'New slot: Motor. Pick how your cells keep out of the cool water.' };
   // Tag positions on the 600 x 410 diagram: side, top.
   var TAGPOS = { reflex: ['L', 14], envelope: ['L', 92], division: ['L', 174], motor: ['L', 330], signal: ['R', 14], insides: ['R', 92], power: ['R', 174] };
   var TAG_W = 160, TAG_H = 62;
@@ -1088,8 +1151,14 @@
   function coverName(b) {
     var genus = { respiration: 'Helicobacter', fermentation: 'Lactobacillus', fuelcell: 'Vibrio' }[b.metabolism] || 'Helicobacter';
     var epi = [], bio = { stringent: 'parcus', sporulate: 'sporans', sos: 'reparans' }, ptx = { wall: 'armatus', quorum: 'sociabilis', naps: 'dormiens', acidproof: 'acidotolerans', flagellum: 'natans', clock: 'horarius', radio: 'radiatus', copier: 'perfectus', repair: 'reparatus', pump: 'protonicus', lipids: 'densus', shell: 'testaceus' };
-    if (b.reflex) epi.push(b.reflex.kind === 'bio' ? bio[b.reflex.id] : 'computans');
-    b.parts.forEach(function (id) { epi.push(ptx[id]); });
+    var C2 = Lv2 ? Lv2.COVER : null, cb = C2 ? Cards.part(b.metabolism) : null;
+    if (C2) {   // habitat 2 names (HABITAT-2 7.8): the world-1 lists plus the new cards; the genus follows the Power card
+      genus = C2.genus[b.metabolism] || genus; for (var k in C2.epithet) { if (k === 'heatrule' || k === 'nightferm') continue; if (k === 'heatps') continue; ptx[k] = C2.epithet[k]; } bio.nightferm = C2.epithet.nightferm;
+    }
+    if (b.reflex) epi.push(b.reflex.kind === 'bio' ? bio[b.reflex.id] : (C2 && b.reflex.sensor === 'temp' ? C2.epithet.heatrule : 'computans'));
+    b.parts.forEach(function (id) { if (ptx[id]) epi.push(ptx[id]); });
+    if (C2 && b.metabolism === 'heatps') epi.push(C2.epithet.heatps);
+    if (C2 && cb && b.parts) { var tol = 0, fx = function (c) { return c && c.fx && c.fx.heat ? c.fx.heat : 0; }; tol = 45 + fx(cb); b.parts.forEach(function (id) { tol += fx(Cards.part(id)); }); if (tol >= C2.calidus.fromHeat) epi.push(C2.calidus.epithet); }
     if (machineCount(b)) epi.push('suspiciosus');
     if (b.slop >= 6) epi.push('adolescens'); if (b.pace < 4) epi.push('modestus'); if (b.pace > 4) epi.push('festinans');
     if (b.metabolism === 'fermentation') epi.push('acidophilus');
@@ -1099,7 +1168,7 @@
   }
   function failStatLine(run) {
     var a = run.autopsy, st = Sim.stats(dishObj(), run.build).filter(function (x) { return x.id === a.stat; })[0];
-    return Sim.STAT_INFO[a.stat].name + (st && st.state !== 'unchecked' ? ': ' + st.verdict : '') + ' (' + (CAUSE_WORDS[a.cause] || a.cause) + ')';
+    return Sim.STAT_INFO[a.stat].name + (st && st.state !== 'unchecked' ? ': ' + st.verdict : '') + ' (' + (a.cause === 'bust' && run.dish && run.dish.temp ? 'Lost to the night' : (CAUSE_WORDS[a.cause] || a.cause)) + ')';
   }
   function recordRow(run, d) {
     var v = run.v;
@@ -1107,8 +1176,8 @@
     if (d.aliveOnly) return '<div class="row"><b>Record</b><span>Colony at the end: ' + Math.round(run.H.rob[run.T] / run.H.rob[0] * 100) + '% of where it started.</span></div>';
     return '<div class="row"><b>Record</b><span>In the band ' + Math.round(v.bandFrac * 100) + '% of the time (needs ' + Math.round(d.band.need * 100) + '%). Final share ' + (v.finalShare * 100).toFixed(1) + '%. Highest guard alert: ' + STAGE_NAMES[v.maxStage] + '.' + spare + '</span></div>';
   }
-  var TAG_WORDS = { acid: 'DISSOLVED.', overgrew: 'TOOK OVER.', starved: 'STARVED OUT.', bust: 'STARVED OUT.', bloom: 'OUTGROWN.', below: 'TOO FEW.', band: 'OUT OF STEP.' };
-  function slideTag(cause) { return TAG_WORDS[cause] || (/^exposed:/.test(cause) ? 'COVER BLOWN.' : 'FAILED.'); }
+  var TAG_WORDS = { acid: 'DISSOLVED.', overgrew: 'TOOK OVER.', starved: 'STARVED OUT.', bust: 'STARVED OUT.', bloom: 'OUTGROWN.', below: 'TOO FEW.', band: 'OUT OF STEP.', cooked: 'COOKED.', grazed: 'EATEN.' };
+  function slideTag(cause, d) { if (cause === 'bust' && d && d.temp) return 'LOST TO THE NIGHT.'; return TAG_WORDS[cause] || (/^exposed:/.test(cause) ? 'COVER BLOWN.' : 'FAILED.'); }
   function timelineSvg(T, from, to) {
     function x(t) { return 10 + 580 * Math.max(0, Math.min(T, t)) / T; }
     var o = '<svg class="slidetime" viewBox="0 0 600 46" role="img" aria-label="Timeline: it went wrong at tick ' + from + ' of ' + T + '"><line class="tl" x1="10" y1="22" x2="590" y2="22"/>', i;
@@ -1131,17 +1200,17 @@
     S.resultShown = true; var v = run.v, ov = $('overlay'), html;
     if (v.win) {
       var stamp = STAMPS[D.hash(JSON.stringify(run.build)) % STAMPS.length];
-      var next = ORDER[ORDER.indexOf(d.id) + 1], gr = d.exam ? Sim.grade(run, d, run.build) : null;
+      var ORD = orderForDish(d), next = ORD[ORD.indexOf(d.id) + 1], gr = d.exam ? Sim.grade(run, d, run.build) : null;
       var gradeHtml = gr ? '<div class="gradebox g-' + gr.toLowerCase() + '" id="gradeBox"><span class="gk">Exam grade</span><b>' + gr + '</b><span class="gn">' + esc(GRADE_NEXT[gr]) + '</span></div>' : '';
-      var last = next == null && ORDER.every(function (i) { return S.cleared[i]; });
+      var last = next == null && ORD.every(function (i) { return S.cleared[i]; });
       html = '<div class="winwrap"><div class="paper memo"><h2>CLEARED</h2><div class="stampbox"><div class="stamp win' + (reduced ? '' : ' slam') + '" id="stamp">' + stamp + '</div></div>' +
         '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' + gradeHtml + '<div class="covercap">Final readings</div><div class="paperbars statbars" id="winBars"></div>' +
         '<div class="row"><b>Dish</b><span>' + d.id + ': ' + esc(d.title) + '</span></div>' + recordRow(run, d) + (d.reading ? '<div class="row reading"><b>Reading</b><span id="winReading">' + esc(d.reading) + '</span></div>' : '') +
         '<div class="pbtns">' + (next != null ? '<button type="button" data-act="next">Next dish</button>' : last ? '<button type="button" data-act="complete">Sampling complete</button>' : '') + '<button type="button" data-act="watch">Watch replay</button><button type="button" data-act="list">Dish list</button></div></div>' +
-        '<div class="paper notebook"><h3>From our samples: notebook page ' + (ORDER.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id]) + '</h4><p>' + esc(d.notebook) + '</p>' + (d.colony ? '<div class="scrawl colony"><b>Colony comment:</b> <span id="colonyNote">' + esc(d.colony) + '</span></div>' : '') + '</div></div>';
+        '<div class="paper notebook"><h3>From our samples: notebook page ' + (ORD.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id] || d.nbTitle) + '</h4><p>' + esc(d.notebook) + '</p>' + (d.colony ? '<div class="scrawl colony"><b>Colony comment:</b> <span id="colonyNote">' + esc(d.colony) + '</span></div>' : '') + '</div></div>';
     } else {
       var a = run.autopsy;
-      html = '<div class="losswrap"><div class="slide" id="lossSlide"><div class="slidetag" id="slideTag">' + slideTag(a.cause) + '</div>' +
+      html = '<div class="losswrap"><div class="slide" id="lossSlide"><div class="slidetag" id="slideTag">' + slideTag(a.cause, d) + '</div>' +
         '<div class="slidetop"><img class="slideimg" id="slideImg" alt="The dish at the moment it went wrong"><div class="slidebars statbars" id="slideBars"></div></div>' +
         timelineSvg(run.T, a.from, a.to) + '</div><div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span id="memoFrom">' + esc(MEMO_FROM[a.cause] || 'Sample lab') + '</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
         '<div class="row"><b>Finding</b><span class="head" id="memoFinding"><strong>' + esc(a.headline) + '</strong> <span class="rest">' + esc(findingBody(a)) + '</span></span></div>' +
@@ -1162,12 +1231,14 @@
     }
   }
   function completeCard() {
-    var rows = ORDER.map(function (id) {
+    var cw = S.screen && dishObj() && dishObj().world === 2 && Lv2 ? 2 : 1, CO = cw === 2 ? Lv2.COMPLETE : null, ORD = orderOf(cw);
+    var rows = ORD.map(function (id) {
       var d = Lv.dish(id), g = S.grades[id];
       return '<div class="crow2"><span class="cn">' + id + '</span><span class="ct">' + esc(d.title) + '</span><span class="cg ' + (g ? 'g-' + g.toLowerCase() : '') + '">' + (S.cleared[id] ? (d.exam ? (g || 'Cleared') : '\u2713 Cleared') : 'Not cleared') + '</span></div>';
     }).join('');
-    var story = (W.complete || []).map(function (r) { return '<div class="row"><b>' + esc(r[0]) + '</b><span>' + esc(r[1]) + '</span></div>'; }).join('');
-    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>SAMPLING COMPLETE</h2>' + (STORY_ART.ripple ? '<img class="completeimg" src="assets/story/complete-ripple.jpg" alt="A slow ripple crossing the surface of the warm mountain">' : '') + '<div class="covercap">The ten dishes</div><div class="clist">' + rows + '</div>' +
+    var srows = CO ? CO.rows : (W.complete || []).map(function (r) { return r[0] === 'Next' && Lv2 ? [r[0], 'The banded water: a new site, with one rule turned upside down. Open it from the dish list.'] : r; });
+    var story = srows.map(function (r) { return '<div class="row"><b>' + esc(r[0]) + '</b><span>' + esc(r[1]) + '</span></div>'; }).join('');
+    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>' + (CO ? esc(CO.title) : 'SAMPLING COMPLETE') + '</h2>' + (cw === 1 && STORY_ART.ripple ? '<img class="completeimg" src="assets/story/complete-ripple.jpg" alt="A slow ripple crossing the surface of the warm mountain">' : '') + '<div class="covercap">' + (cw === 2 ? 'The four dishes' : 'The ten dishes') + '</div><div class="clist">' + rows + '</div>' +
       story + '<div class="pbtns"><button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
     $('overlay').hidden = false; S.overlayOpen = true;
   }
@@ -1179,7 +1250,7 @@
     else if (a === 'adapt') { closeOverlay(); show('adapt'); }
     else if (a === 'watch') { closeOverlay(); }
     else if (a === 'jump') { closeOverlay(); S.playing = false; S.t = S.run.autopsy.from; setPlayLabel(); glJump(); }
-    else if (a === 'next') { closeOverlay(); selectDish(ORDER[ORDER.indexOf(S.dish) + 1]); }
+    else if (a === 'next') { closeOverlay(); selectDish(orderOf(worldNo(S.dish))[orderOf(worldNo(S.dish)).indexOf(S.dish) + 1]); }
     else if (a === 'list') { closeOverlay(); show('list'); }
     else if (a === 'complete') completeCard();
   });
@@ -1199,16 +1270,16 @@
 
   // ---------------------------------------------------------------- wiring
   $('navList').addEventListener('click', function () { closeOverlay(); show('list'); });
-  $('navWorld').addEventListener('click', function () { closeOverlay(); S.worldBack = S.screen === 'world' ? S.worldBack : S.screen; show('world'); });
+  $('navWorld').addEventListener('click', function () { closeOverlay(); if (S.screen !== 'world') S.worldView = S.screen === 'list' ? S.worldTab : (S.dish != null ? worldNo(S.dish) : 1); S.worldBack = S.screen === 'world' ? S.worldBack : S.screen; show('world'); });
   $('worldGo').addEventListener('click', worldContinue);
   $('briefGo').addEventListener('click', enterWatch);
   $('introGo').addEventListener('click', introNext);
   $('introBack').addEventListener('click', function () { if (S.introAt > 0) { S.introAt--; renderIntro(); } });
   $('introSkip').addEventListener('click', introDone);
-  $('replayIntro').addEventListener('click', function () { S.introAt = 0; show('intro'); });
+  $('replayIntro').addEventListener('click', function () { S.introAt = 0; S.introWorld = 1; show('intro'); });
   $('unlockAll').addEventListener('click', function () { S.unlocked = true; save('unlocked2', true); renderList(); });
   $('resetProgress').addEventListener('click', function () {
-    S.cleared = {}; S.wins = {}; S.grades = {}; save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro2', false);
+    S.cleared = {}; S.wins = {}; S.grades = {}; save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro2', false); S.seenIntroB = false; S.seenWorldB = false; S.worldTab = 1; save('introB', false); save('worldB', false); save('worldTab', 1);
     save('cleared2', {}); save('wins2', {}); save('unlocked2', false); save('world2', false); renderList();
   });
   $('undo').addEventListener('click', function () { if (!S.undo.length) return; S.build = S.undo.pop(); S.preview = null; syncRuleFromBuild(); renderAdapt(false); });
@@ -1258,6 +1329,7 @@
     glPortrait: function () { return GL.p; },
     forceFallback: function (on) { GL.forced = !!on; if (on) { glDestroy(); glNote('Simple dish view: forced for testing.'); if (GL.p) { $('cellWrap').classList.remove('cellglon'); $('cellGL').hidden = true; } } else { GL.failed = false; glNote(''); GL.pfailed = false; if (S.screen === 'adapt') renderCell(); } return { forced: GL.forced }; },
     S: S, show: show, selectDish: selectDish, enterWatch: enterWatch, run: doRun, seek: seek, skip: skip, showResult: showResult, advance: advance,
+    world: function (w) { if (tabLocked(w)) return { ok: false, reason: 'locked' }; S.worldTab = w; save('worldTab', w); renderList(); show('list'); return { ok: true, world: w }; }, worldOrder: function (w) { return orderOf(w == null ? S.worldTab : w).slice(); }, setTab: setTab,
     worldContinue: worldContinue, verdictAction: verdictAction, pressTip: pressTip,
     selectSlot: selectSlot, fit: function (id, layer) { var k = (Cards.part(id) || Cards.bio(id)).slot; if (layer != null) S.layer = layer; if (!selectable(k)) return { ok: false, reason: Sim.lockedReason(dishObj(), k) }; S.slot = k; return doFit(k, id); },
     unfit: function (k, id) { return doUnfit(k, id); }, preview: previewOption, clearPreview: clearPreview, fixViaSlots: fixViaSlots,

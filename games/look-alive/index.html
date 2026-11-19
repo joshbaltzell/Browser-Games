@@ -53,6 +53,7 @@
       <h1>Pass as a native.</h1>
       <p class="lede">Your cell has gone into the warm mountain to blend in. Watch it fail, change it, and try again. The cell that wins a dish is the cell you start the next one with.</p>
       <div class="scalestrip" id="scaleList"></div>
+      <div class="wtabs" id="worldTabs" role="tablist"></div>
       <div id="dishList"></div>
       <div class="listfoot"><button type="button" class="ghost" id="replayIntro">Replay intro</button><button type="button" class="ghost" id="unlockAll">Unlock all dishes</button><button type="button" class="ghost" id="resetProgress">Clear saved progress</button></div>
     </div>
@@ -65,7 +66,7 @@
       <div class="scalestrip" id="scaleWorld"></div>
       <img class="worldimg" id="worldImg" src="assets/cards/world-acidica.jpg" alt="Your pink cell among purple native bacteria drifting in the sour, amber-streaked water of the warm crowd" onerror="this.style.display='none'">
       <div class="facts" id="worldFacts"></div>
-      <div class="localskey" aria-label="How the locals look in the dish"><span><svg viewBox="0 0 40 16" aria-hidden="true"><rect x="1" y="4" width="17" height="8" rx="4"/><rect x="21" y="4" width="17" height="8" rx="4"/></svg><i>Lactobacillus</i> long rods, often in pairs</span><span><svg viewBox="0 0 40 16" aria-hidden="true"><circle cx="6" cy="8" r="4.5"/><circle cx="15" cy="8" r="4.5"/><circle cx="24" cy="8" r="4.5"/><circle cx="33" cy="8" r="4.5"/></svg><i>Streptococcus</i> beads in pairs and chains</span><span><svg viewBox="0 0 40 16" aria-hidden="true"><path d="M12 8c3-6 7-6 10 0s7 6 10 0"/><path d="M12 8C9 5 6 7 2 4M12 8C9 8 6 10 2 9M12 8c-3 3-6 4-9 7" stroke-width="1"/></svg><i>Helicobacter pylori</i> curved spirals with a tuft of tails</span></div>
+      <div class="localskey" id="localsKey" aria-label="How the locals look in the dish"><span><svg viewBox="0 0 40 16" aria-hidden="true"><rect x="1" y="4" width="17" height="8" rx="4"/><rect x="21" y="4" width="17" height="8" rx="4"/></svg><i>Lactobacillus</i> long rods, often in pairs</span><span><svg viewBox="0 0 40 16" aria-hidden="true"><circle cx="6" cy="8" r="4.5"/><circle cx="15" cy="8" r="4.5"/><circle cx="24" cy="8" r="4.5"/><circle cx="33" cy="8" r="4.5"/></svg><i>Streptococcus</i> beads in pairs and chains</span><span><svg viewBox="0 0 40 16" aria-hidden="true"><path d="M12 8c3-6 7-6 10 0s7 6 10 0"/><path d="M12 8C9 5 6 7 2 4M12 8C9 8 6 10 2 9M12 8c-3 3-6 4-9 7" stroke-width="1"/></svg><i>Helicobacter pylori</i> curved spirals with a tuft of tails</span></div>
       <p class="badge" id="worldBadge"></p>
       <p class="mission" id="worldMission"></p>
       <button type="button" class="big" id="worldGo">Continue</button>

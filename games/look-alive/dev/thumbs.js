@@ -1,7 +1,8 @@
 // REDUCED=1 node games/look-alive/dev/cdp-drive.js games/look-alive/dev/thumbs.js    writes assets/thumbs/dish-1.jpg .. dish-10.jpg
 const fs=require('fs'),path=require('path');
 module.exports=async(a)=>{const out=path.resolve(__dirname,'../assets/thumbs');fs.mkdirSync(out,{recursive:true});
- for(let id=1;id<=10;id++){
+ const IDS=process.env.IDS?process.env.IDS.split(",").map(Number):[1,2,3,4,5,6,7,8,9,10];   // IDS=11,12,13,14 renders the habitat-2 thumbnails
+ for(const id of IDS){
   const url=await a.eval(`(function(){var L=LookAliveLevels,Sim=LookAlive,d=L.dish(${id}),b=L.carry(${id});
    var run=Sim.play(L.PLANET,d,JSON.parse(JSON.stringify(b)),{n:64,snapEvery:10});run.v=Sim.verdict(run);var au=run.v.win?null:Sim.autopsy(run);
    var t=au?Math.min(run.T,(au.from||0)+6):Math.round(run.T*0.4);

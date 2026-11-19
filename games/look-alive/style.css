@@ -650,3 +650,11 @@ canvas { display: block; }
 }
 .memo.complete { max-width: 680px; }
 .notebook .scrawl.colony { line-height: 1.3; margin-top: 6px; }
+
+.wtabs { display: flex; gap: 8px; margin: 0 0 12px; max-width: 100%; }
+.wtab { flex: 1 1 0; min-width: 0; padding: 8px 10px; background: #05060b; border: 1px solid var(--line2); border-radius: 8px; color: var(--ink); font: inherit; text-align: center; cursor: pointer; }
+.wtab .wt { display: block; font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
+.wtab .wl { display: block; margin-top: 2px; font-size: 12px; color: var(--dim); }
+.wtab.on { border-color: var(--vio); background: #1b1740; color: var(--ink); }
+.wtab.locked { cursor: default; color: var(--dim); }
+@media (max-width: 400px) { .wtabs { gap: 6px; } .wtab { padding: 6px; } .wtab .wt { font-size: 11px; letter-spacing: .02em; } }
