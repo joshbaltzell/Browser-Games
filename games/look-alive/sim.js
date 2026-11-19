@@ -35,9 +35,10 @@ var LookAlive = (function () {
     return cap;
   }
   // ---- habitat 2 (D.temp): a temperature per cell, hot down the middle column, cool at the left and right edges (the grid wraps, so the two cool edges meet)
+  // (columns come from the mirrored distance, so the two mirrored columns are exactly equal)
   function makeTemp(n, T) {
     var a = new Float32Array(n * n), x, y;
-    for (x = 0; x < n; x++) { var u = (x + 0.5) / n, t = T.cool + (T.hot - T.cool) * (0.5 - 0.5 * Math.cos(6.2832 * u)); for (y = 0; y < n; y++) a[y * n + x] = t; }
+    for (x = 0; x < n; x++) { var u = Math.min(x + 0.5, n - x - 0.5) / n, t = T.cool + (T.hot - T.cool) * (0.5 - 0.5 * Math.cos(2 * Math.PI * u)); for (y = 0; y < n; y++) a[y * n + x] = t; }
     return a;
   }
   function sstep(a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
@@ -413,7 +414,8 @@ var LookAlive = (function () {
     // habitat 2 (D.temp): heat stress and grazing per cell, the current, and the heat-direction rule actions
     var TT = settling || !D.temp ? null : D.temp, TP = TT ? s.temp : null, tol = TT ? bp.tol : 0, hW = TT ? TT.width : 1, hDie = TT ? TT.heatDeath : 0;
     var gMax = TT ? (TT.graze || 0) * bp.grazeKeep : 0, gTop = TT ? TT.grazeTop : 0, gRamp = TT ? TT.grazeRamp : 1, heatSum = 0, grazeSum = 0, coolSum = 0;
-    var gs = n / 16, heatDir = TT && rule && (rule.action === 'hotter' || rule.action === 'cooler'), flowK = TT && !heatDir ? Math.min(0.45, (TT.flow || 0) * gs * (1 - bp.grip)) : 0;   // a heat rule holds station against the current
+    var gs = n / 16, flowK = TT ? Math.min(0.45, (TT.flow || 0) * gs * (1 - bp.grip)) : 0, hm = null;   // cells whose heat rule fires hold station against the current (see hm)
+    if (TT) { hm = s.hm || (s.hm = new Int8Array(n * n)); hm.fill(0); }
     if (TT) s.darkLag = (s.darkLag || 0) + Pe.foodAlpha * (evl - (s.darkLag || 0));
     var o2m = TT && TT.o2Night && (bp.metabolism === 'respiration' || bp.metabolism === 'fuelcell') ? 1 - TT.o2Night * evl : 1;   // nights are anoxic: oxygen users stall
     var acidD = settling ? 0 : bp.acidRate, ab = D.abundance, crowdR = Pr.crowd * (ab && !settling ? ab.crowd : 1), acidLoss = 0, abFood = ab && !settling ? ab.food || 0 : 0, abCross = ab && !settling ? ab.cross || 1 : 1;
@@ -443,7 +445,7 @@ var LookAlive = (function () {
           lv = clamp((dg - bio.fx.attackAbove) / bio.fx.softness, 0, 1);
           bioQ *= 1 - lv; kmul *= 1 - bio.fx.repair * lv; dm *= 1 - lv * (1 - bio.fx.deathMult);
         } else if (bioId === 'nightferm') {   // habitat 2: when local food falls (night), live on stored sugar: some births go on, fewer deaths
-          var nf = bio.fx, dk = s.darkLag * (1 + Pe.noise * hz(i, t, 5));   // senses the dark itself (light, a few ticks late), not hunger
+          var nf = bio.fx, dk = (s.darkLag || 0) * (1 + Pe.noise * hz(i, t, 5));   // senses the dark itself (light, a few ticks late), not hunger
           lv = clamp((dk - nf.darkAbove) / nf.softness, 0, 1);
           nfB = nf.store * lv;   // births from stored sugar: no food used, added after the food limit below
           bioQ *= 1 - lv; dm *= 1 - lv * (1 - nf.deathMult);
@@ -465,8 +467,8 @@ var LookAlive = (function () {
             case 'sloppy': m0 *= rfx.sloppyBirths; sloppyMass += rv; break;
             case 'toward': mf += rfx.move; break;
             case 'away': ma = rfx.move; break;
-            case 'hotter': if (TP) mf = rfx.heatMove; break;
-            case 'cooler': if (TP) ma = rfx.heatMove; break;
+            case 'hotter': if (TP) { mf = rfx.heatMove; hm[i] = 1; } break;
+            case 'cooler': if (TP) { ma = rfx.heatMove; hm[i] = -1; } break;
           }
         }
       }
@@ -511,12 +513,12 @@ var LookAlive = (function () {
         if (R[i] <= 0 || (mvf <= 0 && mva <= 0 && flowK <= 0)) continue;
         xx = i % n; yy = (i - xx) / n;
         nb[0] = ((yy + n - 1) % n) * n + xx; nb[1] = ((yy + 1) % n) * n + xx; nb[2] = yy * n + (xx + n - 1) % n; nb[3] = yy * n + (xx + 1) % n;
-        if (flowK > 0) { var dn2 = TP[nb[2]] < TP[nb[3]] ? nb[2] : nb[3]; if (TP[dn2] < TP[i]) { var q0 = R[i] * flowK; tN[i] -= q0; tN[dn2] += q0; } }   // the current carries cells downstream, to the cooler side
-        if (heatDir && TP) {   // the heat compass: toward the hottest (or coolest) neighbour, exact, no noise
-          var mvh = Math.min(0.45, (mvf > 0 ? mvf : mva) * gs);
-          if (mvh > 0) { best = nb[0]; bv = TP[best]; for (k = 1; k < 4; k++) { cv = TP[nb[k]]; if (mvf > 0 ? cv > bv : cv < bv) { bv = cv; best = nb[k]; } } if (mvf > 0 ? bv > TP[i] : bv < TP[i]) { var qh = R[i] * mvh; tN[i] -= qh; tN[best] += qh; } }
+        if (hm && hm[i]) {   // the heat compass (a firing rule): toward the hottest (or coolest) neighbour, exact, no noise; the cell holds station against the current
+          var hd = hm[i], mvh = Math.min(0.45, (hd > 0 ? mvf : mva) * gs);
+          if (mvh > 0) { best = nb[0]; bv = TP[best]; for (k = 1; k < 4; k++) { cv = TP[nb[k]]; if (hd > 0 ? cv > bv : cv < bv) { bv = cv; best = nb[k]; } } if (hd > 0 ? bv > TP[i] : bv < TP[i]) { var qh = R[i] * mvh; tN[i] -= qh; tN[best] += qh; } }
           continue;
         }
+        if (flowK > 0) { var dn2 = TP[nb[2]] < TP[nb[3]] ? nb[2] : nb[3]; if (TP[dn2] < TP[i]) { var q0 = R[i] * flowK; tN[i] -= q0; tN[dn2] += q0; } }   // the current carries cells downstream, to the cooler side
         if (mvf > 0) {
           best = -1; bv = noisyMove ? FD[i] * (1 + Pe.noise * hz(i, t, 3)) * 1.02 : F[i];
           for (k = 0; k < 4; k++) {
@@ -872,7 +874,7 @@ var LookAlive = (function () {
       } else if (inEv && E.type === 'bloom') {
         res.cause = 'bloom'; res.card = cl ? cl.name : null;
         res.text = 'Lost to the bloom from tick ' + ts + ': after the natives surged at tick ' + E.tick + ' your share sank below ' + pct(band.lo) + (cl ? ', slowed by ' + cl.name : '') + '.';
-      } else if (D.temp && H.graze && grazeLossOf(H, T) >= ST.grazeSafe) {
+      } else if (D.temp && H.graze && Math.max(grazeLossOf(H, T), grazeLossEarly(H, T, band.lo)) >= ST.grazeSafe) {
         res.cause = 'grazed'; res.card = null;
         res.text = 'Grazed from tick ' + ts + ': ' + pct(avg(H.cool, band.warm, T)) + ' of your colony drifted below 40 C, where the slow shadow eats it.';
       } else {
@@ -1057,6 +1059,7 @@ var LookAlive = (function () {
   };
   function csafe(D) { return D.crashSafe || ST.crashSafe; }
   function heatLossOf(H) { var l = 0, t; for (t = 1; t <= 20; t++) l += H.heat[t] || 0; return l / 20; }
+  function grazeLossEarly(H, T, floor) { var l = 0, c = 0, t; for (t = 1; t <= T; t++) if ((H.share[t] || 0) < floor) { l += H.graze[t] || 0; c++; } return c ? l / c : 0; }
   function grazeLossOf(H, T) { var l = 0, c = 0, t; for (t = 30; t <= T; t++) { l += H.graze[t] || 0; c++; } return c ? l / c : 0; }
   var fcCache = {}, fcCount = 0;
   function qtile(a, p) { var s = a.slice().sort(function (x, y) { return x - y; }); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; }

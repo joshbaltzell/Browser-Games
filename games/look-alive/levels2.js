@@ -6,7 +6,7 @@ var LookAliveLevels2 = (function () {
   var Lv = typeof LookAliveLevels !== 'undefined' ? LookAliveLevels : require('./levels.js');
 
   // ---------------------------------------------------------------- constants (HABITAT-2 section 3)
-  var M = { base: 45, width: 10, heatDeath: 0.10, grazeTop: 40, grazeRamp: 6, flow: 0.06, gripDiffuse: 0.7, rDiffuse: 0.05, o2Night: 0.9,
+  var M = { base: 45, width: 10, heatDeath: 0.10, grazeTop: 40, grazeRamp: 6, flow: 0.06, gripDiffuse: 0.7, rDiffuse: 0.055, o2Night: 0.9,
             bands: { hot: 0.45, mat: 1.15, rim: 0.9, photoLo: 70, photoHi: 75, grazeLo: 36, grazeHi: 42 } };
   var BAND2 = { lo: 0.03, hi: 0.12, need: 0.7, warm: 30 };   // "Stay between 3% and 12% of the dish": your cell can only live in part of the water
   var NIGHTS = { first: 50, period: 80, dur: 40, depth: 0.95, bustDeath: 0.09 };
@@ -21,9 +21,9 @@ var LookAliveLevels2 = (function () {
     }
     return ev;
   }
-  function temp(hot, cool, graze, withNights) {
+  function temp(hot, cool, graze, withNights, flow) {   // flow: optional per-dish current, else M.flow
     var o = { hot: hot, cool: cool, graze: graze || 0, base: M.base, width: M.width, heatDeath: M.heatDeath, grazeTop: M.grazeTop, grazeRamp: M.grazeRamp,
-      flow: M.flow, gripDiffuse: M.gripDiffuse, rDiffuse: M.rDiffuse, bands: M.bands };
+      flow: flow != null ? flow : M.flow, gripDiffuse: M.gripDiffuse, rDiffuse: M.rDiffuse, bands: M.bands };
     if (withNights) o.o2Night = M.o2Night;
     return o;
   }
@@ -53,6 +53,9 @@ var LookAliveLevels2 = (function () {
   function examTips(own) { var t = {}, k; for (k in EXAM_TIPS) t[k] = EXAM_TIPS[k]; for (k in own) t[k] = own[k]; return t; }
 
   var TIP_BELOW = ['Your colony is too small to stay in the band.', 'Turn the Pace up a little, or take off a card that slows you and does nothing here.'];
+  // Reused word for word from levels.js (EXAM_TIPS.overgrew, and the regularity tip of dish 8); every sentence is also true on dishes 11 to 13.
+  var TIP_OVERGREW = ['Your colony grew past the top of the band and stayed there.', 'Something has to hold your births down. Open "What changes this?" under Growth: it lists the dials and slots that move your share.'];
+  var TIP_REGULAR = ['Your cells divided in step, and the inspector read that as a machine.', 'Look at the Division slot, the Sloppiness dial, and the Machine cards you added: a reflex rule that fires everywhere at once also looks like a machine.'];
   var TIP_OTHER = ['Something else is out of balance.', 'Open the autopsy: it names the card or control behind the problem.'];
   var TIP_COOKED_12 = ['Your cell is cooking in the hot middle.', 'Keep a heat card from the last dish.'];
 
@@ -76,7 +79,7 @@ var LookAliveLevels2 = (function () {
   var CH_EXAM = ['growth', 'casualties', 'regularity'];
 
   var DISHES2 = [
-    dish({ id: 11, title: 'Hotter Than Home', energy: 5, slots: SLOTS, stats: ['heat', 'growth', 'natural'], channels: CH_PLAIN, temp: temp(70, 58, 0, false),
+    dish({ id: 11, title: 'Hotter Than Home', energy: 5, slots: SLOTS, stats: ['heat', 'growth', 'natural'], channels: CH_PLAIN, temp: temp(70, 58, 0, false, 0.02),
       problem: 'The water here is 58 to 70 C. Your cell was made for acid, and acid is not the problem now.', goal: GOAL2,
       fixes: [
         { id: 'chap', label: 'Swap Acid-proof insides for Heat-shock chaperones (Insides)', changes: { remove: ['acidproof'], add: ['chaperones'] } },
@@ -86,7 +89,7 @@ var LookAliveLevels2 = (function () {
       tipFixes: { cooked: ['chap', 'tetra', 'heatps'] },
       tips: {
         cooked: ['Your cell is cooking. Nothing in it is made for hot water.', 'Your Acid-proof insides do nothing here. The Insides, Envelope and Power slots each have a card for heat.'],
-        below: TIP_BELOW, other: TIP_OTHER
+        below: TIP_BELOW, overgrew: TIP_OVERGREW, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
       },
       nbTitle: 'Living in hot water',
       notebook: 'Thermus aquaticus was found in 1969 in Mushroom Spring, Yellowstone, at about 70 C, and its heat-proof copying enzyme (Taq) is now used in every DNA lab. Cells survive heat in several ways at once: chaperones such as GroEL refold proteins the heat unfolds, Thermus thermophilus wraps its DNA and ribosomes in long polyamines (mutants without them fail above about 75 C), and heat-loving archaea build membranes of single long lipids, with more rings the hotter the water. No living cell has all of these. Here, each slot had one.',
@@ -94,18 +97,18 @@ var LookAliveLevels2 = (function () {
       reading: 'The crowds here stand in heat that would cook ours. We think they are not braver than us. They are made of different stuff.',
       colony: 'We pay for heat the way we paid for acid: in growth.' }),
 
-    dish({ id: 12, title: 'The Comfortable End', energy: 5, slots: SLOTS.concat(['motor']), opens: ['motor'], stats: ['heat', 'growth', 'grazing', 'natural'], channels: CH_PLAIN, temp: temp(75, 30, 0.20, false),
+    dish({ id: 12, title: 'The Comfortable End', energy: 5, slots: SLOTS.concat(['motor']), opens: ['motor'], stats: ['heat', 'growth', 'grazing', 'natural'], channels: CH_PLAIN, temp: temp(75, 30, 0.20, false, 0.05),
       problem: 'A cell that settles where the water is comfortable is eaten.', goal: GOAL2,
       fixes: [
         { id: 'pili', label: 'Add Twitching pili (the Motor slot is open)', changes: { add: ['pili'] } },
         { id: 'filament', label: 'Add Filament form (Division)', changes: { add: ['filament'] } },
-        { id: 'compass', label: 'Machine rule: when temperature here is less than 45, move toward heat; Pace 4', heavy: true,
-          changes: { set: { pace: 4 }, reflex: { kind: 'machine', sensor: 'temp', cmp: 'lt', value: 45, action: 'hotter' } } }
+        { id: 'compass', label: 'Machine rule: when temperature here is less than 60, move toward heat; Heat-stable photosystem; Pace 5', heavy: true,
+          changes: { set: { pace: 5, metabolism: 'heatps' }, reflex: { kind: 'machine', sensor: 'temp', cmp: 'lt', value: 60, action: 'hotter' } } }
       ],
       tipFixes: { grazed: ['pili', 'filament', 'compass'] },
       tips: {
         grazed: ['The current carried your cells to the cool edge, and something there eats them.', 'Hold your cells in place (the new Motor slot), or make them too big to eat (Division), or steer them away from the cool water (a Machine rule).'],
-        cooked: TIP_COOKED_12, below: TIP_BELOW, other: TIP_OTHER
+        cooked: TIP_COOKED_12, below: TIP_BELOW, overgrew: TIP_OVERGREW, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
       },
       nbTitle: 'Why the cool edge is eaten',
       notebook: 'Paracoenia turbida is a brine fly. Its eggs do not hatch and its youngest larvae die above about 40 C, so it lays them only at the cool edge of a hot spring, and the larvae eat almost all of the mat below the place where the eggs were laid. Late in their growth they even eat the mat dams that shield them from the hot water. The hot, flowing water above that line stays whole. Smaller grazers, such as amoebae and flagellates, are kept off by size: bacteria that grow as long filaments or clumps are too big to swallow. A fly is thousands of times the size of a cell. To a cell it is not an animal; it is a landslide.',
@@ -113,7 +116,7 @@ var LookAliveLevels2 = (function () {
       reading: 'The crowds that survive live where we would not. We think a city that chooses the hot end on purpose is not a city. It is a plan.',
       colony: 'We had a name for things that act on whole crowds at once. We called it weather.' }),
 
-    dish({ id: 13, title: 'Night Shift', energy: 5, slots: SLOTS.concat(['motor']), stats: ['heat', 'growth', 'natural', 'night'], channels: CH_PLAIN, temp: temp(68, 44, 0, true), nights: true,
+    dish({ id: 13, title: 'Night Shift', energy: 5, slots: SLOTS.concat(['motor']), stats: ['heat', 'growth', 'natural', 'night'], channels: CH_PLAIN, temp: temp(68, 44, 0, true, 0.04), nights: true,
       problem: 'The light goes out every 80 ticks, and the water runs out of oxygen in the dark.', goal: 'Stay in the band through every night.',
       fixes: [
         { id: 'nightferm', label: 'Swap Sporulate for Night fermentation (Reflex)', changes: { reflex: { kind: 'bio', id: 'nightferm' } } },
@@ -123,7 +126,7 @@ var LookAliveLevels2 = (function () {
       tipFixes: { bust: ['nightferm', 'sos', 'naps'] },
       tips: {
         bust: ['The light went out and your colony fell out of the band.', 'Sporulate is too slow for a dark that comes back every 80 ticks. Look at the Reflex slot for something that reacts to the dark itself.'],
-        cooked: TIP_COOKED_12, below: TIP_BELOW, other: TIP_OTHER
+        cooked: TIP_COOKED_12, below: TIP_BELOW, overgrew: TIP_OVERGREW, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
       },
       nbTitle: 'Day and night in a mat',
       notebook: 'One millimetre inside a mat at Octopus Spring, about 55 C, the water after noon holds about 900 micromoles of oxygen per litre, far more than it can hold in balance with air, at pH 9.4. Before sunrise the same spot has no oxygen at all and pH 7.2. By day the cyanobacteria store sugar (glycogen); at night they ferment it into acetate and propionate, and the mat fixes nitrogen in the dark. Thermostichus also moves: it crawls toward light on thin threads called type IV pili.',
@@ -132,7 +135,7 @@ var LookAliveLevels2 = (function () {
       colony: 'Every crowd changes what it eats twice a day, and none of them is told to. We cannot tell who keeps the clock.' }),
 
     dish({ id: 14, title: 'Greetings from the Banded Water', energy: 3, exam: true, regWeight: 2, peakSafe: 6, slots: SLOTS.concat(['motor']),
-      stats: ['heat', 'growth', 'grazing', 'natural', 'night'], channels: CH_EXAM, temp: temp(85, 30, 0.20, true), nights: true,
+      stats: ['heat', 'growth', 'grazing', 'natural', 'night'], channels: CH_EXAM, temp: temp(85, 30, 0.35, true), nights: true,
       // The spec gives no problem line for the exam; this one is the dish 13 goal and the field note's own words, nothing new.
       problem: 'Hot, cold, dark, the slow shadow.', goal: 'Stay in the band through every night.',
       tips: examTips({

@@ -78,7 +78,7 @@ const winners = { 11: [], 12: [], 13: [], 14: [] }, rate = {}, tried3 = {};
   const mets = ['fermentation', 'respiration', 'heatps', 'fuelcell'];
   const env = [[], ['tetraether'], ['pump'], ['lipids'], ['wall'], ['shell']];
   const ins = [null, 'chaperones', 'polyamines', 'acidproof', 'repair'], div = [null, 'filament', 'naps', 'clock', 'copier'], sig = [null, 'quorum', 'radio'], mot = [null, 'pili', 'flagellum'];
-  const rfx = [null, bio('sporulate'), bio('stringent'), bio('sos'), bio('nightferm'), rule('temp', 'lt', 45, 'hotter'), rule('temp', 'lt', 50, 'hotter')];
+  const rfx = [null, bio('sporulate'), bio('stringent'), bio('sos'), bio('nightferm'), rule('temp', 'lt', 45, 'hotter'), rule('temp', 'lt', 50, 'hotter'), rule('temp', 'gt', 55, 'cooler'), rule('temp', 'gt', 50, 'cooler'), rule('food', 'gt', 99, 'cooler'), rule('food', 'gt', 99, 'hotter')];   // the last two never fire
   const gen = seed => {
     let s = seed; const R = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }, pick = a => a[Math.floor(R() * a.length)];
     return D => { for (;;) {
@@ -133,7 +133,13 @@ const winners = { 11: [], 12: [], 13: [], 14: [] }, rate = {}, tried3 = {};
   const c1 = out.offcool.win && out.offhot.win && out.offcool.share >= out.offhot.share;
   const c2 = !out.oncool.win && out.oncool.cause === 'grazed' && out.onhot.win;
   const c3 = !tt.cool.win && !tt.hot.win;
-  result(c1 && c2 && c3, 'H5 INVERSION', 'no grazers: cool ' + s(out.offcool) + ', hot ' + s(out.offhot) + (c1 ? '' : ' [WANTED both win, cool share >= hot]') + '; grazers on: cool ' + s(out.oncool) + ', hot ' + s(out.onhot) + (c2 ? '' : ' [WANTED cool loss/grazed, hot win]') + '; chaperones+tetraether no reflex, grazers on: cool ' + s(tt.cool) + ', hot ' + s(tt.hot) + (c3 ? '' : ' [WANTED both lose]'));
+  // H5b: a heat rule that can never fire is not a free anti-current card: carried cell + never-firing rule loses, with about the same share below 40 C
+  const dead = B.build(3, 6, 'fermentation', ['chaperones'], { kind: 'machine', sensor: 'food', cmp: 'gt', value: 99, action: 'cooler' });
+  const vOk = Sim.validate(D12, dead).ok, cc = B.build(3, 6, 'fermentation', ['chaperones'], null);   // the dish 12 carried cell with the reflex slot empty (the rule takes that slot)
+  const coolOf = bb => { const o = run(D12, bb, 'cool'); let a = 0, c = 0; for (let t = 30; t <= o.r.H.cool.length - 1; t++) { a += o.r.H.cool[t] || 0; c++; } return { win: o.v.win, cool: c ? a / c : 0 }; };
+  const cA = coolOf(cc), cB = vOk ? coolOf(dead) : null;
+  const c4 = vOk && !cB.win && Math.abs(cB.cool - cA.cool) <= 0.25 * Math.max(cA.cool, 1e-6);
+  result(c1 && c2 && c3 && c4, 'H5 INVERSION', 'no grazers: cool ' + s(out.offcool) + ', hot ' + s(out.offhot) + (c1 ? '' : ' [WANTED both win, cool share >= hot]') + '; grazers on: cool ' + s(out.oncool) + ', hot ' + s(out.onhot) + (c2 ? '' : ' [WANTED cool loss/grazed, hot win]') + '; chaperones+tetraether no reflex, grazers on: cool ' + s(tt.cool) + ', hot ' + s(tt.hot) + (c3 ? '' : ' [WANTED both lose]') + '; never-firing cooler rule on the carried cell: ' + (vOk ? (cB.win ? 'WIN' : 'loss') + ', mean share below 40 C ' + pc(cB.cool) + ' vs the same cell with no reflex ' + pc(cA.cool) + (c4 ? '' : ' [WANTED loss and within 25%]') : 'INVALID RULE'));
   lap('H5');
 }
 
@@ -160,6 +166,7 @@ const winners = { 11: [], 12: [], 13: [], 14: [] }, rate = {}, tried3 = {};
 {
   let same = 0, tot = 0; const bs = [];
   IDS.forEach(id => { bs.push([id, Lv.carry(id)]); }); bs.push([12, Lv.applyFix(Lv.carry(12), Lv.dish(12).fixes[0])]);
+  { const nf = Lv.dish(13).fixes.find(x => x.id === 'nightferm'); if (nf) bs.push([13, Lv.applyFix(Lv.carry(13), nf)]); }   // the only reader of darkLag
   bs.forEach(([id, b]) => { const r1 = play(id, b, 64, { snapEvery: 10 }), r2 = play(id, b, 64, { snapEvery: 10 }); tot++; if (hash(r1) === hash(r2)) same++; });
   let resumeOk = 0, resumeTot = 0, resumeNote = '';
   IDS.forEach(id => {
