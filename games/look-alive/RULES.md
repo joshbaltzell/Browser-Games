@@ -209,6 +209,31 @@ The build that starts each dish is the simplest intended winner of the one befor
 | bust | tick 150, depth 0.9, 80 ticks, 7.5% | tick 50, depth 0.945, 85 ticks, 7% | failure visible before tick 100; reflex-free builds still lose |
 | Tight membrane | n/a | blocks 85% | colony shrinks to 43% on dish 1: survives with visible losses |
 
+## Results (wave 2: balance pass, habitat 2)
+
+Full run of `node games/look-alive/dev/check.js` (about 640 s): **48 of 49 lines pass.** The one failure is P7 on dish 2, kept as a known failure: dish 2 was left alone in this pass (57 of 287 sweep winners break the 5 point rule; 48 of those use a Sloppiness setting that is not a dial on dish 2). The run was repeated after the habitat 2 simulation landed, with the same result. Both fingerprints (`dev/fingerprint.js`, 20 runs at 64x64; `dev/fingerprint-wide.js`, three builds per dish at 16x16 and 64x64) show dishes 1 to 10 unchanged by habitat 2.
+
+- **E6** now passes. A 16x16 winner that loses at 64x64 counts as borderline when its 16x16 forecast already showed a checked stat outside its safe zone (the player was warned). Dish 5: 23 of 24 sampled winners still win, 1 was warned. Over all 604 dish 5 winners (measured on a scratch copy when the pass was planned): 19 lose at 64x64, 13 of them had a warning bar; of the 545 with every bar safe, 6 (1.1%) lose. That 1.1% is not excused by the check; the 24-build sample drew none.
+- **Dish 7** changed: `acidLoad` 1.8 to 1.5, abundance `death` 0.02 to 0.01, runaway 15 to 10. It wins in 181 of 12,960 sampled runs (1.4%, was 0.5%) with 4 slot patterns. The carried cell (Pace 4, Sloppiness 0, Proton pump) now loses by Naturalness late in the run instead of fading out.
+- **X9** exam breadth: every exam dish has at least 3 winning slot patterns in its sample (dish 6: 9, dish 7: 4, dish 8: 8, dish 9: 4, dish 10: 4); dish 7 holds a 1.2% floor. Dish 9 is swept over all 99 card sets (every second set hid two of its four patterns).
+- **X10** no extreme dials: every exam dish has at least 2 slot patterns with a winner at Pace 1 to 7 and Sloppiness 1 to 6, confirmed at 64x64 (3 on each dish).
+- **X11** every exam loss cause has its own tip and no tip spells out a winner: 31 dish and cause pairs. `exposed:casualties` and `band` never occur on an exam dish; their shared tips are fallbacks.
+- **X12** the dish 8 hint names the problem, not the answer: answer cards on the carried cell are Tight membrane, Head count, Stringent and SOS; no dish 8 tip names one. The autopsy now names Sporulate when spores caused the overgrowth.
+- **X6** all checked bars safe means a win: 96.0% (48 of 50; limit 95%). The two misses are dish 7 builds at Sloppiness 0 where Naturalness and Growth suspicion each sit under their own line and add up past the exposure line. This predates the pass. A possible follow-up: never show the autopsy's stat as safe when the forecast run itself is exposed.
+
+### Habitat 2, "The banded water" (dishes 11 to 14, `levels2.js`)
+
+Everything in `sim.js` for these dishes sits behind `dish.temp`: a fixed temperature per column (hot in the middle, cool at both edges), a heat tolerance from cards (`fx.heat`), grazing below 40 C, a current that carries cells toward the cool edges unless a part grips (Twitching pili, Flagellum) or a heat rule fires, night events with anoxia, and three stats (Heat tolerance, Grazing, Night survival). The band is 3% to 12%. The forecast runs at 32x32 on these dishes. The spec is `docs/superpowers/plans/2026-11-18-look-alive-wave-2/HABITAT-2.md`; tuned values that differ from it: `rDiffuse` 0.055; current per dish 0.02 (11), 0.05 (12), 0.04 (13), 0.06 (14); dish 14 grazing 0.35; dish 12's heat-rule fix is "under 60 C, move toward heat" with the Heat-stable photosystem at Pace 5.
+
+Full run of `node games/look-alive/dev/check-h2.js` (about 155 s): **9 of 11 lines pass.**
+
+- **H1** the carried cell loses with the dish's cause at 32x32 and 64x64: 11 cooked, 12 grazed, 13 lost to the night, 14 below the band.
+- **H2** all 9 intended fixes win at both grids. **H3** winners in 400 random legal builds: 56, 59, 35 and 9 (dish 14: 2.3%). **H4** no build wins all four (best 3 of 4).
+- **H5** the inversion: with grazing off, a colony started in the cool water does better than one started in the hot water (final share 9.0% against 8.3%); with grazing on, the cool start is grazed and loses and the hot start wins. A heat rule that never fires gives no shelter from the current.
+- **H7** deterministic, resume exact (including a Night fermentation build), 64x64 mean about 70 ms. **H8** the 32x32 forecast run and the 64x64 run agree on 94.0% of winners. **H9** one dial step moves the share by at most 2.2 points on dishes 11 to 13.
+- **H6 fails:** all shown bars safe means a win in 91.7% of cases (88 of 96; limit 95%). The misses are mostly dish 12 builds with a heat rule that settle at the rule's threshold among dense natives and fall below the band; the Growth bar does not model that. A loss has its stat unsafe in 98.2%.
+- **H10 fails:** dishes 11 to 13 have no tip of their own for `starved` (the general tip shows). Writing one needs new copy.
+
 ## Results (stat-bar pass)
 
 Full run of `node games/look-alive/dev/check.js` (321 s): **31 of 33 lines pass.** The two failures are the same two known ones (P7 on dish 2: 57 of 287 winners break the 5 point rule; E6: dish 5 is 23 of 24). New lines (the sample is slot-legal sweep builds, with no dial the dish lacks):

@@ -2,24 +2,19 @@
 
 Scratchpad: `/private/tmp/claude-501/-Users-joshbaltzell-Documents-GitHub-Browser-Games/6b137395-576b-45f0-b596-d1d8bb342438/scratchpad` (may not survive a reboot).
 
-## Dispatch count: 13 of 45 (Opus used: 1 of 2)
-1 T1.A, 2 M3-R, 3 M4 T3-T5, 4 T1.B, 5 M2 T2a, 6 Opus M4 review, 7 M2 T2b+T2c, 8 H2 levels2.js, 9 M7 T1 sim, 10 M5 T3: all done.
-11. H2 T3 dev/check-h2.js (sonnet): running.
-12. H2 T6 game wiring (sonnet; game.js, index.html, style.css): running.
-13. H2 T7 renderer (sonnet; render-gl.js, draw.js): running.
-Background: full check.js against the extended sim (scratchpad m7-check-full.txt).
+## RUN COMPLETE (2026-11-19). Read WAVE-2-REPORT.md.
+All milestones M0 to M9 are done and committed on local branch `look-alive-wave-2`. Not pushed. No PR.
 
-## Images: about $1.70 spent of the $3 cap (16 card variants $1.03; 9 habitat cards + postcard $0.48; 3 habitat intro + 1 redo $0.12; ST-1, ST-2 $0.07). All installed. No more planned.
+## Dispatch count: 16 of 45 (Opus used: 2 of 2)
+1 T1.A, 2 M3-R, 3 M4 T3-T5, 4 T1.B, 5 M2 T2a, 6 Opus M4 review, 7 M2 T2b+T2c, 8 H2 levels2.js, 9 M7 T1 sim, 10 M5 T3, 11 check-h2, 12 H2 game wiring, 13 H2 renderer, 14 Opus M7 review, 15 review fixes + tuning, 16 walkthrough-h2 + pixel test.
 
-## Commits so far
-b762b49 M0 kit; cfab49f card art; 23096a3 M3-R; 35267f9 M1; 0af3ff4 M2 tier 1; efaa1aa M4; 15d0a99 M2 T2a; (M4 review fixes); b20bfdb M5 data; b567ef5 M2 T2b/T2c; a81ca75 M5 story spine; 3781d4e habitat sim + levels2.js; 1cecb96 habitat art.
-Stages 1 and 2 (M0 to M5) are complete and committed.
+## Images: about $1.70 of the $3 cap.
 
-## Next (stage 3)
-- When 11 to 13 report: verify each (check-h2 output; walkthrough 10/10 + habitat drive; M3 sig compare), commit.
-- Then: Opus review of the sim diff (scratchpad m7.diff = before-m7 vs after-m7 sim.js + cards.js; plus levels2.js, check-h2.js). Dispatch 14, the second and last Opus.
-- Then T5 tuning (sonnet, at most two rounds), T9 walkthrough-h2 + pixel-h2 (sonnet), thumbnails for 11 to 14 (thumbs.js with ids changed; flip THUMBS2 in game.js), full check.js + check-h2.js.
-- M9: RULES.md and NOTES.md updates (Opus finding 4: RULES results stale; new glSig value; X9 to X12 lines), final checks at five sizes, WAVE-2-REPORT.md, memory file. No Opus final review (Opus is capped at two).
+## Final checks
+check.js 48 of 49 (P7 known); check-h2.js 9 of 11 (H6, H10); both walkthroughs pass at five sizes; layout, contrast, u1, lore, pages, smoke clean.
+
+## Open for the owner
+Play dishes 1 to 5 and 11 to 14 (PLAYTEST.md, ten questions in the report); decide dish 2; one "starved" tip for dishes 11 to 13; H6; then push and open the PR (title and body are in the report).
 
 ## Notes for the report
 - M1: watchPinkEnd is 64 of 2243 px (2.9%) against the plan's 2% line; the residual grew with the bigger dish and the new renderer. Walkthrough passes.
