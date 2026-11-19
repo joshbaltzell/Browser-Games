@@ -69,8 +69,9 @@ var LookAliveRender = (function () {
   // background: dish field, rim, waste haze, acid ambient, immune glow, acid fizz
   var FS_BG = [
     '#version 300 es', 'precision highp float; precision highp int;',
-    'uniform vec2 uRes,uCen; uniform float uScale,uTime,uBgBlur,uAcid,uHaze,uDish,uFizz; uniform sampler2D uF;',
+    'uniform vec2 uRes,uCen; uniform float uScale,uTime,uBgBlur,uAcid,uHaze,uDish,uFizz,uTH,uTC; uniform sampler2D uF;',
     'out vec4 o;', GL_COMMON,
+    'float tkm(float x,float f0){ if(f0<=0.||f0>=1.) return 0.; float x0=acos(1.-2.*f0)/3.14159265-1.; return exp(-sq((x-x0)/.006))+exp(-sq((x+x0)/.006)); }',
     'void main(){',
     '  vec2 px=gl_FragCoord.xy; px.y=uRes.y-px.y;',
     '  vec2 w=(px-.5*uRes)/uScale+uCen;',
@@ -80,6 +81,8 @@ var LookAliveRender = (function () {
     '  float rr2=length(px-.5*uRes)/min(uRes.x,uRes.y);',
     '  vec3 base=vec3(.004,.004,.013)+vec3(.012,.006,.03)*smoothstep(.3,1.,rd)*uDish+vec3(.03,.034,.06)*(1.-smoothstep(0.,.7,rr2))*(1.-uDish);',
     '  vec3 c=mix(vec3(0.),base,inside);',
+    '  float tU=clamp((w.x+1.)*.5,0.,1.), tF=clamp((.5-.5*cos(6.28318*tU)),0.,1.);',
+    '  if(uTH>0.) c+=mix(vec3(.05,.065,.13),vec3(.16,.095,.05),tF)*inside;',
     '  if(uHaze>.5){',
     '    vec2 fuv=(w+1.)/2.; vec4 F=texture(uF,fuv);',
     '    float inb=step(abs(w.x),1.)*step(abs(w.y),1.);',
@@ -102,6 +105,12 @@ var LookAliveRender = (function () {
     '    float ring=exp(-sq((rd-1.)/(.0065+bb*.9)));',
     '    float outer=exp(-max(rd-1.,0.)/.045)*step(1.,rd);',
     '    c+=vec3(.50,.40,.95)*(ring*.95+outer*.16);',
+    '  }',
+    '  if(uTH>0.){',   // temperature strip just outside the rim: amber-white where hot, dim violet-blue where cool, ticks at 40 C and 72 C
+    '    float fr=clamp(tF,0.,1.), band=smoothstep(1.015-aa,1.02+aa+bb*.5,rd)*(1.-smoothstep(1.045-aa,1.05+aa+bb*.5,rd))*step(abs(w.x),1.);',
+    '    float spn=max(1.,uTH-uTC);',
+    '    float tk=(tkm(w.x,(40.-uTC)/spn)+tkm(w.x,(72.-uTC)/spn))*step(1.005,rd)*(1.-step(1.07,rd));',
+    '    c+=mix(vec3(.14,.12,.42),vec3(1.,.82,.5),fr*fr*(3.-2.*fr))*band*1.1+vec3(.9,.92,1.)*tk*.6;',
     '  }',
     '  o=vec4(c,1.);',
     '}'].join('\n');
@@ -393,7 +402,7 @@ var LookAliveRender = (function () {
     '}'].join('\n');
   var FS_COMP = [
     '#version 300 es', 'precision highp float; precision highp int;',
-    'uniform sampler2D uS,uB1,uB2; uniform vec2 uRes; uniform float uBloom,uVig,uChroma,uGrain,uExp,uTime;', 'out vec4 o;', GL_COMMON,
+    'uniform sampler2D uS,uB1,uB2,uF; uniform vec2 uRes,uCen; uniform float uBloom,uVig,uChroma,uGrain,uExp,uTime,uShadow,uScale;', 'out vec4 o;', GL_COMMON,
     'void main(){',
     '  vec2 uv=gl_FragCoord.xy/uRes; vec2 cc=uv-.5; float rad=dot(cc,cc);',
     '  vec3 c; float k=.03*uChroma;',
@@ -401,6 +410,13 @@ var LookAliveRender = (function () {
     '  vec3 b=texture(uB1,uv).rgb*.24+texture(uB2,uv).rgb*.4;',
     '  c+=b*uBloom;',
     '  float v=1.-uVig*.66*smoothstep(.26,.80,length(cc)*1.18);',
+    '  if(uShadow>0.){',   // grazer shadow: huge, slow and far out of focus; alpha of the field texture, blurred by a warped 4-tap and a low-frequency fbm, no edges
+    '    vec2 sp=gl_FragCoord.xy; sp.y=uRes.y-sp.y; vec2 sw=(sp-.5*uRes)/uScale+uCen;',
+    '    vec2 dr=vec2(uTime*.02,0.); vec2 wq=sw+.2*(vec2(fbm(sw*.8+dr),fbm(sw*.8+vec2(4.1,2.3)-dr))-.5);',
+    '    float sh=(texture(uF,(wq+vec2(.14,.1)+1.)*.5).a+texture(uF,(wq+vec2(-.14,.1)+1.)*.5).a+texture(uF,(wq+vec2(.14,-.1)+1.)*.5).a+texture(uF,(wq+vec2(-.14,-.1)+1.)*.5).a)*.25;',
+    '    sh*=1.-smoothstep(.9,1.08,length(sw));',
+    '    c*=1.-.8*uShadow*sh*(.62+.38*fbm(sw*.7+dr));',
+    '  }',
     '  c*=v*uExp;',
     '  c=max(c,0.); float mx=max(max(c.r,c.g),max(c.b,1e-4)); vec3 hp=c/mx*(1.-exp(-mx*1.15)); vec3 pc=1.-exp(-c*1.5); c=mix(pc,hp,.78); c=pow(c,vec3(.93));',
     '  float n=h21(gl_FragCoord.xy+fract(uTime*3.7)*113.)-.5;',
@@ -515,7 +531,7 @@ var LookAliveRender = (function () {
     gl.disable(gl.BLEND);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.fieldTex);
     this.pBg.tx = { uF: 0 };
-    this.U(this.pBg, { uRes: [W, H], uCen: [P.cx, P.cy], uScale: P.sc, uTime: P.time, uBgBlur: P.bgBlur, uAcid: P.acid, uFizz: P.fizz, uHaze: P.haze, uDish: P.dish });
+    this.U(this.pBg, { uRes: [W, H], uCen: [P.cx, P.cy], uScale: P.sc, uTime: P.time, uBgBlur: P.bgBlur, uAcid: P.acid, uFizz: P.fizz, uHaze: P.haze, uDish: P.dish, uTH: P.tH || 0, uTC: P.tC || 0 });
     gl.bindVertexArray(this.vaoEmpty); gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
     gl.bindVertexArray(this.vaoCell);
@@ -543,8 +559,9 @@ var LookAliveRender = (function () {
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, T.scene.tex);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, T.a.tex);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, T.c.tex);
-    this.pComp.tx = { uS: 0, uB1: 1, uB2: 2 };
-    this.U(this.pComp, { uRes: [W, H], uBloom: bloomOn ? P.bloom : 0, uVig: P.vig, uChroma: P.chroma, uGrain: P.grain, uExp: P.exposure, uTime: P.time });
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.fieldTex); gl.activeTexture(gl.TEXTURE0);
+    this.pComp.tx = { uS: 0, uB1: 1, uB2: 2, uF: 3 };
+    this.U(this.pComp, { uRes: [W, H], uBloom: bloomOn ? P.bloom : 0, uVig: P.vig, uChroma: P.chroma, uGrain: P.grain, uExp: P.exposure, uTime: P.time, uShadow: P.shadow || 0, uCen: [P.cx, P.cy], uScale: P.sc });
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.activeTexture(gl.TEXTURE0);
     if (q) { gl.endQuery(this.timer.TIME_ELAPSED_EXT); this.qBusy = q; }
@@ -713,6 +730,12 @@ var LookAliveRender = (function () {
     extra = extra || {};
     this.run = run; this.D = dish; this.build = build; this.slots = extra.slots || null; this.mach = extra.machine || 0; this.bf = buildFlags(this.slots, this.mach);
     this.assignSpecies();
+    // grazer shadow strength per cell (habitat 2): water under 40 C, scaled by the dish's grazing; none on world 1
+    var gzn = this.gn * this.gn, TP = dish && dish.temp; this.gz = null; this.gzMax = 0;
+    if (TP && TP.graze > 0) {
+      this.gz = new Float32Array(gzn);
+      for (i = 0; i < gzn; i++) { var tcx = ((i % this.gn) + 0.5) / this.gn, tcT = TP.cool + (TP.hot - TP.cool) * (0.5 - 0.5 * Math.cos(2 * Math.PI * tcx)); this.gz[i] = clamp((40 - tcT) / 6, 0, 1) * Math.min(1, TP.graze / 0.2); if (this.gz[i] > this.gzMax) this.gzMax = this.gz[i]; }
+    }
     var H = run.H, T = run.T, n = run.n, nn = n * n, S = run.snaps, k, t, i;
     this.T = T; this.tickKey = -1;
     this.agg = S.map(function (sn) {
@@ -751,11 +774,22 @@ var LookAliveRender = (function () {
   // Radii are scaled so the mean drawn area equals the old mean (chains are longer), so the on-screen pink:violet balance holds.
   Dish.prototype.assignSpecies = function () {
     var S = this.nat, n = S.n, id = this.D ? this.D.id : 0, mix = TUNE.speciesMix[id] || TUNE.speciesMix[0], j, a0 = 0, a1 = 0, PI = Math.PI;
-    var F = new Uint8Array(n), G = new Uint8Array(n), HL = new Float32Array(n), RK = new Float32Array(n), TL = new Uint8Array(n);
+    var F = new Uint8Array(n), G = new Uint8Array(n), HL = new Float32Array(n), RK = new Float32Array(n), TL = new Uint8Array(n), KD = new Uint8Array(n);
+    var TP = this.D && this.D.temp, gnn = this.gn || 64;
     for (j = 0; j < n; j++) {
       var u = S.su[j], v = S.sv[j], w = S.sw[j], r0 = 0.8 + 0.5 * S.sz[j], r2 = r0 * r0, an;
       a0 += r2 * (PI + 4 * S.hl[j]);
-      if (u < mix[0]) {                                   // Lactobacillus
+      if (TP) {                                           // hot spring: the kind follows the cell's temperature; same shape forms, no new shader shape (Fischerella's Y and Thermus are skipped)
+        var tT = TP.cool + (TP.hot - TP.cool) * (0.5 - 0.5 * Math.cos(2 * PI * (((S.ci[j] % gnn) + 0.5) / gnn)));
+        if (tT >= 73) {                                   // Thermocrinis: thin long single rods
+          KD[j] = 3; F[j] = 1; G[j] = 1; RK[j] = TUNE.lacR * 0.55; HL[j] = 2.4 + 1.6 * v; TL[j] = 0; an = PI + 4 * HL[j];
+        } else if (w < (tT < 50 ? 0.55 : 0.3)) {          // Roseiflexus / Chloroflexus: long gliding filaments, 3 to 4 linked segments
+          var fs = v < 0.5 ? 3 : 4, fh = 0.9, fg = TUNE.chainGap;
+          KD[j] = 2; F[j] = 1; G[j] = fs; RK[j] = TUNE.lacR * 0.7; HL[j] = fs * (fh + 1 + fg / 2) - fg / 2 - 1; TL[j] = 0; an = fs * (PI + 4 * fh);
+        } else {                                          // Thermostichus: short cylinders
+          KD[j] = 1; F[j] = 1; G[j] = 1; RK[j] = TUNE.lacR; HL[j] = 0.5 + 0.3 * v; TL[j] = 0; an = PI + 4 * HL[j];
+        }
+      } else if (u < mix[0]) {                                   // Lactobacillus
         var segs = w < TUNE.lacSeg2 ? 2 : 1, hs = TUNE.lacHl[0] + TUNE.lacHl[1] * v, g = TUNE.chainGap;
         F[j] = 1; G[j] = segs; RK[j] = TUNE.lacR; HL[j] = segs * (hs + 1 + g / 2) - g / 2 - 1; TL[j] = 0; an = segs * (PI + 4 * hs);
       } else if (u < mix[0] + mix[1]) {                   // Streptococcus
@@ -768,7 +802,7 @@ var LookAliveRender = (function () {
     }
     var k = Math.sqrt(a0 / Math.max(1e-6, a1)) * TUNE.spAreaK;
     for (j = 0; j < n; j++) RK[j] *= k;
-    this.natForm = F; this.natSeg = G; this.natHl = HL; this.natRK = RK; this.natTail = TL; this.spK = k;
+    this.natKind = TP ? KD : null; this.natForm = F; this.natSeg = G; this.natHl = HL; this.natRK = RK; this.natTail = TL; this.spK = k;
   };
   Dish.prototype.colonyAtSmooth = function (t) {   // like colonyAt, interpolated between snapshots so the beacon glides
     var n = this.agg.length, x = clamp(t / 10, 0, n - 1), i = Math.floor(x), j = Math.min(n - 1, i + 1), f = x - i, a = this.agg[i], b = this.agg[j];
@@ -899,7 +933,7 @@ var LookAliveRender = (function () {
     this.thin = [thinN, thinR]; this.vis = [cntN, cntR];
     var compN = 1, compR = 1;
     // natives
-    if (!noCull) this.shapeCounts = { lacto: 0, strep: 0, helico: 0 };
+    if (!noCull) this.shapeCounts = this.natKind ? { thermostichus: 0, filament: 0, thermocrinis: 0 } : { lacto: 0, strep: 0, helico: 0 };
     for (j = 0; j < S.n && n < cap; j++) {
       q = this.pN[S.ci[j]]; th = S.th[j]; vis = clamp((q - th + TUNE.deathMargin) / (0.22 * q + 0.004 + TUNE.deathMargin), 0, 1); if (vis <= 0.04 || S.g4[j] > thinN) continue;
       x = S.x[j]; y = S.y[j];
@@ -912,7 +946,8 @@ var LookAliveRender = (function () {
       inst[o + 4] = 0; inst[o + 5] = S.dep[j]; inst[o + 6] = S.ph[j]; inst[o + 7] = this.natHl[j];
       inst[o + 8] = 0; inst[o + 9] = 0; inst[o + 10] = this.natSeg[j]; inst[o + 11] = this.natTail[j]; inst[o + 12] = crashFade * (0.6 + 0.4 * S.g3[j]); inst[o + 13] = 0; inst[o + 14] = 0; inst[o + 15] = this.natForm[j];
       n++;
-      if (!noCull) { var fmj = this.natForm[j]; if (fmj === 1) this.shapeCounts.lacto++; else if (fmj === 2) this.shapeCounts.strep++; else this.shapeCounts.helico++; }
+      if (!noCull && this.natKind) { var kdj = this.natKind[j]; if (kdj === 1) this.shapeCounts.thermostichus++; else if (kdj === 2) this.shapeCounts.filament++; else this.shapeCounts.thermocrinis++; }
+      else if (!noCull) { var fmj = this.natForm[j]; if (fmj === 1) this.shapeCounts.lacto++; else if (fmj === 2) this.shapeCounts.strep++; else this.shapeCounts.helico++; }
     }
     // robots (pink): dissolve under acid, engulfed by immune cells, dormant ovals, seams from the Naturalness channel
     S = this.rob;
@@ -986,7 +1021,7 @@ var LookAliveRender = (function () {
     // waste haze texture (red), fizz zone (blue: where robots are, as a share of the colony), immune glow (green, written above)
     for (k3 = 0; k3 < FG * FG; k3++) {
       var gi = ((((k3 / FG) | 0) * this.gn / FG) | 0) * this.gn + (((k3 % FG) * this.gn / FG) | 0);
-      fieldG[k3 * 4] = clamp((this.fieldBuf.W[gi] - 0.125) / 0.10, 0, 1) * 255; fieldG[k3 * 4 + 2] = clamp(this.pR[gi] * 4, 0, 1) * 255; fieldG[k3 * 4 + 3] = 255;
+      fieldG[k3 * 4] = clamp((this.fieldBuf.W[gi] - 0.125) / 0.10, 0, 1) * 255; fieldG[k3 * 4 + 2] = clamp(this.pR[gi] * 4, 0, 1) * 255; fieldG[k3 * 4 + 3] = this.gz ? this.gz[gi] * 255 : 255;
     }
     this.fx = { acidLoss: acidLoss, stress: stress, crash: crash, stage: stage, kill: kill, seamS: seamS, pulse: pulse, foodRatio: foodRatio };
     return { n: n, ns: ns };
@@ -1024,6 +1059,7 @@ var LookAliveRender = (function () {
       n: r.n, ns: r.ns, cx: this.view.cx, cy: this.view.cy, sc: sc, zoom: zoom, focus: focus, K: K, tol: TUNE.tol, depth: 1, bgBlur: bgBlur,
       acid: acidAmb, fizz: clamp(fx.acidLoss * 2.5, 0, 1), time: tm, exposure: expo, cloud: cloud, dish: 1, haze: 1, bloom: TUNE.bloom, bloomThr: TUNE.bloomThr, cloudK: TUNE.cloud, vig: TUNE.vignette, chroma: TUNE.chroma, grain: TUNE.grain,
       field: this.field, bld: { env: this.bf.env, ee: 0, tight: this.bf.tight, pump: this.bf.pump, shell: this.bf.shell, acidIn: this.bf.acidIn, sync: this.bf.sync, head: this.bf.head, reflex: this.bf.reflex, core: this.bf.core, refA: -2.356 },
+      shadow: this.gzMax > 0 ? 1 : 0, tH: D && D.temp ? D.temp.hot : 0, tC: D && D.temp ? D.temp.cool : 0,
       pulse: fx.pulse, lowBloom: this.tierName === 'phone', pulseGlow: TUNE.pulseGlow, glint: TUNE.glint,
       sp: { helAmp: TUNE.helAmp, helWaves: TUNE.helWaves, tailW: TUNE.tailW, gap: TUNE.chainGap, strPitch: TUNE.strPitch, granS: TUNE.granS, bokK: 1 - TUNE.bokehCut * smooth(TUNE.bokehZ0, TUNE.bokehZ1, zoom) }
     });
