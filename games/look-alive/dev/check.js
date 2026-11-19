@@ -177,30 +177,31 @@ const otherWin = {};
   DISH_IDS.forEach(id => {
     const map = {}; data[id].all.forEach(r => { map[r.key] = r; });
     let explained = 0, winners = 0, checked = 0, badShare = 0, badStage = 0, bad = 0, worstShare = 0, worstStage = 0, worstAt = '';
-    const done = {};
+    const done = {}, DD = Lv.dish(id);
+    // Only dial settings a player can reach on this dish: a dial the dish does not show stays at the carried value (Pace 4, Sloppiness 0).
+    // The sweep also covers Sloppiness on dishes 2 and 3, where it is not a dial; those builds are not part of the property.
+    const reach = b => (DD.dials.indexOf('pace') >= 0 || b.pace === 4) && (DD.dials.indexOf('slop') >= 0 || b.slop === 0);
     data[id].all.forEach(r => {
-      if (!r.win || done[r.key]) return; done[r.key] = 1; winners++;
+      if (!r.win || done[r.key] || !reach(r.build)) return; done[r.key] = 1; winners++;
       let badHere = false;
       B.neighbours(r.build).forEach(nb => {
-        const o = map[B.key(nb)]; if (!o) return; checked++;
+        const o = map[B.key(nb)]; if (!o || !reach(nb)) return; checked++;
         const ds = Math.abs(o.finalShare - r.finalShare), dg = Math.abs(o.maxStage - r.maxStage);
+        // The one sanctioned cliff: on dish 2 a step up in Pace can tip a held colony into the runaway flood. It only counts as explained
+        // when the neighbour loses by taking over the dish (the autopsy says so, with the real figure) and predict() flags the runaway.
+        if ((ds > TOL || dg > 1) && id === 2 && !o.win) {
+          const nr = play(2, nb, SN), na = Sim.autopsy(nr), pr = Sim.predict(Lv.dish(2), nb);
+          if (na && (na.cause === 'overgrew' || na.cause === 'exposed:casualties') && /share passed \d+%/.test(na.text) && pr.runaway && pr.totals.some(x => /Runaway/.test(x))) { explained++; return; }
+        }
         if (ds > worstShare) { worstShare = ds; worstAt = B.label(r.build) + ' -> ' + B.label(nb); }
         if (dg > worstStage) worstStage = dg;
-        if (ds > TOL || dg > 1) {
-          // The one sanctioned cliff: on dish 2 a step up in Pace can tip a held colony into the runaway flood. It only counts as explained
-          // when the neighbour loses by taking over the dish (the autopsy says so, with the real figure) and predict() flags the runaway.
-          if (id === 2 && !o.win) {
-            const nr = play(2, nb, SN), na = Sim.autopsy(nr), pr = Sim.predict(Lv.dish(2), nb);
-            if (na && (na.cause === 'overgrew' || na.cause === 'exposed:casualties') && /share passed \d+%/.test(na.text) && pr.runaway && pr.totals.some(x => /Runaway/.test(x))) { explained++; return; }
-          }
-          if (ds > TOL) { badShare++; badHere = true; }
-          if (dg > 1) { badStage++; badHere = true; }
-        }
+        if (ds > TOL) { badShare++; badHere = true; }
+        if (dg > 1) { badStage++; badHere = true; }
       });
       if (badHere) bad++;
     });
     if (id !== 1) ok = ok && bad === 0;
-    parts.push('dish ' + id + (id === 1 ? ' (info only, no band)' : '') + ': ' + winners + ' winners, ' + checked + ' neighbour steps, worst share change ' + f(worstShare * 100, 1) + ' points, worst stage change ' + worstStage + '; ' + bad + ' winners break the rule (' + badShare + ' share steps, ' + badStage + ' stage steps)' + (id === 2 ? '; ' + explained + ' steps into the runaway flood excluded as explained cliffs (autopsy gives the real figure, predict() says Runaway)' : '') + (bad ? ' e.g. ' + worstAt : ''));
+    parts.push('dish ' + id + (id === 1 ? ' (info only, no band)' : '') + ': ' + winners + ' winners, ' + checked + ' neighbour steps, worst share change ' + f(worstShare * 100, 1) + ' points, worst stage change ' + worstStage + ' (explained runaway steps left out); ' + bad + ' winners break the rule (' + badShare + ' share steps, ' + badStage + ' stage steps)' + (id === 2 ? '; ' + explained + ' steps into the runaway flood excluded as explained cliffs (autopsy gives the real figure, predict() says Runaway)' : '') + (bad ? ' e.g. ' + worstAt : ''));
   });
   result(ok, 'P7 DIAL SMOOTHNESS (5 points, 1 stage)', '\n       ' + parts.join('\n       '));
 }
