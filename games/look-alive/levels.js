@@ -253,6 +253,64 @@ var LookAliveLevels = (function () {
       problem: 'Strong acid, plentiful food, a food crash and a strict inspector, all at once.', goal: 'Stay in the band through the food crash.', notebook: 'A summary of our notes from the samples. Acid-lovers such as Picrophilus pay energy or build a whole acid-proof set of proteins. Escherichia coli and Bacillus subtilis hedge against hunger with sleepers and spores. Aliivibrio fischeri in a bobtail squid count their neighbours, and the squid vents about 90% of them every dawn so the colony never grows without limit. No living cell has everything: each defence costs energy, growth, or a place in the dish. A passing local is one that balanced them.' })
   );
 
+  // ---------------------------------------------------------------- the story spine (M5): field notes, readings, colony comments, the Scale of Mind strip, the completion card
+  // In the aliens' voice. They never say cow, mammal, stomach or city as fact: "city" appears only after "We think" or in quotation marks (dev/lore-check.js).
+  var STORY = {
+    1: { fieldNote: ['Our first unit dissolved before it had finished arriving. The locals swim in the same water all day and do not seem to notice.', 'We think acid is not a danger here. It is the climate.'],
+      reading: 'Entry revised: "a city that lives in acid, on purpose."',
+      colony: 'Nothing alive can be sealed, so every way of living in acid has a running cost. We tried a sealed shell first and felt clever for about a tick.' },
+    2: { fieldNote: ['Food everywhere, and nothing eats anyone. Our unit took all of it; the locals stopped at their share.', 'We think they hold their own numbers down. We cannot find who tells them to.'],
+      reading: 'Entry revised: "a city that stops growing before it has to."',
+      colony: 'They count each other by smell and switch on together once enough of them are present: the nearest thing to thinking together we have found here. The notes say a squid empties them every dawn. We assume "squid" is a kind of tide.' },
+    3: { fieldNote: ['Every local leaves the same sour trail. Ours left a cleaner one, and the guards came over to sniff.', 'We think the sour smell is a uniform. Nobody issued it.'],
+      reading: 'Entry revised: "a city where everyone smells the same, and checks."',
+      colony: 'The sour trail is not a password. It is what is left after a meal eaten without oxygen, and everyone here eats the same way, so everyone smells the same without ever agreeing to.' },
+    4: { fieldNote: ['Our units divided on the same beat, the way we do at home. The locals divide whenever they like, each on its own.', 'We think this crowd has no clock at all. It runs anyway. We find this upsetting.'],
+      reading: 'Entry revised: "a city where every clock is wrong and nothing is late."',
+      colony: 'Some locals stop for a while, at random, and those are the ones that survive what kills the rest. We had been calling that a fault. We are reviewing what else we called a fault.' },
+    5: { fieldNote: ['Partway through, the food stopped. The locals slowed down and waited; ours kept dividing into nothing.', 'We think the food arrives from outside, in bursts. Nobody here grows it.'],
+      reading: 'Entry revised: "a city that is fed from outside."',
+      colony: 'A spore takes hours to make and cannot be undone. In the time a local takes to begin one, we could hold a vote, lose it, and hold another.' },
+    6: { fieldNote: ['This sample came from deeper in, where the acid is much stronger. The locals pay for it every moment and do not complain.', 'We think the acid is held at this level. Weather would wander.'],
+      reading: 'Entry revised: "a city that keeps its acid at a set level." Someone sets the level.',
+      colony: 'Protection here is never bought once. It is paid out of growth, every moment, by every local, and none of them seems to mind.' },
+    7: { fieldNote: ['Our lab cut the energy budget for this test. The locals have never had a budget and manage on less.', 'We think none of them has every defence. Each one gave something up, and nobody can see what.'],
+      reading: 'Entry revised: "a city where nobody can afford everything, and nobody tries."',
+      colony: 'Picrophilus is so good at acid that it cannot grow without it. We know colonies like that.' },
+    8: { fieldNote: ['The food stopped, came back, and stopped again. Both times the crowd did the same thing: slow down and wait.', 'We think the meals keep a schedule. We do not know whose.'],
+      reading: 'Entry revised: "a city that eats on a schedule it did not write."',
+      colony: 'The crowd survives by not agreeing: some sleep, some keep eating, and whichever guessed right rebuilds the rest. It has never occurred to us to disagree on purpose.' },
+    9: { fieldNote: ['A stricter inspector. It ignores what you do and watches how evenly you do it.', 'We think the guards have been told what order looks like. We would like to meet whoever told them.'],
+      reading: 'Entry revised: "a city whose guards know what order looks like."',
+      colony: 'Cells with the same genes still behave differently. Nobody plans the difference, and the difference keeps them alive. Our units are identical, which is how the guards keep finding us.' },
+    10: { fieldNote: ['Everything at once: the strongest acid, rich food, a crash and the strictest guards. The locals live like this all the time.', 'We think the whole crowd keeps one rhythm. We cannot find the drummer.'],
+      reading: 'Entry revised: "a city kept by something larger." Not the mountain. Mountains do not do things.',
+      colony: 'Every local balances the same few costs, and none of them knows it. The crowd answered every acid and every hunger the same way, with nobody in charge. We think something keeps time for them.' }
+  };
+  DISHES.forEach(function (d) { var s = STORY[d.id]; if (s) { d.fieldNote = s.fieldNote; d.reading = s.reading; d.colony = s.colony; } });
+  // The Scale of Mind strip: index = the highest dish id cleared (0 = none). Every state is one sentence that starts "We think".
+  WORLD.scaleLabel = 'What we think we are looking at';
+  WORLD.sizeLabel = 'Largest mind we expect';
+  WORLD.scale = [
+    { state: 'We think a city lives inside a warm mountain.', size: 'About our size: one cell.' },
+    { state: 'We think it is a city that lives in acid.', size: 'About our size: one cell.' },
+    { state: 'We think it is a city that limits its own numbers.', size: 'About our size: one cell.' },
+    { state: 'We think it is a city where everyone smells the same.', size: 'About our size: one cell.' },
+    { state: 'We think it is a city with no clock that runs anyway.', size: 'About our size: one cell.' },
+    { state: 'We think it is a city fed from outside, in bursts.', size: 'About our size: one cell.' },
+    { state: 'We think it is a city whose acid is set by someone.', size: 'About our size: one cell.' },
+    { state: 'We think it is a city where nobody has everything.', size: 'About our size: one cell.' },
+    { state: 'We think it is a city that eats on a schedule.', size: 'About our size: one cell.' },
+    { state: 'We think it is a city whose guards have been briefed.', size: 'About our size: one cell.' },
+    { state: 'We think it is a city kept by something larger than the crowd.', size: 'About our size. Possibly as large as a whole crowd.' }
+  ];
+  // The completion card after dish 10: [label, text] rows in order.
+  WORLD.complete = [
+    ['Finding', 'The crowd answered every acid and every hunger the same way, as if told. Nobody in it gives orders.'],
+    ['Conclusion', 'We think something sets the acid and sends the meals: something larger than the crowd.'],
+    ['Anomaly', 'During the last cycle the surface of the warm mountain twitched. We logged it as weather.'],
+    ['Next', 'A new site, with one rule turned upside down. The scouts report running water hotter than the mountain.']
+  ];
   function dish(id) { for (var i = 0; i < DISHES.length; i++) if (DISHES[i].id === id) return DISHES[i]; return null; }
   function mk(pace, slop, met, parts, reflex) { return { pace: pace, slop: slop, metabolism: met, parts: parts, reflex: reflex || null }; }
   // The simplest intended winner of each dish: the build that starts the next one. carry(1) is the Factory unit.

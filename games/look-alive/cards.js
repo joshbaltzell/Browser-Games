@@ -111,8 +111,8 @@ var LookAliveCards = (function () {
     { id: 'density', name: 'own density here', global: false, values: [0.05, 0.1, 0.2], unit: '', note: 'Your units per cell, against the natives\' normal of 1.' },
     { id: 'native', name: 'native density here', global: false, values: [0.6, 0.8, 1.0, 1.2], unit: '', note: 'Natives per cell, against their normal of 1.' },
     { id: 'share', name: 'own share of the dish', global: true, values: [0.05, 0.08, 0.10, 0.12, 0.15], unit: '', note: 'Global. No cell could know this.' },
-    { id: 'susp_growth', name: 'Growth suspicion', global: true, values: [0.5, 1, 2], unit: '', note: 'Global. Reads the immune system\'s mind.' },
-    { id: 'susp_waste', name: 'Waste suspicion', global: true, values: [0.5, 1, 2], unit: '', note: 'Global. Reads the immune system\'s mind.' },
+    { id: 'susp_growth', name: 'Growth suspicion', global: true, values: [0.5, 1, 2], unit: '', note: 'Global. Reads the guards\' minds.' },
+    { id: 'susp_waste', name: 'Waste suspicion', global: true, values: [0.5, 1, 2], unit: '', note: 'Global. Reads the guards\' minds.' },
     { id: 'ttev', name: 'ticks until the event', global: true, values: [10, 25, 50], unit: 'ticks', note: 'Global. Counts down to the next event, then reads 0.' }
   ];
   var actions = [

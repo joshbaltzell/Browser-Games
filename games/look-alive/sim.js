@@ -772,7 +772,7 @@ var LookAlive = (function () {
       for (var cid in cs) if (!topId || cs[cid] > cs[topId]) topId = cid;
       res.cardShare = tot > 0 ? cs[topId] / tot : 1; res.topCard = topId;
       if (res.cardShare > res.dominance) res.dominance = res.cardShare;
-      res.text = (res.takeover ? 'Took over the dish by tick ' + te : v.exposedAt > 0 ? 'Exposed at tick ' + te : 'The immune system closed in from tick ' + te) + ': ' + why + '.' +
+      res.text = (res.takeover ? 'Took over the dish by tick ' + te : v.exposedAt > 0 ? 'Exposed at tick ' + te : 'The guards closed in from tick ' + te) + ': ' + why + '.' +
         (res.takeover ? '' : ' The locals check badges, and a border line formed around your colony.');
       if (second >= 0 && tot > 0 && sums[second] / tot >= 0.25) {
         res.second = { channel: second, cause: 'exposed:' + ck[second], text: 'It was also adding to ' + ck[second] + ' suspicion (' + pct(sums[second] / tot) + ' of the total).' };
