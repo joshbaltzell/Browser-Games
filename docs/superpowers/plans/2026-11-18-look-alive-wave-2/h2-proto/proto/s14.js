@@ -1,0 +1,7 @@
+const { probe, mk, bio, rule, Sim, Lv } = require('./base2.js');
+let seed = 11; const R = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }; const pick = a => a[Math.floor(R() * a.length)];
+const mets = ['fermentation', 'respiration', 'heatps', 'fuelcell'], env = [[], ['tetraether'], ['pump'], ['lipids'], ['wall'], ['shell']], ins = [null, 'chaperones', 'polyamines', 'acidproof', 'repair'], div = [null, 'filament', 'naps', 'clock', 'copier'], sig = [null, 'quorum', 'radio'], mot = [null, 'pili', 'flagellum'];
+const rfx = [null, bio('sporulate'), bio('stringent'), bio('sos'), bio('nightferm'), rule('temp', 'lt', 45, 'hotter'), rule('temp', 'lt', 50, 'hotter')];
+const D = Lv.dish(14); let tried = 0; const W = []; const seen = new Set();
+while (tried < 500) { const parts = [].concat(pick(env), [pick(ins), pick(div), pick(sig), pick(mot)].filter(Boolean)); const b = mk(2 + Math.floor(R() * 6), pick([0, 2, 4, 6, 8]), pick(mets), parts, pick(rfx)); if (!Sim.validate(D, b).ok) continue; const k = JSON.stringify(b); if (seen.has(k)) continue; seen.add(k); tried++; const r = probe(14, b, 32); if (r.win) W.push([b, r.fin, probe(14, b, 64).win]); }
+console.log(JSON.stringify(global.G2X), 'wins', W.length, '/', tried, W.map(([b, f, w]) => b.pace + '/' + b.slop + ' ' + b.metabolism + '+' + b.parts.join('+') + '|' + (b.reflex ? b.reflex.id || 'rule' : '-') + ' ' + f + '% 64:' + (w ? 'W' : 'l')).join(' ; '));
