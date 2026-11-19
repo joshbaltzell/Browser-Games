@@ -65,11 +65,13 @@
   var GRADE_NEXT = { Passable: 'Convincing needs the guards never to reach Inspection.', Convincing: 'Benign needs every stat inside its zone the whole run, with 1 energy spare.', Benign: 'That is the best grade. Nothing more to earn here.' };
   var NB_TITLE = { 1: 'How acid-loving microbes keep acid out', 2: 'The growth curve and carrying capacity', 3: 'Fermentation and respiration', 4: 'Variation between cells', 5: 'Sensing and response', 6: 'How acid-lovers trade energy for safety', 7: 'Why real cells cannot have everything', 8: 'Bet-hedging: sleepers and spores', 9: 'Why variation is normal in living things', 10: 'A summary page from the lab' };
   var PACE_NAMES = ['Glacial', 'Sluggish', 'Slow', 'Unhurried', 'Native rate', 'Brisk', 'Quick', 'Eager', 'Frantic'];
-  var SLOP_NAMES = ['Spreadsheet', 'Ledger', 'Tidy', 'Careful', 'Casual', 'Relaxed', 'Messy', 'Chaotic', 'Teenager'];
+  var SLOP_NAMES = ['Perfectly regular', 'Ledger', 'Tidy', 'Careful', 'Casual', 'Relaxed', 'Messy', 'Chaotic', 'Teenager'];
   var STAMPS = ['SUFFICIENTLY BACTERIAL', 'PASSES AS NATIVE', 'NOTHING TO SEE HERE', 'APPROVED BY THE IMMUNE SYSTEM', 'UNREMARKABLE', 'CLEARED FOR COLONISATION'];
   var STAGE_NAMES = ['Calm', 'Curiosity', 'Inspection', 'Response'];
   var CAUSE_WORDS = { acid: 'Dissolved by the acid', 'exposed:growth': 'Cover blown: Growth (speed)', 'exposed:waste': 'Cover blown: Smell', 'exposed:casualties': 'Cover blown: Growth (share)', 'exposed:regularity': 'Cover blown: Naturalness',
     overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band' };
+  var MEMO_FROM = { acid: "The lab's acid sampler", overgrew: "The lab's head counter", below: "The lab's head counter", starved: "The lab's head counter", band: "The lab's head counter", bust: "The lab's food watcher", bloom: "The lab's food watcher" };
+  function memoFrom(cause) { return MEMO_FROM[cause] || (String(cause).indexOf('exposed') === 0 ? 'Office of the Guards' : "The lab's head counter"); }
 
   // ---------------------------------------------------------------- storage (every access guarded)
   var KEY = 'bg.look-alive.';
@@ -124,6 +126,10 @@
   function sameReflex(a, b) { return JSON.stringify(a || null) === JSON.stringify(b || null); }
 
   // ---------------------------------------------------------------- step bar and handler line
+  function findingBody(a) {
+    var t = a && a.text ? a.text.replace(/^[^:]{0,70}\btick \d+(?: to \d+)?:\s*/, '') : '';
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
   function failSentence(a) { return a && a.headline ? a.headline.split('. ')[0].replace(/\.$/, '') : ''; }
   function refresh() {
     var step = 0, text = '', d = dishObj(), a = S.lastAutopsy;
@@ -350,6 +356,10 @@
   // Tag positions on the 600 x 410 diagram: side, top.
   var TAGPOS = { reflex: ['L', 14], envelope: ['L', 92], division: ['L', 174], motor: ['L', 330], signal: ['R', 14], insides: ['R', 92], power: ['R', 174] };
   var TAG_W = 160, TAG_H = 62;
+  var COACH = { 1: 'Start here. Pick a card in the list that keeps the acid out.', 2: 'Start here. Pick a Signal card so your cells hold their own numbers down.' };
+  // Josh, wave 2 decision 4: tutorial dishes show only the slots you can change. Set to 0 to show locked slots everywhere again.
+  var HIDE_LOCKED_BELOW = 5;
+  function tagHidden(d, k) { return !!d && !isExam(d) && d.id < HIDE_LOCKED_BELOW && slotStateOf(k) !== 'open'; }
   var LOCK_SVG = '<svg class="lockico" viewBox="0 0 9 10" aria-hidden="true"><rect x="0.5" y="4" width="8" height="5.5" rx="1" fill="currentColor"/><path d="M2.3 4V3a2.2 2.2 0 0 1 4.4 0v1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
   function mutate(fn) {
     S.undo.push(copy(S.build)); if (S.undo.length > 60) S.undo.shift();
@@ -445,23 +455,26 @@
     SLOT_ORDER.forEach(function (k) { state[k] = slotStateOf(k); });
     var nw = S.pointed ? d.opens : [], lead = '';
     SLOT_ORDER.forEach(function (k) {
+      if (tagHidden(d, k)) return;
       var p = TAGPOS[k], a = D.ANCHOR[k], x = p[0] === 'L' ? TAG_W + 2 : 600 - TAG_W - 2, y = p[1] + TAG_H / 2;
       lead += '<line class="leader' + (S.slot === k ? ' sel' : '') + '" x1="' + x + '" y1="' + y + '" x2="' + Math.round(a[0]) + '" y2="' + Math.round(a[1]) + '"/><circle cx="' + Math.round(a[0]) + '" cy="' + Math.round(a[1]) + '" r="2.5" fill="' + (S.slot === k ? '#5fd0ff' : '#8a90a8') + '"/>';
     });
     var fi = fixInfo(), fixSlots = fi.slots;
     $('cellSvg').innerHTML = D.cellArt(sl, { state: state, sel: S.slot, nw: nw, fix: fixSlots, ghost: gh && gh.slot ? gh.slot : null, ghostSlots: gh && gh.slot ? Sim.toSlots(gh.build) : null }) + lead;
+    $('cellWrap').classList.toggle('hidelocked', d.id < HIDE_LOCKED_BELOW && !isExam(d));
     drawPortrait(sl, gh);
     var box = $('tagLayer'), carried = S.carried;
     if (!box.firstChild) {
       SLOT_ORDER.forEach(function (k) {
         var p = TAGPOS[k], b = el('button', 'tag'); b.type = 'button'; b.setAttribute('data-slot', k);
         b.style.left = (p[0] === 'L' ? 2 / 6 : (600 - TAG_W - 2) / 6) + '%'; b.style.top = (p[1] / 4.1) + '%';
-        b.addEventListener('click', function () { selectSlot(k); });
+        b.addEventListener('click', function (e) { if (selectSlot(k) && e.detail === 0) { var f = $('optList').querySelector('.opt, .optempty'); if (f) f.focus({ preventScroll: true }); } });
         box.appendChild(b);
       });
     }
     Array.prototype.forEach.call(box.children, function (b) {
-      var k = b.getAttribute('data-slot'), st = state[k], info = Cards.slotInfo(k), ch = st === 'open' ? slotChange(k) : '', txt = slotText(k, sl), status = '';
+      var k = b.getAttribute('data-slot'), hid = tagHidden(d, k); b.hidden = hid; b.style.display = hid ? 'none' : ''; if (hid) return;
+      var st = state[k], info = Cards.slotInfo(k), ch = st === 'open' ? slotChange(k) : '', txt = slotText(k, sl), status = '';
       if (st !== 'open') status = Sim.lockedReason(d, k);
       else if (fixSlots.indexOf(k) >= 0) status = '<span class="pill fx">changes ' + esc(fi.by[k].join(', ')) + '</span>';
       else if (S.pointed && d.opens.indexOf(k) >= 0) status = '<span class="pill pt">new slot</span>';
@@ -472,6 +485,17 @@
       b.setAttribute('aria-label', info.name + ': ' + txt + (st !== 'open' ? '. ' + Sim.lockedReason(d, k) : ''));
       b.title = info.name + ' (' + info.where + '). ' + txt + (st !== 'open' ? '. ' + Sim.lockedReason(d, k) : '');
     });
+    var fl = $('factoryLine'), fac = SLOT_ORDER.filter(function (k) { return tagHidden(d, k) && slotStateOf(k) === 'factory'; });
+    if (fac.length) { fl.innerHTML = LOCK_SVG + '<span>Factory fitted, cannot change yet: ' + fac.map(function (k) { return esc(cardName(Lv.FACTORY[k])) + ' (' + esc(Cards.slotInfo(k).name) + ')'; }).join(', ') + '</span>'; fl.style.display = ''; }
+    else fl.style.display = 'none';
+    var co = $('coach'), ck = S.pointed && COACH[d.id] && !isExam(d) ? d.opens[0] : null;
+    if (ck && !tagHidden(d, ck)) {
+      var cp = TAGPOS[ck], left = cp[0] === 'L';
+      co.className = 'coach ' + (left ? 'cl' : 'cr'); co.textContent = COACH[d.id];
+      co.style.top = ((cp[1] + TAG_H / 2) / 4.1) + '%';
+      co.style.left = left ? ((TAG_W + 12) / 6) + '%' : ''; co.style.right = left ? '' : ((TAG_W + 12) / 6) + '%';
+      co.style.display = '';
+    } else co.style.display = 'none';
   }
   $('cellSvg').addEventListener('click', function (e) {
     var g = e.target.closest ? e.target.closest('.slotg') : null; if (!g || !e.target.classList.contains('hl')) return;
@@ -541,7 +565,7 @@
       '<div class="why">' + (why ? esc(why) : (c.layers > 1 ? 'Takes both Envelope layers.' : '')) + '</div>';
     inn.appendChild(tb); inn.appendChild(tx); w.appendChild(inn);
     w.addEventListener('click', function () { toggleOption(k, c.id); });
-    w.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); S.focusId = c.id; toggleOption(k, c.id); } });
+    w.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); S.focusId = c.id; toggleOption(k, c.id); } });
     w.addEventListener('mouseenter', function () { previewOption(k, c.id); w.classList.add('pv'); });
     w.addEventListener('focus', function () { previewOption(k, c.id); w.classList.add('pv'); });
     w.addEventListener('mouseleave', function () { w.classList.remove('pv'); clearPreview(); });
@@ -554,7 +578,7 @@
     var target = k === 'envelope' ? sl.envelope[S.layer] : undefined;
     w.innerHTML = '<span>Empty' + (k === 'envelope' ? ' (this layer)' : '') + '</span><span>' + (isEmpty ? 'Fitted' : 'take it off') + '</span>';
     function go() { if (isEmpty || (k === 'envelope' && !target)) { showPreviewText('This slot is already empty.', false); return; } doUnfit(k, target); }
-    w.addEventListener('click', go); w.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); S.focusId = 'empty'; go(); } });
+    w.addEventListener('click', go); w.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); S.focusId = 'empty'; go(); } });
     w.addEventListener('mouseenter', function () { if (!isEmpty && !(k === 'envelope' && !target)) previewOption(k, null); });
     w.addEventListener('focus', function () { if (!isEmpty && !(k === 'envelope' && !target)) previewOption(k, null); });
     w.addEventListener('mouseleave', clearPreview); w.addEventListener('blur', clearPreview);
@@ -878,8 +902,9 @@
     $('ribbon').style.display = any ? '' : 'none';
     $('ribbonKey').style.display = any ? '' : 'none';
     $('legGrn').style.display = any ? '' : 'none';
-    $('g1Title').innerHTML = any ? 'Your share of the dish <span class="dim">band and event marked</span>' : 'Your colony <span class="dim">percent of what you started with</span>';
-    $('g2Title').innerHTML = any ? 'Suspicion total <span class="dim">stage lines at 1.5, 4.5 and 8</span>' : 'Lost to acid <span class="dim">share of your colony dissolved each tick</span>';
+    S.chartCaps = any ? ['Your share of the dish: band and event marked', 'Suspicion total: stage lines at 1.5, 4.5 and 8'] : ['Your colony: percent of what you started with', 'Lost to acid: share of your colony dissolved each tick'];
+    $('tabShare').textContent = any ? 'Your share' : 'Your colony'; $('tabSusp').textContent = any ? 'Suspicion' : 'Lost to acid';
+    setChartTab(S.chartTab || 'share');
     var imm = $('immune'); imm.innerHTML = '<div class="stg" data-st="1">Curiosity</div><div class="stg" data-st="2">Inspection</div><div class="stg" data-st="3">Response</div><div class="kill" id="killTxt"></div>';
     S.lastStage = -1; S.vcache = '';
     $('skipBtn').textContent = S.mode === 'watch' ? 'Skip' : 'Skip to trouble';
@@ -887,20 +912,27 @@
     $('readLine').textContent = '';
     setPlayLabel(); renderVerdict();
   }
+  function setChartTab(k) {
+    S.chartTab = k; var share = k === 'share';
+    $('tabShare').classList.toggle('on', share); $('tabShare').setAttribute('aria-selected', share ? 'true' : 'false');
+    $('tabSusp').classList.toggle('on', !share); $('tabSusp').setAttribute('aria-selected', share ? 'false' : 'true');
+    $('paneShare').hidden = !share; $('paneSusp').hidden = share;
+    $('chartCap').textContent = (S.chartCaps || ['', ''])[share ? 0 : 1];
+  }
   function setPlayLabel() { $('playBtn').textContent = S.playing ? 'Pause' : 'Play'; }
   function setSpeedUI() { Array.prototype.forEach.call(document.querySelectorAll('#speeds button'), function (x) { x.classList.toggle('on', +x.getAttribute('data-sp') === S.speed); }); }
   function renderVerdict() {
     var run = S.run; if (!run) return;
     var text = '', btn = '';
     if (S.mode === 'watch') {
-      if (!S.watchDone) text = 'Watching your cell as it is...';
+      if (!S.watchDone) text = '';
       else if (run.v.win) { text = 'Your carried cell already survives this dish.'; btn = 'Continue'; }
-      else { text = run.autopsy.headline + ' ' + run.autopsy.text; btn = 'Adapt your cell'; }
-    } else if (!S.runFinished) text = 'Running your changed cell...';
+      else { text = run.autopsy.headline + ' ' + findingBody(run.autopsy); btn = 'Adapt your cell'; }
+    } else if (!S.runFinished) text = '';
     else if (run.v.win) { text = 'Your cell made it. The guards did not notice.'; btn = 'See result'; }
-    else { text = run.autopsy.headline + ' ' + run.autopsy.text; btn = 'Back to Adapt'; }
+    else { text = run.autopsy.headline + ' ' + findingBody(run.autopsy); btn = 'Back to Adapt'; }
     var key = text + '|' + btn; if (key === S.vcache) return; S.vcache = key;
-    $('verdictText').textContent = text;
+    $('verdictText').textContent = text; $('verdictText').title = text;
     var b = $('verdictBtn'); b.textContent = btn || 'Adapt your cell'; b.style.visibility = btn ? 'visible' : 'hidden';
   }
   function verdictAction() {
@@ -923,11 +955,17 @@
     S.playing = false; S.t = t; setPlayLabel(); glJump();
   }
   function flashSkip(msg) { var b = $('skipBtn'), old = 'Skip to trouble'; b.textContent = msg; setTimeout(function () { b.textContent = old; }, 1600); }
+  // Dish 1 Watch at the default 1x: the first ticks play slowly so the player sees the pink cells dissolve (the colony is gone by tick 12).
+  function playRate() {
+    var run = S.run;
+    if (S.mode !== 'watch' || !run || !run.dish.aliveOnly || S.speed !== 1) return S.speed;
+    return S.t < 6 ? 0.25 : S.t < 12 ? 0.5 : 1;
+  }
   // Advance playback by dt seconds (also callable from the debug hook).
   function advance(dt) {
     var run = S.run; if (!run || !S.playing) return;
     if (S.holdUntil && performance.now() < S.holdUntil) return;   // the rack focus plays before the action starts
-    S.t += dt * 12 * S.speed;
+    S.t += dt * 12 * playRate();
     var lim = S.mode === 'watch' && S.stopAt != null ? S.stopAt : run.T;
     if (S.t >= lim) {
       S.t = lim; S.playing = false; setPlayLabel();
@@ -992,7 +1030,7 @@
         S.lastStage = stg;
         Array.prototype.forEach.call($('immune').querySelectorAll('.stg'), function (e) { var n = +e.getAttribute('data-st'); e.classList.toggle('on', n <= stg); e.classList.toggle('s3', n === 3 && stg >= 3); });
       }
-      var kt = $('killTxt'), ktxt = stg >= 3 ? 'Killing ' + (H.kill[ti] * 100).toFixed(1) + '% of you per tick' : stg >= 1 ? 'Watching. Nothing dies yet.' : 'The immune system has not noticed you.';
+      var kt = $('killTxt'), ktxt = stg >= 3 ? 'Killing ' + (H.kill[ti] * 100).toFixed(1) + '% of you per tick' : stg >= 1 ? 'Watching. Nothing dies yet.' : 'The guards have not noticed you.';
       if (kt.textContent !== ktxt) { kt.textContent = ktxt; kt.classList.toggle('hot', stg >= 3); }
       var ymax = 0.3; for (t = 0; t <= T; t++) if (H.share[t] > ymax) ymax = Math.min(1, Math.ceil(H.share[t] * 10) / 10);
       var band = d.band;
@@ -1066,8 +1104,8 @@
         '<div class="paper notebook"><h3>From our samples: notebook page ' + (ORDER.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id]) + '</h4><p>' + esc(d.notebook) + '</p><div class="scrawl">(Copied from the locals. Keep it secret from the guards.)</div></div></div>';
     } else {
       var a = run.autopsy;
-      html = '<div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span>Office of the Immune Coroner</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
-        '<div class="row"><b>Finding</b><span class="head"><strong>' + esc(a.headline) + '</strong> ' + esc(a.text) + '</span></div>' +
+      html = '<div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span>' + esc(memoFrom(a.cause)) + '</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
+        '<div class="row"><b>Finding</b><span class="head"><strong>' + esc(a.headline) + '</strong> ' + esc(findingBody(a)) + '</span></div>' +
         '<div class="row"><b>Stat that failed</b><span>' + esc(failStatLine(run)) + '</span></div>' +
         '<div class="row"><b>Also</b><span class="sec">' + (a.second ? esc(a.second.text) : 'No second cause of note.') + '</span></div>' +
         recordRow(run, d) +
@@ -1141,6 +1179,7 @@
   $('playBtn').addEventListener('click', function () { setPlaying(!S.playing); });
   $('skipBtn').addEventListener('click', skip);
   $('verdictBtn').addEventListener('click', verdictAction);
+  $('tabShare').addEventListener('click', function () { setChartTab('share'); }); $('tabSusp').addEventListener('click', function () { setChartTab('susp'); });
   $('resultBtn').addEventListener('click', function () { if (S.run && S.mode === 'run') { S.runFinished = true; renderVerdict(); showResult(); } });
   $('realTog').addEventListener('change', function () { S.real = this.checked; $('optList').classList.toggle('showreal', S.real); });
   $('realTog').addEventListener('change', function () { S.real = this.checked; $('optList').classList.toggle('showreal', S.real); });
@@ -1174,7 +1213,7 @@
     worldContinue: worldContinue, verdictAction: verdictAction, pressTip: pressTip,
     selectSlot: selectSlot, fit: function (id, layer) { var k = (Cards.part(id) || Cards.bio(id)).slot; if (layer != null) S.layer = layer; if (!selectable(k)) return { ok: false, reason: Sim.lockedReason(dishObj(), k) }; S.slot = k; return doFit(k, id); },
     unfit: function (k, id) { return doUnfit(k, id); }, preview: previewOption, clearPreview: clearPreview, fixViaSlots: fixViaSlots,
-    tags: function () { return Array.prototype.map.call(document.querySelectorAll('#tagLayer .tag'), function (b) { return { slot: b.getAttribute('data-slot'), text: b.textContent, selectable: b.getAttribute('aria-disabled') === 'false', cls: b.className }; }); },
+    tags: function () { return Array.prototype.map.call(document.querySelectorAll('#tagLayer .tag'), function (b) { return { slot: b.getAttribute('data-slot'), text: b.textContent, selectable: b.getAttribute('aria-disabled') === 'false', cls: b.className, hidden: b.hidden }; }); },
     options: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt, #optList .optempty'), function (o) { var w = o.querySelector('.why'); return { id: o.getAttribute('data-id'), fitted: /fitted/.test(o.className), blocked: /blocked/.test(o.className), why: w ? w.textContent : '', img: (o.querySelector('img') || {}).complete ? o.querySelector('img').naturalWidth : null }; }); },
     fix: function (id) { var d = dishObj(), f = d.fixes.filter(function (x) { return x.id === id; })[0]; S.undo.push(copy(S.build)); S.build = Lv.applyFix(S.build, f); syncRuleFromBuild(); renderAdapt(false); return S.build; },
     setBuild: function (b) { S.undo.push(copy(S.build)); S.build = copy(b); syncRuleFromBuild(); renderAdapt(false); },
