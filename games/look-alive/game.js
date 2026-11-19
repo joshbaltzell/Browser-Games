@@ -270,6 +270,7 @@
     $('briefProblem').textContent = d.problem; $('briefGoal').textContent = d.goal;
     $('briefExam').style.display = d.exam ? '' : 'none';
     $('briefFig').innerHTML = figHtml(S.carried);
+    $('briefCover').innerHTML = coverName(S.carried);
     $('briefCell').textContent = buildWords(S.carried) + (S.dish > 1 && S.wins[S.dish - 1] ? ' (the cell that won the last dish)' : '') + '. It goes in unchanged.';
   }
 

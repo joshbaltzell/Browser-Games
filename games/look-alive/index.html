@@ -8,6 +8,10 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+  <filter id="inkRough" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.6" result="m"/><feComposite in="SourceGraphic" in2="m" operator="in"/></filter>
+  <filter id="chalkRough" x="-10%" y="-30%" width="120%" height="160%"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="3" result="t"/><feDisplacementMap in="SourceGraphic" in2="t" scale="2.6" xChannelSelector="R" yChannelSelector="G"/></filter>
+</defs></svg>
 <header id="head">
   <div id="topbar">
     <a class="back" href="../../index.html" aria-label="Back to games">&larr;<span class="bk"> Back to games</span></a>
@@ -59,6 +63,7 @@
       <h1 id="worldName"></h1>
       <img class="worldimg" id="worldImg" src="assets/cards/world-acidica.jpg" alt="Your pink cell among purple native bacteria drifting in the sour, amber-streaked water of the warm crowd" onerror="this.style.display='none'">
       <div class="facts" id="worldFacts"></div>
+      <div class="localskey" aria-label="How the locals look in the dish"><span><svg viewBox="0 0 40 16" aria-hidden="true"><rect x="1" y="4" width="17" height="8" rx="4"/><rect x="21" y="4" width="17" height="8" rx="4"/></svg><i>Lactobacillus</i> long rods, often in pairs</span><span><svg viewBox="0 0 40 16" aria-hidden="true"><circle cx="6" cy="8" r="4.5"/><circle cx="15" cy="8" r="4.5"/><circle cx="24" cy="8" r="4.5"/><circle cx="33" cy="8" r="4.5"/></svg><i>Streptococcus</i> beads in pairs and chains</span><span><svg viewBox="0 0 40 16" aria-hidden="true"><path d="M12 8c3-6 7-6 10 0s7 6 10 0"/><path d="M12 8C9 5 6 7 2 4M12 8C9 8 6 10 2 9M12 8c-3 3-6 4-9 7" stroke-width="1"/></svg><i>Helicobacter pylori</i> curved spirals with a tuft of tails</span></div>
       <p class="badge" id="worldBadge"></p>
       <p class="mission" id="worldMission"></p>
       <button type="button" class="big" id="worldGo">Continue</button>
@@ -67,6 +72,8 @@
 
   <section class="screen" id="screen-brief">
     <div class="briefwrap">
+    <div class="paper letter" id="briefLetter">
+      <div class="lethead"><svg class="leteye" viewBox="0 0 40 40" aria-hidden="true"><polygon points="20,2 36,11 36,29 20,38 4,29 4,11" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 20q11-10 22 0q-11 10-22 0z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="20" cy="20" r="3.5" fill="currentColor"/></svg><span class="letorg">Department of Plausible Deniability</span></div>
       <div class="kicker" id="briefKicker"></div>
       <h1 id="briefTitle"></h1>
       <div class="report" id="briefReport" aria-live="polite"></div>
@@ -74,6 +81,10 @@
       <div class="briefrow"><b>Your goal</b><span id="briefGoal"></span></div>
       <div class="briefrow" id="briefExam"><b>This is an exam</b><span>There are no answer tips, and several different cells can pass. You are graded: Passable, Convincing or Benign.</span></div>
       <div class="briefrow"><b>Your cell</b><span class="briefcell"><span class="cellfig" id="briefFig"></span><span id="briefCell"></span></span></div>
+      <div class="specimen"><span id="briefCover"></span> &ndash; not a robot.</div>
+      <div class="letstamp" aria-hidden="true">BE COOL.</div>
+      <div class="coffee" aria-hidden="true"></div>
+    </div>
       <button type="button" class="big" id="briefGo">Start the test</button>
     </div>
   </section>
