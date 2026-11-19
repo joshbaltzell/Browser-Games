@@ -585,6 +585,7 @@
 
   // ---- the options panel
   function thumbEl(id, cls) {
+    if (id === 'machinerule') return el('div', cls + ' noimg', 'R');   // a machine rule has no card picture (a heat rule uses the compass card)
     var img = document.createElement('img'); img.className = cls; img.alt = ''; img.src = 'assets/cards/card-' + id + '.jpg';
     img.onerror = function () { var d2 = el('div', cls + ' noimg', esc((cardOrBio(id) ? cardOrBio(id).name : '?').charAt(0))); if (img.parentNode) img.parentNode.replaceChild(d2, img); };
     return img;
@@ -961,7 +962,7 @@
       var c = Cards.part(id), tag = { quorum: 'acts when crowded', radio: 'acts to hold share', wall: 'acts in trouble', repair: 'acts in trouble' }[id] || 'always on';
       add(id, c.name, c.shelf === 'machine', tag, { quorum: 'q', radio: 'r', wall: 't', repair: 't' }[id] || 'const');
     });
-    if (b.reflex) add('reflex', reflexName(b.reflex), b.reflex.kind === 'machine', 'armed', 'fire', b.reflex.kind === 'bio' ? b.reflex.id : 'machinerule');
+    if (b.reflex) add('reflex', reflexName(b.reflex), b.reflex.kind === 'machine', 'armed', 'fire', b.reflex.kind === 'bio' ? b.reflex.id : (b.reflex.sensor === 'temp' || b.reflex.action === 'hotter' || b.reflex.action === 'cooler') ? 'compass' : 'machinerule');
     if (b.reflex) { var mx = 0; for (var t = 0; t <= run.T; t++) if (run.H.fires[t] > mx) mx = run.H.fires[t]; run.fired = mx >= 0.03; }
   }
   function anyChannel(run) { return D.CH.some(function (c) { return run.channels[c.id]; }); }
@@ -1211,7 +1212,7 @@
     } else {
       var a = run.autopsy;
       html = '<div class="losswrap"><div class="slide" id="lossSlide"><div class="slidetag" id="slideTag">' + slideTag(a.cause, d) + '</div>' +
-        '<div class="slidetop"><img class="slideimg" id="slideImg" alt="The dish at the moment it went wrong"><div class="slidebars statbars" id="slideBars"></div></div>' +
+        '<div class="slidetop"><img class="slideimg" id="slideImg" alt="The dish at the moment it went wrong"><div class="slidebars statbars" id="slideBars"></div></div><div class="slidenote" id="slideNote"></div>' +
         timelineSvg(run.T, a.from, a.to) + '</div><div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span id="memoFrom">' + esc(MEMO_FROM[a.cause] || 'Sample lab') + '</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
         '<div class="row"><b>Finding</b><span class="head" id="memoFinding"><strong>' + esc(a.headline) + '</strong> <span class="rest">' + esc(findingBody(a)) + '</span></span></div>' +
         '<div class="row"><b>Stat that failed</b><span>' + esc(failStatLine(run)) + '</span></div>' +
@@ -1221,12 +1222,16 @@
         '<div class="pbtns"><button type="button" data-act="adapt">Back to Adapt</button><button type="button" data-act="jump">Jump to the moment</button><button type="button" data-act="watch">Watch replay</button></div></div></div>';
     }
     ov.innerHTML = html; ov.hidden = false; S.overlayOpen = true; renderTips(); refresh();
-    var fsx = Sim.stats(d, run.build);
+    // The bars on the result cards are read from the run that just finished; the outlined marker is what the forecast said.
+    var fsx = Sim.runStats(run), fcx = Sim.stats(d, run.build);
     if (v.win) { buildBars($('winBars'), d.stats); Array.prototype.forEach.call($('winBars').children, function (row, i) { setBar(row, fsx[i], {}); }); }
     else {
       buildBars($('slideBars'), d.stats); var hit = false;
-      Array.prototype.forEach.call($('slideBars').children, function (row, i) { var f = run.autopsy.stat === fsx[i].id; setBar(row, fsx[i], { fail: f }); if (f) { row.insertAdjacentHTML('beforeend', chalkSvg()); hit = true; } });
+      Array.prototype.forEach.call($('slideBars').children, function (row, i) { var f = run.autopsy.stat === fsx[i].id, sx = fsx[i]; if (f && (sx.state === 'safe' || sx.state === 'edge')) { sx = Object.assign({}, sx, { state: 'low', verdict: CAUSE_WORDS[run.autopsy.cause] || 'This is what failed' }); } setBar(row, sx, { fail: f, forecast: fcx[i] }); if (f) { row.insertAdjacentHTML('beforeend', chalkSvg()); hit = true; } });
       if (!hit) $('lossSlide').insertAdjacentHTML('beforeend', chalkSvg().replace('class="chalk"', 'class="chalk ontime"'));
+      var sn = $('slideNote'), au = run.autopsy, missed = fcx.filter(function (x) { return x.checked !== false && x.state !== 'unchecked'; }).every(function (x) { return x.state === 'safe'; });
+      var pc2 = function (x) { return (x * 100).toFixed(x < 0.1 ? 2 : 1).replace(/\.?0+$/, '') + '%'; };
+      sn.textContent = (d.band && !d.aliveOnly ? 'At tick ' + au.from + ' your share was ' + pc2(run.H.share[au.from] || 0) + '. The band is ' + pc2(d.band.lo) + ' to ' + pc2(d.band.hi) + '. ' : '') + 'Outlined marker: the forecast.' + (missed ? ' The forecast said every bar was safe; the full run disagreed.' : '');
       var src = dishSnapshot(run.autopsy.from), im = $('slideImg'); if (src) im.src = src; else im.style.display = 'none';
     }
   }

@@ -56,6 +56,8 @@ var LookAliveLevels2 = (function () {
   // Reused word for word from levels.js (EXAM_TIPS.overgrew, and the regularity tip of dish 8); every sentence is also true on dishes 11 to 13.
   var TIP_OVERGREW = ['Your colony grew past the top of the band and stayed there.', 'Something has to hold your births down. Open "What changes this?" under Growth: it lists the dials and slots that move your share.'];
   var TIP_REGULAR = ['Your cells divided in step, and the inspector read that as a machine.', 'Look at the Division slot, the Sloppiness dial, and the Machine cards you added: a reflex rule that fires everywhere at once also looks like a machine.'];
+  var FORECAST_LO = 1.15;   // the Growth forecast must clear the band floor by this factor to read Safe (the 32x32 forecast is optimistic against the 64x64 run)
+  var TIP_STARVED = ['Your colony died out before the run ended.', 'It made too few cells to replace the ones it lost. Turn the Pace up, or take off a card that slows you and does nothing here.'];
   var TIP_OTHER = ['Something else is out of balance.', 'Open the autopsy: it names the card or control behind the problem.'];
   var TIP_COOKED_12 = ['Your cell is cooking in the hot middle.', 'Keep a heat card from the last dish.'];
 
@@ -67,7 +69,7 @@ var LookAliveLevels2 = (function () {
       show: { pace: true, slop: true, metabolism: true, reflex: { bio: BIO2, rule: true }, channels: o.channels,
         shelves: { biology: SHELF_BIO, machine: SHELF_MACHINE } },
       allowed: { metabolism: METAB2, parts: WORLD1_PARTS.concat(NEW_PARTS, motor ? MOTOR_PARTS : []), bio: BIO2, sensors: SENSORS2, actions: ACTIONS2 },
-      band: BAND2, event: NONE, forecastN: 32, crashSafe: 0.024, world: 2,
+      band: BAND2, event: NONE, forecastN: 32, forecastLoMult: FORECAST_LO, crashSafe: 0.024, world: 2,
       temp: o.temp, tips: o.tips, tipFixes: o.tipFixes || {}, fixes: o.fixes || [],
       nbTitle: o.nbTitle, notebook: o.notebook, fieldNote: o.fieldNote, reading: o.reading, colony: o.colony };
     if (o.nights) { d.events = nights(d.ticks); d.event = d.events[0]; }
@@ -89,7 +91,7 @@ var LookAliveLevels2 = (function () {
       tipFixes: { cooked: ['chap', 'tetra', 'heatps'] },
       tips: {
         cooked: ['Your cell is cooking. Nothing in it is made for hot water.', 'Your Acid-proof insides do nothing here. The Insides, Envelope and Power slots each have a card for heat.'],
-        below: TIP_BELOW, overgrew: TIP_OVERGREW, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
+        below: TIP_BELOW, overgrew: TIP_OVERGREW, starved: TIP_STARVED, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
       },
       nbTitle: 'Living in hot water',
       notebook: 'Thermus aquaticus was found in 1969 in Mushroom Spring, Yellowstone, at about 70 C, and its heat-proof copying enzyme (Taq) is now used in every DNA lab. Cells survive heat in several ways at once: chaperones such as GroEL refold proteins the heat unfolds, Thermus thermophilus wraps its DNA and ribosomes in long polyamines (mutants without them fail above about 75 C), and heat-loving archaea build membranes of single long lipids, with more rings the hotter the water. No living cell has all of these. Here, each slot had one.',
@@ -108,7 +110,7 @@ var LookAliveLevels2 = (function () {
       tipFixes: { grazed: ['pili', 'filament', 'compass'] },
       tips: {
         grazed: ['The current carried your cells to the cool edge, and something there eats them.', 'Hold your cells in place (the new Motor slot), or make them too big to eat (Division), or steer them away from the cool water (a Machine rule).'],
-        cooked: TIP_COOKED_12, below: TIP_BELOW, overgrew: TIP_OVERGREW, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
+        cooked: TIP_COOKED_12, below: TIP_BELOW, overgrew: TIP_OVERGREW, starved: TIP_STARVED, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
       },
       nbTitle: 'Why the cool edge is eaten',
       notebook: 'Paracoenia turbida is a brine fly. Its eggs do not hatch and its youngest larvae die above about 40 C, so it lays them only at the cool edge of a hot spring, and the larvae eat almost all of the mat below the place where the eggs were laid. Late in their growth they even eat the mat dams that shield them from the hot water. The hot, flowing water above that line stays whole. Smaller grazers, such as amoebae and flagellates, are kept off by size: bacteria that grow as long filaments or clumps are too big to swallow. A fly is thousands of times the size of a cell. To a cell it is not an animal; it is a landslide.',
@@ -126,7 +128,7 @@ var LookAliveLevels2 = (function () {
       tipFixes: { bust: ['nightferm', 'sos', 'naps'] },
       tips: {
         bust: ['The light went out and your colony fell out of the band.', 'Sporulate is too slow for a dark that comes back every 80 ticks. Look at the Reflex slot for something that reacts to the dark itself.'],
-        cooked: TIP_COOKED_12, below: TIP_BELOW, overgrew: TIP_OVERGREW, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
+        cooked: TIP_COOKED_12, below: TIP_BELOW, overgrew: TIP_OVERGREW, starved: TIP_STARVED, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
       },
       nbTitle: 'Day and night in a mat',
       notebook: 'One millimetre inside a mat at Octopus Spring, about 55 C, the water after noon holds about 900 micromoles of oxygen per litre, far more than it can hold in balance with air, at pH 9.4. Before sunrise the same spot has no oxygen at all and pH 7.2. By day the cyanobacteria store sugar (glycogen); at night they ferment it into acetate and propionate, and the mat fixes nitrogen in the dark. Thermostichus also moves: it crawls toward light on thin threads called type IV pili.',

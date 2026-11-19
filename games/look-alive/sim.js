@@ -1069,6 +1069,7 @@ var LookAlive = (function () {
     if (fcCache[key]) return fcCache[key];
     var run = play(Lv().PLANET, D, b, { n: D.forecastN || 16 }), f = forecastOf(run, D);
     if (fcCount > 3000) { fcCache = {}; fcCount = 0; }
+    f.fc = true;   // marks the coarse forecast run: stats() may apply a dish's forecast margin to it (D.forecastLoMult), the real run never gets one
     fcCache[key] = f; fcCount++;
     return f;
   }
@@ -1124,7 +1125,8 @@ var LookAlive = (function () {
       if (v < z[0]) { state = 'low'; verdict = 'Too low: you will dissolve'; }
     } else if (id === 'growth') {
       if (f.p70 > D.band.hi || (D.exam && (f.above > (1 - D.band.need) * f.cnt || f.gpeak > 4.5))) { v = shareVal(Math.max(f.p70, D.band.hi * 1.05)); state = 'high'; verdict = 'Too fast: you will take over'; }   // exam dishes: also high when above the band for over 30% of the run (a sleeping colony while the natives starve)
-      else if (f.p30 < D.band.lo || (f.crashMin >= csafe(D) && f.pl30 < D.band.lo)) { v = shareVal(Math.min(f.p30, f.pl30)); state = 'low'; verdict = 'Too slow: you will fade out'; }
+      // habitat 2: the coarse forecast grid reads a little high near the band floor, so the forecast (f.fc) must clear it by a margin
+      else if (f.p30 < D.band.lo * (f.fc && D.forecastLoMult || 1) || (f.crashMin >= csafe(D) && f.pl30 < D.band.lo)) { v = shareVal(Math.min(f.p30, f.pl30)); state = 'low'; verdict = 'Too slow: you will fade out'; }
       else v = shareVal(Math.sqrt(Math.max(f.p30, 1e-4) * Math.max(f.l70, 1e-4)));
     } else if (id === 'smell') {
       v = clamp(1 - f.waste / ST.peakLine, 0, 1);
@@ -1150,6 +1152,8 @@ var LookAlive = (function () {
     var f = forecast(D, build);
     return shownIds(D).map(function (id) { return statEval(D, id, f); });
   }
+  // The same stats read from a finished run (the real replay), for the result slides: what happened, not what was forecast.
+  function runStats(run) { var D = run.dish; if (!run.v) run.v = verdict(run); var f = forecastOf(run, D); return shownIds(D).map(function (id) { return statEval(D, id, f); }); }
   // A colony the acid dissolves has no meaningful Growth, Smell, Naturalness or Crash numbers (nothing is left to measure): only Acid defence counts then.
   function dissolved(D, b) { var f = forecast(D, b); return !f.alive && f.acidLoss > ST.acidSafeLoss; }
   function statDist(s) { return s.value < s.safe[0] ? s.safe[0] - s.value : s.value > s.safe[1] ? s.value - s.safe[1] : 0; }
@@ -1338,7 +1342,7 @@ var LookAlive = (function () {
     return out;
   }
 
-  return { grade: grade, energyOf: buildEnergy, dissolved: dissolved, stats: stats, liveStats: liveStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
+  return { grade: grade, energyOf: buildEnergy, dissolved: dissolved, stats: stats, liveStats: liveStats, runStats: runStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
     channelsOn: channelsOn, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { ST: ST, newState: newState, step: step, HK: HK } };
 })();
 if (typeof module !== 'undefined') module.exports = LookAlive;

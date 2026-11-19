@@ -225,14 +225,15 @@ Full run of `node games/look-alive/dev/check.js` (about 640 s): **48 of 49 lines
 
 Everything in `sim.js` for these dishes sits behind `dish.temp`: a fixed temperature per column (hot in the middle, cool at both edges), a heat tolerance from cards (`fx.heat`), grazing below 40 C, a current that carries cells toward the cool edges unless a part grips (Twitching pili, Flagellum) or a heat rule fires, night events with anoxia, and three stats (Heat tolerance, Grazing, Night survival). The band is 3% to 12%. The forecast runs at 32x32 on these dishes. The spec is `docs/superpowers/plans/2026-11-18-look-alive-wave-2/HABITAT-2.md`; tuned values that differ from it: `rDiffuse` 0.055; current per dish 0.02 (11), 0.05 (12), 0.04 (13), 0.06 (14); dish 14 grazing 0.35; dish 12's heat-rule fix is "under 60 C, move toward heat" with the Heat-stable photosystem at Pace 5.
 
-Full run of `node games/look-alive/dev/check-h2.js` (about 155 s): **9 of 11 lines pass.**
+Full run of `node games/look-alive/dev/check-h2.js` (about 170 s): **11 of 11 lines pass** after the repair pass of 2026-11-19 (it was 9 of 11 before it: H6 at 91.7% and H10).
 
 - **H1** the carried cell loses with the dish's cause at 32x32 and 64x64: 11 cooked, 12 grazed, 13 lost to the night, 14 below the band.
 - **H2** all 9 intended fixes win at both grids. **H3** winners in 400 random legal builds: 56, 59, 35 and 9 (dish 14: 2.3%). **H4** no build wins all four (best 3 of 4).
 - **H5** the inversion: with grazing off, a colony started in the cool water does better than one started in the hot water (final share 9.0% against 8.3%); with grazing on, the cool start is grazed and loses and the hot start wins. A heat rule that never fires gives no shelter from the current.
 - **H7** deterministic, resume exact (including a Night fermentation build), 64x64 mean about 70 ms. **H8** the 32x32 forecast run and the 64x64 run agree on 94.0% of winners. **H9** one dial step moves the share by at most 2.2 points on dishes 11 to 13.
-- **H6 fails:** all shown bars safe means a win in 91.7% of cases (88 of 96; limit 95%). The misses are mostly dish 12 builds with a heat rule that settle at the rule's threshold among dense natives and fall below the band; the Growth bar does not model that. A loss has its stat unsafe in 98.2%.
-- **H10 fails:** dishes 11 to 13 have no tip of their own for `starved` (the general tip shows). Writing one needs new copy.
+- **H6** all shown bars safe means a win: 95.5% (84 of 88; limit 95%, so the margin is thin). A loss has its stat unsafe in 98.5%. The Growth forecast on these dishes must clear the band floor by a factor of 1.15 to read Safe (`dish.forecastLoMult`, applied to the 32x32 forecast only, never to the real run), because the coarse forecast grid reads a little high near the floor. The reproduced case: dish 12, Pace 2, Sloppiness 6, Heat-stable photosystem, Radio mesh, Twitching pili, "move toward heat below 50 C" forecast 100% in band and lost the real run at 24.7%; its Growth bar now reads "Too slow".
+- **H10** every loss cause seen on dishes 11 to 13 has a tip of its own, including `starved`.
+- **Result cards read the real run.** The bars on the loss slide and the win card come from the finished 64x64 run (`Sim.runStats(run)`); the outlined marker is the forecast. The loss slide states the share at the pinned tick against the band.
 
 ## Results (stat-bar pass)
 

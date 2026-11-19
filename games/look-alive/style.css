@@ -658,3 +658,13 @@ canvas { display: block; }
 .wtab.on { border-color: var(--vio); background: #1b1740; color: var(--ink); }
 .wtab.locked { cursor: default; color: var(--dim); }
 @media (max-width: 400px) { .wtabs { gap: 6px; } .wtab { padding: 6px; } .wtab .wt { font-size: 11px; letter-spacing: .02em; } }
+/* loss slide: the observed share at the pinned tick, and what the outlined marker means */
+.slidenote { margin-top: 8px; font-family: var(--mono); font-size: 11px; line-height: 1.4; color: #b9bdd0; }
+.scard .noimg { display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 14px; color: var(--dim); border: 1px solid var(--line2); }
+/* habitat 2 stats: icon and pattern, so these bars are not colour-only either */
+.sb[data-stat="heat"]    { --sc: var(--amb); --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M8 2v8'/%3E%3Ccircle cx='8' cy='12' r='2.4' fill='%23000'/%3E%3Cpath d='M11.5 3.5h2M11.5 6.5h2'/%3E%3C/svg%3E"); }
+.sb[data-stat="grazing"] { --sc: var(--grn); --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M13.5 9.5A6 6 0 1 1 6.5 2.5a3 3 0 0 0 3 3.5 3 3 0 0 0 4 3.5z'/%3E%3C/svg%3E"); }
+.sb[data-stat="night"]   { --sc: var(--vio); --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linejoin='round'%3E%3Cpath d='M12.5 10.5A5.5 5.5 0 0 1 5.5 3.5a5.5 5.5 0 1 0 7 7z'/%3E%3C/svg%3E"); }
+.sb[data-stat="heat"] .sb-track    { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='14'%3E%3Cpath d='M4 0v14' stroke='%23f5a524' stroke-opacity='.6' stroke-width='1.4'/%3E%3C/svg%3E"); }
+.sb[data-stat="grazing"] .sb-track { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14'%3E%3Cpath d='M1 10a4 4 0 0 1 8 0' fill='none' stroke='%232dd4a7' stroke-opacity='.6' stroke-width='1.2'/%3E%3C/svg%3E"); }
+.sb[data-stat="night"] .sb-track   { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='14'%3E%3Cpath d='M0 7Q3 3 6 7T12 7' fill='none' stroke='%23a78bfa' stroke-opacity='.7' stroke-width='1.2'/%3E%3C/svg%3E"); }

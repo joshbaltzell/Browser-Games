@@ -121,3 +121,18 @@ Not verified: nobody has played it; Safari and touch were not tested. See `WAVE-
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 https://claude.ai/code/session_01NkcHs7p9a2fEUCrHeqGy77
+
+## Addendum: repair pass (2026-11-19, after the report)
+
+Prompted by the dish 12 "four safe readings, one lost colony" case in `next-phase-visual-plan.html`, which reproduced exactly.
+
+- The loss slide and the win card now draw their bars from the run that just finished, not from the forecast. The forecast shows as an outlined marker. The loss slide states the share at the pinned tick against the band ("At tick 132 your share was 2.99%. The band is 3% to 12%.").
+- The Growth forecast on dishes 11 to 14 must clear the band floor by 15% to read Safe. The dish 12 case now forecasts "Too slow". All nine intended fixes still forecast Safe.
+- Dishes 11 to 13 have a "starved" tip (new copy, two sentences).
+- A machine rule no longer asks for a missing card image; heat rules show the compass card.
+- The three hot-spring stat bars have icons and patterns (they were plain squares).
+
+Checks after the pass: `check-h2.js` 11 of 11 (bars agree 95.5%, was 91.7%); both fingerprints unchanged; `check.js quick` has the same pass and fail set as before; both walkthroughs, the restyle, contrast, layout and lore checks pass. The full `check.js` was not re-run: the change cannot reach dishes 1 to 10 (the margin is set only on hot-spring dishes).
+
+Known failures are now down to P7 (dish 2, by decision). H6 passes with little room: 84 of 88.
+
