@@ -1,0 +1,89 @@
+{
+ "slug": "look-alive",
+ "outDir": "games/look-alive/art-src/refs",
+ "cap": 75,
+ "style": "STYLE (applies to every image): a single illustration for a game card, in the same dark-field microscope style as the attached image. Pure black background. One clear subject, centred, filling about two thirds of the square, readable at small size. Translucent glowing bodies with a bright rim and a glassy darker interior, soft bloom. Colours with fixed meanings: pink (#FF5C8A) for the player's own cell, violet (#8B5CF6) only for native bystander cells, amber (#F5A524) for heat, acid, waste and chemicals, green (#2DD4A7) only for immune activity. The player's cell is a BACTERIUM: a plain envelope ring, a loose coil of DNA, a few ribosome dots, nothing else; no nucleus, no mitochondria, no organelles, no face. Clean, charming, slightly cute, scientific. No text, no letters, no numbers, no labels, no border, no frame, no watermark.",
+ "requests": [
+  {
+   "id": "LH-01",
+   "file": "card-chaperones.png",
+   "size": "1024x1024",
+   "refs": [
+    "01-style-frame.png"
+   ],
+   "prompt": "A round pink bacterial cell in shimmering amber heat haze. Inside it, a few small barrel-shaped rings each hold a loose, tangled thread and give it back neatly folded. The cell looks calm in the heat. BIOLOGY card: organic, soft, slightly irregular."
+  },
+  {
+   "id": "LH-02",
+   "file": "card-polyamines.png",
+   "size": "1024x1024",
+   "refs": [
+    "01-style-frame.png"
+   ],
+   "prompt": "A round pink bacterial cell in light amber heat haze. Its loose coil of DNA is wrapped by many thin, beaded chains that hold the coil steady. The chains are fine and few. BIOLOGY card: organic, soft, slightly irregular."
+  },
+  {
+   "id": "LH-03",
+   "file": "card-tetraether.png",
+   "size": "1024x1024",
+   "refs": [
+    "01-style-frame.png"
+   ],
+   "prompt": "A round pink bacterial cell whose skin is a single thick layer made of many long strands that each run straight through it from outside to inside, with small rings along each strand. Amber heat haze outside; the skin holds firm. BIOLOGY card: organic, soft, slightly irregular."
+  },
+  {
+   "id": "LH-04",
+   "file": "card-heatps.png",
+   "size": "1024x1024",
+   "refs": [
+    "01-style-frame.png"
+   ],
+   "prompt": "A short cylindrical pink bacterial cell lying in bright hot light from above, with thin stacked membranes inside it glowing as they catch the light. Amber heat shimmer around it. BIOLOGY card: organic, soft, slightly irregular."
+  },
+  {
+   "id": "LH-05",
+   "file": "card-pili.png",
+   "size": "1024x1024",
+   "refs": [
+    "01-style-frame.png"
+   ],
+   "prompt": "A short cylindrical pink bacterial cell holding onto a dark surface with several very thin threads that stick to the ground ahead of it and pull it along. Faint streaks of flowing water pass behind it while the cell stays put. BIOLOGY card: organic, soft, slightly irregular."
+  },
+  {
+   "id": "LH-06",
+   "file": "card-filament.png",
+   "size": "1024x1024",
+   "refs": [
+    "01-style-frame.png"
+   ],
+   "prompt": "A long chain of pink bacterial cells joined end to end into one gently curving filament, far longer than the few tiny single violet cells nearby. A huge soft out-of-focus dark shape at the edge of the frame cannot close around it. BIOLOGY card: organic, soft, slightly irregular. No animal shapes."
+  },
+  {
+   "id": "LH-07",
+   "file": "card-nightferm.png",
+   "size": "1024x1024",
+   "refs": [
+    "01-style-frame.png"
+   ],
+   "prompt": "A round pink bacterial cell at night: the field around it is deep blue-black and dim, and inside the cell a few small amber granules of stored sugar glow softly, with a faint amber wisp leaving the cell. The cell is resting, not dividing. BIOLOGY card: organic, soft, slightly irregular."
+  },
+  {
+   "id": "LH-08",
+   "file": "card-compass.png",
+   "size": "1024x1024",
+   "refs": [
+    "01-style-frame.png"
+   ],
+   "prompt": "A pink machine cell with a small precise hexagonal sensor plate on its skin and a thin straight needle of light pointing toward an amber glow at one side of the frame. Neat tick marks around the plate. MACHINE card: tidy, geometric, plainly manufactured."
+  },
+  {
+   "id": "LH-09",
+   "file": "world-banded.png",
+   "size": "1536x864",
+   "refs": [
+    "01-style-frame.png"
+   ],
+   "prompt": "A wide establishing view of a hot spring outflow seen through a round microscope lens: a steaming channel running down the centre of the frame, with soft natural colour bands either side of it, pale pink streamers in the hottest middle, then a green layer over an orange layer, then a thin, eroded rim at both cool edges. A huge, very blurred dark shadow at the far cool edge. No buildings, no streets, no roads, no animals, no text."
+  }
+ ]
+}

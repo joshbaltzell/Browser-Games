@@ -86,14 +86,19 @@ module.exports=async(a)=>{
   const rec={id};
   rec.lockedBefore=await ev(`document.querySelector('#dishList button[data-dish="${id}"]').disabled`);
   await W.click(`#dishList button[data-dish="${id}"]`);await a.sleep(200);
+  if(id===1&&(await ev(`__la.info().screen`))==='world')rec.scaleWorld=await ev(`(document.querySelector('#scaleWorld .sv')||{}).textContent===LookAliveLevels.WORLD.scale[0].state`);
   if(id===1){if((await ev(`__la.info().screen`))==='world')await W.click('#worldGo');await a.sleep(200);}
   rec.reportShown=await ev(`document.getElementById('briefReport').innerText.length>60`);
+  // M5: the briefing shows this dish's two-line field note
+  rec.fieldNote=await ev(`(function(){var b=document.getElementById('briefNote'),p=b?b.querySelectorAll('p'):[],d=LookAliveLevels.dish(${id});return !!b&&b.offsetParent!==null&&p.length===2&&p[0].textContent===d.fieldNote[0]&&p[1].textContent===d.fieldNote[1]})()`);
   await W.click('#briefGo');await a.sleep(150);await W.click('#speeds button[data-sp="16"]');
   rec.watchDone=await W.waitFor(`__la.S.watchDone===true`,20000)>=0;
   rec.watchCause=await ev(`__la.info().autopsy&&__la.info().autopsy.cause`);
   await W.click('#verdictBtn');await a.sleep(300);
   // 1. carried cell must fail
   const r1=await play(); rec.carriedWins=r1.win; rec.cause=r1.cause;
+  // M5: the memo is from a desk that fits the cause, and the finding does not repeat the headline's lead-in
+  rec.memo=await ev(`(function(){var f=document.getElementById('memoFrom'),r=document.querySelector('#memoFinding .rest');return {from:f?f.textContent:null,dup:r?/^[^:.]{0,60}\\btick \\d+(?: to \\d+)?:/.test(r.textContent):null}})()`);
   await a.eval(`document.getElementById('overlay').hidden=true;__la.S.overlayOpen=false;__la.show('adapt');__la.pressTip();1`);await a.sleep(300);
   rec.help=await ev(`(document.getElementById('tipText').innerText||'').replace(/\\s+/g,' ').slice(0,110)`);
   // 2. build the winner through the real UI functions
@@ -111,12 +116,19 @@ module.exports=async(a)=>{
   rec.fitLog=(res||[]).filter(x=>/"ok":false|reason/.test(x)).slice(0,3);
   rec.builtMatches=await ev(`(function(t){var b=__la.S.build;return b.pace===t.pace&&b.slop===t.slop&&b.metabolism===t.metabolism&&JSON.stringify(b.parts.slice().sort())===JSON.stringify(t.parts.slice().sort())&&JSON.stringify(b.reflex||null)===JSON.stringify(t.reflex||null)})(${JSON.stringify(target)})`);
   const r2=await play(); rec.uiWinnerWins=r2.win;
+  // M5: the win shows this dish's reading and the notebook page's colony comment
+  rec.story=await ev(`(function(){var d=LookAliveLevels.dish(${id}),r=document.getElementById('winReading'),c=document.getElementById('colonyNote');return {reading:!!r&&r.textContent===d.reading,colony:!!c&&c.textContent===d.colony}})()`);
   await a.eval(`document.getElementById('overlay').hidden=true;__la.S.overlayOpen=false;__la.show('list');1`);await a.sleep(250);
   rec.nextUnlocked=await ev(id<10?`!document.querySelector('#dishList button[data-dish="${id+1}"]').disabled`:`'n/a'`);
   rec.clearedNow=await ev(`Object.keys(__la.S.cleared).join(',')`);
+  rec.scaleList=await ev(`(document.querySelector('#scaleList .sv')||{}).textContent===LookAliveLevels.WORLD.scale[${id}].state`);
   await a.eval(`try{__la.advance()}catch(e){};1`);await a.sleep(300);
   rows.push(rec);
  }
+ // M5: the completion card carries the seed of the next rung; every dish passed the story checks
+ const done=await ev(`(function(){__la.completeCard();var c=document.getElementById('completeCard'),t=c?c.textContent:'';var o={card:!!c,twitched:/twitched/.test(t),setsAcid:/sets the acid/.test(t),sameWay:/every acid/.test(t)};document.getElementById('overlay').hidden=true;__la.S.overlayOpen=false;return o})()`);
+ const failDishes=rows.filter(r=>!r.fieldNote||!r.story||!r.story.reading||!r.story.colony||!r.scaleList||!r.memo||!r.memo.from||/Coroner|Immune/.test(r.memo.from)||r.memo.dup!==false).map(r=>r.id);
+ sum.story={fieldNotes:rows.filter(r=>r.fieldNote).length,readings:rows.filter(r=>r.story&&r.story.reading).length,colony:rows.filter(r=>r.story&&r.story.colony).length,scaleWorld:rows[0].scaleWorld,complete:done,failDishes};
  console.log(JSON.stringify(rows));
  sum.dishesPassed=rows.filter(r=>r.carriedWins===false&&r.uiWinnerWins===true&&r.builtMatches===true&&(r.id===10||r.nextUnlocked===true)).length;
  }

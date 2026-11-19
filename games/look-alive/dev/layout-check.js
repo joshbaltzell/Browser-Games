@@ -63,7 +63,7 @@ module.exports=async(a)=>{
  }
  check('L11 zoom hint text clear of the Your cell thumbnail',[1,2,5].every(i=>!rn[i].hintHitsYourCell),[1,2,5].map(i=>rn[i].hint));
  check('L12 legend says guards, not immune cells',!/immune/i.test(rn[2].legend)&&/guards/.test(rn[2].legend),rn[2].legend);
- check('L13 memo From by cause (dish 1 acid, dish 2 guards)',rn[1].memo.From==="The lab's acid sampler"&&rn[2].memo.From==='Office of the Guards',[rn[1].memo.From,rn[2].memo.From]);
+ check('L13 memo From by cause (dish 1 acid, dish 2 guards)',rn[1].memo.From==='Desk of Dissolved Samples'&&rn[2].memo.From==='Guard-watch desk',[rn[1].memo.From,rn[2].memo.From]);
  const dup=s=>{const m=(s||'').toLowerCase().match(/tick \d+/g)||[];return m.length!==new Set(m).size;};
  check('L14 memo finding says its tick once',[1,2,5].every(i=>!dup(rn[i].memo.Finding)),[1,2,5].map(i=>(rn[i].memo.Finding||'').slice(0,90)));
  check('L15 Sloppy dial label',/^0: Perfectly regular/.test(ad[4].slop),ad[4].slop);

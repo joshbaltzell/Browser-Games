@@ -70,8 +70,11 @@
   var STAGE_NAMES = ['Calm', 'Curiosity', 'Inspection', 'Response'];
   var CAUSE_WORDS = { acid: 'Dissolved by the acid', 'exposed:growth': 'Cover blown: Growth (speed)', 'exposed:waste': 'Cover blown: Smell', 'exposed:casualties': 'Cover blown: Growth (share)', 'exposed:regularity': 'Cover blown: Naturalness',
     overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band' };
-  var MEMO_FROM = { acid: "The lab's acid sampler", overgrew: "The lab's head counter", below: "The lab's head counter", starved: "The lab's head counter", band: "The lab's head counter", bust: "The lab's food watcher", bloom: "The lab's food watcher" };
-  function memoFrom(cause) { return MEMO_FROM[cause] || (String(cause).indexOf('exposed') === 0 ? 'Office of the Guards' : "The lab's head counter"); }
+  // Memo "from" line per loss cause (M5). Unknown causes fall back to the sample lab.
+  var MEMO_FROM = { acid: 'Desk of Dissolved Samples', 'exposed:growth': 'Guard-watch desk', 'exposed:waste': 'Guard-watch desk', 'exposed:casualties': 'Guard-watch desk', 'exposed:regularity': 'Guard-watch desk',
+    overgrew: 'Head-count desk', below: 'Head-count desk', starved: 'Head-count desk', band: 'Head-count desk', bust: 'Meal-schedule desk', bloom: 'Meal-schedule desk' };
+  // Story pictures (section D). A missing file logs a console error even with onerror, so each picture is switched on only once it exists.
+  var STORY_ART = { cell: false, crowd: false, ripple: true };
 
   // ---------------------------------------------------------------- storage (every access guarded)
   var KEY = 'bg.look-alive.';
@@ -203,6 +206,14 @@
     if (S.unlocked) return false;
     var i = ORDER.indexOf(id); return i > 0 && !S.cleared[ORDER[i - 1]];
   }
+  // The Scale of Mind strip: the state after the highest dish cleared (WORLD.scale in levels.js).
+  function scaleIndex() { var n = 0; ORDER.forEach(function (id) { if (S.cleared[id]) n = Math.max(n, id); }); return Math.min(n, W.scale.length - 1); }
+  function renderScale(boxId) {
+    var box = $(boxId); if (!box || !W.scale) return;
+    var i = scaleIndex(), s = W.scale[i];
+    box.innerHTML = '<div class="sp">' + (STORY_ART.cell ? '<img src="assets/story/scale-cell.jpg" alt="">' : '') + (i >= 10 && STORY_ART.crowd ? '<img src="assets/story/scale-crowd.jpg" alt="">' : '') + '</div>' +
+      '<div class="st"><div class="sk">' + esc(W.scaleLabel) + '</div><p class="sv">' + esc(s.state) + '</p><div class="ss"><span>' + esc(W.sizeLabel) + ':</span> ' + esc(s.size) + '</div></div>';
+  }
   function renderList() {
     var box = $('dishList'); box.innerHTML = ''; var wall = null;
     ORDER.forEach(function (id) {
@@ -220,6 +231,7 @@
       var b = el('button', 'big', locked ? 'Locked' : cleared ? 'Again' : 'Start'); b.disabled = locked; b.setAttribute('data-dish', id);
       b.addEventListener('click', function () { selectDish(id); }); tile.appendChild(b); wall.appendChild(tile);
     });
+    renderScale('scaleList');
   }
   function selectDish(id) {
     S.dish = id; S.carried = carriedFor(id); S.build = copy(S.carried); S.undo = []; S.rule = { sensor: null, cmp: null, value: null, action: null };
@@ -235,6 +247,7 @@
     W.facts.forEach(function (f, i) { box.appendChild(el('div', 'fact', '<div class="fn">' + (i + 1) + '</div><p>' + esc(f) + '</p>')); });
     $('worldBadge').textContent = W.badge || '';
     $('worldMission').textContent = W.mission;
+    renderScale('scaleWorld');
   }
   function worldContinue() {
     S.seenWorld = true; save('world2', true);
@@ -270,6 +283,8 @@
     $('briefKicker').textContent = 'Dish ' + d.id + ' of ' + ORDER.length;
     $('briefTitle').textContent = d.title;
     $('briefProblem').textContent = d.problem; $('briefGoal').textContent = d.goal;
+    var fn = d.fieldNote || ['', ''], fps = $('briefNote').querySelectorAll('p');
+    fps[0].textContent = fn[0]; fps[1].textContent = fn[1]; $('briefNote').style.display = d.fieldNote ? '' : 'none';
     $('briefExam').style.display = d.exam ? '' : 'none';
     $('briefFig').innerHTML = figHtml(S.carried);
     $('briefCover').innerHTML = coverName(S.carried);
@@ -1121,15 +1136,15 @@
       var last = next == null && ORDER.every(function (i) { return S.cleared[i]; });
       html = '<div class="winwrap"><div class="paper memo"><h2>CLEARED</h2><div class="stampbox"><div class="stamp win' + (reduced ? '' : ' slam') + '" id="stamp">' + stamp + '</div></div>' +
         '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' + gradeHtml + '<div class="covercap">Final readings</div><div class="paperbars statbars" id="winBars"></div>' +
-        '<div class="row"><b>Dish</b><span>' + d.id + ': ' + esc(d.title) + '</span></div>' + recordRow(run, d) +
+        '<div class="row"><b>Dish</b><span>' + d.id + ': ' + esc(d.title) + '</span></div>' + recordRow(run, d) + (d.reading ? '<div class="row reading"><b>Reading</b><span id="winReading">' + esc(d.reading) + '</span></div>' : '') +
         '<div class="pbtns">' + (next != null ? '<button type="button" data-act="next">Next dish</button>' : last ? '<button type="button" data-act="complete">Sampling complete</button>' : '') + '<button type="button" data-act="watch">Watch replay</button><button type="button" data-act="list">Dish list</button></div></div>' +
-        '<div class="paper notebook"><h3>From our samples: notebook page ' + (ORDER.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id]) + '</h4><p>' + esc(d.notebook) + '</p><div class="scrawl">(Copied from the locals. Keep it secret from the guards.)</div></div></div>';
+        '<div class="paper notebook"><h3>From our samples: notebook page ' + (ORDER.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id]) + '</h4><p>' + esc(d.notebook) + '</p>' + (d.colony ? '<div class="scrawl colony"><b>Colony comment:</b> <span id="colonyNote">' + esc(d.colony) + '</span></div>' : '') + '</div></div>';
     } else {
       var a = run.autopsy;
       html = '<div class="losswrap"><div class="slide" id="lossSlide"><div class="slidetag" id="slideTag">' + slideTag(a.cause) + '</div>' +
         '<div class="slidetop"><img class="slideimg" id="slideImg" alt="The dish at the moment it went wrong"><div class="slidebars statbars" id="slideBars"></div></div>' +
-        timelineSvg(run.T, a.from, a.to) + '</div><div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span>' + esc(memoFrom(a.cause)) + '</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
-        '<div class="row"><b>Finding</b><span class="head"><strong>' + esc(a.headline) + '</strong> ' + esc(findingBody(a)) + '</span></div>' +
+        timelineSvg(run.T, a.from, a.to) + '</div><div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span id="memoFrom">' + esc(MEMO_FROM[a.cause] || 'Sample lab') + '</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
+        '<div class="row"><b>Finding</b><span class="head" id="memoFinding"><strong>' + esc(a.headline) + '</strong> <span class="rest">' + esc(findingBody(a)) + '</span></span></div>' +
         '<div class="row"><b>Stat that failed</b><span>' + esc(failStatLine(run)) + '</span></div>' +
         '<div class="row"><b>Also</b><span class="sec">' + (a.second ? esc(a.second.text) : 'No second cause of note.') + '</span></div>' +
         recordRow(run, d) +
@@ -1151,8 +1166,9 @@
       var d = Lv.dish(id), g = S.grades[id];
       return '<div class="crow2"><span class="cn">' + id + '</span><span class="ct">' + esc(d.title) + '</span><span class="cg ' + (g ? 'g-' + g.toLowerCase() : '') + '">' + (S.cleared[id] ? (d.exam ? (g || 'Cleared') : '\u2713 Cleared') : 'Not cleared') + '</span></div>';
     }).join('');
-    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>SAMPLING COMPLETE</h2><div class="covercap">The ten dishes</div><div class="clist">' + rows + '</div>' +
-      '<div class="row"><b>Next</b><span>A new site, with one rule turned upside down.</span></div><div class="pbtns"><button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
+    var story = (W.complete || []).map(function (r) { return '<div class="row"><b>' + esc(r[0]) + '</b><span>' + esc(r[1]) + '</span></div>'; }).join('');
+    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>SAMPLING COMPLETE</h2>' + (STORY_ART.ripple ? '<img class="completeimg" src="assets/story/complete-ripple.jpg" alt="A slow ripple crossing the surface of the warm mountain">' : '') + '<div class="covercap">The ten dishes</div><div class="clist">' + rows + '</div>' +
+      story + '<div class="pbtns"><button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
     $('overlay').hidden = false; S.overlayOpen = true;
   }
   $('overlay').addEventListener('click', function (e) {
