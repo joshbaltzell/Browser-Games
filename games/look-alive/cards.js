@@ -83,8 +83,8 @@ var LookAliveCards = (function () {
     { id: 'filament', slot: 'division', name: 'Filament form', shelf: 'biology', kind: 'part', energy: 1, counterpart: null, world: 2,
       real: 'Bacteria that grow as long filaments or clumps are too big for small grazers such as flagellates to swallow, and grazing itself can push a colony to make more of them.',
       game: 'Changed for the game: here filaments escape the slow shadow too. A real fly larva swallows anything.',
-      effect: 'Grazing -95%. Births -5%. A little less regular.',
-      fx: { graze: 0.95, births: 0.95, sigma: 0.01 } },
+      effect: 'Grazing -98%. Births -5%. A little less regular.',
+      fx: { graze: 0.98, births: 0.95, sigma: 0.01 } },
 
     // ---- Machine shelf (powerful, raises Regularity) ----
     { id: 'fuelcell', slot: 'power', name: 'Fuel cell', shelf: 'machine', kind: 'metabolism', energy: 1, counterpart: 'respiration',

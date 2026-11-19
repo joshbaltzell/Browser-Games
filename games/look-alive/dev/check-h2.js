@@ -230,5 +230,20 @@ const winners = { 11: [], 12: [], 13: [], 14: [] }, rate = {}, tried3 = {};
   lap('H10');
 }
 
+// ---------------------------------------------------------------- H11 the dials alone never win
+// The carried cell with only Pace and Sloppiness changed (all 81 settings, no card touched) must lose every habitat-2 dish at the forecast grid and at 64x64:
+// a dish that falls to "turn the Pace up" teaches nothing about its slot. (Found by the owner in play: Pace alone won dishes 12, 13 and 14.)
+{
+  const lines = []; let ok = true;
+  IDS.forEach(id => {
+    const c = Lv.carry(id), w = { 32: [], 64: [] };
+    for (let p = 0; p <= 8; p += (QUICK ? 2 : 1)) for (let s = 0; s <= 8; s += (QUICK ? 2 : 1)) [32, 64].forEach(n => { const b = clone(c); b.pace = p; b.slop = s; if (Sim.verdict(play(id, b, n)).win) w[n].push(p + '/' + s); });
+    if (w[32].length || w[64].length) ok = false;
+    lines.push(id + ': ' + w[64].length + ' dial-only wins at 64x64, ' + w[32].length + ' at 32x32' + (w[64].length || w[32].length ? ' (Pace/Sloppiness ' + w[64].concat(w[32]).slice(0, 6).join(' ') + ')' : ''));
+  });
+  result(ok, 'H11 THE DIALS ALONE NEVER WIN (carried cell, every Pace and Sloppiness)', lines.join('; '));
+  lap('H11');
+}
+
 console.log('\n' + (nLines - fails) + ' of ' + nLines + ' lines pass' + ' (' + ((Date.now() - t0) / 1000).toFixed(0) + ' s)');
 process.exit(fails ? 1 : 0);

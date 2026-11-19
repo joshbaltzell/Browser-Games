@@ -136,3 +136,11 @@ Checks after the pass: `check-h2.js` 11 of 11 (bars agree 95.5%, was 91.7%); bot
 
 Known failures are now down to P7 (dish 2, by decision). H6 passes with little room: 84 of 88.
 
+## Addendum 2: slow-frame fix, check correction, dial pass (2026-11-19)
+
+- **Simple dish view:** the dish treated anything under 33 frames a second as slow, so a browser capped at 30 dropped to the flat view and stayed there. Now slow means under about 24, the flat view needs under about 11, and a fallback is retried on the next dish or from a button. The slowdown itself was not reproduced.
+- **P7 corrected:** it counts only dial settings a player can reach. Dish 2 (flood kept by Josh): 9 of 34 winners break the rule, worst step 6.6 points.
+- **Dial pass:** Josh found Pace alone won dishes 12, 13 and 14. Fixed with a night penalty for fast dividers, a stronger current and grazing on dish 12, and a new check (H11) that the dials alone never win a hot-spring dish. Details in RULES.md. Dish 6 still falls to Pace alone and was left on purpose.
+
+Checks now: `check.js` 48 of 49 (P7); `check-h2.js` 11 of 12 (H8: coarse and full grid agree on 89.7% of winners against 90%); both walkthroughs, lore, pixel, smoke and pages checks pass.
+

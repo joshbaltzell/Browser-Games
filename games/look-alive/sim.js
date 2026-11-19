@@ -418,6 +418,8 @@ var LookAlive = (function () {
     if (TT) { hm = s.hm || (s.hm = new Int8Array(n * n)); hm.fill(0); }
     if (TT) s.darkLag = (s.darkLag || 0) + Pe.foodAlpha * (evl - (s.darkLag || 0));
     var o2m = TT && TT.o2Night && (bp.metabolism === 'respiration' || bp.metabolism === 'fuelcell') ? 1 - TT.o2Night * evl : 1;   // nights are anoxic: oxygen users stall
+    // A fast-dividing cell burns its stores sooner: on night dishes the dark kills faster above the dish's reference Pace (real: slow-growing bacteria survive sudden starvation longer).
+    var hurry = TT && TT.nightHurry ? 1 + TT.nightHurry * Math.max(0, bp.paceMult - (TT.hurryFrom || 1)) : 1;
     var acidD = settling ? 0 : bp.acidRate, ab = D.abundance, crowdR = Pr.crowd * (ab && !settling ? ab.crowd : 1), acidLoss = 0, abFood = ab && !settling ? ab.food || 0 : 0, abCross = ab && !settling ? ab.cross || 1 : 1;
 
     for (i = 0; i < nn; i++) {
@@ -483,7 +485,7 @@ var LookAlive = (function () {
       if (napP) {
         napIn = rv * napP.enter; napOut = zv * napP.wake * clamp((FD[i] - napP.wakeLo) / (napP.wakeHi - napP.wakeLo), 0, 1);
       }
-      var deathR = rv * (baseDeath + crowdR * (rv + Pr.cross * crossEv * nv) + bustDeath * bustTf * bmul) * dm + rv * acidD;
+      var deathR = rv * (baseDeath + crowdR * (rv + Pr.cross * crossEv * nv) + bustDeath * bustTf * bmul * hurry) * dm + rv * acidD;
       acidLoss += rv * acidD;
       if (TP) { deathR += rv * (heatD + grazeD); heatSum += rv * heatD; grazeSum += rv * grazeD; }
       var killCell = rv * killR * killTf * kmul;
@@ -988,6 +990,7 @@ var LookAlive = (function () {
     var out = { runaway: false, energy: { used: 0, max: D.energy }, pace: [], slop: [], cards: cards, totals: [], chips: [], channels: ch, acid: null };
     function add(src, label, chips) { chips.forEach(function (c) { out.chips.push({ source: src, text: c }); }); cards.push({ id: src, label: label, chips: chips }); }
     out.pace = [Math.abs(bp.paceMult - 1) < 0.005 ? 'Births at the native rate' : 'Births ' + sgn(bp.paceMult - 1) + ' vs natives'];
+    if (D.temp && D.temp.nightHurry && bp.paceMult > (D.temp.hurryFrom || 1) + 0.005) out.pace.push('Fast cells starve sooner in the dark');
     // Runaway is read off a short dry run of the model itself (16 by 16), so the warning cannot disagree with what the dish then does.
     var ab = D.abundance, runaway = false;
     if (ab && ab.run) {

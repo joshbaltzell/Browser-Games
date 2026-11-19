@@ -6,10 +6,10 @@ var LookAliveLevels2 = (function () {
   var Lv = typeof LookAliveLevels !== 'undefined' ? LookAliveLevels : require('./levels.js');
 
   // ---------------------------------------------------------------- constants (HABITAT-2 section 3)
-  var M = { base: 45, width: 10, heatDeath: 0.10, grazeTop: 40, grazeRamp: 6, flow: 0.06, gripDiffuse: 0.7, rDiffuse: 0.055, o2Night: 0.9,
+  var M = { base: 45, width: 10, heatDeath: 0.10, grazeTop: 40, grazeRamp: 6, flow: 0.06, gripDiffuse: 0.7, rDiffuse: 0.055, o2Night: 0.9, nightHurry: 6, hurryFrom: 0.93,   // nightHurry: on night dishes the dark kills a cell faster the further its Pace multiplier is above hurryFrom (Pace 3)
             bands: { hot: 0.45, mat: 1.15, rim: 0.9, photoLo: 70, photoHi: 75, grazeLo: 36, grazeHi: 42 } };
   var BAND2 = { lo: 0.03, hi: 0.12, need: 0.7, warm: 30 };   // "Stay between 3% and 12% of the dish": your cell can only live in part of the water
-  var NIGHTS = { first: 50, period: 80, dur: 40, depth: 0.95, bustDeath: 0.09 };
+  var NIGHTS = { first: 50, period: 80, dur: 40, depth: 0.95, bustDeath: 0.12 };
   var GOAL2 = 'Stay between 3% and 12% of the dish, without the guards noticing you.';
 
   var NONE = { type: 'none', tick: -1, announce: -1, rMult: 0, aMult: 0, depth: 0, dur: 0, bustDeath: 0 };
@@ -24,7 +24,7 @@ var LookAliveLevels2 = (function () {
   function temp(hot, cool, graze, withNights, flow) {   // flow: optional per-dish current, else M.flow
     var o = { hot: hot, cool: cool, graze: graze || 0, base: M.base, width: M.width, heatDeath: M.heatDeath, grazeTop: M.grazeTop, grazeRamp: M.grazeRamp,
       flow: flow != null ? flow : M.flow, gripDiffuse: M.gripDiffuse, rDiffuse: M.rDiffuse, bands: M.bands };
-    if (withNights) o.o2Night = M.o2Night;
+    if (withNights) { o.o2Night = M.o2Night; o.nightHurry = M.nightHurry; o.hurryFrom = M.hurryFrom; }
     return o;
   }
 
@@ -58,6 +58,9 @@ var LookAliveLevels2 = (function () {
   var TIP_REGULAR = ['Your cells divided in step, and the inspector read that as a machine.', 'Look at the Division slot, the Sloppiness dial, and the Machine cards you added: a reflex rule that fires everywhere at once also looks like a machine.'];
   var FORECAST_LO = 1.15;   // the Growth forecast must clear the band floor by this factor to read Safe (the 32x32 forecast is optimistic against the 64x64 run)
   var TIP_STARVED = ['Your colony died out before the run ended.', 'It made too few cells to replace the ones it lost. Turn the Pace up, or take off a card that slows you and does nothing here.'];
+  // Night dishes: a faster Pace is not free there (the dark kills fast dividers sooner), so these two do not tell the player to turn it up.
+  var TIP_BELOW_NIGHT = ['Your colony is too small to stay in the band.', 'Take off a card that slows you and does nothing here. A faster Pace costs you in the dark, so look at the Reflex slot first.'];
+  var TIP_STARVED_NIGHT = ['Your colony died out before the run ended.', 'It made too few cells to replace the ones it lost. A faster Pace costs you in the dark, so look at the Reflex slot first.'];
   var TIP_OTHER = ['Something else is out of balance.', 'Open the autopsy: it names the card or control behind the problem.'];
   var TIP_COOKED_12 = ['Your cell is cooking in the hot middle.', 'Keep a heat card from the last dish.'];
 
@@ -69,7 +72,7 @@ var LookAliveLevels2 = (function () {
       show: { pace: true, slop: true, metabolism: true, reflex: { bio: BIO2, rule: true }, channels: o.channels,
         shelves: { biology: SHELF_BIO, machine: SHELF_MACHINE } },
       allowed: { metabolism: METAB2, parts: WORLD1_PARTS.concat(NEW_PARTS, motor ? MOTOR_PARTS : []), bio: BIO2, sensors: SENSORS2, actions: ACTIONS2 },
-      band: BAND2, event: NONE, forecastN: 32, forecastLoMult: FORECAST_LO, crashSafe: 0.024, world: 2,
+      band: BAND2, event: NONE, forecastN: 32, forecastLoMult: o.forecastLoMult || FORECAST_LO, crashSafe: 0.024, world: 2,
       temp: o.temp, tips: o.tips, tipFixes: o.tipFixes || {}, fixes: o.fixes || [],
       nbTitle: o.nbTitle, notebook: o.notebook, fieldNote: o.fieldNote, reading: o.reading, colony: o.colony };
     if (o.nights) { d.events = nights(d.ticks); d.event = d.events[0]; }
@@ -99,7 +102,7 @@ var LookAliveLevels2 = (function () {
       reading: 'The crowds here stand in heat that would cook ours. We think they are not braver than us. They are made of different stuff.',
       colony: 'We pay for heat the way we paid for acid: in growth.' }),
 
-    dish({ id: 12, title: 'The Comfortable End', energy: 5, slots: SLOTS.concat(['motor']), opens: ['motor'], stats: ['heat', 'growth', 'grazing', 'natural'], channels: CH_PLAIN, temp: temp(75, 30, 0.20, false, 0.05),
+    dish({ id: 12, title: 'The Comfortable End', energy: 5, slots: SLOTS.concat(['motor']), opens: ['motor'], stats: ['heat', 'growth', 'grazing', 'natural'], channels: CH_PLAIN, temp: temp(75, 30, 0.25, false, 0.065), forecastLoMult: 1.3,
       problem: 'A cell that settles where the water is comfortable is eaten.', goal: GOAL2,
       fixes: [
         { id: 'pili', label: 'Add Twitching pili (the Motor slot is open)', changes: { add: ['pili'] } },
@@ -122,13 +125,12 @@ var LookAliveLevels2 = (function () {
       problem: 'The light goes out every 80 ticks, and the water runs out of oxygen in the dark.', goal: 'Stay in the band through every night.',
       fixes: [
         { id: 'nightferm', label: 'Swap Sporulate for Night fermentation (Reflex)', changes: { reflex: { kind: 'bio', id: 'nightferm' } } },
-        { id: 'sos', label: 'Swap Sporulate for the SOS response (Reflex)', changes: { reflex: { kind: 'bio', id: 'sos' } } },
-        { id: 'naps', label: 'Add Random naps (Division) and Pace 4', heavy: true, changes: { add: ['naps'], set: { pace: 4 } } }
+        { id: 'sos', label: 'Swap Sporulate for the SOS response (Reflex)', changes: { reflex: { kind: 'bio', id: 'sos' } } }
       ],
-      tipFixes: { bust: ['nightferm', 'sos', 'naps'] },
+      tipFixes: { bust: ['nightferm', 'sos'] },
       tips: {
         bust: ['The light went out and your colony fell out of the band.', 'Sporulate is too slow for a dark that comes back every 80 ticks. Look at the Reflex slot for something that reacts to the dark itself.'],
-        cooked: TIP_COOKED_12, below: TIP_BELOW, overgrew: TIP_OVERGREW, starved: TIP_STARVED, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
+        cooked: TIP_COOKED_12, below: TIP_BELOW_NIGHT, overgrew: TIP_OVERGREW, starved: TIP_STARVED_NIGHT, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
       },
       nbTitle: 'Day and night in a mat',
       notebook: 'One millimetre inside a mat at Octopus Spring, about 55 C, the water after noon holds about 900 micromoles of oxygen per litre, far more than it can hold in balance with air, at pH 9.4. Before sunrise the same spot has no oxygen at all and pH 7.2. By day the cyanobacteria store sugar (glycogen); at night they ferment it into acetate and propionate, and the mat fixes nitrogen in the dark. Thermostichus also moves: it crawls toward light on thin threads called type IV pili.',
