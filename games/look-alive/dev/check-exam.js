@@ -261,7 +261,7 @@ module.exports = function (E) {
     const named = answers.filter(id => has(all, SHORT[id] || id));
     const para = all.match(/pause dividing|stop dividing|senses? hunger|count each other|head count|quorum/i);
     const problem = /crash/i.test(og) && /overgrowth|over the band|took over|too big/i.test(og) && /Sporulate raises your Growth/.test(og);
-    result(named.length === 0 && !para && problem, 'X12 THE DISH 8 HINT NAMES THE PROBLEM, NOT THE ANSWER', 'answer cards on the carried cell (' + words(c) + '): ' + (answers.map(id => SHORT[id] || id).join(', ') || 'none') + '; named in a dish 8 tip: ' + (named.map(id => SHORT[id] || id).join(', ') || 'none') + '; paraphrase found: ' + (para ? '"' + para[0] + '"' : 'none') + '; overgrowth tip names the overgrowth, the crashes and "Sporulate raises your Growth": ' + problem);
+    result(answers.length > 0 && named.length === 0 && !para && problem, 'X12 THE DISH 8 HINT NAMES THE PROBLEM, NOT THE ANSWER', 'answer cards on the carried cell (' + words(c) + '): ' + (answers.map(id => SHORT[id] || id).join(', ') || 'none') + '; named in a dish 8 tip: ' + (named.map(id => SHORT[id] || id).join(', ') || 'none') + '; paraphrase found: ' + (para ? '"' + para[0] + '"' : 'none') + '; overgrowth tip names the overgrowth, the crashes and "Sporulate raises your Growth": ' + problem);
   }
 
   // ---------------------------------------------------------------- X8 dishes 1 to 5 unchanged
