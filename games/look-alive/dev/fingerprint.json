@@ -1,0 +1,142 @@
+{
+ "1:carried": {
+  "win": false,
+  "cause": "acid",
+  "final": 0,
+  "H": "5e21b1b65e71567e",
+  "snaps": "4990fa78b72f5f83"
+ },
+ "1:winner": {
+  "win": true,
+  "cause": null,
+  "final": 0.253233,
+  "H": "6a998def665f6ecd",
+  "snaps": "f2d51ac4e0883853"
+ },
+ "2:carried": {
+  "win": false,
+  "cause": "exposed:casualties",
+  "final": 0.958202,
+  "H": "ec599cbe7e84dd78",
+  "snaps": "a87bcb250611f095"
+ },
+ "2:winner": {
+  "win": true,
+  "cause": null,
+  "final": 0.1407,
+  "H": "f6e920bc27bee0d9",
+  "snaps": "74e957ce80c7d619"
+ },
+ "3:carried": {
+  "win": false,
+  "cause": "exposed:waste",
+  "final": 0.106168,
+  "H": "5c041cf6a5075b8c",
+  "snaps": "9cb020d0ccc0d070"
+ },
+ "3:winner": {
+  "win": true,
+  "cause": null,
+  "final": 0.103022,
+  "H": "1e42af1b1248ed53",
+  "snaps": "fbcdd7365c143b58"
+ },
+ "4:carried": {
+  "win": false,
+  "cause": "exposed:regularity",
+  "final": 0.03924,
+  "H": "16565ea8cc460eaf",
+  "snaps": "137da61b5024ce0b"
+ },
+ "4:winner": {
+  "win": true,
+  "cause": null,
+  "final": 0.070944,
+  "H": "c42203f31615a3cd",
+  "snaps": "c03440103157ffb5"
+ },
+ "5:carried": {
+  "win": false,
+  "cause": "bust",
+  "final": 0.001893,
+  "H": "c27525396d4ca152",
+  "snaps": "c3209bd2817b9eef"
+ },
+ "5:winner": {
+  "win": true,
+  "cause": null,
+  "final": 0.05932,
+  "H": "9ab0b6736589278f",
+  "snaps": "05c4557e10ac1d9a"
+ },
+ "6:carried": {
+  "win": false,
+  "cause": "exposed:regularity",
+  "final": 0.044058,
+  "H": "6e9c5712982e403c",
+  "snaps": "344107b2d9e81d9a"
+ },
+ "6:winner": {
+  "win": true,
+  "cause": null,
+  "final": 0.075427,
+  "H": "911463738262a07e",
+  "snaps": "1a220fd86d189fd7"
+ },
+ "7:carried": {
+  "win": false,
+  "cause": "below",
+  "final": 0.034185,
+  "H": "f125b05f225f1836",
+  "snaps": "5fcb481375231a52"
+ },
+ "7:winner": {
+  "win": true,
+  "cause": null,
+  "final": 0.068183,
+  "H": "c86452ceccaaebe5",
+  "snaps": "8c727ecbdc9707b7"
+ },
+ "8:carried": {
+  "win": false,
+  "cause": "bust",
+  "final": 0.005248,
+  "H": "85408eb6eeca7eab",
+  "snaps": "e9e7d30e0befe3d6"
+ },
+ "8:winner": {
+  "win": true,
+  "cause": null,
+  "final": 0.081311,
+  "H": "2fd0d186797ac717",
+  "snaps": "cdf0d5bc56cbe483"
+ },
+ "9:carried": {
+  "win": false,
+  "cause": "exposed:regularity",
+  "final": 0.100843,
+  "H": "f73a3abf0c374344",
+  "snaps": "ed00b8ab5c7fad97"
+ },
+ "9:winner": {
+  "win": true,
+  "cause": null,
+  "final": 0.07404,
+  "H": "f994ce54eee8d67a",
+  "snaps": "a1c929088ec6a25d"
+ },
+ "10:carried": {
+  "win": false,
+  "cause": "starved",
+  "final": 0.000101,
+  "H": "bbcd02ee1e6c62e4",
+  "snaps": "74bc894848efd9dd"
+ },
+ "10:winner": {
+  "win": true,
+  "cause": null,
+  "final": 0.06251,
+  "H": "e7f992fcd22d4c6f",
+  "snaps": "53713fc56b0bc09a"
+ }
+}
