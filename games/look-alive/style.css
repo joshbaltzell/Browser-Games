@@ -497,3 +497,41 @@ canvas { display: block; }
   #undo { position: fixed; left: 8px; bottom: 8px; width: calc(38% - 12px); min-height: 52px; z-index: 25; }
   .tuning .energy { position: fixed; left: 10px; right: 10px; bottom: 64px; height: 16px; z-index: 25; }
 }
+
+/* ================= U1 tier 1 (wave 2, M2): tokens, panel chrome, patterned bars, line icons ================= */
+:root {
+  --vline: rgba(167,139,250,.34); --vline2: rgba(167,139,250,.62); --vglow: 0 0 0 1px rgba(167,139,250,.06), 0 0 24px rgba(120,100,230,.10);
+  --rad: 14px; --paper: #efe6d0; --paper2: #e3d8bd; --pink-ink: #2b2418; --paper-dim: #5a4a2e; --paper-key: #7a4a00;
+  --stamp-red: #b3202e; --stamp-grn: #1d6b4a; --chalk: #f2efe6; --c-acid: #c8d23a;
+}
+.panel:not(.cellpanel) { border-color: var(--vline); border-radius: var(--rad); box-shadow: var(--vglow); background-image: linear-gradient(180deg, rgba(24,20,48,.45), rgba(9,11,18,0) 60%); }
+.cellpanel { border-color: var(--vline); border-radius: var(--rad); }
+.ptitle { color: #9aa0b8; }
+.runR .ptitle::before, .forecast .ptitle::before { content: "\2022\2022\2022"; letter-spacing: 2px; color: var(--vio); margin-right: 8px; }
+#stepbar li { border-color: var(--vline); border-radius: 999px; }
+#stepbar li.on { box-shadow: 0 0 16px rgba(255,107,149,.35); }
+.dishcanvas.gl { box-shadow: 0 0 0 3px #1b1f3a, 0 0 0 4px var(--vline2), 0 0 26px 4px rgba(120,100,230,.28); }
+
+/* stat bars: pattern in the danger ends, opaque safe zone, line icon per stat */
+.sb-track { height: 14px; margin: 1px 0 2px; border-radius: 7px; border-color: var(--vline); background-color: #121426; background-repeat: repeat; overflow: hidden; }
+.sb-zone { background: linear-gradient(rgba(45,212,167,.34), rgba(45,212,167,.34)), #0e1c1c; border-left: 1px solid var(--grn); border-right: 1px solid var(--grn); }
+.sb-mark, .sb-ghost { top: -3px; height: 18px; }
+.sb[data-stat="acid"]    { --sc: var(--c-acid); --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5C8 1.5 3 7.5 3 10.5a5 5 0 0 0 10 0C13 7.5 8 1.5 8 1.5z' fill='none' stroke='%23000' stroke-width='1.6'/%3E%3Ccircle cx='6.6' cy='10.6' r='1.3'/%3E%3C/svg%3E"); }
+.sb[data-stat="growth"]  { --sc: var(--pink); --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M2 2v12h12'/%3E%3Cpath d='M4 12C8 11.5 10.5 8 13 3.5'/%3E%3Cpath d='M10.5 3.5H13V6'/%3E%3C/svg%3E"); }
+.sb[data-stat="smell"]   { --sc: var(--amb); --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M5 14c-2-3 2-4 0-7s1-4 0-6'/%3E%3Cpath d='M10.5 14c-2-3 2-4 0-7s1-4 0-6'/%3E%3C/svg%3E"); }
+.sb[data-stat="natural"] { --sc: var(--cy); --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linejoin='round' stroke-linecap='round'%3E%3Cpath d='M4.5 14.5h7L9.6 1.5H6.4z'/%3E%3Cpath d='M8 11l3.6-6.5'/%3E%3C/svg%3E"); }
+.sb[data-stat="crash"]   { --sc: var(--vio); --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M1.8 11.2L6.4 8.6'/%3E%3Cpath d='M9.6 7.4L14.2 4.8'/%3E%3Cpath d='M8 3.2v1.6M8 11.2v1.6M5.2 4.2l.8 1.1M10 10.7l.8 1.1' stroke-width='1.1'/%3E%3C/svg%3E"); }
+.sb[data-stat="acid"] .sb-track    { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 0L8 8M8 0L0 8' stroke='%23c8d23a' stroke-opacity='.6' stroke-width='1'/%3E%3C/svg%3E"); }
+.sb[data-stat="growth"] .sb-track  { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M-2 10L10 -2M-2 2L2 -2M6 10L10 6' stroke='%23ff6b95' stroke-opacity='.6' stroke-width='1.6'/%3E%3C/svg%3E"); }
+.sb[data-stat="smell"] .sb-track   { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Ccircle cx='3' cy='3' r='1.3' fill='%23f5a524' fill-opacity='.75'/%3E%3C/svg%3E"); }
+.sb[data-stat="natural"] .sb-track { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14'%3E%3Cpath d='M0 9.5L2.5 4.5L5 9.5L7.5 4.5L10 9.5' fill='none' stroke='%235fd0ff' stroke-opacity='.65' stroke-width='1.2'/%3E%3C/svg%3E"); }
+.sb[data-stat="crash"] .sb-track   { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='14'%3E%3Cpath d='M0 7Q3 3 6 7T12 7' fill='none' stroke='%23a78bfa' stroke-opacity='.7' stroke-width='1.2'/%3E%3C/svg%3E"); }
+.sb-name::before { content: ""; display: inline-block; width: 13px; height: 13px; margin-right: 5px; vertical-align: -2px; background: var(--sc, currentColor); -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat; }
+.sb.unchecked .sb-track { background-image: none; }
+
+/* legend: shape + colour, never colour alone */
+.legend .sw { width: 14px; height: 14px; border-radius: 0; vertical-align: -3px; -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat; }
+.legend .sw.vio  { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1.5' y='5.5' width='13' height='5' rx='2.5' fill='none' stroke='%23000' stroke-width='1.6' transform='rotate(-30 8 8)'/%3E%3C/svg%3E"); }
+.legend .sw.pink { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.2' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Ccircle cx='8' cy='8' r='3'/%3E%3C/svg%3E"); }
+.legend .sw.amb  { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M5 14c-2-3 2-4 0-7s1-4 0-6'/%3E%3Cpath d='M10.5 14c-2-3 2-4 0-7s1-4 0-6'/%3E%3C/svg%3E"); }
+.legend .sw.grn  { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 2c3 0 5.5 2 5.5 5.2 0 1.6 1.2 2.4.6 4-.9 2.3-3.6 2.8-6.1 2.8S2.8 13.2 2.3 11c-.4-1.6.6-2.2.6-3.8C2.9 4 5 2 8 2z' fill='none' stroke='%23000' stroke-width='1.6'/%3E%3Ccircle cx='8' cy='8' r='1.8'/%3E%3C/svg%3E"); }
