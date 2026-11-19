@@ -24,7 +24,16 @@ var LookAliveRender = (function () {
     glint: 1.0, pulseSize: 0.22, pulseGlow: 0.9,
     zoomMax: 16, jumpZoom: 2.1,
     bloom: 0.35, bloomThr: 0.8, vignette: 1, chroma: 1, grain: 1,
-    slowMs: 30, slowFrames: 50
+    slowMs: 30, slowFrames: 50,
+    // native species (visual only; the sim has one native field). [Lactobacillus, Streptococcus, Helicobacter pylori] by dish id; 0 = default
+    speciesMix: { 0: [0.45, 0.35, 0.20], 1: [0.50, 0.30, 0.20], 6: [0.36, 0.30, 0.34], 9: [0.40, 0.40, 0.20], 10: [0.34, 0.33, 0.33] },
+    lacHl: [1.4, 1.2], lacSeg2: 0.35, lacR: 0.85, chainGap: 0.16,     // long rods, 35% in chains of two; gap between links (x radius)
+    strSegs: [2, 2, 3, 4], strPitch: 0.92, strR: 0.95,               // cocci: half pairs, the rest chains of 3 or 4; centre spacing (x diameter)
+    helHl: [1.6, 0.8], helR: 0.8, helAmp: 0.55, helWaves: 1.6, helTuft: 0.85,   // curved spiral rods; 85% carry a tuft of 3 tails at one end
+    spAreaK: 1.065,                                                   // one-shot fudge if the pink:violet ratio check misses
+    granS: 0.85, tailW: 0.75,                                        // crisper native granules and tails
+    bokehCut: 0.55, bokehZ0: 2.5, bokehZ1: 6,                        // less milky veil of out-of-focus bokeh discs when zoomed in
+    beacon: 1, beaconR: 0.09, beaconZ0: 1.15, beaconZ1: 1.8          // the ringed pink disc on your colony at zoom 1 (mock-up 04); 0 = off
   };
 
   var INT_RE = /^i[A-Z]/;
@@ -115,7 +124,7 @@ var LookAliveRender = (function () {
     '  float tail=aC.w*rpx*4.4;',
     '  float ee=uEE>0.?uEE:max(2.,.07*rpx);',
     '  float pad=2.5+b*1.5+ee*3.*step(.5,uEnv)+rpx*.6*step(.5,uHead+uShell+uPump);',
-    '  float ex=hpx+rpx+tail+pad, ey=rpx+pad+(aC.w>.5?rpx*.75:0.)+(aB.x<.5?rpx*.55:0.);',
+    '  float ex=hpx+rpx+tail+pad, ey=rpx+pad+(aC.w>.5?rpx*(aD.w>2.5?1.5:.75):0.)+(aB.x<.5?rpx*(aD.w>2.5?1.15:.55):0.);',
     '  if(aB.x>1.5&&aB.x<2.5){ex=rpx*1.5+pad;ey=ex;}',
     '  vec2 p=aCorner*vec2(ex,ey);',
     '  vec2 pos=(aA.xy-uCen)*uScale+.5*uRes;',
@@ -129,6 +138,7 @@ var LookAliveRender = (function () {
     '#version 300 es', 'precision highp float; precision highp int;',
     'in vec2 vP; in float vR,vHs,vBlur,vDep,vPh; flat in float vSp; in vec4 vC,vD;',
     'uniform float uTime,uGranK,uEnv,uCloud,uScale,uEE,uTight,uPump,uShell,uAcidIn,uSync,uHead,uReflex,uCore,uRefA,uPulse,uPort,uPG,uGlint;',
+    'uniform float uHelAmp,uHelWaves,uTailW,uChainGap,uStrPitch,uGranS,uBokK;',
     'out vec4 o;', GL_COMMON,
     'float hexd(vec2 p,float r){p=abs(p);return max(p.x*.8660254+p.y*.5,p.y)-r*.8660254;}',
     'void main(){',
@@ -147,6 +157,7 @@ var LookAliveRender = (function () {
     '  float rr=r*(1.-.3*dis)*(1.-.3*eng);',
     '  float h2=vHs*(1.+.9*pin)+r*.9*pin;',
     '  float d; vec2 g; vec2 wp=vP;',
+    '  float h2f=h2, fm=vD.w, nsg=max(vC.z,1.), phs=vPh;',
     '  if(imm){',
     '    float a=atan(vP.y,vP.x);',
     '    float w=1.+.15*sin(3.*a+uTime*1.6+vPh*20.)+.09*sin(5.*a-uTime*2.3+vPh*9.)+.05*sin(2.*a+uTime*.8);',
@@ -160,6 +171,9 @@ var LookAliveRender = (function () {
     '      wp.y=vP.y-nv*rr*bnd*(u1*u1-.33);',
     '      float aw=atan(wp.y,vP.x-clamp(vP.x,-h2,h2));',
     '      wob=1.+nv*(.10*sin(aw*2.+vPh*40.)+.07*sin(aw*3.+vPh*17.)+.10*(h11(vPh*9.1)-.5)*u1);',
+    '      if(fm>2.5){ wp.y-=rr*uHelAmp*sin(u1*3.14159*uHelWaves+vPh*6.283); }',
+    '      else if(fm>1.5){ float P2=2.*rr*uStrPitch, hf=(nsg-1.)*.5*P2; float k=clamp(floor((vP.x+hf)/P2+.5),0.,nsg-1.); wp.x=vP.x+hf-k*P2; h2=0.; phs=vPh+k*.173; wob=1.+nv*.05*sin(atan(wp.y,wp.x)*3.+phs*20.); }',
+    '      else if(fm>.5&&nsg>1.5){ float gg=rr*uChainGap, P1=(2.*(h2+rr)+gg)/nsg; float k=clamp(floor((vP.x+h2+rr+gg*.5)/P1),0.,nsg-1.); wp.x=vP.x+h2+rr+gg*.5-(k+.5)*P1; h2=max(P1*.5-gg*.5-rr,0.); phs=vPh+k*.173; }',
     '    }',
     '    float x=clamp(wp.x,-h2,h2); vec2 q=vec2(wp.x-x,wp.y); float L=length(q)+1e-4;',
     '    float pr=(1.-.82*pin*pin*exp(-sq(vP.x/(.42*(h2+rr)+1.))))*wob;',
@@ -171,7 +185,7 @@ var LookAliveRender = (function () {
     '  if(rr<3.2&&bl<2.5){',
     '    float rm=exp(-sq((d+.9)/max(1.,.12*rr+bl*.5)));',
     '    vec3 cs=col*(fill*.2+rm*.6)*(1.-.45*dorm);',
-    '    if(sp<.5){ float cn=exp(-sq(vP.x/(h2*.5+rr*.7))-sq(vP.y/(rr*.55))); cs=col*(fill*(.34-.14*cn*0.)+rm*.62+cn*fill*.16*smoothstep(2.2,3.2,rr))*(1.-.45*dorm); }',
+    '    if(sp<.5){ float cn=exp(-sq(wp.x/(h2*.5+rr*.7))-sq(wp.y/(rr*.55))); cs=col*(fill*(.34-.14*cn*0.)+rm*.62+cn*fill*.16*smoothstep(2.2,3.2,rr))*(1.-.45*dorm); }',
     '    float vs=1.; if(uCloud>.5) vs=smoothstep(2.,4.5,rr+h2);',
     '    float kp=1.-dis;',
     '    o=vec4(cs*(1.-fade)*vs*kp*(1.+uPG*.6*uPulse*float(rob)),1.);return;',
@@ -184,10 +198,10 @@ var LookAliveRender = (function () {
     '  if(!rob||uPort>.5){',
     '    for(int i=0;i<6;i++){',
     '      float fi=float(i);',
-    '      vec2 gp=vec2((h11(vPh*13.1+fi)-.5)*2.*(h2+rr*.5),(h11(vPh*7.7+fi*3.1)-.5)*rr*1.0);',
-    '      gp+=.12*rr*vec2(sin(uTime*.35+fi*2.1+vPh*9.),cos(uTime*.3+fi*1.7+vPh*5.));',
-    '      float gs=rr*(.09+.12*h11(vPh*3.3+fi*5.))+.5;',
-    '      vec2 dd=vP-gp; gran+=exp(-dot(dd,dd)/(gs*gs));',
+    '      vec2 gp=vec2((h11(phs*13.1+fi)-.5)*2.*(h2+rr*.5),(h11(phs*7.7+fi*3.1)-.5)*rr*1.0);',
+    '      gp+=.12*rr*vec2(sin(uTime*.35+fi*2.1+phs*9.),cos(uTime*.3+fi*1.7+phs*5.));',
+    '      float gs=(rr*(.09+.12*h11(phs*3.3+fi*5.))+.5)*uGranS;',
+    '      vec2 dd=wp-gp; gran+=exp(-dot(dd,dd)/(gs*gs));',
     '    }',
     '  }',
     '  float latt=0.,seamLine=0.;',
@@ -200,11 +214,11 @@ var LookAliveRender = (function () {
     '  }',
     '  float att=1./(1.+sq(bl/(rr+2.))*.9);',
     '  float mB=smoothstep(2.5,14.,bl);',
-    '  float Rd=rr+h2*.6+bl*.55;',
+    '  float Rd=rr+h2f*.6+bl*.55;',
     '  float db=length(vP)-Rd; float sb=1.+Rd*.16;',
     '  float fillB=1.-smoothstep(-sb,sb,db);',
     '  float ringB=exp(-sq((db+sb*.8)/(sb*.9)));',
-    '  float areaK=clamp(rr*(rr+h2)*2.4/(Rd*Rd),.03,1.);',
+    '  float areaK=clamp(rr*(rr+h2f)*2.4/(Rd*Rd),.03,1.);',
     '  float rimW=max(1.,.10*rr)*(rob?1.+1.1*uTight:1.)+bl*.5;',
     '  float rim=exp(-sq((d+rimW*.8)/rimW));',
     '  float spec=pow(max(dot(-g,normalize(vec2(-.55,-.85))),0.),6.)*rim;',
@@ -215,9 +229,9 @@ var LookAliveRender = (function () {
     '  if(sp<.5){',
     '    float nd=smoothstep(2.6,5.,rr);',
     '    float bodyG=.06+.34*pow(1.-t,2.);',
-    '    float nuc=exp(-sq(wp.y/(rr*.38))-sq((vP.x-(h11(vPh*2.9)-.5)*h2*.8)/(max(h2,rr*.5)*.55+rr*.35)));',
+    '    float nuc=exp(-sq(wp.y/(rr*.38))-sq((vP.x-(h11(phs*2.9)-.5)*h2*.8)/(max(h2,rr*.5)*.55+rr*.35)));',
     '    float gn=0.;',
-    '    for(int i=0;i<5;i++){ float fi=float(i); vec2 gq=vec2((h11(vPh*17.3+fi*2.7)-.5)*2.*(h2+rr*.45),(h11(vPh*11.1+fi*4.3)-.5)*rr*.95); gq+=.1*rr*vec2(sin(uTime*.4+fi*2.3+vPh*7.),cos(uTime*.33+fi*1.9+vPh*3.)); vec2 gd=wp-gq; float gz=rr*(.12+.10*h11(vPh*4.7+fi*3.7))+.4; gn+=exp(-dot(gd,gd)/(gz*gz)); }',
+    '    for(int i=0;i<5;i++){ float fi=float(i); vec2 gq=vec2((h11(phs*17.3+fi*2.7)-.5)*2.*(h2+rr*.45),(h11(phs*11.1+fi*4.3)-.5)*rr*.95); gq+=.1*rr*vec2(sin(uTime*.4+fi*2.3+phs*7.),cos(uTime*.33+fi*1.9+phs*3.)); vec2 gd=wp-gq; float gz=(rr*(.12+.10*h11(phs*4.7+fi*3.7))+.4)*uGranS; gn+=exp(-dot(gd,gd)/(gz*gz)); }',
     '    nb=(col*4.*(bodyG*(.6+.8*mot)+nuc*.1)*fill+mix(col,vec3(1.),.5)*gn*fill*1.3*smoothstep(.12,.45,t))*nd*(1.-.65*dorm);',
     '    nb+=col*fill*.05*(1.-nd);',
     '  }',
@@ -225,7 +239,7 @@ var LookAliveRender = (function () {
     '   +(rimc*(rim*.78*(1.+.5*dorm+1.1*uPort)+edgeGlow*.7)+vec3(spec)*.22)',
     '   +colI*fill*(.03+.12*pow(1.-t,1.5))*mix(.45+1.1*mot,.75+.45*mot,uPort)*mix(.6,1.,lodv)*(1.+1.3*big+(rob?0.:1.6)*smoothstep(4.,10.,rr))*(1.-.65*dorm)',
     '   +mix(rob?vec3(1.,.62,.2):col,vec3(1.),.4)*(gran*(.55+.6*big))*fill*lodv*uGranK',
-    '   +col*fill*exp(-sq(vP.y/(rr*.55)))*sq(sq(clamp(1.-abs(vP.x)/(h2+rr*.9),0.,1.)))*.07*big*(rob?0.:1.);',
+    '   +col*fill*exp(-sq(wp.y/(rr*.55)))*sq(sq(clamp(1.-abs(wp.x)/(h2+rr*.9),0.,1.)))*.07*big*(rob?0.:1.);',
     '  if(rob){',
     '    s+=mix(col,vec3(1.),.3)*latt*fill*(.55+.5*uSync-.35*uPort)*lodv*uGranK*dk*(1.+.6*uSync*uPulse);',
     '    s+=mix(col,vec3(1.),.55)*seamLine*(seam+.55*uSync+.16*uPort)*fill*1.25*lodv*dk;',
@@ -259,16 +273,19 @@ var LookAliveRender = (function () {
     '    }',
     '    s*=1.+uPG*uPulse;',
     '  }',
-    '  vec3 bok=col*(fillB*.30+ringB*.55)*areaK*.42;',
+    '  vec3 bok=col*(fillB*.30+ringB*.55)*areaK*.42*uBokK;',
     '  if(tailF>.5){',
-    '    float s0=-vP.x-(h2+rr*.78); float Lt=rr*4.;',
-    '    if(s0>0.&&s0<Lt){',
-    '      float u2=s0/Lt; float amp=rr*.45*(.25+u2);',
-    '      float yc=amp*sin(s0/(rr*1.15)-uTime*5.5+vPh*6.28);',
-    '      float tw=max(.55,.10*rr)*(1.-.45*u2)+bl*.6;',
-    '      float tv=exp(-sq((vP.y-yc)/tw))*(1.-u2*u2)*smoothstep(2.5,6.,rr)*att;',
-    '      vec3 tc=rob?C_AMB:mix(col,vec3(1.),.35);',
-    '      s+=tc*tv*.85;',
+    '    float nt=(sp<.5&&fm>2.5)?3.:1.;',
+    '    for(int k=0;k<3;k++){ float fk=float(k); if(fk>=nt) break;',
+    '      float ao=(fk-(nt-1.)*.5)*.30; vec2 pv=vP+vec2(h2f+rr*.78,0.); pv=vec2(cos(ao)*pv.x+sin(ao)*pv.y,-sin(ao)*pv.x+cos(ao)*pv.y);',
+    '      float s0=-pv.x; float Lt=rr*4.;',
+    '      if(s0>0.&&s0<Lt){',
+    '        float u2=s0/Lt; float amp=rr*.45*(.25+u2)*(nt>1.?.7:1.);',
+    '        float yc=amp*sin(s0/(rr*1.15)-uTime*5.5+vPh*6.28+fk*1.7);',
+    '        float tw=(max(.55,.10*rr)*(1.-.45*u2)+bl*.6)*(rob?1.:uTailW)*(nt>1.?.75:1.);',
+    '        float tv=exp(-sq((pv.y-yc)/tw))*(1.-u2*u2)*smoothstep(2.5,6.,rr)*att;',
+    '        vec3 tc=rob?C_AMB:mix(col,vec3(1.),.35); s+=tc*tv*(nt>1.?.6:.85);',
+    '      }',
     '    }',
     '  }',
     '  vec3 rgb=mix(s*att,bok,mB);',
@@ -343,7 +360,8 @@ var LookAliveRender = (function () {
     '  float amp=clamp(vR*vR*.9/((vR+vB)*(vR+vB)+1.),.05,1.);',
     '  vec3 c=vH<.5?vec3(.72,.78,1.):(vH<.8?vec3(.96,.65,.14):vec3(.65,.55,.98));',
     '  float I;',
-    '  if(vKind>1.5){ I=ring*.9+fill*.05; vec2 hp=vP-vec2(-.3,-.3)*vR; I+=exp(-dot(hp,hp)/(vR*vR*.05+.5))*.7*smoothstep(2.,5.,vR); c=vec3(1.,.85,.5); }',
+    '  if(vKind>2.5){ float rw=max(.9,vR*.09); float rg=exp(-((d+vR*.14)*(d+vR*.14))/(rw*rw)); float core=exp(-dot(vP,vP)/(vR*vR*.06+1.)); float halo=exp(-max(d,0.)/(vR*.45+1.)); c=vec3(1.,.42,.58); I=rg*1.15+core*.85+halo*.25; }',
+    '  else if(vKind>1.5){ I=ring*.9+fill*.05; vec2 hp=vP-vec2(-.3,-.3)*vR; I+=exp(-dot(hp,hp)/(vR*vR*.05+.5))*.7*smoothstep(2.,5.,vR); c=vec3(1.,.85,.5); }',
     '  else if(vB<1.5){ I=fill*.7+ring*.2; }',
     '  else { I=fill*.28+ring*.5; }',
     '  I*=amp*vAl;',
@@ -489,7 +507,7 @@ var LookAliveRender = (function () {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.cellBuf); if (n) gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.inst, 0, n * 16);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.speckBuf); if (ns) gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.spk, 0, ns * 8);
     if (P.field) { gl.bindTexture(gl.TEXTURE_2D, this.fieldTex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FG, FG, gl.RGBA, gl.UNSIGNED_BYTE, P.field); }
-    var b = P.bld || {};
+    var b = P.bld || {}, sp = P.sp || SP0;
     var common = { uRes: [W, H], uCen: [P.cx, P.cy], uScale: P.sc, uFocus: P.focus, uK: P.K, uTol: P.tol, uZoom: P.zoom, uDepth: P.depth, uTime: P.time };
     if (this.timer && !this.qBusy) { q = gl.createQuery(); gl.beginQuery(this.timer.TIME_ELAPSED_EXT, q); }
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
@@ -504,7 +522,8 @@ var LookAliveRender = (function () {
     if (P.cloud && n) { this.U(this.pCloud, Object.assign({}, common, { uCloudK: P.cloudK })); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n); }
     this.U(this.pCell, Object.assign({}, common, {
       uGranK: 1, uEnv: b.env || 0, uCloud: P.cloud ? 1 : 0, uEE: b.ee || 0, uTight: b.tight || 0, uPump: b.pump || 0, uShell: b.shell || 0, uAcidIn: b.acidIn || 0, uSync: b.sync || 0,
-      uHead: b.head || 0, uReflex: b.reflex || 0, uCore: b.core || 0, uRefA: b.refA || 0, uPulse: P.pulse || 0, uPG: P.pulseGlow == null ? 0.3 : P.pulseGlow, uGlint: P.glint || 0, uPort: this.mode === 'portrait' ? 1 : 0
+      uHead: b.head || 0, uReflex: b.reflex || 0, uCore: b.core || 0, uRefA: b.refA || 0, uPulse: P.pulse || 0, uPG: P.pulseGlow == null ? 0.3 : P.pulseGlow, uGlint: P.glint || 0, uPort: this.mode === 'portrait' ? 1 : 0,
+      uHelAmp: sp.helAmp, uHelWaves: sp.helWaves, uTailW: sp.tailW, uChainGap: sp.gap, uStrPitch: sp.strPitch, uGranS: sp.granS, uBokK: sp.bokK
     }));
     if (n) gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
     if (ns) { gl.bindVertexArray(this.vaoSpeck); this.U(this.pSpeck, common); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, ns); }
@@ -544,6 +563,7 @@ var LookAliveRender = (function () {
   };
 
   // ---------------------------------------------------------------- build features -> shader flags
+  var SP0 = { helAmp: 0, helWaves: 0, tailW: 1, gap: 0.16, strPitch: 0.92, granS: 1, bokK: 1 };
   function buildFlags(slots, mach) {
     var env = (slots && slots.envelope) || [], b = { env: 0, tight: 0, pump: 0, shell: 0, acidIn: 0, sync: 0, head: 0, reflex: 0, core: 0 };
     if (!slots) return b;
@@ -636,7 +656,7 @@ var LookAliveRender = (function () {
     function species(spc, kb, mn, maskFn) {
       var cap = Math.ceil(kb * cells / mn * 1.2) + 64, o = {
         x: new Float32Array(cap), y: new Float32Array(cap), ci: new Uint16Array(cap), th: new Float32Array(cap), ph: new Float32Array(cap), sz: new Float32Array(cap), dep: new Float32Array(cap),
-        hl: new Float32Array(cap), ang: new Float32Array(cap), g4: new Float32Array(cap), g1: new Float32Array(cap), g2: new Float32Array(cap), g3: new Float32Array(cap), tail: new Uint8Array(cap), n: 0
+        hl: new Float32Array(cap), ang: new Float32Array(cap), g4: new Float32Array(cap), g1: new Float32Array(cap), g2: new Float32Array(cap), g3: new Float32Array(cap), tail: new Uint8Array(cap), su: new Float32Array(cap), sv: new Float32Array(cap), sw: new Float32Array(cap), n: 0
       }, c;
       for (c = 0; c < n * n; c++) {
         var col = c % n, row = (c / n) | 0, mx = (col + 0.5) / n * 2 - 1, my = (row + 0.5) / n * 2 - 1;
@@ -648,6 +668,7 @@ var LookAliveRender = (function () {
           if (rr > 1.0 || acc > maskFn(px, py) || o.n >= cap) continue;
           var i2 = o.n++;
           o.x[i2] = px; o.y[i2] = py; o.ci[i2] = c; o.th[i2] = th; o.ph[i2] = ph; o.sz[i2] = sz; o.ang[i2] = a; o.g1[i2] = h1; o.g2[i2] = h2; o.g3[i2] = h3; o.g4[i2] = h4;
+          o.su[i2] = hash32(c, q, 7001) / 4294967296; o.sv[i2] = hash32(c, q, 7002) / 4294967296; o.sw[i2] = hash32(c, q, 7003) / 4294967296;
           if (spc === 0) {
             o.dep[i2] = clamp(0.5 + dp * 0.12, 0, 1); var coc = hl < 0.25; o.hl[i2] = coc ? sd * 0.25 : 0.8 + 1.5 * sd; o.tail[i2] = t1 < 0.3 ? 1 : 0;
           } else { o.dep[i2] = clamp(0.5 + dp * 0.016, 0, 1); o.hl[i2] = hl * 0.12; o.tail[i2] = 0; }
@@ -684,12 +705,14 @@ var LookAliveRender = (function () {
     this.fieldBuf = { N: new Float32Array(n * n), R: new Float32Array(n * n), W: new Float32Array(n * n), F: new Float32Array(n * n), Z: new Float32Array(n * n) };
     this.pN = new Float32Array(n * n); this.pR = new Float32Array(n * n); this.pF = new Float32Array(n * n); this.dz = new Float32Array(n * n);
     this.tickKey = -1;
+    this.assignSpecies();
   };
 
   // ---- the run
   Dish.prototype.setRun = function (run, dish, build, extra) {
     extra = extra || {};
     this.run = run; this.D = dish; this.build = build; this.slots = extra.slots || null; this.mach = extra.machine || 0; this.bf = buildFlags(this.slots, this.mach);
+    this.assignSpecies();
     var H = run.H, T = run.T, n = run.n, nn = n * n, S = run.snaps, k, t, i;
     this.T = T; this.tickKey = -1;
     this.agg = S.map(function (sn) {
@@ -724,6 +747,33 @@ var LookAliveRender = (function () {
   Dish.prototype.setTick = function (t) { this.tick = t; };
 
   Dish.prototype.resetView = function () { this.view.cx = 0; this.view.cy = 0; this.view.zoom = 1; this.zoomAnim = null; };
+  // Visual species by identity hash: the same individual is always the same species, across scrub, zoom, tier and replay.
+  // Radii are scaled so the mean drawn area equals the old mean (chains are longer), so the on-screen pink:violet balance holds.
+  Dish.prototype.assignSpecies = function () {
+    var S = this.nat, n = S.n, id = this.D ? this.D.id : 0, mix = TUNE.speciesMix[id] || TUNE.speciesMix[0], j, a0 = 0, a1 = 0, PI = Math.PI;
+    var F = new Uint8Array(n), G = new Uint8Array(n), HL = new Float32Array(n), RK = new Float32Array(n), TL = new Uint8Array(n);
+    for (j = 0; j < n; j++) {
+      var u = S.su[j], v = S.sv[j], w = S.sw[j], r0 = 0.8 + 0.5 * S.sz[j], r2 = r0 * r0, an;
+      a0 += r2 * (PI + 4 * S.hl[j]);
+      if (u < mix[0]) {                                   // Lactobacillus
+        var segs = w < TUNE.lacSeg2 ? 2 : 1, hs = TUNE.lacHl[0] + TUNE.lacHl[1] * v, g = TUNE.chainGap;
+        F[j] = 1; G[j] = segs; RK[j] = TUNE.lacR; HL[j] = segs * (hs + 1 + g / 2) - g / 2 - 1; TL[j] = 0; an = segs * (PI + 4 * hs);
+      } else if (u < mix[0] + mix[1]) {                   // Streptococcus
+        var sg = TUNE.strSegs[Math.min(TUNE.strSegs.length - 1, (v * TUNE.strSegs.length) | 0)];
+        F[j] = 2; G[j] = sg; RK[j] = TUNE.strR; HL[j] = (sg - 1) * TUNE.strPitch; TL[j] = 0; an = sg * PI;
+      } else {                                            // Helicobacter pylori
+        F[j] = 3; G[j] = 1; RK[j] = TUNE.helR; HL[j] = TUNE.helHl[0] + TUNE.helHl[1] * v; TL[j] = w < TUNE.helTuft ? 1 : 0; an = PI + 4 * HL[j];
+      }
+      a1 += r2 * RK[j] * RK[j] * an;
+    }
+    var k = Math.sqrt(a0 / Math.max(1e-6, a1)) * TUNE.spAreaK;
+    for (j = 0; j < n; j++) RK[j] *= k;
+    this.natForm = F; this.natSeg = G; this.natHl = HL; this.natRK = RK; this.natTail = TL; this.spK = k;
+  };
+  Dish.prototype.colonyAtSmooth = function (t) {   // like colonyAt, interpolated between snapshots so the beacon glides
+    var n = this.agg.length, x = clamp(t / 10, 0, n - 1), i = Math.floor(x), j = Math.min(n - 1, i + 1), f = x - i, a = this.agg[i], b = this.agg[j];
+    return [a.cx + (b.cx - a.cx) * f, a.cy + (b.cy - a.cy) * f];
+  };
   Dish.prototype.colonyAt = function (t) {
     var si = Math.min(this.agg.length - 1, Math.floor(t / 10)), a = this.agg[si];
     return a ? [a.cx, a.cy] : [0, 0];
@@ -849,6 +899,7 @@ var LookAliveRender = (function () {
     this.thin = [thinN, thinR]; this.vis = [cntN, cntR];
     var compN = 1, compR = 1;
     // natives
+    if (!noCull) this.shapeCounts = { lacto: 0, strep: 0, helico: 0 };
     for (j = 0; j < S.n && n < cap; j++) {
       q = this.pN[S.ci[j]]; th = S.th[j]; vis = clamp((q - th + TUNE.deathMargin) / (0.22 * q + 0.004 + TUNE.deathMargin), 0, 1); if (vis <= 0.04 || S.g4[j] > thinN) continue;
       x = S.x[j]; y = S.y[j];
@@ -857,10 +908,11 @@ var LookAliveRender = (function () {
       if (jit) { wander(S, j); x += DX; y += DY; }
       if (!noCull && (x < X0 || x > X1 || y < Y0 || y > Y1)) continue;
       vis = Math.min(1, (q - th) / (0.22 * q + 0.004));
-      o = n * 16; inst[o] = x; inst[o + 1] = y; inst[o + 2] = rN * compN * (0.8 + 0.5 * S.sz[j]) * (0.12 + 0.88 * Math.pow(vis, 0.7)) * clamp((thinN - S.g4[j]) / 0.08 + 0.3, 0.3, 1); inst[o + 3] = S.ang[j] + (jit ? 0.25 * Math.sin(tm * 0.2 + S.ph[j] * 30) : 0);
-      inst[o + 4] = 0; inst[o + 5] = S.dep[j]; inst[o + 6] = S.ph[j]; inst[o + 7] = S.hl[j];
-      inst[o + 8] = 0; inst[o + 9] = 0; inst[o + 10] = 0; inst[o + 11] = S.tail[j]; inst[o + 12] = crashFade * (0.6 + 0.4 * S.g3[j]); inst[o + 13] = 0; inst[o + 14] = 0; inst[o + 15] = 0;
+      o = n * 16; inst[o] = x; inst[o + 1] = y; inst[o + 2] = rN * compN * (0.8 + 0.5 * S.sz[j]) * (0.12 + 0.88 * Math.pow(vis, 0.7)) * clamp((thinN - S.g4[j]) / 0.08 + 0.3, 0.3, 1) * this.natRK[j]; inst[o + 3] = S.ang[j] + (jit ? 0.25 * Math.sin(tm * 0.2 + S.ph[j] * 30) : 0);
+      inst[o + 4] = 0; inst[o + 5] = S.dep[j]; inst[o + 6] = S.ph[j]; inst[o + 7] = this.natHl[j];
+      inst[o + 8] = 0; inst[o + 9] = 0; inst[o + 10] = this.natSeg[j]; inst[o + 11] = this.natTail[j]; inst[o + 12] = crashFade * (0.6 + 0.4 * S.g3[j]); inst[o + 13] = 0; inst[o + 14] = 0; inst[o + 15] = this.natForm[j];
       n++;
+      if (!noCull) { var fmj = this.natForm[j]; if (fmj === 1) this.shapeCounts.lacto++; else if (fmj === 2) this.shapeCounts.strep++; else this.shapeCounts.helico++; }
     }
     // robots (pink): dissolve under acid, engulfed by immune cells, dormant ovals, seams from the Naturalness channel
     S = this.rob;
@@ -923,6 +975,14 @@ var LookAliveRender = (function () {
       if (!noCull && (fxp < X0 || fxp > X1 || fyp < Y0 || fyp > Y1)) continue;
       var k6 = ns * 8; spk[k6] = fxp; spk[k6 + 1] = fyp; spk[k6 + 2] = fo.sz[dk] * (0.7 + 0.3 * Math.min(1, (pf * 0.92 - fo.th[dk]) / 0.15)); spk[k6 + 3] = fo.z[dk]; spk[k6 + 4] = 0; spk[k6 + 5] = fo.ph[dk]; spk[k6 + 6] = 0.2; spk[k6 + 7] = 0.42; ns++;
     }
+    this.beaconA = 0;
+    if (!noCull && TUNE.beacon > 0 && ns < scap) {
+      var lg = this.lag[ti] + (this.lag[tj] - this.lag[ti]) * tf, l0 = Math.max(1e-6, this.lag[0]);
+      var bz = TUNE.beacon * (1 - smooth(TUNE.beaconZ0, TUNE.beaconZ1, zz)) * (1 - smooth(0.3, 0.6, cntR / Math.max(1, cntN + cntR))) * smooth(0.02, 0.12, lg / l0);
+      if (bz > 0.02) { var cb = this.colonyAtSmooth(t), kb = ns * 8;
+        spk[kb] = cb[0]; spk[kb + 1] = cb[1]; spk[kb + 2] = TUNE.beaconR * clamp(Math.sqrt(lg / l0), 0.45, 2.0); spk[kb + 3] = TUNE.focus;
+        spk[kb + 4] = 3; spk[kb + 5] = 0; spk[kb + 6] = 0; spk[kb + 7] = bz; ns++; this.beaconA = bz; }
+    }
     // waste haze texture (red), fizz zone (blue: where robots are, as a share of the colony), immune glow (green, written above)
     for (k3 = 0; k3 < FG * FG; k3++) {
       var gi = ((((k3 / FG) | 0) * this.gn / FG) | 0) * this.gn + (((k3 % FG) * this.gn / FG) | 0);
@@ -964,7 +1024,8 @@ var LookAliveRender = (function () {
       n: r.n, ns: r.ns, cx: this.view.cx, cy: this.view.cy, sc: sc, zoom: zoom, focus: focus, K: K, tol: TUNE.tol, depth: 1, bgBlur: bgBlur,
       acid: acidAmb, fizz: clamp(fx.acidLoss * 2.5, 0, 1), time: tm, exposure: expo, cloud: cloud, dish: 1, haze: 1, bloom: TUNE.bloom, bloomThr: TUNE.bloomThr, cloudK: TUNE.cloud, vig: TUNE.vignette, chroma: TUNE.chroma, grain: TUNE.grain,
       field: this.field, bld: { env: this.bf.env, ee: 0, tight: this.bf.tight, pump: this.bf.pump, shell: this.bf.shell, acidIn: this.bf.acidIn, sync: this.bf.sync, head: this.bf.head, reflex: this.bf.reflex, core: this.bf.core, refA: -2.356 },
-      pulse: fx.pulse, lowBloom: this.tierName === 'phone', pulseGlow: TUNE.pulseGlow, glint: TUNE.glint
+      pulse: fx.pulse, lowBloom: this.tierName === 'phone', pulseGlow: TUNE.pulseGlow, glint: TUNE.glint,
+      sp: { helAmp: TUNE.helAmp, helWaves: TUNE.helWaves, tailW: TUNE.tailW, gap: TUNE.chainGap, strPitch: TUNE.strPitch, granS: TUNE.granS, bokK: 1 - TUNE.bokehCut * smooth(TUNE.bokehZ0, TUNE.bokehZ1, zoom) }
     });
     this.drawn = r.n; this.focusNow = focus; this.bgBlur = bgBlur; this.scNow = sc;
     this.updateScale(sc);
@@ -996,7 +1057,7 @@ var LookAliveRender = (function () {
   Dish.prototype.resize = function () { if (this.supported) this.eng.resize(); };
   Dish.prototype.stats = function () {
     var e = this.eng;
-    return { supported: this.supported, webgl2: !!e.gl, renderer: e.name, tier: this.tierName, budget: this.C, candidates: this.cellCount, drawn: this.drawn || 0, immune: this.immVisible || 0,
+    return { supported: this.supported, webgl2: !!e.gl, renderer: e.name, tier: this.tierName, budget: this.C, candidates: this.cellCount, drawn: this.drawn || 0, shapeCounts: this.shapeCounts || null, beacon: +(this.beaconA || 0).toFixed(2), spK: +(this.spK || 0).toFixed(3), immune: this.immVisible || 0,
       cpuMs: +e.cpuMs.toFixed(2), jsMs: +(this.jsMs || 0).toFixed(2), gpuMs: e.gpuMs, frameMs: +this.ft.toFixed(1), stepped: this.stepped.slice(), zoom: +this.view.zoom.toFixed(2), focus: +(this.focusNow || 0).toFixed(3), bgBlur: +(this.bgBlur || 0).toFixed(1),
       size: [e.W, e.H], px: +e.px.toFixed(2), floatTargets: e.floatOK, fx: this.fx || null, lost: this.lost, anim: this.anim ? this.anim.kind : null, reduced: this.reduced };
   };
