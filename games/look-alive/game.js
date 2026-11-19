@@ -24,13 +24,20 @@
     if (GL.canvas && GL.canvas.parentNode) GL.canvas.parentNode.removeChild(GL.canvas);
     GL.canvas = null; $('runDish').style.display = '';
   }
-  function glFailed(why) { GL.failed = true; GL.reason = why; glDestroy(); glNote('Simple dish view: the detailed view is not available here (' + why + ').'); }
+  function glFailed(why) {
+    GL.failed = true; GL.reason = why; glDestroy();
+    if (why !== 'slow') { glNote('Simple dish view: the detailed view is not available here (' + why + ').'); return; }
+    // Too slow is not final: the detailed view is tried again at the lowest detail on the next dish, or now from this button.
+    GL.wasSlow = true; glNote('Simple dish view: the detailed view was running very slowly. ');
+    var b = el('button', 'dretry', 'Try the detailed view again'); b.type = 'button'; b.addEventListener('click', glRetry); $('dishFbNote').appendChild(b);
+  }
+  function glRetry() { if (GL.failed && GL.reason === 'slow') { GL.failed = false; GL.reason = ''; glNote(''); S.liveKey = ''; if (S.run && dishGL()) { setGLRun(GL.r, S.run); GL.r.setTick(S.t); $('runDish').style.display = 'none'; } } }
   function dishGL() {
     if (GL.forced || GL.failed || !window.LookAliveRender) return null;
     if (!GL.r) {
       var c = document.createElement('canvas'); c.id = 'runDishGL'; c.className = 'dishcanvas gl'; c.setAttribute('role', 'img'); c.setAttribute('aria-label', 'The dish: purple natives, pink you, amber waste');
       $('dishWrap').appendChild(c);
-      var r = window.LookAliveRender.create(c, { host: $('dishWrap'), reduced: reduced, onfail: glFailed });
+      var r = window.LookAliveRender.create(c, { host: $('dishWrap'), reduced: reduced, onfail: glFailed, tier: GL.wasSlow ? 'phone' : undefined });
       if (!r.supported) { if (c.parentNode) c.parentNode.removeChild(c); GL.failed = true; GL.reason = r.err || 'no WebGL2'; glNote('Simple dish view: the detailed view is not available here (' + GL.reason + ').'); return null; }
       GL.r = r; GL.canvas = c; glNote('');
     }
@@ -279,6 +286,7 @@
     renderScale('scaleList', tw);
   }
   function selectDish(id) {
+    if (GL.failed && GL.reason === 'slow') { GL.failed = false; GL.reason = ''; glNote(''); }   // a slow spell on one dish does not lock the simple view in for the rest of the session
     S.dish = id; S.carried = carriedFor(id); S.build = copy(S.carried); S.undo = []; S.rule = { sensor: null, cmp: null, value: null, action: null };
     S.slot = Lv.dish(id).opens[0] || Lv.dish(id).slots[0]; S.layer = 0; S.pointed = Lv.dish(id).opens.length > 0; S.whyOpen = false; S.runGrade = null; S.note = ''; S.preview = null; S.run = null; S.ghost = null; S.shownDish = -1; S.lastAutopsy = null; S.lastRunLost = false; S.tipLevel = 0; S.runCount = 0; S.overlayOpen = false; S.fail = null;
     closeOverlay();

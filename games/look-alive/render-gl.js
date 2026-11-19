@@ -24,7 +24,7 @@ var LookAliveRender = (function () {
     glint: 1.0, pulseSize: 0.22, pulseGlow: 0.9,
     zoomMax: 16, jumpZoom: 2.1,
     bloom: 0.35, bloomThr: 0.8, vignette: 1, chroma: 1, grain: 1,
-    slowMs: 30, slowFrames: 50,
+    slowMs: 42, slowFrames: 50, failMs: 90,             // slow = under about 24 frames a second (a browser capped at 30 is not slow); the flat 2D view only below about 11
     // native species (visual only; the sim has one native field). [Lactobacillus, Streptococcus, Helicobacter pylori] by dish id; 0 = default
     speciesMix: { 0: [0.45, 0.35, 0.20], 1: [0.50, 0.30, 0.20], 6: [0.36, 0.30, 0.34], 9: [0.40, 0.40, 0.20], 10: [0.34, 0.33, 0.33] },
     lacHl: [1.4, 1.2], lacSeg2: 0.35, lacR: 0.85, chainGap: 0.16,     // long rods, 35% in chains of two; gap between links (x radius)
@@ -1086,7 +1086,7 @@ var LookAliveRender = (function () {
     if (this.slowCount > TUNE.slowFrames && !this.opts.noAuto) {
       var order = ['high', 'laptop', 'phone'], i = order.indexOf(this.tierName);
       if (i < order.length - 1) { var was = this.tierName; this.stepped.push(was); this.setQuality(order[i + 1]); this.note('Frames were slow, so the dish stepped down to ' + TUNE.tiers[this.tierName].toLocaleString('en-US') + ' cells.'); }
-      else if (this.opts.autoFallback !== false) { this.supported = false; this.err = 'too slow'; if (this.onfail) this.onfail('slow'); }
+      else if (this.opts.autoFallback !== false && this.ft > TUNE.failMs) { this.supported = false; this.err = 'too slow'; if (this.onfail) this.onfail('slow'); }   // at the lowest tier the detailed view stays unless frames are very slow: a choppy real dish beats the flat one
       this.slowCount = 0;
     }
   };
