@@ -43,10 +43,40 @@
     }
     return GL.r.supported ? GL.r : null;
   }
-  function setGLRun(g, run) {
-    g.setRun(run, run.dish, run.build, { slots: Sim.toSlots(run.build), machine: machineCount(run.build) });
+  function setGLRun(g, run, keep) {
+    var o = { slots: Sim.toSlots(run.build), machine: machineCount(run.build) }; if (keep) o.keepView = true;
+    g.setRun(run, run.dish, run.build, o);
   }
-  function glJump() { var g = GL.r; if (g && g.supported && S.run) { g.setTick(S.t); g.rackFocus('jump'); } }
+  function glJump(target) { var g = GL.r; if (g && g.supported && S.run) { g.setTick(S.t); if (target) g.rackFocus('jump', target); else g.rackFocus('jump'); } }
+  // ---------------------------------------------------------------- event zoom (Run mode, lost run): the camera goes to a spot the sim records
+  var EZ_KIND = { acid: 'colony', overgrew: 'colony', bloom: 'colony', starved: 'food', bust: 'food', below: 'thinning', band: 'thinning', cooked: 'thinning', grazed: 'thinning' };
+  function ezKindFor(run) { var a = run && run.autopsy; return a && EZ_KIND[a.cause] || null; }
+  // The located spot for the lost run's cause, or null (no spot, or the renderer has no locate yet). Falls back to the colony.
+  function ezLocate(run) {
+    var g = GL.r, kind = ezKindFor(run); if (!kind || !g || !g.supported || typeof g.locate !== 'function') return null;
+    var tick = run.autopsy.from, p = g.locate(kind, tick);
+    if (!p && kind !== 'colony') { kind = 'colony'; p = g.locate(kind, tick); }
+    return p ? { x: p.x, y: p.y, cool: !!p.cool, kind: kind } : null;
+  }
+  function ezReset() { var z = S.ez; z.fired = false; z.kind = null; z.target = null; z.since = 0; z.cool = false; z.used = null; }
+  function ezPhrase() {
+    var z = S.ez; if (z.used === 'thinning') return 'CAMERA: where your colony is thinning' + (z.cool ? ', in the cool water' : '');
+    return z.used === 'food' ? 'CAMERA: where food ran out under your colony' : 'CAMERA: your colony';
+  }
+  function ezSlow() { var z = S.ez, g = GL.r; return !!((z.since && !z.fired) || (z.fired && z.used && g && typeof g.eventActive === 'function' && g.eventActive())); }
+  // Called every frame after playback advances. tPrev is the tick before this frame.
+  function ezTick(tPrev) {
+    var z = S.ez, run = S.run, g = GL.r; if (!run) return;
+    if (tPrev <= 0.001) ezReset();
+    if (S.mode !== 'run' || run.v.win || !run.autopsy || !S.playing || z.fired || S.cmp.held) return;
+    if (!g || !g.supported || typeof g.eventZoom !== 'function') return;
+    if (reduced || g.userMoved) { z.fired = true; z.since = 0; return; }   // no automatic camera under reduced motion, or once the player has moved it
+    var from = Math.max(1, run.autopsy.from - 6);   // start a little early: the glide takes about 1.5 s
+    if (!z.since) { if (tPrev < from && S.t >= from) z.since = performance.now(); else return; }
+    if (performance.now() - z.since > 3000) { z.fired = true; return; }
+    var tg = ezLocate(run); if (!tg) { z.fired = true; return; }
+    if (g.eventZoom({ x: tg.x, y: tg.y })) { z.fired = true; z.target = tg; z.kind = EZ_KIND[run.autopsy.cause]; z.used = tg.kind; z.cool = tg.cool; }
+  }
   function portraitGL() {
     if (GL.pfailed || GL.forced || !window.LookAliveRender) return null;
     if (!GL.p) {
@@ -87,7 +117,7 @@
     overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band', cooked: 'Cooked by the heat', grazed: 'Eaten at the cool edge' };
   // Memo "from" line per loss cause (M5). Unknown causes fall back to the sample lab.
   var MEMO_FROM = { acid: 'Desk of Dissolved Samples', 'exposed:growth': 'Guard-watch desk', 'exposed:waste': 'Guard-watch desk', 'exposed:casualties': 'Guard-watch desk', 'exposed:regularity': 'Guard-watch desk',
-    overgrew: 'Head-count desk', below: 'Head-count desk', starved: 'Head-count desk', band: 'Head-count desk', bust: 'Meal-schedule desk', bloom: 'Meal-schedule desk' };
+    overgrew: 'Head-count desk', below: 'Head-count desk', starved: 'Head-count desk', band: 'Head-count desk', bust: 'Meal-schedule desk', bloom: 'Meal-schedule desk', cooked: 'Warm-water desk', grazed: 'Cool-edge desk' };
   // Story pictures (section D). A missing file logs a console error even with onerror, so each picture is switched on only once it exists.
   var STORY_ART = { cell: false, crowd: false, ripple: true };
 
@@ -112,7 +142,8 @@
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
     t: 0, playing: false, speed: 4, resultShown: false, overlayOpen: false, runCount: 0, troubleTick: -1, cardEls: [], shownDish: -1, chipCache: {},
-    lastAutopsy: null, lastRunLost: false, tipLevel: 0, dialKeys: [], vcache: '', fail: null, real: false, liveKey: ''
+    lastAutopsy: null, lastRunLost: false, tipLevel: 0, dialKeys: [], vcache: '', fail: null, real: false, liveKey: '',
+    ez: { fired: false, kind: null, target: null, since: 0, tPrev: 0, cool: false, used: null }, cmp: { held: false, kept: false, base: null, run: null, runFor: null, diff: '' }
   };
 
   function dishObj() { return S.dish == null ? null : Lv.dish(S.dish); }
@@ -181,6 +212,7 @@
 
   // ---------------------------------------------------------------- screens
   function show(name) {
+    compareSet(false);
     if (name !== 'list' && name !== 'world' && name !== 'intro' && S.dish == null) name = 'list';
     if (name === 'run' && !S.run) name = 'adapt';
     S.screen = name; hidePop();
@@ -286,6 +318,7 @@
     renderScale('scaleList', tw);
   }
   function selectDish(id) {
+    compareSet(false); S.cmp = { held: false, kept: false, base: null, run: null, runFor: null, diff: '' }; ezReset();
     if (GL.failed && GL.reason === 'slow') { GL.failed = false; GL.reason = ''; glNote(''); }   // a slow spell on one dish does not lock the simple view in for the rest of the session
     S.dish = id; S.carried = carriedFor(id); S.build = copy(S.carried); S.undo = []; S.rule = { sensor: null, cmp: null, value: null, action: null };
     S.slot = Lv.dish(id).opens[0] || Lv.dish(id).slots[0]; S.layer = 0; S.pointed = Lv.dish(id).opens.length > 0; S.whyOpen = false; S.runGrade = null; S.note = ''; S.preview = null; S.run = null; S.ghost = null; S.shownDish = -1; S.lastAutopsy = null; S.lastRunLost = false; S.tipLevel = 0; S.runCount = 0; S.overlayOpen = false; S.fail = null;
@@ -383,7 +416,7 @@
 
   // ---------------------------------------------------------------- Watch
   function enterWatch() {
-    var d = dishObj(); if (!d) return;
+    var d = dishObj(); if (!d) return; compareSet(false);
     var run = simulate(S.carried);
     S.mode = 'watch'; S.run = run; S.ghost = null; S.stopAt = watchStop(run); S.watchDone = false; S.runFinished = false;
     S.lastAutopsy = run.autopsy; S.lastRunLost = false; S.tipLevel = 0; setFail(run, S.carried);
@@ -947,15 +980,64 @@
   function doRun() {
     var d = dishObj(); if (!d) return null;
     var v = Sim.validate(d, S.build); if (!v.ok) { renderProblems(); return null; }
-    S.ghost = S.prev[d.id] || null;
+    compareSet(false); var C = S.cmp, prevRec = S.prev[d.id] || null;
+    if (C.kept && !C.base) C.base = prevRec;   // Keep switched on before any baseline existed: the first earlier run becomes the baseline
+    S.ghost = C.kept && C.base ? C.base : prevRec;
     var run = simulate(S.build);
-    S.mode = 'run'; S.run = run; S.runCount++; S.prev[d.id] = { share: run.H.share, total: run.H.total };
+    S.mode = 'run'; S.run = run; S.runCount++; if (!(C.kept && C.base)) S.prev[d.id] = { share: run.H.share, total: run.H.total, build: copy(S.build) };
+    ezReset(); S.ez.tPrev = 0; cmpSync();
     S.stopAt = null; S.runFinished = false; S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = 2; setSpeedUI();
     if (run.v.win) { S.cleared[d.id] = true; S.wins[d.id] = copy(S.build); save('cleared2', S.cleared); save('wins2', S.wins); S.lastRunLost = false; recordGrade(run, d, S.build); }
     else { S.lastAutopsy = run.autopsy; S.lastRunLost = true; S.tipLevel = 0; setFail(run, S.build); }
     closeOverlay(); show('run');
     return run;
   }
+
+  // ---------------------------------------------------------------- Run: compare with the previous run (hold the button to see it in the dish at the same tick and camera)
+  function cmpDiffText(prevB, curB, d) {
+    var out = [], pn = Sim.normalize(prevB), cn = Sim.normalize(curB);
+    if (pn.metabolism !== cn.metabolism) out.push('Power ' + cardName(pn.metabolism) + ' to ' + cardName(cn.metabolism));
+    (cn.parts || []).forEach(function (id) { if ((pn.parts || []).indexOf(id) < 0) out.push(cardName(id) + ' added'); });
+    (pn.parts || []).forEach(function (id) { if ((cn.parts || []).indexOf(id) < 0) out.push(cardName(id) + ' removed'); });
+    var pr = pn.reflex ? JSON.stringify(pn.reflex) : '', cr = cn.reflex ? JSON.stringify(cn.reflex) : '';
+    if (pr !== cr) out.push(!pn.reflex ? reflexName(cn.reflex) + ' added' : !cn.reflex ? reflexName(pn.reflex) + ' removed' : (reflexName(pn.reflex) === reflexName(cn.reflex) ? reflexName(cn.reflex) + ' changed' : reflexName(pn.reflex) + ' to ' + reflexName(cn.reflex)));
+    if (pn.pace !== cn.pace) out.push('Pace ' + pn.pace + ' to ' + cn.pace);
+    if ((pn.slop || 0) !== (cn.slop || 0)) out.push('Sloppiness ' + (pn.slop || 0) + ' to ' + (cn.slop || 0));
+    if (!out.length) return 'Nothing differs: this is the same cell as the previous run.';
+    var eff = ''; try { eff = changesText(changesBetween(d, prevB, curB)); } catch (e) { eff = ''; }
+    return 'Changed: ' + out.join(', ') + (eff ? '. Effect: ' + eff : '');
+  }
+  function cmpSupported() { var g = GL.r; return !g || !g.supported || typeof g.eventZoom === 'function'; }   // a renderer that can keep the camera across setRun; the simple 2D view needs nothing
+  function cmpSync() {
+    var C = S.cmp, run = S.run, b = $('cmpBtn'), base = S.screen === 'run' && S.mode === 'run' ? S.ghost : null, why = '';
+    if (!base || !base.build) why = S.mode === 'watch' ? 'Compare works on your own runs, not on Watch.' : 'No previous run on this dish yet. Run a changed cell and this holds the one before.';
+    else if (!cmpSupported()) why = 'This view cannot hold the camera still while swapping runs.';
+    b.disabled = !!why; b.title = why || 'Hold to see the previous run in the dish at this tick. Release to come back.';
+    $('cmpKeep').checked = C.kept; $('cmpKeepL').title = 'Keep: later runs compare against the same previous run instead of replacing it.';
+    C.diff = why ? '' : cmpDiffText(base.build, run.build, run.dish);
+    var t = why ? 'Nothing to compare yet.' : C.diff; if ($('cmpDiff').textContent !== t) { $('cmpDiff').textContent = t; $('cmpDiff').title = t; }
+    C.available = !why;
+  }
+  // The previous run, simulated once with the game's own path and cached until the baseline changes.
+  function cmpRun() { var C = S.cmp, base = S.ghost; if (!base || !base.build) return null; if (!C.run || C.runFor !== base) { C.run = simulate(base.build); C.runFor = base; } return C.run; }
+  function compareSet(on) {
+    var C = S.cmp, g = GL.r, want = !!on; if (!C) return false;
+    if (want) { if (S.screen !== 'run' || S.mode !== 'run' || !S.run || $('cmpBtn').disabled || S.overlayOpen) want = false; else if (!cmpRun()) want = false; }
+    if (want === C.held) return C.held;
+    C.held = want; var shown = want ? C.run : S.run;
+    if (g && g.supported && shown && g.run !== shown) { try { setGLRun(g, shown, true); g.setTick(Math.min(S.t, shown.T)); } catch (e) { if (window.console) console.error(e && e.stack || e); } }
+    var b = $('cmpBtn'); b.classList.toggle('held', want); b.textContent = want ? 'Showing: previous run' : 'Hold: previous run';
+    return C.held;
+  }
+  (function () {
+    var b = $('cmpBtn'), down = function () { compareSet(true); }, up = function () { compareSet(false); };
+    b.addEventListener('pointerdown', function (e) { if (e.button) return; down(); });
+    ['pointerup', 'pointercancel', 'pointerleave', 'blur'].forEach(function (n) { b.addEventListener(n, up); });
+    b.addEventListener('keydown', function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!e.repeat) down(); } });
+    b.addEventListener('keyup', function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); up(); } });
+    b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    $('cmpKeep').addEventListener('change', function () { S.cmp.kept = this.checked; S.cmp.base = this.checked ? S.ghost || null : null; });
+  })();
 
   // ---------------------------------------------------------------- Run: playback
   function stripCards(run) {
@@ -1000,7 +1082,7 @@
     $('skipBtn').textContent = S.mode === 'watch' ? 'Skip' : 'Skip to trouble';
     $('resultBtn').style.visibility = S.mode === 'watch' ? 'hidden' : 'visible';
     $('readLine').textContent = '';
-    setPlayLabel(); renderVerdict();
+    setPlayLabel(); renderVerdict(); cmpSync();
   }
   function setChartTab(k) {
     S.chartTab = k; var share = k === 'share';
@@ -1042,12 +1124,13 @@
     if (S.mode === 'watch') { S.t = S.stopAt; S.playing = false; setPlayLabel(); glJump(); watchFinished(); return; }
     var t = S.troubleTick;
     if (t < 0) { if (run.autopsy && run.autopsy.from) t = run.autopsy.from; else { flashSkip('No trouble in this run'); return; } }
-    S.playing = false; S.t = t; setPlayLabel(); glJump();
+    S.playing = false; S.t = t; setPlayLabel(); glJump(S.mode === 'run' && !run.v.win ? ezLocate(run) : null);
   }
   function flashSkip(msg) { var b = $('skipBtn'), old = 'Skip to trouble'; b.textContent = msg; setTimeout(function () { b.textContent = old; }, 1600); }
   // Dish 1 Watch at the default 1x: the first ticks play slowly so the player sees the pink cells dissolve (the colony is gone by tick 12).
   function playRate() {
     var run = S.run;
+    if (S.mode === 'run' && ezSlow()) return Math.min(S.speed, 1) * 0.35;   // playback slows while the camera is on the deciding moment
     if (S.mode !== 'watch' || !run || !run.dish.aliveOnly || S.speed !== 1) return S.speed;
     return S.t < 6 ? 0.25 : S.t < 12 ? 0.5 : 1;
   }
@@ -1088,17 +1171,18 @@
   function drawRun(ts) {
     var run = S.run; if (!run) return;
     var H = run.H, T = run.T, ti = Math.min(T, Math.floor(S.t)), d = run.dish, any = anyChannel(run);
-    var si = Math.min(run.snaps.length - 1, Math.floor(S.t / 10)), A = run.snaps[si], B = run.snaps[Math.min(run.snaps.length - 1, si + 1)];
-    var f = si >= run.snaps.length - 1 ? 0 : (S.t - si * 10) / 10;
+    var sr = S.cmp.held && S.cmp.run ? S.cmp.run : run, st = Math.min(S.t, sr.T);   // sr: the run the dish shows (the previous run while the compare button is held)
+    var si = Math.min(sr.snaps.length - 1, Math.floor(st / 10)), A = sr.snaps[si], B = sr.snaps[Math.min(sr.snaps.length - 1, si + 1)];
+    var f = si >= sr.snaps.length - 1 ? 0 : (st - si * 10) / 10;
     var tm = reduced ? 0 : ts / 1000, acidNow = H.acid[ti] || 0;
     var gdish = dishGL();
     if (gdish) {
-      if (gdish.run !== run) setGLRun(gdish, run);
+      if (gdish.run !== sr) setGLRun(gdish, sr);
       $('runDish').style.display = 'none'; GL.canvas.style.display = '';
-      gdish.setTick(S.t); gdish.frame(ts);
+      gdish.setTick(st); gdish.frame(ts);
     } else {
       $('runDish').style.display = '';
-      D.drawCells($('runDish'), A, B, f, { n: run.n, nativeRef: H.nat[0], stage: any ? H.stage[ti] : 0, kill: any ? H.kill[ti] : 0, time: tm, stress: d.acid ? Math.min(1, acidNow * 3) : 0, acid: !!d.acid });
+      D.drawCells($('runDish'), A, B, f, { n: sr.n, nativeRef: sr.H.nat[0], stage: any ? H.stage[ti] : 0, kill: any ? H.kill[ti] : 0, time: tm, stress: d.acid ? Math.min(1, acidNow * 3) : 0, acid: !!d.acid });
     }
     var rl = d.aliveOnly ? 'Colony alive: ' + Math.round(H.rob[ti] / H.rob[0] * 100) + '%   Lost to acid: ' + (acidNow * 100).toFixed(0) + '% per tick'
       : 'Your share of the dish: ' + (H.share[ti] * 100).toFixed(1) + '%' + (acidNow > 0.005 ? '   Lost to acid: ' + (acidNow * 100).toFixed(0) + '% per tick' : '');
@@ -1110,6 +1194,8 @@
     });
     S.marks = marks;
     if (crashNow) rl += '   FOOD CRASH';
+    if (S.cmp.held && S.cmp.run) rl = 'PREVIOUS RUN   Your share of the dish: ' + (S.cmp.run.H.share[Math.min(S.cmp.run.T, ti)] * 100).toFixed(1) + '%';
+    else if (gdish && typeof gdish.eventActive === 'function' && gdish.eventActive() && S.ez.used) rl += '   ' + ezPhrase();
     if ($('readLine').textContent !== rl) $('readLine').textContent = rl;
     var pin = S.resultShown && run.autopsy && S.mode === 'run' ? { from: run.autopsy.from, to: run.autopsy.to } : null;
     var g = S.ghost, t;
@@ -1205,7 +1291,7 @@
     return '';
   }
   function showResult() {
-    var run = S.run, d = dishObj(); if (!run) return;
+    var run = S.run, d = dishObj(); if (!run) return; compareSet(false);
     S.resultShown = true; var v = run.v, ov = $('overlay'), html;
     if (v.win) {
       var stamp = STAMPS[D.hash(JSON.stringify(run.build)) % STAMPS.length];
@@ -1262,7 +1348,7 @@
     if (a === 'tip') pressTip();
     else if (a === 'adapt') { closeOverlay(); show('adapt'); }
     else if (a === 'watch') { closeOverlay(); }
-    else if (a === 'jump') { closeOverlay(); S.playing = false; S.t = S.run.autopsy.from; setPlayLabel(); glJump(); }
+    else if (a === 'jump') { closeOverlay(); S.playing = false; S.t = S.run.autopsy.from; setPlayLabel(); glJump(S.mode === 'run' && !S.run.v.win ? ezLocate(S.run) : null); }
     else if (a === 'next') { closeOverlay(); selectDish(orderOf(worldNo(S.dish))[orderOf(worldNo(S.dish)).indexOf(S.dish) + 1]); }
     else if (a === 'list') { closeOverlay(); show('list'); }
     else if (a === 'complete') completeCard();
@@ -1276,7 +1362,7 @@
       if (S.screen === 'adapt') {
         if (GL.p && GL.p.supported) GL.p.tick(ts);
         if (S.note && performance.now() > S.noteUntil) { S.note = ''; renderProblems(); }
-      } else if (S.screen === 'run' && S.run) { advance(dt); drawRun(ts); }
+      } else if (S.screen === 'run' && S.run) { var tp = S.t; advance(dt); ezTick(tp); drawRun(ts); }
     } catch (err) { if (window.console) console.error(err && err.stack || err); }
     requestAnimationFrame(frame);
   }
@@ -1354,6 +1440,8 @@
     ruleChoose: ruleChoose, installRule: installRule, previewDial: previewDial,
     bars: function () { return Array.prototype.map.call(document.querySelectorAll('#statBars .sb'), function (r) { return { stat: r.getAttribute('data-stat'), verdict: r.querySelector('.sb-verdict').textContent, vcls: r.querySelector('.sb-verdict').className, mark: r.querySelector('.sb-mark').style.left, markCls: r.querySelector('.sb-mark').className, ghost: r.querySelector('.sb-ghost').style.display === 'none' ? null : r.querySelector('.sb-ghost').style.left, ghostCls: r.querySelector('.sb-ghost').className, arrow: r.querySelector('.sb-arrow').textContent, arrowCls: r.querySelector('.sb-arrow').className, tag: r.querySelector('.sb-tag').textContent, failed: r.classList.contains('failed'), unchecked: r.classList.contains('unchecked'), zoneShown: r.querySelector('.sb-zone').style.display !== 'none' }; }); },
     liveBars: function () { return Array.prototype.map.call(document.querySelectorAll('#liveBars .sb'), function (r) { return { stat: r.getAttribute('data-stat'), verdict: r.querySelector('.sb-verdict').textContent, mark: r.querySelector('.sb-mark').style.left, tag: r.querySelector('.sb-tag').textContent }; }); },
+    eventZoomState: function () { var z = S.ez, g = GL.r; return { fired: z.fired, kind: z.kind, target: z.target, active: !!(g && typeof g.eventActive === 'function' && g.eventActive()) }; },
+    compare: function (on) { return compareSet(on); }, compareState: function () { var C = S.cmp; return { available: !!C.available && !$('cmpBtn').disabled, held: C.held, kept: C.kept, diffText: C.diff }; },
     completeCard: completeCard, whyList: whyList, startStandard: startStandard, marks: function () { return S.marks; }, grades: function () { return S.grades; },
     fixLine: function () { return $('fixLine').textContent; }, previewText: function () { return $('pvT').textContent; }, fail: function () { return S.fail; },
     cards: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt'), function (o) { var c = o.querySelector('.chg'); return { id: o.getAttribute('data-id'), text: c.textContent, tones: Array.prototype.map.call(c.querySelectorAll('.ef[class*="t-"]'), function (x) { return x.className.replace(/.*t-/, '') + ':' + x.textContent.trim(); }) }; }); },

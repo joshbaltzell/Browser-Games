@@ -280,12 +280,12 @@ canvas { display: block; }
 .rungrid { display: grid; grid-template-columns: calc(var(--dish) + 22px) minmax(0, 1fr); gap: 10px; height: 100%; min-height: 0; }
 .runL, .runR { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
 .controls { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.controls .crow { margin: 0; } .controls .crow:last-child { flex: 1 1 220px; }
+.controls .crow { margin: 0; } .controls .crow:nth-child(2) { flex: 1 1 220px; } .controls .cmprow { flex: 1 1 100%; align-items: flex-start; }
 .charttabs { display: flex; align-items: center; gap: 4px; height: 26px; margin-bottom: 4px; min-width: 0; }
 .charttabs button[role="tab"] { min-height: 24px; padding: 0 10px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
 .charttabs button[aria-selected="true"] { background: #1b1740; border-color: var(--vio); color: var(--ink); }
 .chartcap { margin-left: 6px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-#paneSusp #gSusp { height: 106px; }
+#paneSusp #gSusp { height: 80px; }
 .runrow { display: flex; gap: 8px; align-items: stretch; flex: none; }
 .runrow #instBox { flex: 1; min-width: 0; }
 .runrow .cardstrip { width: 252px; height: auto; max-height: 164px; }
@@ -307,7 +307,7 @@ canvas { display: block; }
 .scard.never small { color: var(--amb); }
 .verdict { flex: none; height: 78px; display: grid; grid-template-columns: 1fr 170px; gap: 12px; align-items: center; }
 .vtext { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.verdict .readline { text-align: left; height: 18px; font-size: 13.5px; }
+.verdict .readline { text-align: left; height: auto; min-height: 18px; max-height: 36px; line-height: 18px; white-space: normal; font-size: 13.5px; }
 #verdictText { font-size: 13px; line-height: 1.3; height: 52px; overflow: hidden; }
 .verdict button.big { min-height: 44px; font-size: 14px; padding: 0 8px; }
 #instBox { flex: none; } #instBox .statbars.two { grid-template-rows: repeat(3, 42px); gap: 2px 14px; } #instBox .sb { height: 42px; padding-top: 1px; } #instBox .sb-top { height: 14px; } #instBox .sb-track { margin: 1px 0 2px; } #instBox .sb-verdict { height: 13px; line-height: 13px; font-size: 11px; }
@@ -317,7 +317,7 @@ canvas { display: block; }
 .stg.on.s3 { background: var(--red); border-color: var(--red); color: #1a0307; }
 .kill { font-family: var(--mono); font-size: 11px; display: flex; align-items: center; color: var(--dim); line-height: 1.3; }
 .kill.hot { color: var(--red); }
-#gShare { height: 106px; } #foodStrip { width: 100%; height: 30px; margin-top: 2px; } #ribbon { width: 100%; height: 12px; margin-top: 2px; }
+#gShare { height: 80px; } #foodStrip { width: 100%; height: 24px; margin-top: 2px; } #ribbon { width: 100%; height: 12px; margin-top: 2px; }
 .ribbonkey { display: flex; gap: 12px; height: 16px; font-size: 10.5px; color: var(--dim); align-items: center; margin-top: 3px; }
 .ribbonkey i { display: inline-block; width: 12px; height: 8px; margin-right: 4px; border-radius: 1px; }
 
@@ -670,3 +670,12 @@ canvas { display: block; }
 .sb[data-stat="night"] .sb-track   { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='14'%3E%3Cpath d='M0 7Q3 3 6 7T12 7' fill='none' stroke='%23a78bfa' stroke-opacity='.7' stroke-width='1.2'/%3E%3C/svg%3E"); }
 .dnote .dretry { min-height: 22px; padding: 0 8px; font-size: 10px; margin-left: 4px; }
 .dnote.fb { pointer-events: auto; }
+
+/* Compare with the previous run: the button, the Keep toggle and the diff line always take the same space */
+.cmprow { gap: 6px 10px; flex-wrap: wrap; }
+.cmpbtn { font-size: 12px; padding: 0 10px; min-width: 150px; min-height: 32px; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.cmpbtn.held { background: var(--pink, #ff5a9a); color: #1a0710; }
+.cmpbtn:disabled { opacity: .45; cursor: not-allowed; }
+.cmpkeep { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; min-height: 32px; cursor: pointer; white-space: nowrap; }
+.cmpkeep input { margin: 0; width: 16px; height: 16px; }
+.cmpdiff { flex: 1 1 180px; font-size: 12px; line-height: 16px; height: 32px; overflow: hidden; display: block; align-self: center; }

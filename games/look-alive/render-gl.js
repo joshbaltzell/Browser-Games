@@ -23,6 +23,8 @@ var LookAliveRender = (function () {
     immSpread: 0.6, immOrbit: 0.35, immRadius: 0.04, immRate: 0.16, immRoam: 0.35,   // immune cells: how tightly they converge on the colony, orbit speed (rad/s), orbit radius
     glint: 1.0, pulseSize: 0.22, pulseGlow: 0.9,
     zoomMax: 16, jumpZoom: 2.1,
+    crowdDim: 0.72, crowdLo: 0.14, crowdHi: 0.27, crowdShare: [0.5, 0.8], crowdZoom: [2, 3.5], nativeLift: 0.3,   // readable crowds: pink cells in a dense pink bank dim by up to crowdDim (local pink density, smoothed, between crowdLo and crowdHi); natives lift by nativeLift as the on-screen pink share passes crowdShare; both fade out as zoom goes crowdZoom[0] to [1]
+    eventZoom: 2.6, eventHold: 3, eventIn: 1.5, eventOut: 1.3,   // automatic camera move to a located spot: zoom, hold seconds, glide in and ease back seconds
     bloom: 0.35, bloomThr: 0.8, vignette: 1, chroma: 1, grain: 1,
     slowMs: 42, slowFrames: 50, failMs: 90,             // slow = under about 24 frames a second (a browser capped at 30 is not slow); the flat 2D view only below about 11
     // native species (visual only; the sim has one native field). [Lactobacillus, Streptococcus, Helicobacter pylori] by dish id; 0 = default
@@ -610,7 +612,7 @@ var LookAliveRender = (function () {
     this.supported = true;
     this.tierName = opts.tier || (window.matchMedia && window.matchMedia('(pointer:coarse)').matches && Math.min(screen.width, screen.height) < 700 ? 'phone' : 'laptop');
     this.run = null; this.tick = 0; this.time = 0; this.lastTs = 0; this.visible = true; this.frames = 0;
-    this.view = { cx: 0, cy: 0, zoom: 1 }; this.anim = null; this.exposure = 1; this.focusBase = TUNE.focus; this.focus = TUNE.focus;
+    this.view = { cx: 0, cy: 0, zoom: 1 }; this.userMoved = false; this.anim = null; this.exposure = 1; this.focusBase = TUNE.focus; this.focus = TUNE.focus;
     this.dust = []; this.lens = [];
     var R = mul(4242), i, a, d;
     for (i = 0; i < 150; i++) { a = R() * 6.283; d = Math.sqrt(R()) * 1.05; this.dust.push({ x: Math.cos(a) * d, y: Math.sin(a) * d, s: 0.0025 + 0.009 * R() * R() * 2, z: R(), h: R(), ph: R() }); }
@@ -764,7 +766,8 @@ var LookAliveRender = (function () {
     this.seamS = new Float32Array(T + 1);
     var reg = H.susp && H.susp.regularity, mf = this.mach > 0 ? Math.min(1, 0.45 + 0.3 * this.mach) : 0;
     for (t = 0; t <= T; t++) this.seamS[t] = reg ? clamp(reg[t] / 6, 0, 1) * mf : 0;
-    this.resetView(); this.tick = 0; this.anim = null; this.exposure = 1; this.warm = 20; this.slowCount = 0;
+    if (!extra.keepView) { this.resetView(); this.tick = 0; this.anim = null; this.exposure = 1; this.userMoved = false; }
+    this.warm = 20; this.slowCount = 0;
     if (this.uiNote) this.note('');
   };
   Dish.prototype.setTick = function (t) { this.tick = t; };
@@ -814,12 +817,12 @@ var LookAliveRender = (function () {
   };
 
   // ---- rack focus: start blurred, hunt past focus once, settle (about 1.5 s). Three moments only: watch, run, jump.
-  Dish.prototype.rackFocus = function (kind) {
+  Dish.prototype.rackFocus = function (kind, target) {   // target {x, y} (optional, jump only): go to that point instead of the colony
     if (!this.supported) return;
     if (kind === 'jump') {
-      var c = this.colonyAt(this.tick);
-      if (this.reduced) { this.view.zoom = TUNE.jumpZoom; this.view.cx = c[0] * 0.6; this.view.cy = c[1] * 0.6; this.clampView(); return; }
-      this.anim = { kind: 'jump', t: 0, dur: TUNE.rackDur, z0: this.view.zoom, c0: [this.view.cx, this.view.cy], c1: c, f0: -0.9 };
+      var c = target ? [target.x, target.y] : this.colonyAt(this.tick), kk = target ? 1 : 0.6;
+      if (this.reduced) { this.view.zoom = TUNE.jumpZoom; this.view.cx = c[0] * kk; this.view.cy = c[1] * kk; this.clampView(); return; }
+      this.anim = { kind: 'jump', t: 0, dur: TUNE.rackDur, z0: this.view.zoom, c0: [this.view.cx, this.view.cy], c1: c, k1: kk, f0: -0.9 };
     } else {
       if (this.reduced) return;
       this.resetView(); this.anim = { kind: kind, t: 0, dur: TUNE.rackDur, f0: kind === 'watch' ? TUNE.rackStart : TUNE.rackStart * 0.9 };
@@ -828,6 +831,13 @@ var LookAliveRender = (function () {
   Dish.prototype.stepAnim = function (dt) {
     var a = this.anim; if (!a) return;
     a.t += dt;
+    if (a.kind === 'event') {   // glide in, hold, ease back to the starting view; focus and exposure are left alone
+      var ee = function (x) { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); }, v = this.view, k;
+      if (a.t >= a.tIn + a.tHold + a.tOut) { v.cx = a.c0[0]; v.cy = a.c0[1]; v.zoom = a.z0; this.anim = null; return; }
+      if (a.t < a.tIn) k = ee(a.t / a.tIn); else if (a.t < a.tIn + a.tHold) k = 1; else k = 1 - ee((a.t - a.tIn - a.tHold) / a.tOut);
+      v.zoom = a.z0 + (a.z1 - a.z0) * k; v.cx = a.c0[0] + (a.c1[0] - a.c0[0]) * k; v.cy = a.c0[1] + (a.c1[1] - a.c0[1]) * k;
+      return;
+    }
     var hunt = function (t, f0, tg) { return tg + (f0 - tg) * Math.exp(-TUNE.rackDecay * t) * Math.cos(2 * Math.PI * TUNE.rackFreq * t); };
     var e = function (x) { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
     this.focusBase = hunt(a.t, a.f0, TUNE.focus);
@@ -835,9 +845,54 @@ var LookAliveRender = (function () {
     if (a.kind === 'jump') {
       var u = e(a.t / 1.7);
       this.view.zoom = a.z0 + (TUNE.jumpZoom - a.z0) * u;
-      this.view.cx = a.c0[0] + (a.c1[0] * 0.6 - a.c0[0]) * u; this.view.cy = a.c0[1] + (a.c1[1] * 0.6 - a.c0[1]) * u; this.clampView();
+      this.view.cx = a.c0[0] + (a.c1[0] * a.k1 - a.c0[0]) * u; this.view.cy = a.c0[1] + (a.c1[1] * a.k1 - a.c0[1]) * u; this.clampView();
     }
     if (a.t >= a.dur) { this.anim = null; this.focusBase = TUNE.focus; this.exposure = 1; }
+  };
+
+  // ---- event zoom: a one-shot camera move to a located spot (the game decides when; the player's input always wins)
+  Dish.prototype.eventActive = function () { return !!(this.anim && this.anim.kind === 'event'); };
+  Dish.prototype.eventZoom = function (target, opts) {
+    if (!this.supported || !this.run || this.reduced || this.userMoved || this.anim || !target || !isFinite(target.x) || !isFinite(target.y)) return false;
+    opts = opts || {};
+    var z1 = clamp(opts.zoom || TUNE.eventZoom, 1, TUNE.zoomMax), lim = Math.max(0, 1 - 0.9 / z1), d = Math.sqrt(target.x * target.x + target.y * target.y), f = d > lim ? lim / d : 1;
+    this.anim = { kind: 'event', t: 0, z0: this.view.zoom, c0: [this.view.cx, this.view.cy], z1: z1, c1: [target.x * f, target.y * f], tIn: opts.glide || TUNE.eventIn, tHold: opts.hold || TUNE.eventHold, tOut: opts.back || TUNE.eventOut };
+    return true;
+  };
+  // locate(kind, tick) -> {x, y, cool} in dish coordinates, or null. kind: 'colony' | 'thinning' | 'food'. Computed on demand from the 10-tick snapshots.
+  Dish.prototype.locate = function (kind, tick) {
+    var run = this.run; if (!run || !run.snaps || !run.snaps.length) return null;
+    var S = run.snaps, n = run.n, last = S.length - 1, si = clamp(Math.floor((tick || 0) / 10), 0, last), TP = this.D && this.D.temp;
+    function blocks(sn) {   // 4x4-cell blocks stepped by 2, as the colony focus does
+      var out = [], gx, gy, xx, yy, s, f, sx, sy, v;
+      for (gy = 0; gy < n - 3; gy += 2) for (gx = 0; gx < n - 3; gx += 2) {
+        s = 0; f = 0; sx = 0; sy = 0;
+        for (yy = 0; yy < 4; yy++) for (xx = 0; xx < 4; xx++) { v = sn.robot[(gy + yy) * n + gx + xx]; s += v; sx += v * (gx + xx + 0.5); sy += v * (gy + yy + 0.5); f += sn.food[(gy + yy) * n + gx + xx]; }
+        out.push({ s: s, f: f, wx: s > 0 ? sx / s : gx + 2, wy: s > 0 ? sy / s : gy + 2, gx: gx + 2, gy: gy + 2 });
+      }
+      return out;
+    }
+    var B = blocks(S[si]), i, best = null, bv, pt;
+    if (kind === 'colony') {
+      for (i = 0; i < B.length; i++) if (!best || B[i].s > best.s) best = B[i];
+      if (!best || best.s <= 0) return null;
+      pt = [best.wx, best.wy];
+    } else if (kind === 'thinning') {
+      var a = si < last ? si : last - 1; if (a < 0) return null;
+      var B0 = blocks(S[a]), B1 = blocks(S[a + 1]); bv = 0;
+      for (i = 0; i < B0.length; i++) { var dv = B0[i].s - B1[i].s; if (dv > bv) { bv = dv; best = B0[i]; } }
+      if (!best) return null;
+      pt = [best.gx, best.gy];
+    } else if (kind === 'food') {
+      var mx = 0; for (i = 0; i < B.length; i++) if (B[i].s > mx) mx = B[i].s;
+      if (mx <= 0) return null;
+      for (i = 0; i < B.length; i++) if (B[i].s >= 0.25 * mx && (!best || B[i].f < best.f)) best = B[i];
+      if (!best) return null;
+      pt = [best.gx, best.gy];
+    } else return null;
+    var x = pt[0] / n * 2 - 1, y = pt[1] / n * 2 - 1, cool = false;
+    if (TP) { var tcT = TP.cool + (TP.hot - TP.cool) * (0.5 - 0.5 * Math.cos(2 * Math.PI * ((x + 1) / 2))); cool = tcT < 40; }
+    return { x: x, y: y, cool: cool };
   };
 
   // ---- camera
@@ -856,11 +911,11 @@ var LookAliveRender = (function () {
     }
     cv.addEventListener('wheel', function (e) {
       e.preventDefault(); if (!self.run) return;
-      self.anim = self.anim && self.anim.kind === 'jump' ? null : self.anim;
+      self.cancelAuto();
       var w0 = toWorld(e), z = clamp(self.view.zoom * Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0016)), 1, TUNE.zoomMax);
       self.view.zoom = z; var w1 = toWorld(e); self.view.cx += w0[0] - w1[0]; self.view.cy += w0[1] - w1[1]; self.clampView(); self.touchedView();
     }, { passive: false });
-    cv.addEventListener('pointerdown', function (e) { try { cv.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ } ptrs[e.pointerId] = [e.clientX, e.clientY]; last = [e.clientX, e.clientY]; pinch = 0; self.anim = self.anim && self.anim.kind === 'jump' ? null : self.anim; });
+    cv.addEventListener('pointerdown', function (e) { try { cv.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ } ptrs[e.pointerId] = [e.clientX, e.clientY]; last = [e.clientX, e.clientY]; pinch = 0; self.cancelAuto(); });
     cv.addEventListener('pointermove', function (e) {
       if (!ptrs[e.pointerId]) return;
       var ids = Object.keys(ptrs), r = cv.getBoundingClientRect();
@@ -878,7 +933,8 @@ var LookAliveRender = (function () {
     cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
     cv.addEventListener('dblclick', function () { self.resetView(); self.touchedView(); });
   };
-  Dish.prototype.touchedView = function () { if (this.uiHint) this.uiHint.style.opacity = '0'; };
+  Dish.prototype.cancelAuto = function () { if (this.anim && this.anim.kind === 'jump') this.anim = null; else if (this.anim && this.anim.kind === 'event') { this.anim = null; this.userMoved = true; } };
+  Dish.prototype.touchedView = function () { this.userMoved = true; if (this.anim && this.anim.kind === 'event') this.anim = null; if (this.uiHint) this.uiHint.style.opacity = '0'; };
 
   // ---- fields at a tick (interpolated between the 10-tick snapshots, then scaled by the per-tick history)
   Dish.prototype.fieldsAt = function (t) {
@@ -931,7 +987,21 @@ var LookAliveRender = (function () {
       var rsh = cntR / Math.max(1, cntN + cntR); sCap *= 1 + TUNE.crowd * smooth(0.3, 0.85, rsh); thinN = clamp(sCap / Math.max(1, cntN + cntR), 0.04, 1); var bst = 1 + (TUNE.robotBoost - 1) * (1 - smooth(TUNE.boostLo, TUNE.boostUntil, rsh)); thinR = Math.min(1, thinN * bst);   // robots are thinned less (you must stay findable); the on-screen pink share is overstated by robotBoost only while zoomed out
     }
     this.thin = [thinN, thinR]; this.vis = [cntN, cntR];
-    var compN = 1, compR = 1;
+    var compN = 1, compR = 1, crowdK = 0, liftK = 0, pS = null, gn = this.gn;
+    if (!noCull) {   // readable crowds (never part of signature(), which packs with noCull)
+      var zg = 1 - smooth(TUNE.crowdZoom[0], TUNE.crowdZoom[1], zz), shg = smooth(TUNE.crowdShare[0], TUNE.crowdShare[1], rsh);
+      crowdK = TUNE.crowdDim * zg * shg; liftK = TUNE.nativeLift * zg * shg;
+      if (crowdK > 0.001) {
+        var pR = this.pR, ix, iy, dx, dy, sx, sy, sm9, cnt9;
+        if (!this.pRs || this.pRs.length !== gn * gn) this.pRs = new Float32Array(gn * gn);
+        pS = this.pRs;
+        for (iy = 0; iy < gn; iy++) for (ix = 0; ix < gn; ix++) {
+          sm9 = 0; cnt9 = 0;
+          for (dy = -1; dy <= 1; dy++) { sy = iy + dy; if (sy < 0 || sy >= gn) continue; for (dx = -1; dx <= 1; dx++) { sx = ix + dx; if (sx < 0 || sx >= gn) continue; sm9 += pR[sy * gn + sx]; cnt9++; } }
+          pS[iy * gn + ix] = sm9 / cnt9;
+        }
+      }
+    }
     // natives
     if (!noCull) this.shapeCounts = this.natKind ? { thermostichus: 0, filament: 0, thermocrinis: 0 } : { lacto: 0, strep: 0, helico: 0 };
     for (j = 0; j < S.n && n < cap; j++) {
@@ -944,7 +1014,7 @@ var LookAliveRender = (function () {
       vis = Math.min(1, (q - th) / (0.22 * q + 0.004));
       o = n * 16; inst[o] = x; inst[o + 1] = y; inst[o + 2] = rN * compN * (0.8 + 0.5 * S.sz[j]) * (0.12 + 0.88 * Math.pow(vis, 0.7)) * clamp((thinN - S.g4[j]) / 0.08 + 0.3, 0.3, 1) * this.natRK[j]; inst[o + 3] = S.ang[j] + (jit ? 0.25 * Math.sin(tm * 0.2 + S.ph[j] * 30) : 0);
       inst[o + 4] = 0; inst[o + 5] = S.dep[j]; inst[o + 6] = S.ph[j]; inst[o + 7] = this.natHl[j];
-      inst[o + 8] = 0; inst[o + 9] = 0; inst[o + 10] = this.natSeg[j]; inst[o + 11] = this.natTail[j]; inst[o + 12] = crashFade * (0.6 + 0.4 * S.g3[j]); inst[o + 13] = 0; inst[o + 14] = 0; inst[o + 15] = this.natForm[j];
+      inst[o + 8] = 0; inst[o + 9] = 0; inst[o + 10] = this.natSeg[j]; inst[o + 11] = this.natTail[j]; inst[o + 12] = crashFade * (0.6 + 0.4 * S.g3[j]) - liftK; inst[o + 13] = 0; inst[o + 14] = 0; inst[o + 15] = this.natForm[j];
       n++;
       if (!noCull && this.natKind) { var kdj = this.natKind[j]; if (kdj === 1) this.shapeCounts.thermostichus++; else if (kdj === 2) this.shapeCounts.filament++; else this.shapeCounts.thermocrinis++; }
       else if (!noCull) { var fmj = this.natForm[j]; if (fmj === 1) this.shapeCounts.lacto++; else if (fmj === 2) this.shapeCounts.strep++; else this.shapeCounts.helico++; }
@@ -966,7 +1036,7 @@ var LookAliveRender = (function () {
       inst[o + 2] = rR * compR * (0.8 + 0.4 * S.sz[j]) * (0.5 + 0.5 * vis) * (dormant ? 0.72 : 1) * (1 + TUNE.pulseSize * pulse) * (1 - 0.35 * stress); inst[o + 3] = S.ang[j];
       inst[o + 4] = 1; inst[o + 5] = S.dep[j]; inst[o + 6] = S.ph[j]; inst[o + 7] = dormant ? 0.55 : S.hl[j];
       inst[o + 8] = 0; inst[o + 9] = dis; inst[o + 10] = sm; inst[o + 11] = bf.motor && !dormant && S.g1[j] < 0.35 ? 1 : 0;
-      inst[o + 12] = crashFade * (0.6 + 0.4 * S.g3[j]); inst[o + 13] = eg; inst[o + 14] = dormant; inst[o + 15] = 0;
+      inst[o + 12] = pS ? 1 - (1 - crashFade * (0.6 + 0.4 * S.g3[j])) * (1 - crowdK * smooth(TUNE.crowdLo, TUNE.crowdHi, pS[S.ci[j]])) : crashFade * (0.6 + 0.4 * S.g3[j]); inst[o + 13] = eg; inst[o + 14] = dormant; inst[o + 15] = 0;
       n++;
       if (dis > 0.06 && dis < 0.94 && bubbles < 220 && ns < scap - 1 && (S.g1[j] < 0.55)) {   // acid fizz: a bubble rising off each dissolving cell
         bubbles++; var k2 = ns * 8; spk[k2] = x + 0.004 * Math.sin(S.ph[j] * 50); spk[k2 + 1] = y - dis * 0.03 - 0.004; spk[k2 + 2] = 0.0035 + 0.005 * S.g3[j]; spk[k2 + 3] = S.dep[j];
@@ -1046,9 +1116,9 @@ var LookAliveRender = (function () {
     eng.resize();
     this.stepAnim(dt);
     var focus = this.focusBase;
-    if (!this.reduced && !this.anim) focus += 0.03 * Math.sin(this.time * 0.8) + 0.014 * Math.sin(this.time * 2.1 + 1);
+    if (!this.reduced && (!this.anim || this.anim.kind === 'event')) focus += 0.03 * Math.sin(this.time * 0.8) + 0.014 * Math.sin(this.time * 2.1 + 1);
     this.focus = focus;
-    var zoom = this.view.zoom, sc = this.baseScale() * zoom, K = 34 * TUNE.blur * clamp(Math.min(eng.W, eng.H) / eng.px / 760, 0.28, 1.2) * (this.anim ? 1 + TUNE.rackBoost * Math.exp(-1.8 * this.anim.t) : 1), kz = 0.55 + 0.45 * Math.sqrt(zoom);
+    var zoom = this.view.zoom, sc = this.baseScale() * zoom, K = 34 * TUNE.blur * clamp(Math.min(eng.W, eng.H) / eng.px / 760, 0.28, 1.2) * (this.anim && this.anim.kind !== 'event' ? 1 + TUNE.rackBoost * Math.exp(-1.8 * this.anim.t) : 1), kz = 0.55 + 0.45 * Math.sqrt(zoom);
     var bgBlur = clamp(Math.max(Math.abs(TUNE.focus - focus) - TUNE.tol, 0) * K * kz, 0, 72);
     var tm = this.reduced ? 0 : this.time;
     var r = this.pack(Math.min(this.T, Math.max(0, this.tick)), tm, sc, false), fx = this.fx;
