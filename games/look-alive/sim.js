@@ -780,10 +780,12 @@ var LookAlive = (function () {
     } else if (above > below) {
       var ta = band.warm; for (t = band.warm; t <= T; t++) if (H.share[t] > band.hi) { ta = t; break; }
       var peak = 0; for (t = 0; t <= T; t++) if (H.share[t] > peak) peak = H.share[t];
-      var cu = growthCulprit(run, true);
+      var cu = growthCulprit(run, true), spore = !!bp.bio && bp.bio.id === 'sporulate' && avg(H.dorm, ta, T) >= 0.25;
+      // Sporulate: spores never die and still count in the share, so a colony that sleeps while the natives die back ends up over the band. Name it plainly.
+      if (spore) cu = { id: 'sporulate', name: 'your Sporulate reflex (spores never die, and they still count in your share)' };
       res.cause = 'overgrew'; res.from = ta; res.to = T; res.dominance = above / Math.max(1, above + below);
       res.card = cu ? cu.name : null;
-      if (D.abundance) res.text = 'Took over the dish by tick ' + ta + ': your share passed ' + passed(H, band) + ' and the guards noticed.';
+      if (D.abundance) res.text = 'Took over the dish by tick ' + ta + ': your share passed ' + passed(H, band) + (spore ? ', pushed up by ' + cu.name + ',' : '') + ' and the guards noticed.';
       else res.text = 'Over the band from tick ' + ta + ': your share reached ' + pct(peak) + ' (ceiling ' + pct(band.hi) + ')' + (cu ? ', pushed up by ' + cu.name : '') + '.';
     } else if (below > 0) {
       var evs = evList(D), which = 0;

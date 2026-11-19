@@ -372,11 +372,14 @@ const d5 = data[5];
     let still = 0, gap = 0, borderline = 0;
     pick.forEach(r => {
       const o = B.play(data[id].D, r.build, 64);
-      if (o.v.win) still++; else if (Math.abs(o.v.bandFrac - data[id].D.band.need) <= 0.05 || Math.abs(r.bandFrac - data[id].D.band.need) <= 0.05 || data[id].D.aliveOnly || r.peakS >= 6.5) borderline++;   // borderline: within 5 points of the band line, or within 1.5 of the stage 3 line (S 8)
+      // borderline: within 5 points of the band line, within 1.5 of the stage 3 line (S 8), or the 16x16 forecast already showed a checked stat outside its safe zone
+      // (the player was warned: the bars come from the same 16x16 run). A 64x64 loss of a build whose forecast said every checked stat is safe is never borderline.
+      const warned = Sim.stats(data[id].D, r.build).some(s => s.checked && s.state !== 'safe');
+      if (o.v.win) still++; else if (Math.abs(o.v.bandFrac - data[id].D.band.need) <= 0.05 || Math.abs(r.bandFrac - data[id].D.band.need) <= 0.05 || data[id].D.aliveOnly || r.peakS >= 6.5 || warned) borderline++;
       gap += Math.abs(o.v.finalShare - r.finalShare);
     });
     all = all && still + borderline === pick.length && still / Math.max(1, pick.length) >= 0.85;
-    parts.push('dish ' + id + ': ' + still + ' of ' + pick.length + ' sampled 16x16 winners still win at 64x64' + (borderline ? ' (' + borderline + ' more were borderline: within 5 points of the band line, or peak S within 1.5 of the stage 3 line)' : '') + ', mean final-share gap ' + f(100 * gap / Math.max(1, pick.length), 1) + ' points');
+    parts.push('dish ' + id + ': ' + still + ' of ' + pick.length + ' sampled 16x16 winners still win at 64x64' + (borderline ? ' (' + borderline + ' more were borderline: within 5 points of the band line, peak S within 1.5 of the stage 3 line, or a forecast bar already out of its zone)' : '') + ', mean final-share gap ' + f(100 * gap / Math.max(1, pick.length), 1) + ' points');
   });
   result(all, 'E6 GRID AGREEMENT', parts.join('; '));
 }

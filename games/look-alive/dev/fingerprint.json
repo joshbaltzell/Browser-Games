@@ -85,17 +85,17 @@
  },
  "7:carried": {
   "win": false,
-  "cause": "below",
-  "final": 0.034185,
-  "H": "f125b05f225f1836",
-  "snaps": "5fcb481375231a52"
+  "cause": "exposed:regularity",
+  "final": 0.075439,
+  "H": "86e9a1a1f2b7696e",
+  "snaps": "e9548dd9d3db2ef2"
  },
  "7:winner": {
   "win": true,
   "cause": null,
-  "final": 0.068183,
-  "H": "c86452ceccaaebe5",
-  "snaps": "8c727ecbdc9707b7"
+  "final": 0.109129,
+  "H": "eaa7c4f7531aae48",
+  "snaps": "a3062b42ad3eb7fb"
  },
  "8:carried": {
   "win": false,
