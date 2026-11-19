@@ -10,11 +10,14 @@ All milestones M0 to M9 are done and committed on local branch `look-alive-wave-
 
 ## Images: about $1.70 of the $3 cap.
 
-## Final checks
-check.js 48 of 49 (P7 known); check-h2.js 9 of 11 (H6, H10); both walkthroughs pass at five sizes; layout, contrast, u1, lore, pages, smoke clean.
+## Current checks (after the follow-up passes of 2026-11-19, last commit on the branch)
+check.js 48 of 49 (P7, dish 2 flood kept by Josh); check-h2.js 11 of 12 (H8 at 89.7% against 90%); both walkthroughs, layout, contrast, u1, lore, pixel, pages, smoke clean.
+
+## Follow-up passes after the overnight run
+6d5bfe9 result cards read the real run + forecast margin + starved tip; 8a27b2e slow-frame fallback fix; f5a7d2a P7 counts reachable dials; 8d93204 dials alone no longer win dishes 11 to 14 (night penalty for fast cells, H11).
 
 ## Open for the owner
-Play dishes 1 to 5 and 11 to 14 (PLAYTEST.md, ten questions in the report); decide dish 2; one "starved" tip for dishes 11 to 13; H6; then push and open the PR (title and body are in the report).
+Push and open the PR (title and body in WAVE-2-REPORT.md). Replay dishes 12 to 14 (harder now). Dish 6 still falls to Pace alone (left on purpose). Next ideas are in next-phase-visual-plan.html (untracked, Josh's): event zoom during Run, readable colony edges, pin-and-compare.
 
 ## Notes for the report
 - M1: watchPinkEnd is 64 of 2243 px (2.9%) against the plan's 2% line; the residual grew with the bigger dish and the new renderer. Walkthrough passes.

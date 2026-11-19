@@ -1,6 +1,6 @@
 # Look Alive wave 2: report (2026-11-19, unattended run)
 
-All three stages are built and committed on local branch `look-alive-wave-2`. Nothing was pushed and no PR was opened. Two habitat-2 checks fail and one world-1 check fails by decision (dish 2 left alone); all three are listed below. Nobody has played any of it.
+All three stages are built and committed on local branch `look-alive-wave-2`. Nothing was pushed and no PR was opened. At the end of the overnight run two habitat-2 checks failed and one world-1 check failed by decision (dish 2 left alone). Later the same day three follow-up passes changed that: read the two addenda at the end for the current state. Nobody has played any of it.
 
 Agent dispatches: 16 of the 45 allowed (14 Sonnet, 2 Opus, 0 Haiku). Images: about $1.70 of the $3 cap (32 generations). I do not have a dollar figure for the model spend; check `/cost`.
 
@@ -26,7 +26,7 @@ Final results, all run by me on the final tree:
 | Check | Result |
 |---|---|
 | `check.js` full (628 s) | 48 of 49. P7 fails (dish 2, known) |
-| `check-h2.js` full (156 s) | 9 of 11. H6 and H10 fail (below) |
+| `check-h2.js` full (156 s) | 9 of 11 at the time of the run. H6 and H10 failed (below); now 11 of 12, see the addenda |
 | `fingerprint.js` and `fingerprint-wide.js --with2` | Dishes 1 to 10 unchanged by habitat 2 |
 | `walkthrough.js` at 1280x720, 1366x768, 390x844, 320x640, 844x390 | 10 of 10 at every size, keyboard-only run passes, story checks 10 of 10, 0 console errors |
 | `walkthrough-h2.js` at the same five sizes | 4 of 4 at every size, 0 console errors |
@@ -114,7 +114,7 @@ Wave 2 of Look Alive, built from the plan in `docs/superpowers/plans/2026-11-18-
 - Story: Scale of Mind strip, field notes, readings, colony comments, a completion card that points at the next site, a lore check.
 - Habitat 2, "The banded water": a temperature gradient, grazing at the cool edges, a current, nights without oxygen, the Motor slot, seven new cards, three new stats, four dishes in `levels2.js`. Dishes 1 to 10 are bit-identical with it loaded (two fingerprint guards).
 
-Checks: `check.js` 48 of 49 (P7 on dish 2 is a known failure, dish 2 was left alone); `check-h2.js` 9 of 11 (H6 bars agree at 91.7% against 95%; H10 no own "starved" tip on dishes 11 to 13); both walkthroughs pass at five viewport sizes with 0 console errors; layout, contrast, lore, pages and smoke checks clean.
+Checks: `check.js` 48 of 49 (P7, dial smoothness on dish 2: 9 of 34 reachable winners; the flood was kept on purpose); `check-h2.js` 11 of 12 (H8: the coarse forecast grid and the full run agree on 89.7% of sampled winners against 90%); both walkthroughs pass at five viewport sizes with 0 console errors; layout, contrast, lore, pages and smoke checks clean.
 
 Not verified: nobody has played it; Safari and touch were not tested. See `WAVE-2-REPORT.md` for the full list.
 
