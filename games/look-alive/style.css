@@ -565,3 +565,56 @@ canvas { display: block; }
   .letstamp { font-size: 22px; bottom: 12px; right: 30px; }
   .coffee { width: 80px; height: 80px; bottom: 4px; }
 }
+
+/* U1 tier 2b: win card and loss slide */
+.stamp.win { border-color: var(--stamp-grn); color: var(--stamp-grn); filter: url(#inkRough); }
+.paperbars { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; margin: 2px 0 6px; }
+.paperbars .sb { height: 38px; padding-top: 1px; } .paperbars .sb-top { height: 14px; }
+.paperbars .sb-name { font-family: var(--type); font-weight: 400; color: var(--pink-ink); }
+.paperbars .sb-track { background-color: var(--paper2); border-color: var(--paper-dim); }
+.paperbars .sb-zone { background: linear-gradient(rgba(29,107,74,.30), rgba(29,107,74,.30)), #d6dcc0; border-color: var(--stamp-grn); }
+.paperbars .sb-verdict { font-size: 10.5px; height: 13px; line-height: 13px; }
+.paperbars .sb-verdict.ok { color: var(--stamp-grn); } .paperbars .sb-verdict.bad { color: #8a1f3a; } .paperbars .sb-verdict.amb { color: var(--paper-key); } .paperbars .sb-verdict.neu { color: var(--paper-dim); }
+.paperbars .sb-arrow, .paperbars .sb-tag { display: none; }
+.winwrap .memo { transform: rotate(-.6deg); }
+.losswrap { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 560px); gap: 18px; align-items: start; max-width: 100%; }
+.slide { position: relative; background: #05060c; border: 1px solid var(--vline); border-radius: var(--rad); padding: 16px 16px 10px; box-shadow: 0 10px 40px #000; }
+.slidetop { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; align-items: center; }
+.slideimg { width: 200px; height: 200px; border-radius: 50%; object-fit: cover; background: #000; box-shadow: 0 0 0 3px #1b1f3a, 0 0 0 4px var(--vline2); }
+.slidebars .sb { position: relative; overflow: visible; }
+.chalk { position: absolute; right: 100%; top: -8px; width: 130px; height: 44px; margin-right: -6px; overflow: visible; pointer-events: none; }
+.chalk.ontime { right: auto; left: 40%; top: auto; bottom: 34px; }
+.ch { fill: none; stroke: var(--chalk); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; filter: url(#chalkRough); stroke-dasharray: 240; animation: chalkdraw .8s ease-out .3s both; }
+@keyframes chalkdraw { from { stroke-dashoffset: 240; } to { stroke-dashoffset: 0; } }
+.slidetag { position: absolute; right: -10px; top: -14px; z-index: 2; transform: rotate(6deg); background: var(--paper); color: var(--stamp-red); font-family: var(--type); font-size: 22px; padding: 6px 16px 6px 26px; border: 3px double var(--stamp-red); border-radius: 3px; box-shadow: 0 4px 14px #000; }
+.slidetag::before { content: ""; position: absolute; left: 9px; top: 50%; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%; background: #05060c; box-shadow: 0 0 0 1.5px #a3885a; }
+.slidetime { display: block; width: 100%; height: 46px; margin-top: 10px; }
+.slidetime .tl { stroke: #c9c4b4; stroke-width: 1.5; } .slidetime .tk { stroke: #8a8576; } .slidetime .tb { fill: rgba(255,93,108,.22); }
+.slidetime .pin { fill: #e0283c; stroke: #000; } .slidetime .pinhi { fill: #ffb3bb; } .slidetime .tt { fill: #e6e9f4; font-family: var(--mono); font-size: 11px; text-anchor: middle; }
+@media (max-width: 1180px) { .losswrap { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) { .slidetop { grid-template-columns: 1fr; justify-items: center; } .slideimg { width: 160px; height: 160px; } .chalk { display: none; } }
+@media (prefers-reduced-motion: reduce) { .ch { animation: none; } }
+
+/* U1 tier 2c: dish wall */
+.listwrap { max-width: 1120px; }
+.wall { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px 18px; margin-bottom: 8px; }
+.dtile { position: relative; height: 292px; display: grid; grid-template-rows: 146px 22px 34px 32px 44px; gap: 3px; padding: 10px; background: var(--panel); border: 1px solid var(--vline); border-radius: var(--rad); }
+.dthumb { position: relative; width: 140px; height: 140px; justify-self: center; border-radius: 50%; overflow: visible; background: radial-gradient(circle, #0b0c18 0, #04050a 70%); box-shadow: 0 0 0 2px #1b1f3a, 0 0 0 3px var(--vline2), 0 0 18px rgba(120,100,230,.22); }
+.dthumb img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+.dtile:not(:nth-child(5n)) .dthumb::after { content: ""; position: absolute; left: calc(100% + 24px); top: 50%; width: 40px; border-top: 1px dashed var(--vline2); }
+.dmeta { display: flex; gap: 8px; align-items: baseline; white-space: nowrap; overflow: hidden; } .dmeta .num { font-family: var(--mono); color: var(--vio); font-size: 16px; } .dmeta .t { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
+.dtile .g { font-size: 12px; line-height: 1.35; color: var(--ink); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.dtile .c { font-size: 11px; line-height: 1.35; color: var(--dim); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.dtile button.big { min-height: 40px; font-size: 14px; }
+.dtile.locked { opacity: .5; } .dtile.locked .dthumb { box-shadow: 0 0 0 2px #15182a, 0 0 0 3px #262a40; }
+.dstamp { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-12deg); padding: 3px 10px; font-family: var(--type); font-size: 15px; letter-spacing: .08em; color: #8cebd0; border: 3px double #2dd4a7; background: rgba(4,20,15,.72); border-radius: 3px; white-space: nowrap; }
+.dstamp.g-convincing { color: #a8e6ff; border-color: var(--cy); } .dstamp.g-passable { color: #ffd9a0; border-color: var(--amb); }
+@media (max-width: 1180px) { .wall { grid-template-columns: repeat(3, minmax(0, 1fr)); } .dtile .dthumb::after { display: none; } }
+@media (max-width: 820px) { .wall { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .dtile { height: 276px; grid-template-rows: 124px 22px 34px 32px 44px; } .dthumb { width: 118px; height: 118px; } }
+/* U1 tier 2b fixes (orchestrator): chalk arrow was clipped by .statbars overflow; win card captions and bar rows were cramped */
+.slidebars { overflow: visible; }
+.winwrap .covercap + .covercap { margin-top: 10px; }
+.paperbars { margin-top: 4px; overflow: visible; }
+.paperbars .sb { height: 42px; }
+/* any CSS animation on the chalk path left it undrawn once finished (seen in Chrome with the displacement filter), so the arrow is static */
+.chalk .ch { stroke-dasharray: none; animation: none; }

@@ -66,7 +66,7 @@
   var NB_TITLE = { 1: 'How acid-loving microbes keep acid out', 2: 'The growth curve and carrying capacity', 3: 'Fermentation and respiration', 4: 'Variation between cells', 5: 'Sensing and response', 6: 'How acid-lovers trade energy for safety', 7: 'Why real cells cannot have everything', 8: 'Bet-hedging: sleepers and spores', 9: 'Why variation is normal in living things', 10: 'A summary page from the lab' };
   var PACE_NAMES = ['Glacial', 'Sluggish', 'Slow', 'Unhurried', 'Native rate', 'Brisk', 'Quick', 'Eager', 'Frantic'];
   var SLOP_NAMES = ['Perfectly regular', 'Ledger', 'Tidy', 'Careful', 'Casual', 'Relaxed', 'Messy', 'Chaotic', 'Teenager'];
-  var STAMPS = ['SUFFICIENTLY BACTERIAL', 'PASSES AS NATIVE', 'NOTHING TO SEE HERE', 'APPROVED BY THE IMMUNE SYSTEM', 'UNREMARKABLE', 'CLEARED FOR COLONISATION'];
+  var STAMPS = ['SUFFICIENTLY BACTERIAL', 'PASSES AS NATIVE', 'NOTHING TO SEE HERE', 'OF NO INTEREST TO THE GUARDS', 'UNREMARKABLE', 'CLEARED FOR COLONISATION'];
   var STAGE_NAMES = ['Calm', 'Curiosity', 'Inspection', 'Response'];
   var CAUSE_WORDS = { acid: 'Dissolved by the acid', 'exposed:growth': 'Cover blown: Growth (speed)', 'exposed:waste': 'Cover blown: Smell', 'exposed:casualties': 'Cover blown: Growth (share)', 'exposed:regularity': 'Cover blown: Naturalness',
     overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band' };
@@ -184,7 +184,7 @@
     ['Landing', 'The ground is mountains.', 'We went down to the surface. Our eyes are small, so every grain of soil is a mountain and one drop of water is a lake.'],
     ['Sensors', 'A warm mountain.', 'Our sensors found a mountain nearby that gives off heat. It is far too big and too still to be alive. But inside it, there is a crowd of life, denser than anything we have ever seen.'],
     ['The crowd', 'It must be a civilization.', 'So many, so close, so busy. Where we come from, a crowd like this means a civilization. We think a city lives inside the warm mountain, so we will treat it as one.'],
-    ['The plan', 'We must blend in.', 'Our scouts took samples. Individuals can join another group, so we will send one to join theirs. First, its disguise is tested in a petri dish.']
+    ['The plan', 'We must blend in.', 'Our scouts took samples. Every local is about our size, which is the size minds come in, so the crowd is full of them. Individuals can join another group: we will send one of ours to join theirs, once its disguise passes a test dish.']
   ];
   function renderIntro() {
     var n = S.introAt, b = INTRO[n], img = $('introImg');
@@ -204,19 +204,21 @@
     var i = ORDER.indexOf(id); return i > 0 && !S.cleared[ORDER[i - 1]];
   }
   function renderList() {
-    var box = $('dishList'); box.innerHTML = '';
+    var box = $('dishList'); box.innerHTML = ''; var wall = null;
     ORDER.forEach(function (id) {
       var d = Lv.dish(id), locked = isLocked(id), cleared = !!S.cleared[id], gr = S.grades[id];
-      if (id === 1) box.appendChild(el('div', 'grouph', 'Learning the cell <span class="dim">dishes 1 to 5: one new problem each</span>'));
-      if (id === 6) box.appendChild(el('div', 'grouph', 'Exams <span class="dim">dishes 6 to 10: no answer tips, several cells can pass</span>'));
-      var row = el('div', 'dishrow' + (locked ? ' locked' : '') + (cleared ? ' cleared' : ''));
+      if (id === 1 || id === 6) {
+        box.appendChild(el('div', 'grouph', id === 1 ? 'Learning the cell <span class="dim">dishes 1 to 5: one new problem each</span>' : 'Exams <span class="dim">dishes 6 to 10: no answer tips, several cells can pass</span>'));
+        wall = el('div', 'wall'); box.appendChild(wall);
+      }
       var st = locked ? 'Locked' : cleared ? (d.exam && gr ? gr : 'Cleared') : 'Open';
-      row.innerHTML = '<div class="num">' + id + '</div><div class="mid"><div class="t">' + esc(d.title) + '</div><div class="g">' + esc(d.problem) + '</div>' +
-        '<div class="c">You start with: ' + esc(buildWords(carriedFor(id))) + '</div></div><div class="st' + (gr ? ' g-' + gr.toLowerCase() : '') + '">' + st + '</div>';
-      var b = el('button', 'big', locked ? 'Locked' : cleared ? 'Again' : 'Start');
-      b.disabled = locked; b.setAttribute('data-dish', id);
-      b.addEventListener('click', function () { selectDish(id); });
-      row.appendChild(b); box.appendChild(row);
+      var tile = el('div', 'dtile' + (locked ? ' locked' : cleared ? ' cleared' : ' open'));
+      tile.innerHTML = '<div class="dthumb">' + (locked ? '' : '<img alt="" src="assets/thumbs/dish-' + id + '.jpg">') + (cleared ? '<span class="dstamp' + (gr ? ' g-' + gr.toLowerCase() : '') + '">' + esc(st) + '</span>' : '') + '</div>' +
+        '<div class="dmeta"><span class="num">' + id + '</span><span class="t">' + esc(d.title) + '</span></div><div class="g">' + esc(d.problem) + '</div>' +
+        '<div class="c">You start with: ' + esc(buildWords(carriedFor(id))) + '</div>';
+      var im = tile.querySelector('img'); if (im) im.addEventListener('error', function () { im.remove(); });
+      var b = el('button', 'big', locked ? 'Locked' : cleared ? 'Again' : 'Start'); b.disabled = locked; b.setAttribute('data-dish', id);
+      b.addEventListener('click', function () { selectDish(id); }); tile.appendChild(b); wall.appendChild(tile);
     });
   }
   function selectDish(id) {
@@ -1088,7 +1090,26 @@
     var v = run.v;
     var spare = d.exam ? ' Energy left: ' + (d.energy - Sim.energyOf(Sim.normalize(run.build))) + ' of ' + d.energy + '.' : '';
     if (d.aliveOnly) return '<div class="row"><b>Record</b><span>Colony at the end: ' + Math.round(run.H.rob[run.T] / run.H.rob[0] * 100) + '% of where it started.</span></div>';
-    return '<div class="row"><b>Record</b><span>In the band ' + Math.round(v.bandFrac * 100) + '% of the time (needs ' + Math.round(d.band.need * 100) + '%). Final share ' + (v.finalShare * 100).toFixed(1) + '%. Highest immune stage: ' + STAGE_NAMES[v.maxStage] + '.' + spare + '</span></div>';
+    return '<div class="row"><b>Record</b><span>In the band ' + Math.round(v.bandFrac * 100) + '% of the time (needs ' + Math.round(d.band.need * 100) + '%). Final share ' + (v.finalShare * 100).toFixed(1) + '%. Highest guard alert: ' + STAGE_NAMES[v.maxStage] + '.' + spare + '</span></div>';
+  }
+  var TAG_WORDS = { acid: 'DISSOLVED.', overgrew: 'TOOK OVER.', starved: 'STARVED OUT.', bust: 'STARVED OUT.', bloom: 'OUTGROWN.', below: 'TOO FEW.', band: 'OUT OF STEP.' };
+  function slideTag(cause) { return TAG_WORDS[cause] || (/^exposed:/.test(cause) ? 'COVER BLOWN.' : 'FAILED.'); }
+  function timelineSvg(T, from, to) {
+    function x(t) { return 10 + 580 * Math.max(0, Math.min(T, t)) / T; }
+    var o = '<svg class="slidetime" viewBox="0 0 600 46" role="img" aria-label="Timeline: it went wrong at tick ' + from + ' of ' + T + '"><line class="tl" x1="10" y1="22" x2="590" y2="22"/>', i;
+    for (i = 0; i <= 10; i++) o += '<line class="tk" x1="' + x(T * i / 10).toFixed(1) + '" y1="17" x2="' + x(T * i / 10).toFixed(1) + '" y2="27"/>';
+    o += '<rect class="tb" x="' + x(from).toFixed(1) + '" y="14" width="' + Math.max(2, x(to) - x(from)).toFixed(1) + '" height="16"/>';
+    o += '<circle class="pin" cx="' + x(from).toFixed(1) + '" cy="22" r="7"/><circle class="pinhi" cx="' + (x(from) - 2).toFixed(1) + '" cy="20" r="2"/>';
+    return o + '<text class="tt" x="' + Math.max(26, Math.min(574, x(from))).toFixed(1) + '" y="43">tick ' + from + '</text></svg>';
+  }
+  function chalkSvg() { return '<svg class="chalk" viewBox="0 0 130 44" aria-hidden="true"><path class="ch" d="M4 8 C 34 2, 64 34, 112 26"/><path class="ch" d="M100 16 L 115 26 L 99 35"/></svg>'; }
+  function dishSnapshot(t) {   // the dish at the moment it went wrong, as a still for the slide
+    try {
+      var g = GL.r;
+      if (g && g.supported && GL.canvas) { g.setTick(t); g.visible = true; g.frame(performance.now()); var u = GL.canvas.toDataURL('image/jpeg', 0.85); g.setTick(S.t); return u; }
+      var c = $('runDish'); if (c && c.width) return c.toDataURL('image/jpeg', 0.85);
+    } catch (e) { /* lost context */ }
+    return '';
   }
   function showResult() {
     var run = S.run, d = dishObj(); if (!run) return;
@@ -1098,22 +1119,32 @@
       var next = ORDER[ORDER.indexOf(d.id) + 1], gr = d.exam ? Sim.grade(run, d, run.build) : null;
       var gradeHtml = gr ? '<div class="gradebox g-' + gr.toLowerCase() + '" id="gradeBox"><span class="gk">Exam grade</span><b>' + gr + '</b><span class="gn">' + esc(GRADE_NEXT[gr]) + '</span></div>' : '';
       var last = next == null && ORDER.every(function (i) { return S.cleared[i]; });
-      html = '<div class="winwrap"><div class="paper memo"><h2>CLEARED</h2><div class="stampbox"><div class="stamp' + (reduced ? '' : ' slam') + '" id="stamp">' + stamp + '</div></div>' +
-        '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' + gradeHtml +
+      html = '<div class="winwrap"><div class="paper memo"><h2>CLEARED</h2><div class="stampbox"><div class="stamp win' + (reduced ? '' : ' slam') + '" id="stamp">' + stamp + '</div></div>' +
+        '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' + gradeHtml + '<div class="covercap">Final readings</div><div class="paperbars statbars" id="winBars"></div>' +
         '<div class="row"><b>Dish</b><span>' + d.id + ': ' + esc(d.title) + '</span></div>' + recordRow(run, d) +
         '<div class="pbtns">' + (next != null ? '<button type="button" data-act="next">Next dish</button>' : last ? '<button type="button" data-act="complete">Sampling complete</button>' : '') + '<button type="button" data-act="watch">Watch replay</button><button type="button" data-act="list">Dish list</button></div></div>' +
         '<div class="paper notebook"><h3>From our samples: notebook page ' + (ORDER.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id]) + '</h4><p>' + esc(d.notebook) + '</p><div class="scrawl">(Copied from the locals. Keep it secret from the guards.)</div></div></div>';
     } else {
       var a = run.autopsy;
-      html = '<div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span>' + esc(memoFrom(a.cause)) + '</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
+      html = '<div class="losswrap"><div class="slide" id="lossSlide"><div class="slidetag" id="slideTag">' + slideTag(a.cause) + '</div>' +
+        '<div class="slidetop"><img class="slideimg" id="slideImg" alt="The dish at the moment it went wrong"><div class="slidebars statbars" id="slideBars"></div></div>' +
+        timelineSvg(run.T, a.from, a.to) + '</div><div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span>' + esc(memoFrom(a.cause)) + '</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
         '<div class="row"><b>Finding</b><span class="head"><strong>' + esc(a.headline) + '</strong> ' + esc(findingBody(a)) + '</span></div>' +
         '<div class="row"><b>Stat that failed</b><span>' + esc(failStatLine(run)) + '</span></div>' +
         '<div class="row"><b>Also</b><span class="sec">' + (a.second ? esc(a.second.text) : 'No second cause of note.') + '</span></div>' +
         recordRow(run, d) +
         '<div class="row"><b>' + (d.exam ? 'Help' : 'Tip') + '</b><span class="tipspan"><button type="button" data-act="tip" id="memoTipBtn">' + (d.exam ? 'What changes this?' : 'Tip') + '</button><span id="memoTip"></span></span></div>' +
-        '<div class="pbtns"><button type="button" data-act="adapt">Back to Adapt</button><button type="button" data-act="jump">Jump to the moment</button><button type="button" data-act="watch">Watch replay</button></div></div>';
+        '<div class="pbtns"><button type="button" data-act="adapt">Back to Adapt</button><button type="button" data-act="jump">Jump to the moment</button><button type="button" data-act="watch">Watch replay</button></div></div></div>';
     }
     ov.innerHTML = html; ov.hidden = false; S.overlayOpen = true; renderTips(); refresh();
+    var fsx = Sim.stats(d, run.build);
+    if (v.win) { buildBars($('winBars'), d.stats); Array.prototype.forEach.call($('winBars').children, function (row, i) { setBar(row, fsx[i], {}); }); }
+    else {
+      buildBars($('slideBars'), d.stats); var hit = false;
+      Array.prototype.forEach.call($('slideBars').children, function (row, i) { var f = run.autopsy.stat === fsx[i].id; setBar(row, fsx[i], { fail: f }); if (f) { row.insertAdjacentHTML('beforeend', chalkSvg()); hit = true; } });
+      if (!hit) $('lossSlide').insertAdjacentHTML('beforeend', chalkSvg().replace('class="chalk"', 'class="chalk ontime"'));
+      var src = dishSnapshot(run.autopsy.from), im = $('slideImg'); if (src) im.src = src; else im.style.display = 'none';
+    }
   }
   function completeCard() {
     var rows = ORDER.map(function (id) {
