@@ -1,0 +1,188 @@
+{
+  "slug": "look-alive",
+  "outDir": "games/look-alive/art-src/refs",
+  "cap": 50,
+  "style": "STYLE (applies to every image): a single illustration for a game card, in the same dark-field microscope style as the attached image. Pure black background. One clear subject, centred, filling about two thirds of the square, readable at small size. Translucent glowing bodies with a bright rim and a glassy darker interior, soft bloom. Colours with fixed meanings: pink (#FF5C8A) for the player's own cell, violet (#8B5CF6) only for native bystander cells, amber (#F5A524) for acid, waste and chemicals, green (#2DD4A7) only for immune activity. Clean, charming, slightly cute, scientific. No text, no letters, no numbers, no labels, no border, no frame, no watermark.",
+  "requests": [
+    {
+      "id": "LC-01",
+      "file": "card-pump.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A round pink cell floating in amber acid haze. Around its membrane are several small turnstile-like pumps, each pushing a tiny amber droplet back out of the cell, with little arcs showing the droplets leaving. The inside of the cell is clean and clear. This is a BIOLOGY card: everything looks organic, soft, slightly irregular and alive."
+    },
+    {
+      "id": "LC-02",
+      "file": "card-lipids.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A round pink cell with an unusually thick membrane made of several tightly packed, neat layers. Small amber acid droplets bounce off the outside without getting through. A few droplets are flattened against the surface. This is a BIOLOGY card: everything looks organic, soft, slightly irregular and alive."
+    },
+    {
+      "id": "LC-03",
+      "file": "card-acidproof.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A round pink cell that is completely relaxed in amber acid: amber haze is both outside and inside the cell, and the small parts inside it are sturdy, rounded and glowing calmly, unharmed. The cell looks content. This is a BIOLOGY card: everything looks organic, soft, slightly irregular and alive."
+    },
+    {
+      "id": "LC-04",
+      "file": "card-shell.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A pink cell sealed inside a perfectly smooth, glossy ceramic sphere with one fine seam line and hexagonal panel marks. Amber acid droplets slide off the shell. Nothing can get in or out. This is a MACHINE card: the pink cell is clearly a tiny machine pretending to be a cell, with crisp hexagonal seams, tidy geometric parts and small cyan-white indicator lights."
+    },
+    {
+      "id": "LC-05",
+      "file": "card-clock.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A neat row of five identical pink cells all pinching in two at exactly the same moment, in perfect unison, with a single thin pulse ring passing through all of them. This is a MACHINE card: the pink cell is clearly a tiny machine pretending to be a cell, with crisp hexagonal seams, tidy geometric parts and small cyan-white indicator lights."
+    },
+    {
+      "id": "LC-06",
+      "file": "card-quorum.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A cluster of about nine pink cells huddled together, each leaking tiny glowing dots that gather into a soft shared haze around the group. The cells in the crowded middle are dimmer and calmer than the ones at the edge. This is a BIOLOGY card: everything looks organic, soft, slightly irregular and alive."
+    },
+    {
+      "id": "LC-07",
+      "file": "card-naps.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A small colony of about ten pink cells. Most are bright and active, but three of them are curled up, dim and clearly asleep, with a faint sleepy droop. The sleepers look safe and peaceful. This is a BIOLOGY card: everything looks organic, soft, slightly irregular and alive."
+    },
+    {
+      "id": "LC-08",
+      "file": "card-respiration.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A round pink cell glowing very brightly from within, with many bright sparkles of energy inside it and a few clean, clear bubbles drifting away from it. This is a BIOLOGY card: everything looks organic, soft, slightly irregular and alive."
+    },
+    {
+      "id": "LC-09",
+      "file": "card-fermentation.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A round pink cell with a modest inner glow, trailing a long curling plume of amber sour haze behind it, like a wisp of smoke in still air. This is a BIOLOGY card: everything looks organic, soft, slightly irregular and alive."
+    },
+    {
+      "id": "LC-10",
+      "file": "card-fuelcell.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A pink machine cell with a small glowing reactor core at its centre, a ring of tidy coils around it, and no exhaust at all: the space around it is perfectly clean and empty. This is a MACHINE card: the pink cell is clearly a tiny machine pretending to be a cell, with crisp hexagonal seams, tidy geometric parts and small cyan-white indicator lights."
+    },
+    {
+      "id": "LC-11",
+      "file": "card-wall.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A plump pink cell wrapped in a thick, sturdy outer wall drawn as a visible woven mesh, like a net bag or chain mail, holding its shape firmly. This is a BIOLOGY card: everything looks organic, soft, slightly irregular and alive."
+    },
+    {
+      "id": "LC-12",
+      "file": "card-flagellum.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A capsule-shaped pink cell with one long corkscrew tail spinning behind it, with motion arcs around the tail and a faint trail showing it swimming forward. This is a BIOLOGY card: everything looks organic, soft, slightly irregular and alive."
+    },
+    {
+      "id": "LC-13",
+      "file": "card-radio.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "Six pink machine cells spread apart in a circle, joined by perfectly straight thin lines of light into a tidy network, each with a tiny antenna ring emitting concentric signal arcs. This is a MACHINE card: the pink cell is clearly a tiny machine pretending to be a cell, with crisp hexagonal seams, tidy geometric parts and small cyan-white indicator lights."
+    },
+    {
+      "id": "LC-14",
+      "file": "card-copier.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "One pink machine cell on the left stamping out a perfect grid of identical copies to the right, every copy exactly the same size, shape and spacing, like items off a production line. This is a MACHINE card: the pink cell is clearly a tiny machine pretending to be a cell, with crisp hexagonal seams, tidy geometric parts and small cyan-white indicator lights."
+    },
+    {
+      "id": "LC-15",
+      "file": "card-repair.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A pink machine cell with a cracked, damaged patch on one side, and several tiny mechanical arms reaching from inside it, neatly fitting new hexagonal tiles into the gap. This is a MACHINE card: the pink cell is clearly a tiny machine pretending to be a cell, with crisp hexagonal seams, tidy geometric parts and small cyan-white indicator lights."
+    },
+    {
+      "id": "LC-16",
+      "file": "card-stringent.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A pink cell that has gone quiet and tight: its inner machinery is folded up small, and one small amber alarm flare glows at its centre. Around it the field is empty of food, with only one or two faint specks left. This is a BIOLOGY card: everything looks organic, soft, slightly irregular and alive."
+    },
+    {
+      "id": "LC-17",
+      "file": "card-sos.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A pink cell holding still while it repairs itself: inside is a glowing twisted ribbon with a broken section, and small helper shapes are mending the break. The cell's rim is thickened like a raised shield. This is a BIOLOGY card: everything looks organic, soft, slightly irregular and alive."
+    },
+    {
+      "id": "LC-18",
+      "file": "card-sporulate.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A rod-shaped pink cell with a bright, tough, oval spore forming inside one end, like a seed in a pod. Beside it float two finished spores: small, hard, glossy ovals with thick coats. This is a BIOLOGY card: everything looks organic, soft, slightly irregular and alive."
+    },
+    {
+      "id": "LC-19",
+      "file": "card-factory.png",
+      "size": "1024x1024",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A portrait of the default robot cell: a round pink cell that looks almost organic but has a clear hexagonal seam pattern, a tidy grid of internal parts, one small cyan indicator light, and an innocent, slightly too-perfect look. This is a MACHINE card: the pink cell is clearly a tiny machine pretending to be a cell, with crisp hexagonal seams, tidy geometric parts and small cyan-white indicator lights."
+    },
+    {
+      "id": "LC-20",
+      "file": "world-acidica.png",
+      "size": "1536x864",
+      "refs": [
+        "01-style-frame.png"
+      ],
+      "prompt": "A wide establishing illustration of the world Acidica, in the same dark-field microscope style as the attached image. A dish of amber acid haze drifting in ribbons across a black field. Violet native rod cells drift calmly, each trailing a thin amber sour plume. Food specks glitter everywhere as tiny pale dots. In the foreground one small pink cell has just arrived and is starting to fizz and dissolve at its edges in the acid. No text."
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Picnic Raid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat+Brush&family=Nunito:wght@600;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Caveat+Brush&family=Nunito:wght@600;800&display=swap" rel="stylesheet"></noscript>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="intro">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <filter id="rough" x="-6%" y="-10%" width="112%" height="120%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="7" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="6"/>
+  </filter>
+</svg>
+<a class="back" href="../../index.html">← Back to games</a>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div id="topbar">
+    <div id="score" class="plaque">0 / 12 bites</div>
+    <div id="tabs">
+      <button id="tab-raid" class="pbtn tab" type="button">Raid</button>
+      <button id="tab-defend" class="pbtn tab" type="button">Defend</button>
+      <button id="newpicnic" class="pbtn tab small" type="button">New picnic</button>
+    </div>
+    <div id="attempts" class="plaque">Attempt 1 of 3</div>
+  </div>
+
+  <div id="card" class="plaque">
+    <div class="text"><p id="line"></p><p id="coach"></p></div>
+    <button id="act" class="pbtn" type="button">Rebuild this picnic</button>
+  </div>
+
+  <div id="tray" class="plaque">
+    <div id="tools"></div>
+    <div id="slots"></div>
+    <div id="main"></div>
+  </div>
+</div>
+
+<div id="title" class="overlay">
+  <div class="title-plaque">
+    <h1>Picnic <span>Raid</span></h1>
+    <p class="goal">One lawn. Two sides.</p>
+  </div>
+  <p class="controls">Raid: pick and order your bugs, then press RAID. Defend: tap a gadget, then tap a pad.</p>
+  <div class="title-btns">
+    <button id="go-raid" class="pbtn big red" type="button"><img src="assets/ant-a.png" alt="" onerror="this.style.display='none'">Raid</button>
+    <button id="go-defend" class="pbtn big blue" type="button"><img src="assets/swatter-paddle.png" alt="" onerror="this.style.display='none'">Defend</button>
+  </div>
+</div>
+
+<script src="../kit/kit.js"></script>
+<script src="assets/manifest.js"></script>
+<script src="sim.js"></script>
+<script src="audio.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

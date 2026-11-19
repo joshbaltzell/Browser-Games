@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hal's Completely, Totally, Absolutely Honest Minigolf</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rye&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rye&display=swap" rel="stylesheet"></noscript>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="back" href="../../index.html">← Back to games</a>
+<canvas id="game"></canvas>
+
+<!-- All text lives here, in a 480x270 stage that game.js scales to sit exactly over the pixel canvas. -->
+<div id="stage">
+  <div id="bubble" class="txt"></div>
+  <div id="chart" class="txt">
+    <div class="ct">WALL GUIDE</div>
+    <div class="cr" id="chart0">PLAIN</div>
+    <div class="cr" id="chart1">RED</div>
+    <div class="cr" id="chart2">BLUE</div>
+    <div class="cr" id="chart3">KICK</div>
+  </div>
+  <div id="plaque" class="txt"></div>
+  <div id="boxes" class="txt"><span id="b1"></span><span id="b2"></span><span id="b3"></span></div>
+
+  <div id="title" class="screen">
+    <div id="sign">
+      <div class="l1">Hal's Completely, Totally,</div>
+      <div class="l2">Absolutely Honest</div>
+      <div class="l3">Minigolf</div>
+    </div>
+    <p class="goal">Three holes. One rule is rigged.</p>
+    <p class="controls">Drag back and let go. Or arrows + Space.</p>
+    <div class="row">
+      <button id="btnPlay" type="button" class="btn red">Play</button>
+      <button id="btnWarm" type="button" class="btn">Warm-up</button>
+    </div>
+  </div>
+
+  <div id="warm" class="screen hidden">
+    <div class="row">
+      <button id="wPlay" type="button" class="btn red">Play</button>
+      <button id="wAgain" type="button" class="btn">Again</button>
+    </div>
+  </div>
+
+  <div id="card" class="screen panel hidden">
+    <div id="cHead" class="hd"></div>
+    <div id="cSum"></div>
+    <div id="cBoard"></div>
+    <div id="cLabel"></div>
+    <div id="callRow">
+      <button type="button" class="btn call" data-lie="tilt">Tilted<br>ground</button>
+      <button type="button" class="btn call" data-lie="swapped">Swapped<br>paint</button>
+      <button type="button" class="btn call" data-lie="shy">Shy<br>cup</button>
+    </div>
+    <button id="cNext" type="button" class="btn red wide">Not yet</button>
+    <div id="cFoot">The lie is revealed after hole 3.</div>
+  </div>
+
+  <div id="end" class="screen panel hidden">
+    <div id="eHead" class="hd">CARD COMPLETE</div>
+    <div id="eCard"></div>
+    <div id="eTotal"></div>
+    <div id="eCall"></div>
+    <div id="eLie"></div>
+    <div id="eLieSub"></div>
+    <div class="row">
+      <button id="eNew" type="button" class="btn red">New card</button>
+      <button id="eWarm" type="button" class="btn">Warm-up</button>
+    </div>
+  </div>
+</div>
+
+<script src="../kit/kit.js"></script>
+<script src="assets/manifest.js"></script>
+<script src="holes.js"></script>
+<script src="sim.js"></script>
+<script src="data.js"></script>
+<script src="audio.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

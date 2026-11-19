@@ -1,0 +1,496 @@
+<title>Look Alive Game Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a lab report on a dark stage. One reading column, with image plates that break wider. Single dark look by choice: the subject is dark-field microscopy. */
+:root {
+  color-scheme: dark;
+  --stage: #07060b;
+  --panel: #12101a;
+  --line: #2a2538;
+  --ink: #ece8f5;
+  --dim: #a59fb8;
+  --violet: #a78bfa;
+  --pink: #ff6b95;
+  --amber: #f5a524;
+  --green: #2dd4a7;
+  --paper: #efe6d2;
+  --paper-ink: #2b2418;
+  --display: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+body { background: var(--stage); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.6; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-block: 28px 80px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.col { max-width: 720px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: clamp(34px, 6vw, 60px); letter-spacing: -0.01em; }
+h2 { font-size: clamp(24px, 3.4vw, 32px); margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line); }
+h3 { font-size: 19px; margin-top: 28px; }
+p, ul, ol { margin: 12px 0 0; }
+ul, ol { padding-left: 22px; }
+li + li { margin-top: 6px; }
+a { color: var(--violet); }
+.label { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+.lede { font-size: 20px; color: var(--ink); margin-top: 16px; }
+.dim { color: var(--dim); }
+.hero { display: grid; gap: 20px; }
+.hero img { width: 100%; border-radius: 10px; display: block; }
+.status { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.pill { font-family: var(--mono); font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); }
+.pill.ok { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, transparent); }
+.pill.bad { color: var(--pink); border-color: color-mix(in srgb, var(--pink) 50%, transparent); }
+.pill.warn { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 22px; font-family: var(--mono); font-size: 13px; }
+nav.toc a { color: var(--dim); text-decoration: none; }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--ink); }
+.tablebox { overflow-x: auto; margin-top: 14px; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); }
+th { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); font-weight: 500; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pass { color: var(--green); font-weight: 600; }
+.fail { color: var(--pink); font-weight: 600; }
+.plates { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 18px; }
+.plates.two { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+figure { margin: 0; min-width: 0; }
+figure img { width: 100%; display: block; border-radius: 8px; border: 1px solid var(--line); background: #000; }
+figcaption { font-size: 13px; color: var(--dim); margin-top: 6px; }
+figcaption b { font-family: var(--mono); font-weight: 500; color: var(--ink); margin-right: 6px; }
+.stains { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
+.stain { padding: 12px 0 0; border-top: 3px solid var(--c); }
+.stain b { display: block; font-family: var(--display); }
+.stain span { font-size: 13px; color: var(--dim); }
+.memo { background: var(--paper); color: var(--paper-ink); border-radius: 4px; padding: 20px 22px; margin-top: 22px; max-width: 720px; font-family: var(--mono); font-size: 14px; line-height: 1.55; transform: rotate(-0.4deg); }
+.memo .head { letter-spacing: 0.14em; font-size: 12px; border-bottom: 1px solid #b9ab8c; padding-bottom: 8px; margin-bottom: 10px; }
+.memo ol { margin: 8px 0 0; padding-left: 22px; }
+.steps { counter-reset: s; list-style: none; padding: 0; margin-top: 14px; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 34px 1fr; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); margin: 0; }
+.steps li::before { content: counter(s); font-family: var(--mono); color: var(--violet); }
+.steps b { font-family: var(--display); }
+.steps span { color: var(--dim); display: block; font-size: 14.5px; }
+details { margin-top: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+summary { cursor: pointer; font-family: var(--display); }
+summary:focus-visible, a:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+@media (max-width: 480px) { body { font-size: 15px; } .plates, .plates.two { grid-template-columns: 1fr; } }
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <div class="col">
+    <div class="label">Game plan v2.1 &middot; for review &middot; 16 Nov 2026</div>
+    <h1>Look Alive</h1>
+    <p class="lede">Plague Inc in reverse. You are a robot swarm pretending to be native microbes on an alien planet, and you win by passing as native.</p>
+    <div class="status">
+      <span class="pill ok">Rules spike: 8 of 9 properties pass</span>
+      <span class="pill bad">Smoothness fails, fix is step 1</span>
+      <span class="pill ok">Render spike: 200,000 microbes in 4.4 ms GPU</span>
+      <span class="pill warn">Slow machines unmeasured</span>
+      <span class="pill">30 reference images, $1.18</span>
+    </div>
+    <nav class="toc" aria-label="Sections">
+      <a href="#decisions">Decisions for you</a><a href="#game">The game</a><a href="#mission">Mission and parts</a><a href="#spikes">Spikes</a><a href="#design">Design</a><a href="#teaching">Teaching</a><a href="#mvp">MVP</a><a href="#full">Full game</a><a href="#art">Art</a><a href="#build">Build order</a><a href="#ideas">Ideas</a><a href="#risks">Risks</a>
+    </nav>
+  </div>
+  <figure><img src="refs/02-title-screen.jpg" alt="Title screen: LOOK ALIVE spelled in glowing pink cells among purple native bacteria, with a specimen label reading Bacillus normalis, not a robot"><figcaption><b>02</b>Title screen concept. The specimen label reads "Bacillus normalis - not a robot".</figcaption></figure>
+</header>
+
+<section id="decisions">
+  <h2>Decisions for you</h2>
+  <div class="memo">
+    <div class="head">DEPARTMENT OF PLAUSIBLE DENIABILITY &middot; ACTION REQUIRED</div>
+    <ol>
+      <li>Approve the MVP scope below, or change it.</li>
+      <li>Is Acidica (your waste gives you away) the right first planet?</li>
+      <li>Are the six pass criteria the right bar for go or no-go?</li>
+      <li>Which reference images are on target, and which are off? Use the plate numbers.</li>
+      <li>Should build step 1, retuning the simulation, start now?</li>
+      <li>Who catches you: the native cells, the lab's researcher, or both? The plan assumes both.</li>
+      <li>Is the Biology and Machine split right, with rule cards priced in suspicion?</li>
+    </ol>
+  </div>
+  <p class="col dim">Nothing is built except the two spikes. Everything is on the local <code>proto/all</code> branch, and nothing has been pushed.</p>
+</section>
+
+<section id="game">
+  <h2>The game</h2>
+  <div class="col">
+    <p><b>You win a dish when</b> your colony survives the run, stays inside the dish's population band for most of it, and never gets exposed.</p>
+    <p><b>You get exposed when</b> your colony looks unlike the natives for too long. The robot's own special risk is being too perfect.</p>
+    <p><b>Tone:</b> deadpan comedy. A handler back home sends confident, slightly wrong advice. Your cover name is <i>Bacillus normalis</i>.</p>
+  </div>
+  <div class="plates two">
+    <figure><img src="refs/01-style-frame.jpg" alt="Dark-field dish of purple native rods with a neat pink colony"><figcaption><b>01</b>Style frame. The pink colony is a little too neat.</figcaption></figure>
+    <figure><img src="refs/05-closeup-native-vs-robot.jpg" alt="Close-up of a lumpy purple native cell beside a pink robot cell with a tidy grid inside"><figcaption><b>05</b>Native beside robot. The grid inside is the joke.</figcaption></figure>
+  </div>
+</section>
+
+<section id="mission">
+  <h2>New: the mission and two kinds of parts</h2>
+  <div class="col">
+    <p class="label">Added after your feedback, 16 Nov</p>
+    <h3>The mission: infiltrate the labs</h3>
+    <p>Each planet has a research lab that studies its own life. You are a sample in their dishes. Your goal is to get deeper into the lab and read what they have learned.</p>
+    <ul>
+      <li><b>The dish is the lab's dish, and the view is the lab's microscope.</b> The dark-field picture is what their researcher sees.</li>
+      <li><b>Progress is depth into the lab:</b> bench dish, incubator, cold room, culture collection, and finally the lab notebook.</li>
+      <li><b>The reward for each dish is a stolen notebook page.</b> Each page teaches one real idea from cell biology, then says how this planet differs.</li>
+      <li><b>Two things can catch you.</b> The native cells react inside the dish. The researcher reacts from above: a closer look, then a stain test, then the dish is sterilised.</li>
+    </ul>
+    <h3>Two kinds of parts: Biology and Machine</h3>
+  </div>
+  <div class="tablebox"><table>
+    <tr><th>Shelf</th><th>What it is</th><th>Examples</th><th>Cost</th></tr>
+    <tr><td><b>Biology</b><br><span class="dim">copied from life</span></td><td>Real cell parts that behave as they do in real cells</td><td>Membrane, cell wall, flagellum, pili, ribosomes, fermentation or respiration, chemical quorum signal, spores</td><td>Slow, leaky, imperfect. Safe from suspicion.</td></tr>
+    <tr><td><b>Machine</b><br><span class="dim">only a machine can do it</span></td><td>Abilities no cell has</td><td>Perfect clock, radio between cells, exact counting, memory, self-repair, perfect copying, reflex rule cards</td><td>Powerful. Each one raises the regularity channel.</td></tr>
+  </table></div>
+  <div class="col">
+    <ul>
+      <li>Every Machine part has a Biology counterpart that does the same job worse. Radio is instant. A chemical quorum signal is slow and fades with distance.</li>
+      <li>You learn real biology as the honest, slower way to solve a problem, and why life does it that way.</li>
+      <li><b>Rule cards are Machine parts.</b> Their price is suspicion in the regularity channel. This fixes the "free rule card" problem from the spike in a way that fits the story.</li>
+      <li>Each part's card has two lines: what the real thing does, and what the game changed.</li>
+    </ul>
+    <h3>What the MVP teaches</h3>
+  </div>
+  <div class="tablebox"><table>
+    <tr><th>Dish</th><th>Stolen notebook page</th></tr>
+    <tr><td class="num">0</td><td>Binary fission and the growth curve: lag, log, plateau</td></tr>
+    <tr><td class="num">1</td><td>Carrying capacity and competition for food</td></tr>
+    <tr><td class="num">2</td><td>Metabolism: cells must eat, and waste is a signature</td></tr>
+    <tr><td class="num">3</td><td>Variation: no two cells divide at the same moment</td></tr>
+    <tr><td class="num">4</td><td>Sensing and response: how cells react to change</td></tr>
+    <tr><td class="num">5</td><td>Fermentation and respiration, and Acidica's sour version</td></tr>
+  </table></div>
+</section>
+
+<section id="spikes">
+  <h2>What the spikes proved</h2>
+  <div class="col"><p>Two throwaway builds ran before this plan. One tested the rules with bots and no graphics. The other tested rendering and speed.</p></div>
+  <h3>Rules spike</h3>
+  <div class="tablebox"><table>
+    <tr><th>Property</th><th>Result</th><th>Numbers</th></tr>
+    <tr><td>Doing nothing loses</td><td class="pass">Pass</td><td>Starves in every dish</td></tr>
+    <tr><td>Maximum growth loses</td><td class="pass">Pass</td><td>Exposed at tick 13</td></tr>
+    <tr><td>Two or more different builds win</td><td class="pass">Pass</td><td>11, 8 and 25 mutually different winners</td></tr>
+    <tr><td>A one-step change is smooth</td><td class="fail">Fail</td><td>Share moves about 5 points, which is fine. The immune stage can jump two levels.</td></tr>
+    <tr><td>Dish 3 needs a reflex rule</td><td class="pass">Pass</td><td>0 of 1,848 attribute-only builds win</td></tr>
+    <tr><td>Blind slider sweeping fails</td><td class="pass">Pass</td><td>Random builds win 6.2%, 2.5%, 0.0%</td></tr>
+    <tr><td>Deterministic and resumable</td><td class="pass">Pass</td><td>Byte-identical repeats</td></tr>
+    <tr><td>Each loss has one nameable cause</td><td class="pass">Pass</td><td>94% of losing runs</td></tr>
+    <tr><td>Speed</td><td class="pass">Pass</td><td>23 ms at 64&times;64; about 400 ms at 256&times;256</td></tr>
+  </table></div>
+  <h3>Render spike</h3>
+  <div class="tablebox"><table>
+    <tr><th>Measure</th><th>Result</th></tr>
+    <tr><td>World step, 256&times;256 grid</td><td class="num">1.6 ms per tick</td></tr>
+    <tr><td>Instant resolve of 300 ticks, in the browser</td><td class="num">0.5 to 0.7 s</td></tr>
+    <tr><td>Snapshot at 256&times;256</td><td class="num">0.1 ms, 1.75 MB each</td></tr>
+    <tr><td>Drawing 200,000 microbes (Apple M5)</td><td class="num">4.4 ms GPU, 4.6 ms buffer rebuild</td></tr>
+    <tr><td>Worker needed at 256&times;256</td><td>No</td></tr>
+  </table></div>
+  <div class="col">
+    <p class="dim">Slower machines, phones, Safari and Firefox are unmeasured.</p>
+    <h3>What changed because of the spikes</h3>
+    <ol>
+      <li><b>Coexistence is a rule.</b> Natives crowd themselves harder than they crowd you. Without that, your share runs to 0% or 100% and the band cannot be held.</li>
+      <li><b>Finer levers.</b> Sliders go from 0 to 8, and one step may move suspicion by less than half an immune stage.</li>
+      <li><b>Decoupled channels.</b> Waste suspicion depends on chemistry mismatch, not colony size.</li>
+      <li><b>The immune response weakens, then removes.</b> It shows its kill rate and is not an instant delete.</li>
+      <li><b>Every rule action needs an event that makes it matter.</b> In the spike only "divide faster" ever won.</li>
+      <li><b>Rule cards cost budget points.</b> An always-on card is otherwise a free attribute point.</li>
+      <li><b>Toughness gets a job:</b> it is what survives the planet's events.</li>
+    </ol>
+  </div>
+</section>
+
+<section id="design">
+  <h2>Core design</h2>
+  <h3>Suspicion: four channels, one gauge</h3>
+  <div class="tablebox"><table>
+    <tr><th>Channel</th><th>You raise it by</th><th>The fix</th><th>Stain and pattern</th></tr>
+    <tr><td>Growth</td><td>Dividing faster or slower than natives</td><td>Match their rate</td><td>Pink, stripes</td></tr>
+    <tr><td>Waste</td><td>Leaving the wrong chemistry</td><td>Match the local waste, at a cost</td><td>Amber, dots</td></tr>
+    <tr><td>Casualties</td><td>Starving or harming natives</td><td>Share food, stay in band</td><td>Violet, crosshatch</td></tr>
+    <tr><td>Regularity</td><td>Being too perfect: same timing, flat graphs, stock settings</td><td>Authentic Sloppiness</td><td>Green, zigzag</td></tr>
+  </table></div>
+  <div class="col">
+    <ul>
+      <li>Suspicion has memory and decay. A corrected spike is forgiven. A long drift is not.</li>
+      <li>The channels roll up into one <b>COVER gauge</b>, with a safe zone in the middle and "Too Alien" and "Too Perfect" at the ends.</li>
+      <li>Three immune stages give two warnings: Curiosity, Inspection, Response.</li>
+    </ul>
+  </div>
+  <div class="plates">
+    <figure><img src="refs/03-gameplay-hud.jpg" alt="Gameplay mock-up with a dish view and a slim instrument panel"><figcaption><b>03</b>Play screen: COVER gauge, four needles, band graph.</figcaption></figure>
+    <figure><img src="refs/24-suspicion-channels.jpg" alt="Four semicircular gauges with different fill patterns"><figcaption><b>24</b>Channel gauges, each with its own pattern.</figcaption></figure>
+    <figure><img src="refs/07-immune-curiosity.jpg" alt="Green amoeba-like immune cells drifting toward a pink colony"><figcaption><b>07</b>Stage one: curiosity.</figcaption></figure>
+    <figure><img src="refs/08-immune-response.jpg" alt="A swarm of green immune cells surrounding a pink colony"><figcaption><b>08</b>Stage three: response.</figcaption></figure>
+  </div>
+
+  <h3>The robot tell</h3>
+  <div class="col">
+    <p>The regularity channel is the game's own idea, so it gets the strongest feedback.</p>
+    <ul>
+      <li><b>Hexagon seams</b> on your cells show the regularity channel directly: smooth, wobbly, caught.</li>
+      <li><b>The metronome:</b> when regularity spikes, a tick fades in and your cells pulse in unison.</li>
+      <li><b>Factory Defaults:</b> an unchanged build is itself a tell.</li>
+      <li><b>Anti-flatline:</b> a graph that is too flat raises regularity. This closes the "sweep sliders until the line is flat" exploit.</li>
+      <li><b>Authentic Sloppiness</b> is the dial that fixes it, with tick labels from "Spreadsheet" to "Teenager". Sloppiness costs efficiency.</li>
+    </ul>
+  </div>
+  <div class="plates">
+    <figure><img src="refs/19-robot-states.jpg" alt="Three versions of a pink cell: organic, partly seamed, fully hexagonal"><figcaption><b>19</b>Natural, wobbly, caught.</figcaption></figure>
+    <figure><img src="refs/06-seam-reveal.jpg" alt="A ring of light sweeping a pink colony and revealing hexagonal tiles"><figcaption><b>06</b>The seam reveal.</figcaption></figure>
+    <figure><img src="refs/28-immune-eyes-view.jpg" alt="A monochrome green view with abnormal cells flagged in red"><figcaption><b>28</b>Immune Eyes view (full game).</figcaption></figure>
+  </div>
+
+  <h3>What you control</h3>
+  <div class="tablebox"><table>
+    <tr><th>Input</th><th>MVP</th><th>Full game</th></tr>
+    <tr><td>Attribute pairs (0 to 8)</td><td>Divide vs Toughness; Efficiency vs Sloppiness</td><td>Same, plus Motility vs Stealth</td></tr>
+    <tr><td>Waste chemistry</td><td>Match or not, at a cost</td><td>Several chemistries</td></tr>
+    <tr><td>Skills</td><td>None</td><td>Biofilm, quorum signal, enzymes, mimicry</td></tr>
+    <tr><td>Reflex rule cards</td><td>1 slot, arrives in dish 4</td><td>Up to 3 slots</td></tr>
+  </table></div>
+  <div class="col">
+    <p><b>Rule cards</b> are tap-to-fill sentences: <i>When [sensor] is [more or less than] [value], then [action].</i> Empty slots offer three starter cards from the handler. Cards flash when they fire and are marked if they never fire. Each card costs budget points.</p>
+  </div>
+  <div class="plates">
+    <figure><img src="refs/10-build-screen.jpg" alt="Build screen with see-saw sliders and a rule card"><figcaption><b>10</b>Build screen: see-saw pairs and one rule card.</figcaption></figure>
+    <figure><img src="refs/23-icons-attributes.jpg" alt="Eight glowing line icons in circles"><figcaption><b>23</b>Attribute and skill icons.</figcaption></figure>
+    <figure><img src="refs/09-scout-lens.jpg" alt="A scanning lens over native bacteria with callout icons"><figcaption><b>09</b>Scouting lens.</figcaption></figure>
+  </div>
+
+  <h3>The loop</h3>
+  <ol class="steps col">
+    <li><div><b>Scout</b><span>Watch the natives alone. Read their growth curve, waste and variance.</span></div></li>
+    <li><div><b>Build</b><span>Set attributes and cards. Undo and three build snapshots are available.</span></div></li>
+    <li><div><b>Run</b><span>The dish resolves instantly.</span></div></li>
+    <li><div><b>Replay</b><span>Scrub, change speed, or press Skip to trouble. Your previous attempt stays on the graph as a ghost line.</span></div></li>
+    <li><div><b>Autopsy or stamp</b><span>A loss drops a pin on the timeline and names the cause. A win gets a rubber stamp.</span></div></li>
+    <li><div><b>Retry</b><span>One tap, build kept.</span></div></li>
+  </ol>
+  <div class="plates two">
+    <figure><img src="refs/11-autopsy-slide.jpg" alt="Annotated slide with chalk arrows, a timeline pin and a COVER BLOWN tag"><figcaption><b>11</b>Autopsy as an annotated slide.</figcaption></figure>
+    <figure><img src="refs/12-win-stamp.jpg" alt="Specimen card stamped SUFFICIENTLY BACTERIAL in green ink"><figcaption><b>12</b>The win stamp.</figcaption></figure>
+  </div>
+</section>
+
+<section id="teaching">
+  <h2>Teaching</h2>
+  <div class="col"><p>The first dishes teach by imitation, with almost no text. Each dish is named for what you must do.</p></div>
+  <div class="tablebox"><table>
+    <tr><th>Dish</th><th>Title</th><th>Teaches</th><th>How</th></tr>
+    <tr><td class="num">0</td><td>Match the Ghost</td><td>The goal is a range, not a maximum</td><td>Natives trace a growth curve. You drag one slider until your curve sits beside theirs. Cannot fail.</td></tr>
+    <tr><td class="num">1</td><td>Stay Small, Eat Quietly</td><td>The band and the COVER gauge</td><td>Growing fast overshoots, starves and crashes. The replay shows why.</td></tr>
+    <tr><td class="num">2</td><td>Don't Just Sit There</td><td>Doing nothing loses</td><td>A "Just sit there" button shows the colony starving and flagged as Factory Defaults.</td></tr>
+    <tr><td class="num">3</td><td>Be Messy</td><td>Regularity and sloppiness</td><td>Two native colonies with the same average and different spread. Your perfect colony gets the metronome.</td></tr>
+    <tr><td class="num">4</td><td>When Things Change</td><td>The first reflex rule</td><td>A scheduled bust that no fixed build survives.</td></tr>
+    <tr><td class="num">5</td><td>Greetings from Acidica</td><td>Everything together</td><td>The finale.</td></tr>
+  </table></div>
+  <div class="col">
+    <ul>
+      <li><b>Goal postcard:</b> a three-icon strip, always on screen: band, low suspicion, clock.</li>
+      <li><b>Cause ribbon:</b> a thin strip under the graph, coloured by whichever channel is contributing most.</li>
+      <li><b>Handler's wrong advice:</b> each briefing has one confident tip that is subtly wrong. The autopsy corrects it with real numbers.</li>
+      <li><b>Scale bar and doubling clock,</b> so the science is visible without a lecture.</li>
+    </ul>
+  </div>
+  <div class="plates two">
+    <figure><img src="refs/13-handler-letter.jpg" alt="Letterhead from the Department of Plausible Deniability, stamped BE COOL"><figcaption><b>13</b>The handler writes.</figcaption></figure>
+    <figure><img src="refs/26-planet-postcard.jpg" alt="Retro postcard reading Greetings from Acidica"><figcaption><b>26</b>Chapter postcard.</figcaption></figure>
+  </div>
+</section>
+
+<section id="mvp">
+  <h2>Minimum viable product</h2>
+  <div class="col">
+    <h3>In</h3>
+    <ul>
+      <li>One planet, Acidica. One native species. Bacteria only.</li>
+      <li>Six dishes, as in the table above.</li>
+      <li>Two attribute pairs, a waste setting, one rule slot.</li>
+      <li>COVER gauge, four patterned channel needles, normal-band overlay, three immune stages.</li>
+      <li>Autopsy with a pin, jump to the moment, and a coroner's-memo headline.</li>
+      <li>Ghost-run overlay, one-tap retry, Skip to trouble, undo and build snapshots.</li>
+      <li>Stamps and generated cover names on a win.</li>
+      <li>Seam reveal, lens mood, focus-pull transitions.</li>
+      <li>Calm Lens mode, which stops pulsing, shake and flicker.</li>
+      <li>Synth audio: suspicion drone, metronome, stage chimes.</li>
+    </ul>
+    <h3>Out</h3>
+    <ul><li>Skills, extra planets, more than one rule slot, daily dish, build codes, photo mode.</li></ul>
+    <h3>The MVP passes if</h3>
+    <ol>
+      <li>A first-time player understands the goal in under 10 minutes.</li>
+      <li>After a loss they can name the cause within one replay scrub.</li>
+      <li>They can mostly predict a run's result before pressing Run.</li>
+      <li>At least two different builds solve each dish, and doing nothing loses. Bots check this.</li>
+      <li>A one-step change never jumps the immune stage by more than one. Bots check this.</li>
+      <li>The run and replay feel like a reveal, and the autopsy gets a smile.</li>
+    </ol>
+  </div>
+  <div class="plates two">
+    <figure><img src="refs/14-planet-acidica.jpg" alt="Dish where purple natives trail amber waste ribbons and a pink colony has none"><figcaption><b>14</b>Acidica. Everyone trails amber except you.</figcaption></figure>
+    <figure><img src="refs/30-chemical-fields.jpg" alt="Flowing fields of amber, blue and green between cells"><figcaption><b>30</b>The dish's chemistry made visible.</figcaption></figure>
+  </div>
+</section>
+
+<section id="full">
+  <h2>Full game</h2>
+  <div class="col"><p>Five planets, about eight dishes each. Every planet inverts one rule and opens with a complaint letter from the last robot who failed there.</p></div>
+  <div class="tablebox"><table>
+    <tr><th>Planet</th><th>Inverted rule</th><th>New tool</th></tr>
+    <tr><td>Acidica</td><td>Your waste is your identity</td><td>Waste matching</td></tr>
+    <tr><td>Quietus</td><td>Silence is suspicious</td><td>Quorum signal</td></tr>
+    <tr><td>Brightside</td><td>Light is poison</td><td>Motility and "retreat" rules</td></tr>
+    <tr><td>Tidewash</td><td>Standing still is suspicious</td><td>Movement rules, toughness</td></tr>
+    <tr><td>Mycelia Prime</td><td>Hoarding is a crime</td><td>Sharing and networks</td></tr>
+  </table></div>
+  <div class="plates">
+    <figure><img src="refs/15-planet-quietus.jpg" alt="Natives emitting signal rings around a silent pink colony"><figcaption><b>15</b>Quietus.</figcaption></figure>
+    <figure><img src="refs/16-planet-brightside.jpg" alt="Light shafts across a dish with natives hiding in the dark bands"><figcaption><b>16</b>Brightside.</figcaption></figure>
+    <figure><img src="refs/18-planet-tidewash.jpg" alt="Natives streaming in one direction around a still pink colony"><figcaption><b>18</b>Tidewash.</figcaption></figure>
+    <figure><img src="refs/17-planet-mycelia.jpg" alt="A glowing network of purple threads"><figcaption><b>17</b>Mycelia Prime.</figcaption></figure>
+    <figure><img src="refs/25-dish-wall.jpg" alt="A grid of small glowing Petri dishes joined by lines"><figcaption><b>25</b>Dish select.</figcaption></figure>
+    <figure><img src="refs/29-later-tier-colony.jpg" alt="Plant-like algae chains with hidden pink filaments"><figcaption><b>29</b>A later, plant-like tier.</figcaption></figure>
+  </div>
+  <div class="col">
+    <h3>Dish types beyond "hold the band"</h3>
+    <ul>
+      <li><b>Surprise events:</b> one authored event per dish, such as a phage burst or a nutrient crash.</li>
+      <li><b>Sabotage dishes:</b> you get a failing build, one autopsy line and two edits.</li>
+      <li><b>Chemostat dishes:</b> food flows in and cells flow out, so growth must match the dilution rate.</li>
+      <li><b>Mutators and par score:</b> optional constraints and a fewest-points target, for experts.</li>
+    </ul>
+    <h3>More tools for understanding</h3>
+    <ul>
+      <li><b>Immune Eyes:</b> hold a key to see the dish as the immune system does.</li>
+      <li><b>Predict first:</b> sketch the curve you expect, then compare.</li>
+      <li><b>Lab Notes:</b> each mechanic gets two lines: what the science says, and what the game changed.</li>
+    </ul>
+    <h3>Later, or never</h3>
+    <ul>
+      <li>Later: fungi and plant tiers, daily dish, build codes, photo mode.</li>
+      <li>Out of scope: ants and bees, any server feature, multiplayer.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="art">
+  <h2>Art direction</h2>
+  <div class="col"><p>Each stain colour has one meaning everywhere, including the logo and the store page. Each channel also has a pattern, so colour is never the only cue.</p></div>
+  <div class="stains">
+    <div class="stain" style="--c: var(--violet)"><b>Crystal violet</b><span>Native life</span></div>
+    <div class="stain" style="--c: var(--pink)"><b>Safranin pink</b><span>You</span></div>
+    <div class="stain" style="--c: var(--amber)"><b>Iodine amber</b><span>Waste and chemistry</span></div>
+    <div class="stain" style="--c: var(--green)"><b>Malachite green</b><span>Immune activity</span></div>
+  </div>
+  <div class="plates">
+    <figure><img src="refs/22-logo.jpg" alt="LOOK ALIVE wordmark with two cells as the letters O"><figcaption><b>22</b>Logo. The two O's are a native and a robot.</figcaption></figure>
+    <figure><img src="refs/27-split-lens-keyart.jpg" alt="Split lens: organic cells on the left, the same cells with seams on the right"><figcaption><b>27</b>Split-lens key art for thumbnails.</figcaption></figure>
+    <figure><img src="refs/21-stain-palette.jpg" alt="Four glowing droplets: purple, pink, amber, green"><figcaption><b>21</b>Stain palette board.</figcaption></figure>
+    <figure><img src="refs/20-native-species.jpg" alt="Six purple alien microbe species"><figcaption><b>20</b>Native species sheet.</figcaption></figure>
+    <figure><img src="refs/04-zoomed-out-colonies.jpg" alt="A whole dish seen from far out as purple clouds"><figcaption><b>04</b>Zoomed out: colonies as clouds of light.</figcaption></figure>
+  </div>
+  <div class="col">
+    <p>In-game cells are drawn in shaders. The generated images are references and marketing art, not sprites. Paper items such as the letterhead, stamps and postcards can be generated once and reused.</p>
+    <p class="dim">All 30 images cost $1.18. Prompts are in <code>art-requests.json</code>, and plate numbers match the file names in <code>refs/</code>.</p>
+  </div>
+</section>
+
+<section id="build">
+  <h2>Build order</h2>
+  <div class="tablebox"><table>
+    <tr><th>Step</th><th>What</th><th>Proves</th></tr>
+    <tr><td class="num">1</td><td>Retune the simulation: finer sliders, decoupled channels, gradual immune kill, card prices, one event type</td><td>The smoothness property passes</td></tr>
+    <tr><td class="num">2</td><td>Dishes 0 to 2 with the COVER gauge, replay and autopsy, on flat placeholder graphics</td><td>The goal is understandable</td></tr>
+    <tr><td class="num">3</td><td>Dark-field renderer joined to the real simulation</td><td>It looks like the references</td></tr>
+    <tr><td class="num">4</td><td>Regularity: seams, metronome, sloppiness dial, dish 3</td><td>The robot tell is fun</td></tr>
+    <tr><td class="num">5</td><td>Rule card, dish 4, finale</td><td>Rules are approachable</td></tr>
+    <tr><td class="num">6</td><td>Voice, stamps, handler, sound</td><td>It is funny</td></tr>
+    <tr><td class="num">7</td><td>Playtest against the pass criteria</td><td>Go or no-go for the full game</td></tr>
+  </table></div>
+  <div class="col">
+    <p>Step 1 comes first because it fixes the only failing property.</p>
+    <h3>Technical plan</h3>
+    <ul>
+      <li><b>World:</b> a 256&times;256 grid of typed arrays, deterministic, fixed step.</li>
+      <li><b>Resolve:</b> a full run in under one second, with per-channel history and a snapshot every 10 ticks.</li>
+      <li><b>Rendering:</b> WebGL2. Density texture zoomed out, instanced microbes zoomed in, bloom and vignette.</li>
+      <li><b>Defaults:</b> 20,000 visible microbes, up to 50,000 on fast machines, 5,000 on phones, with automatic fallback.</li>
+      <li><b>Runs from a local file.</b> No modules, no server, no build step.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="ideas">
+  <h2>Ideas from the brainstorm</h2>
+  <div class="col"><p>Six agents produced 112 ideas across six lenses: easier to understand, easier to play, more fun, funnier, more educational, and better to look at and market. Thirty were kept.</p></div>
+  <h3>Kept for the MVP (22)</h3>
+  <div class="tablebox"><table>
+    <tr><th>#</th><th>Idea</th><th>Why</th></tr>
+    <tr><td class="num">1</td><td>COVER gauge with two red ends</td><td>Makes the inverted goal visible</td></tr>
+    <tr><td class="num">2</td><td>Goal postcard strip</td><td>Restates the goal every dish</td></tr>
+    <tr><td class="num">3</td><td>Growth-curve tutorial with ghost natives</td><td>Teaches by imitation</td></tr>
+    <tr><td class="num">4</td><td>Overshoot-and-crash lesson dish</td><td>Teaches the band by failure</td></tr>
+    <tr><td class="num">5</td><td>"Just sit there" beat and Factory Defaults tell</td><td>Kills the do-nothing strategy</td></tr>
+    <tr><td class="num">6</td><td>Hexagon seams as the regularity meter</td><td>The art is the instrument</td></tr>
+    <tr><td class="num">7</td><td>Metronome tell</td><td>Funny and readable</td></tr>
+    <tr><td class="num">8</td><td>Authentic Sloppiness dial</td><td>One control for the robot tell</td></tr>
+    <tr><td class="num">9</td><td>Variance-is-biology scouting beat</td><td>Explains why sloppiness matters</td></tr>
+    <tr><td class="num">10</td><td>Autopsy as a pin, with jump-to-moment and coroner's memo</td><td>Names the cause of failure</td></tr>
+    <tr><td class="num">11</td><td>Cause ribbon under the graph</td><td>Shows which channel is to blame</td></tr>
+    <tr><td class="num">12</td><td>Ghost-run overlay and one-tap retry</td><td>Shows what a tweak did</td></tr>
+    <tr><td class="num">13</td><td>Skip to trouble and replay speeds</td><td>Less watching</td></tr>
+    <tr><td class="num">14</td><td>Tap-to-fill rule sentences and starter cards</td><td>Makes rules approachable</td></tr>
+    <tr><td class="num">15</td><td>Pattern-coded channels and Calm Lens mode</td><td>Accessibility</td></tr>
+    <tr><td class="num">16</td><td>Undo and build snapshots</td><td>Safe experimenting</td></tr>
+    <tr><td class="num">17</td><td>Stain palette as a rule</td><td>Consistent visual language</td></tr>
+    <tr><td class="num">18</td><td>Seam reveal</td><td>Signature moment</td></tr>
+    <tr><td class="num">19</td><td>Lens mood and focus-pull transitions</td><td>Cheap atmosphere</td></tr>
+    <tr><td class="num">20</td><td>Stamps and generated cover names</td><td>Reward and comedy</td></tr>
+    <tr><td class="num">21</td><td>Handler's wrong-advice ledger</td><td>Comedy that teaches</td></tr>
+    <tr><td class="num">22</td><td>Dish titles as verb phrases</td><td>The title is the hint</td></tr>
+  </table></div>
+  <h3>Kept for the full game (8)</h3>
+  <div class="tablebox"><table>
+    <tr><th>#</th><th>Idea</th><th>Why</th></tr>
+    <tr><td class="num">23</td><td>Surprise native events</td><td>Makes each rule action matter</td></tr>
+    <tr><td class="num">24</td><td>Sabotage dishes</td><td>Variety from existing systems</td></tr>
+    <tr><td class="num">25</td><td>Planet rule banner as a complaint letter</td><td>Makes each inversion clear</td></tr>
+    <tr><td class="num">26</td><td>Immune Eyes view</td><td>Shows suspicion as someone else's perception</td></tr>
+    <tr><td class="num">27</td><td>Predict before replay</td><td>Rewards understanding</td></tr>
+    <tr><td class="num">28</td><td>Chemostat dishes and quorum thresholds</td><td>Real science, new puzzle shapes</td></tr>
+    <tr><td class="num">29</td><td>Lab Notes: where the game lies</td><td>Honest about the science</td></tr>
+    <tr><td class="num">30</td><td>Mutators and par score</td><td>Depth for experts</td></tr>
+  </table></div>
+  <details>
+    <summary>Left out, and why</summary>
+    <div class="tablebox"><table>
+      <tr><th>Idea</th><th>Reason</th></tr>
+      <tr><td>Live intervention pings; inspector minigame</td><td>Break the plan-then-watch loop and the deterministic checks</td></tr>
+      <tr><td>One-tap "what if" fixes; counterfactual ghost run</td><td>Solve the puzzle for the player and need a solver</td></tr>
+      <tr><td>Slider preview needles</td><td>A cheap estimate that is wrong would damage trust</td></tr>
+      <tr><td>Rival robot colony; reverse dish</td><td>Large, and not needed to prove the game</td></tr>
+      <tr><td>Gene transfer, antibiotic and succession chapters</td><td>Scope</td></tr>
+      <tr><td>Native gossip ticker, pet names, hobby forms</td><td>Writing volume for little gain</td></tr>
+      <tr><td>Clip export, phone thumb layout, text-to-speech</td><td>Later, if the game ships</td></tr>
+    </table></div>
+  </details>
+</section>
+
+<section id="risks">
+  <h2>Risks</h2>
+  <ol class="col">
+    <li><b>Smoothness is still unproven.</b> The fix is designed but not tested. It is build step 1.</li>
+    <li><b>Legibility.</b> The autopsy named a cause for 94% of bot losses. Human players are untested.</li>
+    <li><b>Restraint as fun.</b> "Nothing bad happened" needs the stamp, the voice and the reveal to feel like a win.</li>
+    <li><b>Slow machines.</b> Only one fast machine was measured.</li>
+    <li><b>Title.</b> "Look Alive" is shared with a small itch horror game and an unreleased zombie game.</li>
+  </ol>
+</section>
+
+</div>

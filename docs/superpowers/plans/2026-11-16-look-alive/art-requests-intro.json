@@ -1,0 +1,38 @@
+{
+ "slug": "look-alive",
+ "outDir": "games/look-alive/art-src/intro",
+ "cap": 10,
+ "style": "STYLE (applies to every image): a dark, elegant, slightly cute science-fiction storybook illustration, as a stylised video game cutscene. Mostly black or deep-navy background with soft glowing light and gentle bloom, and a subtle circular lens vignette at the edges. Limited palette: crystal violet (#8B5CF6) for native microbes, safranin pink (#FF5C8A) for the small alien scout craft and the player's disguised cells, iodine amber (#F5A524) for warm light and chemicals, malachite green (#2DD4A7) for guardian immune cells. Never gory or frightening. No text, no letters, no numbers, no watermark, no signature, no user interface.",
+ "requests": [
+  {
+   "id": "IN-1",
+   "file": "intro-1-arrival.png",
+   "size": "1536x864",
+   "prompt": "The planet Earth seen from orbit, a beautiful blue and green world with swirling white clouds and thin glowing atmosphere, dark space behind it with faint stars. In the lower foreground, small and sharp, a tiny pink glowing alien scout craft shaped like a round pod with a few thin antennae, drifting toward the planet. Wide, calm, awe-inspiring composition."
+  },
+  {
+   "id": "IN-2",
+   "file": "intro-2-landing.png",
+   "size": "1536x864",
+   "prompt": "A farm field seen from the scale of a single bacterium, as if the viewer is a microscopic alien standing on the ground. Giant rounded soil grains the size of mountains, a huge glistening water droplet like a dome-shaped lake, enormous blades of grass towering overhead like green cliffs, a few oversized root hairs. Small violet rod-shaped microbes drift past in the air and the droplet. In the foreground a tiny pink landing pod rests on a soil grain. Warm amber low sunlight rakes across the scene, shallow depth of field with soft blurred background."
+  },
+  {
+   "id": "IN-3",
+   "file": "intro-3-sensors.png",
+   "size": "1536x864",
+   "prompt": "A microscopic alien's sensor view across a farm field at the scale of a single bacterium. In the far distance rises one enormous, smooth, rounded, dark warm hill or mountain, so large and still that it looks like a landform, with a soft amber heat glow rising off it into the evening air. It must NOT look like an animal: no legs, no head, no tail, no ears, no face. Treat it purely as a warm mountain. Other far lumps on the horizon are just more low ridges. Over the image, a thin circular sensor overlay of faint concentric rings and tick marks, and inside the warm mountain one dense bright cluster glowing violet and amber, where an extraordinary concentration of tiny life is detected. In the foreground, giant blades of grass and dew droplets, a small cute pink alien scout pod, a couple of violet microbes and a small green cell. Calm, mysterious, a little eerie but not scary."
+  },
+  {
+   "id": "IN-4",
+   "file": "intro-4-city.png",
+   "size": "1536x864",
+   "prompt": "A close-up microscopic view inside a warm, dark, acidic cavern: the wet, folded, glistening lining of a living organ, with soft rounded pits and ridges like a landscape of low hills. Thousands of ordinary violet rod-shaped and round bacteria drift in the liquid and cling to the surface in loose, irregular clumps, feeding and dividing: some caught mid-division, some in short chains, scattered naturally and randomly, exactly like microbes in a pond. Absolutely no buildings, no structures, no windows, no lamps, no roads, no towers, no bridges and no regular pattern: only natural, unplanned, simple microbial life. Warm amber haze drifts through the liquid like fog. A few small green immune cells drift far in the background. A single small pink alien scout pod hovers at the edge of the frame, looking in. Over the picture, a faint thin schematic scanning overlay of fine concentric ring marks and tick marks only, as if an alien instrument is sensing the crowd. Crowded, organic, beautiful, calm."
+  },
+  {
+   "id": "IN-5",
+   "file": "intro-5-scouts.png",
+   "size": "1536x864",
+   "prompt": "Several small pink alien scout pods drifting down among a crowd of glowing violet bacteria, each pod extending a thin tendril that collects a tiny glowing droplet sample from a native cell. In the soft background, a round glass petri dish glows faintly, ready and empty, as if being prepared to test a disguise. A distant green guard cell watches. Hopeful and quiet, a sense of beginning an infiltration."
+  }
+ ]
+}

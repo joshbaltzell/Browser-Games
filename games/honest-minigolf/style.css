@@ -1,0 +1,73 @@
+:root {
+  --navy: #1d2540; --turf: #2f9e44; --turf2: #237a3b; --red: #c8553d; --cream: #f6ead2; --mustard: #e9b43c; --purple: #5b3a8c;
+  --font: 'Press Start 2P', ui-monospace, Menlo, Consolas, monospace;
+  --sign: 'Rye', Georgia, 'Times New Roman', serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #0e1224; color: var(--cream); font-family: var(--font); overflow: hidden; }
+canvas { display: block; position: fixed; inset: 0; touch-action: none; }
+.back {
+  position: fixed; right: 8px; top: 8px; z-index: 6; min-height: 44px; display: inline-flex; align-items: center;
+  padding: 0 12px; color: var(--cream); text-decoration: none; font: 11px var(--font);
+  background: var(--navy); border: 2px solid var(--mustard);
+}
+.back:focus-visible { outline: 3px solid var(--cream); }
+
+/* The stage is 480x270 CSS px, scaled by game.js to sit over the canvas. Pointer events pass through to the canvas. */
+#stage { position: fixed; left: 0; top: 0; width: 480px; height: 270px; transform-origin: 0 0; z-index: 3; pointer-events: none; visibility: hidden; }
+#stage.ready { visibility: visible; }
+.txt { position: absolute; font-size: 8px; line-height: 10px; color: var(--cream); }
+.hidden { display: none !important; }
+
+#bubble { left: 6px; top: 6px; width: 100px; height: 68px; color: var(--navy); overflow: hidden; word-break: break-word; }
+#chart { left: 8px; top: 178px; width: 96px; height: 68px; }
+#chart .ct { color: var(--mustard); margin-bottom: 4px; text-align: center; }
+#chart .cr { height: 12px; padding-left: 20px; line-height: 10px; }
+#plaque { left: 114px; top: 250px; width: 224px; height: 18px; line-height: 18px; text-align: center; color: var(--cream); white-space: nowrap; }
+#boxes { left: 344px; top: 250px; width: 120px; height: 18px; line-height: 18px; display: flex; gap: 2px; }
+#boxes span { width: 38px; text-align: center; color: var(--cream); white-space: nowrap; }
+
+.screen { position: absolute; inset: 0; pointer-events: none; }
+.screen button, .screen .panelbtn { pointer-events: auto; }
+.btn {
+  font: 8px/10px var(--font); min-width: 96px; min-height: 28px; padding: 4px 6px; cursor: pointer;
+  color: var(--navy); background: var(--cream); border: 2px solid var(--navy); box-shadow: 0 2px 0 var(--mustard);
+}
+.btn.red { color: var(--cream); background: var(--red); }
+.btn:hover:not(:disabled) { background: var(--mustard); color: var(--navy); }
+.btn:focus-visible { outline: 2px solid var(--mustard); outline-offset: 2px; }
+.btn:disabled { opacity: .35; cursor: default; box-shadow: none; }
+.btn.pulse { animation: pulse 1s steps(2) infinite; }
+@keyframes pulse { 50% { transform: translateY(-2px); background: var(--mustard); color: var(--navy); } }
+.row { display: flex; justify-content: center; gap: 12px; }
+
+#title { display: flex; flex-direction: column; align-items: center; }
+#title.hidden { display: none; }
+#sign {
+  margin-top: 12px; width: 268px; height: 104px; padding-top: 7px; text-align: center; background: #7a1f2b; color: var(--cream);
+  font-family: var(--sign); border: 4px dotted var(--mustard); outline: 3px solid #4a1019; outline-offset: -1px;
+  animation: bulbs .6s steps(1) infinite;
+}
+@keyframes bulbs { 0% { border-color: var(--mustard); } 50% { border-color: var(--cream); } }
+#sign .l1 { font-size: 15px; line-height: 20px; }
+#sign .l2 { font-size: 15px; line-height: 20px; color: var(--mustard); }
+#sign .l3 { font-size: 34px; line-height: 44px; color: var(--cream); }
+#title .goal, #title .controls { margin: 0; font-size: 8px; line-height: 12px; text-align: center; color: var(--cream); background: var(--navy); padding: 2px 6px; }
+#title .goal { margin-top: 8px; color: var(--mustard); }
+#title .controls { margin-bottom: 8px; }
+
+#warm { top: 90px; bottom: auto; height: 40px; left: 112px; right: 0; }
+#warm .row { margin-top: 6px; }
+
+.panel { inset: auto; left: 122px; top: 46px; width: 336px; height: 196px; padding: 8px; background: var(--navy); border: 3px solid var(--mustard); pointer-events: auto; font-size: 8px; line-height: 10px; color: var(--cream); }
+.panel .hd { color: var(--mustard); margin-bottom: 6px; height: 10px; white-space: nowrap; overflow: hidden; }
+#cSum, #cBoard, #eCard, #eTotal, #eCall, #eLie, #eLieSub { height: 12px; white-space: nowrap; overflow: hidden; }
+#cLabel { height: 24px; margin: 6px 0 4px; color: var(--mustard); }
+#callRow { display: flex; gap: 4px; height: 32px; }
+#callRow .btn { width: 104px; min-width: 0; height: 32px; }
+#cNext { display: block; width: 100%; height: 30px; margin-top: 8px; }
+#cFoot { margin-top: 8px; height: 10px; opacity: .7; }
+#end .row { margin-top: 10px; }
+#eLie { margin-top: 6px; color: var(--mustard); }
+#eLieSub { height: 24px; white-space: normal; }
+#eTotal { margin-top: 4px; }

@@ -255,6 +255,69 @@ const GAMES = [
     // The emblem from the game's assets (a transparent WebP, 256 px).
     art: `<img src="games/gyms-of-war/assets/emblem-256.webp" alt="" />`,
   },
+  {
+    title: "Pond Chorus",
+    description:
+      "Tap pads to make the pond sing, and keep the slugs off the lilies.",
+    path: "games/pond-chorus/index.html",
+    tags: ["Music", "Puzzle", "Cozy"],
+    accent: "#7bd389",
+    art: `<img class="scene" src="games/pond-chorus/assets/hub-card.jpg" alt="" loading="lazy" />`,
+  },
+  {
+    title: "Nerf the Wolves, Buff the Bunnies",
+    description:
+      "A new wolf is in the meadow. Rebalance the animals until the meadow is fair.",
+    path: "games/nerf-the-wolves/index.html",
+    tags: ["Puzzle", "Satire", "Strategy"],
+    accent: "#f2b84b",
+    art: `<img class="scene" src="games/nerf-the-wolves/assets/hub-card.jpg" alt="" loading="lazy" />`,
+  },
+  {
+    title: "Launch Window",
+    description:
+      "30 seconds to launch. Record your earlier attempts and let them help you.",
+    path: "games/launch-window/index.html",
+    tags: ["Puzzle", "Time", "Robots"],
+    accent: "#f2c230",
+    art: `<img class="scene" src="games/launch-window/assets/hub-card.jpg" alt="" loading="lazy" />`,
+  },
+  {
+    title: "Picnic Raid",
+    description:
+      "One lawn, two sides: send bugs to raid the picnic, then defend it as Gran.",
+    path: "games/picnic-raid/index.html",
+    tags: ["Strategy", "Tower Defense", "Cozy"],
+    accent: "#d8463a",
+    art: `<img class="scene" src="games/picnic-raid/assets/hub-card.jpg" alt="" loading="lazy" />`,
+  },
+  {
+    title: "Hal's Completely, Totally, Absolutely Honest Minigolf",
+    description:
+      "Three holes. One rule is rigged. Work out which, and call it.",
+    path: "games/honest-minigolf/index.html",
+    tags: ["Sports", "Puzzle", "Deduction"],
+    accent: "#e9b43c",
+    art: `<img class="scene" src="games/honest-minigolf/assets/hub-card.jpg" alt="" loading="lazy" />`,
+  },
+  {
+    title: "Mabel & the Mabels",
+    description:
+      "Win the crowd for three minutes: play, record a band of yourselves and rock the plaza.",
+    path: "games/mabel-and-the-mabels/index.html",
+    tags: ["Music", "Action", "Rhythm"],
+    accent: "#f08a4b",
+    art: `<img class="scene" src="games/mabel-and-the-mabels/assets/hub-card.jpg" alt="" loading="lazy" />`,
+  },
+  {
+    title: "Look Alive",
+    description:
+      "A colony of tiny aliens finds a crowd of microbes and takes it for a city. Build one disguised cell that survives the acid, grows without taking over, and passes for a local. Ten dishes.",
+    path: "games/look-alive/index.html",
+    tags: ["Puzzle", "Simulation", "Prototype"],
+    accent: "#ff6b95",
+    art: `<img class="scene" src="games/look-alive/assets/hub-card.jpg" alt="" loading="lazy" />`,
+  },
 ];
 
 function buildCard(game) {

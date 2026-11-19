@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Look Alive</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=Special+Elite&display=swap" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="head">
+  <div id="topbar">
+    <a class="back" href="../../index.html">&larr; Back to games</a>
+    <div class="brand">LOOK ALIVE <span id="dishTitle"></span></div>
+    <nav id="nav">
+      <button type="button" id="navList">Dishes</button>
+      <button type="button" id="navWorld">World</button>
+    </nav>
+  </div>
+  <ol id="stepbar">
+    <li data-step="1"><b>1</b> Briefing</li>
+    <li data-step="2"><b>2</b> Watch</li>
+    <li data-step="3"><b>3</b> Adapt</li>
+    <li data-step="4"><b>4</b> Run</li>
+    <li data-step="5"><b>5</b> Result</li>
+  </ol>
+  <div id="handler"></div>
+</header>
+
+<main id="app">
+
+  <section class="screen" id="screen-intro">
+    <div class="briefwrap introwrap">
+      <div class="introimg"><img id="introImg" src="assets/intro/intro-1.jpg" alt="" onerror="this.style.visibility='hidden'"></div>
+      <div class="kicker" id="introKicker"></div>
+      <h1 id="introTitle"></h1>
+      <p class="introp" id="introText"></p>
+      <div class="introbar">
+        <button type="button" class="ghost" id="introBack">Back</button>
+        <span class="introdots" id="introDots"></span>
+        <button type="button" class="ghost" id="introSkip">Skip</button>
+        <button type="button" class="big" id="introGo">Next</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-list">
+    <div class="listwrap">
+      <h1>Pass as a native.</h1>
+      <p class="lede">Your people think a city lives inside a warm mountain, and your cell has gone in to blend in. Watch it fail, change it, and try again. The cell that wins a dish is the cell you start the next one with.</p>
+      <div id="dishList"></div>
+      <div class="listfoot"><button type="button" class="ghost" id="replayIntro">Replay intro</button><button type="button" class="ghost" id="unlockAll">Unlock all dishes</button><button type="button" class="ghost" id="resetProgress">Clear saved progress</button></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-world">
+    <div class="briefwrap">
+      <div class="kicker">The world</div>
+      <h1 id="worldName"></h1>
+      <img class="worldimg" id="worldImg" src="assets/cards/world-acidica.jpg" alt="Your pink cell among purple native bacteria drifting in the sour, amber-streaked water of the warm crowd" onerror="this.style.display='none'">
+      <div class="facts" id="worldFacts"></div>
+      <p class="badge" id="worldBadge"></p>
+      <p class="mission" id="worldMission"></p>
+      <button type="button" class="big" id="worldGo">Continue</button>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-brief">
+    <div class="briefwrap">
+      <div class="kicker" id="briefKicker"></div>
+      <h1 id="briefTitle"></h1>
+      <div class="report" id="briefReport" aria-live="polite"></div>
+      <div class="briefrow"><b>The problem</b><span id="briefProblem"></span></div>
+      <div class="briefrow"><b>Your goal</b><span id="briefGoal"></span></div>
+      <div class="briefrow" id="briefExam"><b>This is an exam</b><span>There are no answer tips, and several different cells can pass. You are graded: Passable, Convincing or Benign.</span></div>
+      <div class="briefrow"><b>Your cell</b><span class="briefcell"><span class="cellfig" id="briefFig"></span><span id="briefCell"></span></span></div>
+      <button type="button" class="big" id="briefGo">Start the test</button>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-adapt">
+    <div class="adaptgrid">
+      <div class="colL">
+        <div class="panel cellpanel">
+          <div class="cellwrap" id="cellWrap">
+            <canvas id="cellGL" hidden></canvas>
+            <svg id="cellSvg" viewBox="0 0 600 410" role="img" aria-label="Diagram of your cell with its body slots"></svg>
+            <div id="tagLayer"></div>
+          </div>
+        </div>
+        <div class="previewbar" id="previewBar" aria-live="polite"><span class="pv-k" id="pvK">Preview</span><span class="pv-t" id="pvT"></span></div>
+        <div class="panel tuning">
+          <div class="energy"><span class="elabel">Energy</span><div id="energyBar"></div><span id="energyNum"></span></div>
+          <div id="paceBox" class="dialrow"></div>
+          <div id="slopBox" class="dialrow slopdial"></div>
+          <div id="slopHint" class="dialhint"></div>
+        </div>
+      </div>
+      <div class="colC">
+        <div class="panel optpanel" id="optPanel">
+          <div class="opthead"><div class="optnamerow"><div class="optname" id="optName"></div><label class="realtog"><input type="checkbox" id="realTog"> Real biology</label></div><div class="optblurb" id="optBlurb"></div></div>
+          <div id="layerRows" class="layerrows"></div>
+          <div id="optList" class="optlist"></div>
+        </div>
+      </div>
+      <div class="colR">
+        <div class="panel forecast">
+          <div class="ptitle">Forecast <span class="dim">test run</span></div>
+          <div id="statBars" class="statbars"></div>
+          <div id="fixLine" class="fixline" aria-live="polite"></div>
+          <div id="problems"></div>
+        </div>
+        <div class="panel tipbox" id="tipbox">
+          <div class="tiprow"><button type="button" id="tipBtn">Tip</button><button type="button" id="stdBtn">Start from the standard cell</button><span class="dim" id="tipHint"></span></div>
+          <div id="tipText"></div>
+        </div>
+        <div class="toolrow"><button type="button" id="undo">Undo</button><button type="button" id="reset">Reset to carried cell</button></div>
+        <button type="button" id="runBtn" class="runbtn">RUN</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-run">
+    <div class="rungrid">
+      <div class="runL">
+        <div class="panel dishpanel">
+          <div class="yourcell" id="yourCell"><span class="cellfig" id="runFig"></span><small>Your cell</small></div>
+          <div class="dishwrap" id="dishWrap"><canvas id="runDish" class="dishcanvas"></canvas></div>
+          <div class="legend"><i class="sw vio"></i> natives <i class="sw pink"></i> you <i class="sw amb"></i> waste <span id="legGrn"><i class="sw grn"></i> guards (immune cells)</span></div>
+          <div class="readline" id="readLine"></div>
+        </div>
+        <div class="controls panel">
+          <div class="crow">
+            <button type="button" id="playBtn" class="pbtn">Pause</button>
+            <div class="speeds" id="speeds"><button type="button" data-sp="1">1x</button><button type="button" data-sp="2" class="on">2x</button><button type="button" data-sp="4">4x</button><button type="button" data-sp="16">16x</button></div>
+            <button type="button" id="skipBtn">Skip</button>
+            <button type="button" id="resultBtn">Result</button>
+          </div>
+          <div class="crow"><input type="range" id="scrub" min="0" max="300" value="0" step="1"><span id="tickNum" class="mono"></span></div>
+        </div>
+        <div class="cardstrip" id="cardStrip"></div>
+      </div>
+      <div class="runR">
+        <div class="panel verdict"><div id="verdictText"></div><button type="button" id="verdictBtn" class="big">Adapt your cell</button></div>
+        <div class="panel" id="instBox"><div class="ptitle small" id="liveTitle">Live stats</div><div id="liveBars" class="statbars two"></div></div>
+        <div class="immune panel" id="immune"></div>
+        <div class="panel"><div class="ptitle small" id="g1Title"></div><canvas id="gShare" class="graph"></canvas><canvas id="foodStrip" style="display:none"></canvas><canvas id="ribbon"></canvas><div class="ribbonkey" id="ribbonKey"></div></div>
+        <div class="panel" id="g2Box"><div class="ptitle small" id="g2Title"></div><canvas id="gSusp" class="graph low"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <div id="overlay" hidden></div>
+  <div id="pop" hidden></div>
+</main>
+
+<script src="cards.js"></script>
+<script src="levels.js"></script>
+<script src="sim.js"></script>
+<script src="draw.js"></script>
+<script src="render-gl.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

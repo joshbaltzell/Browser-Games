@@ -1,0 +1,10 @@
+:root { --bg: #5cc3f2; --ink: #4a2c17; --cream: #f7f3e3; --font: 'Nunito', 'Trebuchet MS', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font); overflow: hidden; }
+canvas { display: block; position: fixed; inset: 0; touch-action: none; }
+.back {
+  position: fixed; left: 8px; top: 8px; z-index: 5; min-height: 44px; display: inline-flex; align-items: center;
+  padding: 0 14px; color: var(--ink); text-decoration: none; font-size: 15px; font-weight: 800;
+  background: var(--cream); border: 3px solid var(--ink); border-bottom-width: 6px; border-radius: 22px;
+}
+.back:hover { background: #fff; }
