@@ -52,7 +52,39 @@ var LookAliveCards = (function () {
       real: 'A spinning tail driven by a tiny motor. Bacteria run, tumble and run again, drifting toward food.',
       game: 'Your colony spreads toward food.',
       effect: 'Movement biased toward food. Births -4%.',
-      fx: { births: 0.96, moveFood: 0.06 } },
+      fx: { births: 0.96, moveFood: 0.06, grip: 0.5 } },
+
+    // ---- habitat 2 (the banded water): heat, grazing, the Motor ----
+    { id: 'chaperones', slot: 'insides', name: 'Heat-shock chaperones', shelf: 'biology', kind: 'part', energy: 2, counterpart: null, world: 2,
+      real: 'Heat unfolds proteins. Chaperones such as GroEL and DnaK catch the unfolded ones and help them fold back into shape.',
+      game: 'Your cell stands more heat. Refolding costs it a little growth.',
+      effect: 'Heat tolerance +18 C. Births -3%.',
+      fx: { heat: 18, births: 0.97 } },
+    { id: 'polyamines', slot: 'insides', name: 'Long polyamines', shelf: 'biology', kind: 'part', energy: 1, counterpart: null, world: 2,
+      real: 'Thermus thermophilus makes long, branched polyamines that hold its DNA, ribosomes and tRNA together at 80 C. Mutants that cannot make them fail above about 75 C.',
+      game: 'Cheap protection for the insides. On its own it is not enough here.',
+      effect: 'Heat tolerance +10 C. Not enough alone in hot water.',
+      fx: { heat: 10, births: 1.0 } },
+    { id: 'tetraether', slot: 'envelope', name: 'Tetraether membrane', shelf: 'biology', kind: 'part', energy: 2, counterpart: null, world: 2,
+      real: 'Heat-loving archaea such as Sulfolobus build a membrane from single long lipids that span it end to end, with more rings in hotter water (about 3.4 to 4.8 rings from 65 to 82 C). Bacteria do not make these.',
+      game: 'Changed for the game: your cell borrows an archaeal skin. It stays tight in hot water and costs some growth.',
+      effect: 'Heat tolerance +22 C. Births -5%.',
+      fx: { heat: 22, births: 0.95 } },
+    { id: 'heatps', slot: 'power', name: 'Heat-stable photosystem', shelf: 'biology', kind: 'metabolism', energy: 1, counterpart: null, world: 2,
+      real: 'Thermostichus lineages that moved into hotter water have a more heat-stable photosystem, and it works worse when the water is cool. A real trade-off.',
+      game: 'Light gives you as much as the locals get, in hot water. In cool water you grow slower.',
+      effect: 'Power. Yield as the natives. Heat tolerance +14 C. Births -25% where the water is under 52 C.',
+      fx: { yield: 1.0, mix: 0.7, waste: 1, heat: 14, coolBelow: 52, coolMult: 0.75 } },
+    { id: 'pili', slot: 'motor', name: 'Twitching pili', shelf: 'biology', kind: 'part', energy: 2, counterpart: null, world: 2,
+      real: 'Thermostichus moves toward light on type IV pili: thin threads it sticks to a surface and pulls back in. Cells without them cannot move.',
+      game: 'Changed for the game: here the pili hold your cells in place against the current.',
+      effect: 'Holds against the current; spreads less. Births -4%.',
+      fx: { grip: 1, births: 0.96 } },
+    { id: 'filament', slot: 'division', name: 'Filament form', shelf: 'biology', kind: 'part', energy: 1, counterpart: null, world: 2,
+      real: 'Bacteria that grow as long filaments or clumps are too big for small grazers such as flagellates to swallow, and grazing itself can push a colony to make more of them.',
+      game: 'Changed for the game: here filaments escape the slow shadow too. A real fly larva swallows anything.',
+      effect: 'Grazing -95%. Births -5%. A little less regular.',
+      fx: { graze: 0.95, births: 0.95, sigma: 0.01 } },
 
     // ---- Machine shelf (powerful, raises Regularity) ----
     { id: 'fuelcell', slot: 'power', name: 'Fuel cell', shelf: 'machine', kind: 'metabolism', energy: 1, counterpart: 'respiration',
@@ -102,7 +134,11 @@ var LookAliveCards = (function () {
       fx: { foodBelow: 0.34, softness: 0.1, rate: 0.25, wakeAbove: 0.32, wakeRate: 0.02 } },
     { id: 'sos', slot: 'reflex', name: 'SOS response', shelf: 'biology', sentence: 'When under attack, stop dividing and repair.',
       real: 'Damage switches on repair genes and halts division until the damage is fixed.',
-      fx: { attackAbove: 0.0115, softness: 0.02, repair: 0.6, deathMult: 0.07 } }
+      fx: { attackAbove: 0.0115, softness: 0.02, repair: 0.6, deathMult: 0.07 } },
+    { id: 'nightferm', slot: 'reflex', name: 'Night fermentation', shelf: 'biology', sentence: 'When the light goes, live on stored sugar.', world: 2,
+      real: 'At night the mat runs out of oxygen, and its cyanobacteria ferment the sugar they stored by day (glycogen) into acetate and propionate.',
+      game: 'In the dark your cell stops dividing, dies less, and makes a few daughters from stored sugar.',
+      fx: { darkAbove: 0.2, softness: 0.3, store: 0.12, deathMult: 0.1 } }
   ];
 
   // Machine rule vocabulary. Readings are exact and instant; global and suspicion sensors are things no cell could know.
@@ -113,16 +149,19 @@ var LookAliveCards = (function () {
     { id: 'share', name: 'own share of the dish', global: true, values: [0.05, 0.08, 0.10, 0.12, 0.15], unit: '', note: 'Global. No cell could know this.' },
     { id: 'susp_growth', name: 'Growth suspicion', global: true, values: [0.5, 1, 2], unit: '', note: 'Global. Reads the guards\' minds.' },
     { id: 'susp_waste', name: 'Waste suspicion', global: true, values: [0.5, 1, 2], unit: '', note: 'Global. Reads the guards\' minds.' },
-    { id: 'ttev', name: 'ticks until the event', global: true, values: [10, 25, 50], unit: 'ticks', note: 'Global. Counts down to the next event, then reads 0.' }
+    { id: 'ttev', name: 'ticks until the event', global: true, values: [10, 25, 50], unit: 'ticks', note: 'Global. Counts down to the next event, then reads 0.' },
+    { id: 'temp', name: 'temperature here', global: false, values: [40, 45, 50, 55, 60], unit: 'C', note: 'Exact local water temperature. No cell in these mats is known to steer by heat: they steer by light.' }
   ];
   var actions = [
     { id: 'pause', name: 'pause dividing', note: 'Births stop where the rule fires, and idle units die more slowly.' },
     { id: 'fast', name: 'divide faster', note: 'Births x1.5 where the rule fires, and so are deaths: more daughters, more failures. Divides unusually fast: a Growth tell.' },
     { id: 'sloppy', name: 'add sloppiness', note: 'Adds timing noise where the rule fires, but a rule that fires is itself a tell.' },
     { id: 'toward', name: 'move toward food', note: 'Some units drift to the richest neighbour cell.' },
-    { id: 'away', name: 'move away from natives', note: 'Some units drift to the emptiest neighbour cell.' }
+    { id: 'away', name: 'move away from natives', note: 'Some units drift to the emptiest neighbour cell.' },
+    { id: 'hotter', name: 'move toward heat', note: 'Some units step to the hottest neighbour cell.' },
+    { id: 'cooler', name: 'move toward cool', note: 'Some units step to the coolest neighbour cell.' }
   ];
-  var ruleFx = { pauseDeath: 0.15, fastMult: 1.5, fastDeath: 1.5, sloppyBirths: 1.0, sloppySigma: 0.015, move: 0.15 };
+  var ruleFx = { pauseDeath: 0.15, fastMult: 1.5, fastDeath: 1.5, sloppyBirths: 1.0, sloppySigma: 0.015, move: 0.15, heatMove: 0.10 };
 
   // The body slots (GAMEPLAY-V2 section 12). `where` is the place on the cell; `blurb` is the one-line job of the slot.
   var SLOTS = [
