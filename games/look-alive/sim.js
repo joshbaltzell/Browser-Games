@@ -251,6 +251,7 @@ var LookAlive = (function () {
         if (D.agents && rf.otherwise != null && (!Cards.action(rf.otherwise) || A.actions.indexOf(rf.otherwise) < 0)) pr.push('Unknown action "' + rf.otherwise + '".');
       } else pr.push('Reflex kind must be bio or machine.');
     }
+    treeProblems(b).forEach(function (p) { pr.push(p); });
     return { ok: pr.length === 0, problems: pr };
   }
 
@@ -311,6 +312,93 @@ var LookAlive = (function () {
     else sl[slotId] = null;
     var nb = fromSlots(sl, b);
     return { ok: true, build: nb };
+  }
+
+  // ---------------------------------------------------------------- skill tree
+  // Data lives on the cards (`tree`: branch, tier, after = learn first, with = fit together). The Machine rule is not a card, so its node is defined here.
+  var TREE_BRANCHES = [{ id: 'power', name: 'Power' }, { id: 'skin', name: 'Skin' }, { id: 'insides', name: 'Insides' }, { id: 'divide', name: 'Divide' }, { id: 'sense', name: 'Sense' }, { id: 'move', name: 'Move' }, { id: 'react', name: 'React' }];
+  var RULE_NODE = { id: 'rule', name: 'Machine rule', slot: 'reflex', branch: 'react', tier: 2, after: [], 'with': [], energy: 0, shelf: 'machine', kind: 'rule' };
+  function treeBranches() { return TREE_BRANCHES.map(function (b) { return { id: b.id, name: b.name }; }); }
+  function offersNode(D, n) {
+    if (!D || !D.allowed) return false;
+    if (n.kind === 'rule') return isOpen(D, 'reflex') && D.allowed.sensors.length > 0 && D.allowed.actions.length > 0;
+    return offered(D, n.slot).some(function (c) { return c.id === n.id; });
+  }
+  function treeNodes() {
+    var ds = Lv().DISHES, list = [], bi = {};
+    TREE_BRANCHES.forEach(function (b, i) { bi[b.id] = i; });
+    function add(c, kind) {
+      var t = c.tree || {};
+      list.push({ id: c.id, name: c.name, slot: c.slot, branch: t.branch, tier: t.tier, after: (t.after || []).slice(), 'with': (t['with'] || []).slice(), energy: c.energy || 0, shelf: c.shelf, kind: kind, learnedOn: null });
+    }
+    Cards.parts.forEach(function (c) { add(c, 'part'); });
+    Cards.bioReflexes.forEach(function (c) { add(c, 'reflex'); });
+    list.push(cp(RULE_NODE));
+    list.forEach(function (n) { for (var i = 0; i < ds.length; i++) if (offersNode(ds[i], n)) { n.learnedOn = ds[i].id; break; } });
+    list.sort(function (a, b) { return (bi[a.branch] - bi[b.branch]) || (a.tier - b.tier) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); });
+    return list;
+  }
+  function fittedIds(build) {
+    var b = normalize(build) || {}, o = {};
+    if (b.metabolism) o[Cards.canon(b.metabolism)] = true;
+    (b.parts || []).forEach(function (id) { o[Cards.canon(id)] = true; });
+    if (b.reflex) { if (b.reflex.kind === 'bio') o[Cards.canon(b.reflex.id)] = true; else if (b.reflex.kind === 'machine') o.rule = true; }
+    return o;
+  }
+  // The card ids in this card's `with` list that are not fitted in the build.
+  function treeMissing(build, id) {
+    var c = Cards.part(id) || Cards.bio(id);
+    var w = c && c.tree && c.tree['with'] || [], f = fittedIds(build);
+    return w.filter(function (x) { return !f[x]; });
+  }
+  function treeNeed(otherId) {   // "Toxin immunity fitted in the Insides slot"
+    var o = Cards.part(otherId) || Cards.bio(otherId), name = o ? o.name : otherId === 'rule' ? 'Machine rule' : otherId;
+    return name + ' fitted in the ' + slotName(o ? o.slot : otherId === 'rule' ? 'reflex' : '') + ' slot';
+  }
+  function treeNeedWords(c, otherId) { return c.name + ' needs ' + treeNeed(otherId) + '.'; }
+  function treeProblems(b) {
+    var pr = [], f = fittedIds(b);
+    Object.keys(f).forEach(function (id) {
+      var c = Cards.part(id) || Cards.bio(id);
+      if (!c || !c.tree || !c.tree['with'] || !c.tree['with'].length) return;
+      var miss = treeMissing(b, id);
+      if (miss.length) pr.push(treeNeedWords(c, miss[0]));
+    });
+    return pr;
+  }
+  // State of every skill, keyed by id: { state: 'fitted' | 'available' | 'learned' | 'unlearned', reason }.
+  // D is the dish being viewed (null from the dish list), build the cell being built (or null), cleared the game's { dishId: true } map.
+  function treeState(D, build, cleared) {
+    var nodes = treeNodes(), by = {}, fit = fittedIds(build), out = {}, cl = cleared || {};
+    nodes.forEach(function (n) { by[n.id] = n; });
+    function learned(n) {
+      if (n.learnedOn == null) return false;
+      if (cl[n.learnedOn]) return true;
+      return !!D && (D.id === n.learnedOn || (D.id > n.learnedOn && offersNode(D, n)));
+    }
+    nodes.forEach(function (n) {
+      if (fit[n.id]) { out[n.id] = { state: 'fitted', reason: '' }; return; }
+      var unmet = n.after.filter(function (a) { return by[a] && !learned(by[a]); });
+      var ln = learned(n), here = !!D && offersNode(D, n);
+      if (ln && here && !unmet.length) {
+        var miss = treeMissing(build, n.id);
+        out[n.id] = { state: 'available', reason: miss.length ? 'Needs ' + treeNeed(miss[0]) + '.' : 'Ready to fit on this dish.' };
+      } else if (ln) {
+        var why;
+        if (!D) why = 'Learned on dish ' + n.learnedOn + '.';
+        else if (!isOpen(D, n.slot)) { var op = opensOn(n.slot); why = op != null && op > D.id ? 'Opens on dish ' + op + '.' : 'The ' + slotName(n.slot) + ' slot is locked on this dish.'; }
+        else why = 'Not offered on this dish.';
+        out[n.id] = { state: 'learned', reason: why };
+      } else {
+        var r;
+        if (unmet.length) r = 'Learn ' + by[unmet[0]].name + ' first.';
+        else if (n.learnedOn == null) r = 'No dish teaches this yet.';
+        else if (D && !isOpen(D, n.slot) && opensOn(n.slot) > D.id) r = 'Opens on dish ' + opensOn(n.slot) + '.';
+        else r = 'Taught on dish ' + n.learnedOn + '.';
+        out[n.id] = { state: 'unlearned', reason: r };
+      }
+    });
+    return out;
   }
 
   // ---------------------------------------------------------------- state
@@ -1388,7 +1476,7 @@ var LookAlive = (function () {
     return out;
   }
 
-  return { grade: grade, energyOf: buildEnergy, dissolved: dissolved, stats: stats, liveStats: liveStats, runStats: runStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
+  return { grade: grade, energyOf: buildEnergy, dissolved: dissolved, stats: stats, liveStats: liveStats, runStats: runStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, treeNodes: treeNodes, treeBranches: treeBranches, treeState: treeState, treeMissing: treeMissing, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
     channelsOn: channelsOn, causeStat: causeStat, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { ST: ST, newState: newState, step: step, HK: HK } };
 })();
 if (typeof module !== 'undefined') module.exports = LookAlive;

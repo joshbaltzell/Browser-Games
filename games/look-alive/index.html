@@ -19,6 +19,7 @@
     <nav id="nav">
       <button type="button" id="navList">Dishes</button>
       <button type="button" id="navWorld">World</button>
+      <button type="button" id="navTree">Skills</button>
     </nav>
   </div>
   <ol id="stepbar">
@@ -114,7 +115,7 @@
       </div>
       <div class="colC">
         <div class="panel optpanel" id="optPanel">
-          <div class="opthead"><div class="optnamerow"><div class="optname" id="optName"></div><label class="realtog"><input type="checkbox" id="realTog"> Real biology</label></div><div class="optblurb" id="optBlurb"></div></div>
+          <div class="opthead"><div class="optnamerow"><div class="optname" id="optName"></div><button type="button" class="treebtn" id="adaptTree" title="Open the skill tree">Skill tree</button><label class="realtog"><input type="checkbox" id="realTog"> Real biology</label></div><div class="optblurb" id="optBlurb"></div></div>
           <div id="layerRows" class="layerrows"></div>
           <div id="optList" class="optlist"></div>
         </div>
@@ -175,6 +176,20 @@
   <div id="overlay" hidden></div>
   <div id="pop" hidden></div>
 </main>
+
+<div id="treeview" role="dialog" aria-modal="true" aria-label="Skill tree" hidden>
+  <div class="tv-head"><h2>Skill tree</h2><span class="tv-energy" id="treeEnergy"></span><div class="tv-legend" id="treeLegend"></div><button type="button" id="treeClose">Close</button></div>
+  <div class="tv-note" id="treeNote"></div>
+  <div class="tv-scroll" id="treeScroll"><div class="tv-inner" id="treeInner"><svg id="treeLines" aria-hidden="true" focusable="false"><defs>
+    <marker id="tvArrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#8a90a8"/></marker>
+    <marker id="tvArrowHl" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#ffffff"/></marker>
+  </defs><g id="treeLineG"></g></svg><div class="tv-grid" id="treeGrid"></div></div></div>
+  <div class="tv-detail" id="treeDetail">
+    <div class="td-img" id="tdImg"></div>
+    <div class="td-main"><div class="td-name"><b id="tdName"></b><span id="tdShelf"></span><span class="td-en" id="tdEn"></span></div><p class="td-game" id="tdGame"></p><p class="td-real" id="tdReal"></p></div>
+    <div class="td-side"><div class="td-state" id="tdState"></div><div class="td-req" id="tdAfter"></div><div class="td-req" id="tdWith"></div><div class="td-act"><button type="button" id="treeAct" hidden></button><span class="td-msg" id="tdMsg" aria-live="polite"></span></div></div>
+  </div>
+</div>
 
 <script src="cards.js"></script>
 <script src="levels.js"></script>

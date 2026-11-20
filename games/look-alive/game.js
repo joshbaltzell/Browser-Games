@@ -575,7 +575,9 @@
 
   // ---- fitting and clearing, always through LookAlive.fit / unfit
   function doFit(k, id) {
-    var d = dishObj(), r = Sim.fit(d, S.build, id, layerArg(k));
+    var d = dishObj(), miss = treeMissingIds(id);
+    if (miss.length) { r = { ok: false, reason: 'Needs ' + treeNames(miss) + ' fitted first' }; setNote(r.reason); showPreviewText(r.reason, true); return r; }
+    var r = Sim.fit(d, S.build, id, layerArg(k));
     if (!r.ok) { setNote(r.reason); showPreviewText(r.reason, true); return r; }
     commit(r.build); return r;
   }
@@ -719,7 +721,9 @@
   function optionEl(k, c) {
     var mach = c.shelf === 'machine', fitted = fittedIds(k).indexOf(c.id) >= 0, w = el('div', 'opt ' + (mach ? 'mach' : 'bio')), r = null, why = '';
     w.setAttribute('data-id', c.id); w.setAttribute('role', 'button'); w.tabIndex = 0;
+    var miss = fitted ? [] : treeMissingIds(c.id);
     if (!fitted) { r = Sim.fit(dishObj(), S.build, c.id, layerArg(k)); if (!r.ok) why = r.reason; }
+    if (miss.length) why = 'Needs ' + treeNames(miss) + ' fitted first';
     w.setAttribute('aria-pressed', fitted ? 'true' : 'false');
     if (fitted) w.classList.add('fitted'); if (why) w.classList.add('blocked');
     var real = c.real, d0 = dishObj(), game = c.game || c.sentence, ef = effectsFor(d0, c, fitted), g3 = null;
@@ -735,8 +739,10 @@
       '<div class="eff chg" title="' + esc(chgTxt) + '">' + (fitted ? lead : '<i>Changes:</i>') + '<span>' + chg + '<span class="ef en">' + en + '</span></span></div>' +
       (g3 != null ? '<p class="g3" title="' + esc(g3) + '">' + esc(g3) + '</p>' : '') +
       (g3 !== real ? '<p class="real" title="' + esc(real) + '"><i>Real</i>' + esc(real) + '</p>' : '') +
-      '<div class="why">' + (why ? esc(why) : (c.layers > 1 ? 'Takes both Envelope layers.' : '')) + '</div>';
+      '<div class="why' + (miss.length ? ' wlink' : '') + '">' + (why ? '<span class="wt">' + esc(why) + '</span>' : (c.layers > 1 ? 'Takes both Envelope layers.' : '')) + (miss.length ? '<button type="button" class="treelink">Show in the skill tree</button>' : '') + '</div>';
     inn.appendChild(tb); inn.appendChild(tx); w.appendChild(inn);
+    var tl = w.querySelector('.treelink');
+    if (tl) { tl.addEventListener('click', function (e) { e.stopPropagation(); treeOpen(tl, c.id); }); tl.addEventListener('keydown', function (e) { e.stopPropagation(); }); }
     w.addEventListener('click', function () { toggleOption(k, c.id); });
     w.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); S.focusId = c.id; toggleOption(k, c.id); } });
     w.addEventListener('mouseenter', function () { previewOption(k, c.id); w.classList.add('pv'); });
@@ -1524,6 +1530,7 @@
   Array.prototype.forEach.call(document.querySelectorAll('#speeds button'), function (b) { b.addEventListener('click', function () { S.speed = +b.getAttribute('data-sp'); setSpeedUI(); }); });
   document.addEventListener('keydown', function (e) {
     var tg = e.target && e.target.tagName; if (tg === 'TEXTAREA' || (tg === 'INPUT' && e.target.type !== 'range')) return;
+    if (T.open) return;   // the skill tree handles its own keys
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     var ovOpen = S.overlayOpen;
     if (e.key === ' ' || e.code === 'Space') {
@@ -1540,12 +1547,183 @@
     } else if (e.key === 'Escape') { closeOverlay(); hidePop(); }
   });
 
+  // ---------------------------------------------------------------- skill tree: a full-cover overlay (the page behind keeps its screen, dish and build)
+  // Every call into LookAlive.tree* is guarded, so a build without the tree data shows an empty tree and nothing throws.
+  var T = { open: false, sel: null, opener: null, nodes: [], byId: {}, st: {}, branches: [], tiles: {}, pos: {}, adapt: false, msg: '' };
+  var TREE_MARK = {
+    fitted: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.5 8.3l2.3 2.3 4.7-5" fill="none" stroke="#0b0820" stroke-width="2"/></svg>',
+    available: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 5v6M5 8h6" stroke="currentColor" stroke-width="1.6"/></svg>',
+    learned: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="1.6 2.2"/></svg>',
+    unlearned: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7.2" width="9" height="6.8" rx="1.2" fill="currentColor"/><path d="M5.4 7.2V5.4a2.6 2.6 0 0 1 5.2 0v1.8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>'
+  };
+  var TREE_STATE_WORD = { fitted: 'Fitted in this cell', available: 'Available here', learned: 'Learned, not offered here', unlearned: 'Not yet learned' };
+  function treeCall(fn, a, b, c) { try { return typeof Sim[fn] === 'function' ? Sim[fn](a, b, c) : null; } catch (e) { return null; } }
+  function treeMissingIds(id) { var m = S.build ? treeCall('treeMissing', S.build, id) : null; return m && m.length ? m : []; }
+  function treeNames(ids) {
+    var n = ids.map(function (i) { var c = cardOrBio(i); return c ? c.name : i; });
+    return n.length < 2 ? n.join('') : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1];
+  }
+  function treeCtx() { var on = S.dish != null && S.build && S.screen !== 'list' && S.screen !== 'world' && S.screen !== 'intro'; return { D: on ? dishObj() : null, build: on ? S.build : null, adapt: !!(on && S.screen === 'adapt') }; }
+  function treeBuild() {
+    var nodes = treeCall('treeNodes') || [], br = treeCall('treeBranches') || [], grid = $('treeGrid');
+    T.nodes = nodes; T.branches = br; T.byId = {}; T.tiles = {}; T.pos = {}; grid.innerHTML = '';
+    nodes.forEach(function (n) { T.byId[n.id] = n; });
+    var tiers = []; nodes.forEach(function (n) { if (tiers.indexOf(n.tier) < 0) tiers.push(n.tier); }); tiers.sort(function (a, b) { return a - b; });
+    var used = {}, rows = Math.max(tiers.length, 1);
+    br.forEach(function (b, bi) {
+      var h = el('div', 'tv-bh', esc(b.name)); h.style.gridColumn = String(bi + 1); h.style.gridRow = '1'; grid.appendChild(h);
+      nodes.filter(function (n) { return n.branch === b.id; }).forEach(function (n) {
+        var r = tiers.indexOf(n.tier); while (used[bi + ':' + r]) r++;
+        used[bi + ':' + r] = 1; rows = Math.max(rows, r + 1);
+        var t = el('button', 'tv-tile'); t.type = 'button'; t.setAttribute('data-id', n.id); t.style.gridColumn = String(bi + 1); t.style.gridRow = String(r + 2);
+        t.innerHTML = '<span class="tv-mark"></span><span class="tv-name">' + esc(n.name) + '</span><span class="tv-meta"><span>' + (n.energy ? 'Energy ' + n.energy : 'No energy') + '</span><span class="shelf ' + (n.shelf === 'machine' ? 'mach' : 'bio') + '">' + (n.shelf === 'machine' ? 'Machine' : 'Biology') + '</span></span>';
+        t.addEventListener('click', function () { treeSelect(n.id, true); });
+        t.addEventListener('keydown', treeTileKey);
+        grid.appendChild(t); T.tiles[n.id] = t; T.pos[n.id] = { c: bi, r: r };
+      });
+    });
+    grid.style.gridTemplateColumns = 'repeat(' + Math.max(br.length, 1) + ', minmax(138px, 1fr))'; $('treeInner').style.minWidth = (Math.max(br.length, 1) * 148 + 24) + 'px';
+    grid.style.gridTemplateRows = '26px repeat(' + rows + ', var(--th))'; T.rows = rows;
+  }
+  function treeSize() {
+    var sc = $('treeScroll'), avail = sc.clientHeight - 6 - 10 - 26 - 16 * T.rows, th = Math.max(44, Math.min(66, Math.floor(avail / T.rows)));
+    $('treeGrid').style.setProperty('--th', th + 'px');
+  }
+  function treeDraw() {
+    var inner = $('treeInner'), ib = inner.getBoundingClientRect(), svg = $('treeLines'), g = $('treeLineG'), out = '', cnt = 0;
+    svg.setAttribute('width', inner.scrollWidth); svg.setAttribute('height', inner.scrollHeight); g.innerHTML = ''; var gut = {};
+    function rc(id) { var b = T.tiles[id].getBoundingClientRect(); return { l: b.left - ib.left, r: b.right - ib.left, t: b.top - ib.top, b: b.bottom - ib.top, cx: (b.left + b.right) / 2 - ib.left, cy: (b.top + b.bottom) / 2 - ib.top }; }
+    T.nodes.forEach(function (n) {
+      ['after', 'with'].forEach(function (kind) {
+        (n[kind] || []).forEach(function (pid) {
+          if (!T.tiles[pid] || !T.tiles[n.id]) return;
+          var p = rc(pid), q = rc(n.id), d, mx, my;
+          var hh = p.b - p.t, sameCol = Math.abs(p.cx - q.cx) < 4;
+          if (sameCol && Math.abs(q.cy - p.cy) > hh * 1.6) {   // another tile sits between them: go round it in the gutter on the left, so the line never reads as a link to the tile it would cross
+            var gk = Math.round(p.l), go = 4 + 4 * (gut[gk] = (gut[gk] || 0) + 1) - 4, gx = p.l - go - 3;
+            d = 'M' + p.l + ' ' + p.cy + 'H' + gx + 'V' + q.cy + 'H' + (q.l - 2); mx = gx; my = (p.cy + q.cy) / 2;
+          }
+          else if (p.b < q.t - 2) { var k = (q.t - p.b) / 2; d = 'M' + p.cx + ' ' + p.b + 'C' + p.cx + ' ' + (p.b + k) + ' ' + q.cx + ' ' + (q.t - k) + ' ' + q.cx + ' ' + (q.t - 2); mx = (p.cx + q.cx) / 2; my = (p.b + q.t) / 2; }
+          else if (q.b < p.t - 2) { var k2 = (p.t - q.b) / 2; d = 'M' + p.cx + ' ' + p.t + 'C' + p.cx + ' ' + (p.t - k2) + ' ' + q.cx + ' ' + (q.b + k2) + ' ' + q.cx + ' ' + (q.b + 2); mx = (p.cx + q.cx) / 2; my = (p.t + q.b) / 2; }
+          else { var dy = p.b + 11; d = 'M' + p.cx + ' ' + p.b + 'Q' + (p.cx + q.cx) / 2 + ' ' + (dy + 8) + ' ' + q.cx + ' ' + (q.b + 2); mx = (p.cx + q.cx) / 2; my = dy + 3; }
+          out += '<path class="tv-line ' + kind + '" data-from="' + pid + '" data-to="' + n.id + '" data-kind="' + kind + '" d="' + d + '" marker-end="url(#tvArrow)"/>';
+          if (kind === 'with') out += '<text class="tv-wlab" data-from="' + pid + '" data-to="' + n.id + '" x="' + mx + '" y="' + (my + 3) + '" text-anchor="middle">with</text>';
+          cnt++;
+        });
+      });
+    });
+    g.innerHTML = out; T.lineCount = cnt; treeLight();
+  }
+  function treeLight() {
+    var s = T.sel;
+    Array.prototype.forEach.call($('treeLineG').children, function (e) {
+      var hit = !!s && (e.getAttribute('data-from') === s || e.getAttribute('data-to') === s);
+      e.classList.toggle('hl', hit); e.classList.toggle('faint', !!s && !hit);
+      if (e.tagName === 'path') e.setAttribute('marker-end', hit ? 'url(#tvArrowHl)' : 'url(#tvArrow)');
+    });
+    Object.keys(T.tiles).forEach(function (id) {
+      var rel = !!s && id !== s && (T.byId[s].after.concat(T.byId[s].with).indexOf(id) >= 0 || T.byId[id].after.concat(T.byId[id].with).indexOf(s) >= 0);
+      T.tiles[id].classList.toggle('rel', rel); T.tiles[id].classList.toggle('sel', id === s); T.tiles[id].setAttribute('aria-pressed', id === s ? 'true' : 'false');
+    });
+  }
+  function treeRefresh() {
+    var cx = treeCtx(), list = !cx.D; T.adapt = cx.adapt;
+    T.st = treeCall('treeState', cx.D, cx.build, S.cleared) || {};
+    T.nodes.forEach(function (n) {
+      var s = (T.st[n.id] || {}).state || 'unlearned', t = T.tiles[n.id];
+      t.className = 'tv-tile st-' + s + (n.shelf === 'machine' ? ' mach' : '') + (T.sel === n.id ? ' sel' : '');
+      t.firstChild.innerHTML = TREE_MARK[s];
+      t.setAttribute('aria-label', n.name + ', ' + TREE_STATE_WORD[s].toLowerCase() + ', ' + (n.energy ? 'energy ' + n.energy : 'no energy') + ', ' + (n.shelf === 'machine' ? 'machine' : 'biology'));
+    });
+    $('treeLegend').innerHTML = ['fitted', 'available', 'learned', 'unlearned'].filter(function (s) { return !list || s === 'learned' || s === 'unlearned'; }).map(function (s) { return '<span class="lg st-' + s + '"><i>' + TREE_MARK[s] + '</i>' + TREE_STATE_WORD[s] + '</span>'; }).join('') + '<span class="lg ln"><svg viewBox="0 0 30 8" aria-hidden="true"><path d="M1 4H29" stroke="#8a90a8" stroke-width="1.8"/></svg>Learn first</span><span class="lg ln"><svg viewBox="0 0 30 8" aria-hidden="true"><path d="M1 4H29" stroke="#5fd0ff" stroke-width="1.8" stroke-dasharray="4 3"/></svg>With (fitted together)</span>';
+    $('treeNote').textContent = list ? 'No cell is open, so this shows only what is learned and what is not yet.' : (cx.adapt ? 'Cell on Dish ' + cx.D.id + '. Fit or take off a skill here and the Adapt page changes with it.' : 'Cell on Dish ' + cx.D.id + '. Open Adapt to fit skills.');
+    $('treeEnergy').textContent = cx.adapt ? 'Energy ' + $('energyNum').textContent : '';
+    treeDetail(); treeLight();
+  }
+  function treeDetail() {
+    var n = T.sel && T.byId[T.sel], act = $('treeAct');
+    if (!n) {
+      $('tdImg').innerHTML = ''; $('tdName').textContent = 'Pick a skill'; $('tdShelf').className = ''; $('tdShelf').textContent = ''; $('tdEn').textContent = '';
+      $('tdGame').textContent = 'Choose a skill to read what it does, what it costs and what it needs.'; $('tdReal').textContent = ''; $('tdState').textContent = ''; $('tdAfter').textContent = ''; $('tdWith').textContent = ''; act.hidden = true; $('tdMsg').textContent = ''; return;
+    }
+    var c = cardOrBio(n.id) || {}, s = (T.st[n.id] || {}), d = treeCtx().D, mach = n.shelf === 'machine';
+    var game = c.game || c.sentence || '', real = c.real || '';
+    if (d && d.agents) { game = c.game3 || (c.world === 3 ? c.game : c.real) || game; if (game === real) real = ''; }
+    var box = $('tdImg'); box.innerHTML = ''; var tb = el('div', 'thumbbox'); tb.appendChild(thumbEl(n.id, 'thumb')); box.appendChild(tb); box.className = 'td-img ' + (mach ? 'mach' : 'bio');
+    $('tdName').textContent = n.name; $('tdShelf').className = 'shelf ' + (mach ? 'mach' : 'bio'); $('tdShelf').textContent = mach ? 'Machine' : 'Biology';
+    $('tdEn').textContent = n.energy ? 'Energy ' + n.energy : 'No energy';
+    $('tdGame').textContent = game; $('tdGame').title = game; $('tdReal').innerHTML = real ? '<i>Real</i>' + esc(real) : ''; $('tdReal').title = real;
+    $('tdState').innerHTML = '<b class="st-' + (s.state || 'unlearned') + '"><i>' + TREE_MARK[s.state || 'unlearned'] + '</i>' + TREE_STATE_WORD[s.state || 'unlearned'] + '</b> ' + esc(s.reason || '');
+    $('tdAfter').innerHTML = (n.after || []).length ? '<b>Learn first:</b> ' + esc((n.after || []).map(function (i) { return T.byId[i] ? T.byId[i].name : i; }).join(', ')) : '';
+    $('tdWith').innerHTML = (n.with || []).length ? '<b>Needs fitted:</b> ' + esc((n.with || []).map(function (i) { var m = T.byId[i]; return m ? m.name + ' (' + Cards.slotInfo(m.slot).name + ')' : i; }).join(', ')) : '';
+    var st = s.state, can = T.adapt && n.kind !== 'rule' && (st === 'available' || st === 'fitted');
+    act.hidden = !can; if (can) { act.textContent = st === 'fitted' ? 'Take it off' : 'Fit this'; act.disabled = false; }
+    $('tdMsg').textContent = T.msg;
+  }
+  function treeSelect(id, user) {
+    if (!T.byId[id]) return false;
+    T.sel = id; T.msg = ''; treeRefresh();
+    var t = T.tiles[id], sc = $('treeScroll'); if (t && !user && t.scrollIntoView) t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    return true;
+  }
+  function treeAct() {
+    var n = T.sel && T.byId[T.sel]; if (!n || !T.adapt) return;
+    var st = (T.st[n.id] || {}).state, k = n.slot, r;
+    if (st === 'fitted') r = doUnfit(k, n.id);
+    else if (st === 'available') {
+      if (!selectable(k)) r = { ok: false, reason: Sim.lockedReason(dishObj(), k) || 'That slot is shut on this dish.' };
+      else { S.slot = k; if (k === 'envelope') S.layer = Math.min(1, slotsNow().envelope.length); r = doFit(k, n.id); }
+    }
+    T.msg = r && !r.ok ? r.reason || '' : ''; treeRefresh();
+  }
+  function treeOpen(opener, id) {
+    if (T.open) { if (id) treeSelect(id); return; }
+    T.open = true; T.opener = opener || $('navTree'); T.sel = null; T.msg = '';
+    hidePop();
+    var tv = $('treeview'); tv.hidden = false; $('head').inert = true; $('app').inert = true; document.documentElement.classList.add('tree-open');
+    treeBuild(); treeSize(); treeRefresh(); treeDraw();
+    if (id) treeSelect(id);
+    $('treeClose').focus({ preventScroll: true });
+  }
+  function treeClose() {
+    if (!T.open) return;
+    T.open = false; $('treeview').hidden = true; $('head').inert = false; $('app').inert = false; document.documentElement.classList.remove('tree-open');
+    var o = T.opener; if (!o || !o.isConnected || !o.offsetParent) o = $('navTree');
+    o.focus({ preventScroll: true });
+  }
+  function treeTileKey(e) {
+    var id = e.currentTarget.getAttribute('data-id'), me = T.pos[id], best = null, bd = 1e9;
+    if (e.key === 'Escape') { e.preventDefault(); treeClose(); return; }
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].indexOf(e.key) < 0) return;
+    e.preventDefault();
+    var dx = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0, dy = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+    Object.keys(T.pos).forEach(function (o) {
+      var p = T.pos[o], ac = (p.c - me.c) * dx, ar = (p.r - me.r) * dy; if (o === id) return;
+      if (dx ? ac <= 0 : ar <= 0) return;
+      var dist = dx ? ac * 100 + Math.abs(p.r - me.r) : ar * 100 + Math.abs(p.c - me.c) * 3;
+      if (dist < bd) { bd = dist; best = o; }
+    });
+    if (best) T.tiles[best].focus({ preventScroll: false });
+  }
+  $('navTree').addEventListener('click', function () { treeOpen(this); });
+  $('adaptTree').addEventListener('click', function () { treeOpen(this); });
+  $('treeClose').addEventListener('click', treeClose);
+  $('treeAct').addEventListener('click', treeAct);
+  $('treeview').addEventListener('click', function (e) { e.stopPropagation(); });
+  $('treeview').addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.preventDefault(); treeClose(); } });
+  window.addEventListener('resize', function () { if (T.open) { treeSize(); treeDraw(); } });
+  function treeInfo() {
+    var tiles = Object.keys(T.tiles).map(function (id) { var b = T.tiles[id].getBoundingClientRect(); return { id: id, state: (T.st[id] || {}).state || null, x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; });
+    return { open: T.open, selected: T.sel, tiles: tiles, lines: T.open ? $('treeLineG').querySelectorAll('path').length : 0, detail: T.open ? $('treeDetail').textContent.replace(/\s+/g, ' ').trim() : '' };
+  }
+
   // ---------------------------------------------------------------- debug hook
   window.__la = {
     gl: function () { return GL.r; }, glStats: function () { return GL.r ? GL.r.stats() : { supported: false, failed: GL.failed, forced: GL.forced, reason: GL.reason }; },
     glSig: function (t) { return GL.r ? GL.r.signature(t) : null; },
     glPortrait: function () { return GL.p; },
     forceFallback: function (on) { GL.forced = !!on; if (on) { glDestroy(); glNote('Simple dish view: forced for testing.'); if (GL.p) { $('cellWrap').classList.remove('cellglon'); $('cellGL').hidden = true; } } else { GL.failed = false; glNote(''); GL.pfailed = false; if (S.screen === 'adapt') renderCell(); } return { forced: GL.forced }; },
+    tree: function (on) { if (on === false) treeClose(); else treeOpen($('navTree')); return T.open; }, treeSelect: function (id) { return treeSelect(id); }, treeInfo: treeInfo,
     S: S, show: show, selectDish: selectDish, enterWatch: enterWatch, run: doRun, seek: seek, skip: skip, showResult: showResult, advance: advance,
     unlockWorld: function (w) { for (var v = 1; v < w; v++) orderOf(v).forEach(function (id) { S.cleared[id] = true; }); save('cleared2', S.cleared); renderList(); return { ok: !tabLocked(w), world: w }; },   // test setup: marks every dish before world w cleared, which opens its tab
     world: function (w) { if (tabLocked(w)) return { ok: false, reason: 'locked' }; S.worldTab = w; save('worldTab', w); renderList(); show('list'); return { ok: true, world: w }; }, worldOrder: function (w) { return orderOf(w == null ? S.worldTab : w).slice(); }, setTab: setTab,
@@ -1553,7 +1731,7 @@
     selectSlot: selectSlot, fit: function (id, layer) { var k = (Cards.part(id) || Cards.bio(id)).slot; if (layer != null) S.layer = layer; if (!selectable(k)) return { ok: false, reason: Sim.lockedReason(dishObj(), k) }; S.slot = k; return doFit(k, id); },
     unfit: function (k, id) { return doUnfit(k, id); }, preview: previewOption, clearPreview: clearPreview, fixViaSlots: fixViaSlots,
     tags: function () { return Array.prototype.map.call(document.querySelectorAll('#tagLayer .tag'), function (b) { return { slot: b.getAttribute('data-slot'), text: b.textContent, selectable: b.getAttribute('aria-disabled') === 'false', cls: b.className, hidden: b.hidden }; }); },
-    options: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt, #optList .optempty'), function (o) { var w = o.querySelector('.why'); return { id: o.getAttribute('data-id'), fitted: /fitted/.test(o.className), blocked: /blocked/.test(o.className), why: w ? w.textContent : '', img: (o.querySelector('img') || {}).complete ? o.querySelector('img').naturalWidth : null }; }); },
+    options: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt, #optList .optempty'), function (o) { var w = o.querySelector('.wt') || o.querySelector('.why'); return { id: o.getAttribute('data-id'), fitted: /fitted/.test(o.className), blocked: /blocked/.test(o.className), why: w ? w.textContent : '', img: (o.querySelector('img') || {}).complete ? o.querySelector('img').naturalWidth : null }; }); },
     fix: function (id) { var d = dishObj(), f = d.fixes.filter(function (x) { return x.id === id; })[0]; S.undo.push(copy(S.build)); S.build = Lv.applyFix(S.build, f); syncRuleFromBuild(); renderAdapt(false); return S.build; },
     setBuild: function (b) { S.undo.push(copy(S.build)); S.build = copy(b); syncRuleFromBuild(); renderAdapt(false); },
     setDial: function (k, v) { mutate(function (bb) { bb[k] = v; }); },
