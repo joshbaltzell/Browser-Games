@@ -52,6 +52,7 @@ var LookAliveCards = (function () {
       real: 'A spinning tail driven by a tiny motor. Bacteria run, tumble and run again, drifting toward food.',
       game: 'Your colony spreads toward food.',
       effect: 'Movement biased toward food. Births -4%.',
+      game3: 'In the thick water it swims. A cell runs about 20 micrometres a second, turns at random, and pays energy for every second it swims.',
       fx: { births: 0.96, moveFood: 0.06, grip: 0.5 } },
 
     // ---- habitat 2 (the banded water): heat, grazing, the Motor ----
@@ -79,12 +80,25 @@ var LookAliveCards = (function () {
       real: 'Thermostichus moves toward light on type IV pili: thin threads it sticks to a surface and pulls back in. Cells without them cannot move.',
       game: 'Changed for the game: here the pili hold your cells in place against the current.',
       effect: 'Holds against the current; spreads less. Births -4%.',
+      game3: 'In the thick water it crawls. The pili pull in short jerks, a few micrometres a second, with a pause between pulls. Slow, and cheap to run.',
       fx: { grip: 1, births: 0.96 } },
     { id: 'filament', slot: 'division', name: 'Filament form', shelf: 'biology', kind: 'part', energy: 1, counterpart: null, world: 2,
       real: 'Bacteria that grow as long filaments or clumps are too big for small grazers such as flagellates to swallow, and grazing itself can push a colony to make more of them.',
       game: 'Changed for the game: here filaments escape the slow shadow too. A real fly larva swallows anything.',
       effect: 'Grazing -98%. Births -5%. A little less regular.',
       fx: { graze: 0.98, births: 0.95, sigma: 0.01 } },
+
+    // ---- habitat 3 (the thick water): cells are individuals. fx is empty: sim3.js reads the card ids, not these numbers. `art` names the card image to borrow until the card has its own.
+    { id: 'vesicles', slot: 'motor', name: 'Gas vesicles', shelf: 'biology', kind: 'part', energy: 1, counterpart: null, world: 3, art: 'quorum',
+      real: 'Haloquadratum walsbyi makes gas-filled vesicles that let it float. A cell with them drifts in the water instead of sinking, but it cannot steer.',
+      game: 'Your cells drift a wider way through the water. They cannot steer toward food.',
+      effect: 'Motor. Wider drift. No steering. Cheap to run.',
+      fx: {} },
+    { id: 'chemo', slot: 'signal', name: 'Chemoreceptor array', shelf: 'biology', kind: 'part', energy: 1, counterpart: null, world: 3, art: 'compass',
+      real: 'Swimming bacteria carry clusters of receptor proteins at one end. They let a cell compare what it tastes now with what it tasted a moment ago, and lengthen its runs when things are getting better.',
+      game: 'Lets a Flagellum or Twitching pili steer toward food. Without a motor it does nothing.',
+      effect: 'Signal. Steers a swimmer or a crawler toward food. A small cost to run.',
+      fx: {} },
 
     // ---- Machine shelf (powerful, raises Regularity) ----
     { id: 'fuelcell', slot: 'power', name: 'Fuel cell', shelf: 'machine', kind: 'metabolism', energy: 1, counterpart: 'respiration',
@@ -143,7 +157,7 @@ var LookAliveCards = (function () {
 
   // Machine rule vocabulary. Readings are exact and instant; global and suspicion sensors are things no cell could know.
   var sensors = [
-    { id: 'food', name: 'food here', global: false, values: [0.15, 0.25, 0.35, 0.5], unit: '', note: 'Local sugar. Natives settle near 0.4.' },
+    { id: 'food', name: 'food here', global: false, values: [0.15, 0.25, 0.35, 0.5], values3: [0.005, 0.01, 0.015, 0.025, 0.04], unit: '', note: 'Local sugar. Natives settle near 0.4.' },
     { id: 'density', name: 'own density here', global: false, values: [0.05, 0.1, 0.2], unit: '', note: 'Your units per cell, against the natives\' normal of 1.' },
     { id: 'native', name: 'native density here', global: false, values: [0.6, 0.8, 1.0, 1.2], unit: '', note: 'Natives per cell, against their normal of 1.' },
     { id: 'share', name: 'own share of the dish', global: true, values: [0.05, 0.08, 0.10, 0.12, 0.15], unit: '', note: 'Global. No cell could know this.' },
@@ -160,6 +174,14 @@ var LookAliveCards = (function () {
     { id: 'away', name: 'move away from natives', note: 'Some units drift to the emptiest neighbour cell.' },
     { id: 'hotter', name: 'move toward heat', note: 'Some units step to the hottest neighbour cell.' },
     { id: 'cooler', name: 'move toward cool', note: 'Some units step to the coolest neighbour cell.' }
+  ];
+  // Habitat 3 vocabulary (individual cells). Kept out of `sensors` and `actions` so nothing that loops over those lists sees them; sensor() and action() find both.
+  var sensors3 = [
+    { id: 'crowd', name: 'crowding here', global: false, values: [2, 4, 6, 8], unit: 'cells', note: 'How many cells, yours and the locals, stand in this square and the ones around it. Counted exactly.' }
+  ];
+  var actions3 = [
+    { id: 'seek', name: 'swim toward food', note: 'Swims and steers, if the cell has a motor. A cell with no motor only jitters.' },
+    { id: 'stay', name: 'stay and feed', note: 'Stops where it is and eats. Costs nothing to move, and a stopped cell does not count as moving.' }
   ];
   var ruleFx = { pauseDeath: 0.15, fastMult: 1.5, fastDeath: 1.5, sloppyBirths: 1.0, sloppySigma: 0.015, move: 0.15, heatMove: 0.10 };
 
@@ -187,14 +209,14 @@ var LookAliveCards = (function () {
   function canon(id) { return ALIAS[id] || id; }
   function part(id) { return byId(parts, canon(id)); }
   function bio(id) { return byId(bioReflexes, canon(id)); }
-  function sensor(id) { return byId(sensors, id); }
-  function action(id) { return byId(actions, id); }
+  function sensor(id) { return byId(sensors, id) || byId(sensors3, id); }
+  function action(id) { return byId(actions, id) || byId(actions3, id); }
   function ruleText(r) {
     var s = sensor(r.sensor), a = action(r.action);
     return 'When ' + (s ? s.name : r.sensor) + ' is ' + (r.cmp === 'lt' ? 'less than' : 'more than') + ' ' + r.value + ', then ' + (a ? a.name : r.action) + '.';
   }
 
-  return { parts: parts, SLOTS: SLOTS, slotInfo: slotInfo, bySlot: bySlot, layersOf: layersOf, pairs: pairs, bioReflexes: bioReflexes, sensors: sensors, actions: actions, ruleFx: ruleFx,
+  return { parts: parts, SLOTS: SLOTS, slotInfo: slotInfo, bySlot: bySlot, layersOf: layersOf, pairs: pairs, bioReflexes: bioReflexes, sensors: sensors, actions: actions, sensors3: sensors3, actions3: actions3, ruleFx: ruleFx,
     canon: canon, part: part, bio: bio, sensor: sensor, action: action, ruleText: ruleText };
 })();
 if (typeof module !== 'undefined') module.exports = LookAliveCards;

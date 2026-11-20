@@ -93,7 +93,9 @@ var LookAlive = (function () {
   }
   // Which suspicion channels a dish switches on (a channel that is off contributes nothing).
   function channelList(D) { return D.suspicion === false ? [] : (D.channels || CHAN); }
-  function channelsOn(D) { var l = channelList(D), o = {}; CHAN.forEach(function (c) { o[c] = l.indexOf(c) >= 0; }); return o; }
+  function channelsOn(D) { var l = channelList(D), o = {}; CHAN.forEach(function (c) { o[c] = l.indexOf(c) >= 0; }); if (D.agents) o.motion = l.indexOf('motion') >= 0; return o; }
+  // ---- habitat 3 (D.agents): the individual-cell simulation in sim3.js; each hand-off below is a short branch behind D.agents and old dishes never reach it
+  function S3() { return typeof LookAliveSim3 !== 'undefined' ? LookAliveSim3 : require('./sim3.js'); }
 
   function params(P, D, build) {
     var Pr = P.robot, Pn = P.native, b = normalize(build);
@@ -242,6 +244,7 @@ var LookAlive = (function () {
         if (!ac || A.actions.indexOf(rf.action) < 0) pr.push('Unknown action "' + rf.action + '".');
         if (rf.cmp !== 'gt' && rf.cmp !== 'lt') pr.push('Comparison must be gt or lt.');
         if (typeof rf.value !== 'number' || !isFinite(rf.value)) pr.push('The rule needs a number.');
+        if (D.agents && rf.otherwise != null && (!Cards.action(rf.otherwise) || A.actions.indexOf(rf.otherwise) < 0)) pr.push('Unknown action "' + rf.otherwise + '".');
       } else pr.push('Reflex kind must be bio or machine.');
     }
     return { ok: pr.length === 0, problems: pr };
@@ -679,16 +682,19 @@ var LookAlive = (function () {
   // ---------------------------------------------------------------- public API
   function play(P, D, build, opts) {
     opts = opts || {}; build = normalize(build);
+    if (D.agents) return S3().gameRun(D, build, { P: P, bp: params(P, D, build), channels: channelsOn(D), record: opts.record !== false });   // n and snapEvery do not apply: the grid is 64 and a snapshot is every 10 ticks
     var s = newState(P, D, build, opts, baseState(P, opts.n || 64, D));
     if (s.snapEvery) s.snaps.push(snapshot(s));
     return finish(s);
   }
   // Re-run from a snapshot to the end (used to prove determinism).
   function resume(run, snapIndex) {
+    if (run.agents) return play(run.P, run.dish, run.build, {});   // individual cells replay from the seed
     var s = resumeState(run, snapIndex);
     return finish(s);
   }
   function restore(run, snapIndex) {
+    if (run.agents) return S3().restoreSnap(run, snapIndex);
     var sn = run.snaps[snapIndex], nn = run.n * run.n;
     var wa = new Float32Array(nn), i;
     for (i = 0; i < nn; i++) wa[i] = sn.st.WA[i] / Math.max(1e-9, sn.st.WA[i] + sn.st.WB[i]);
@@ -697,6 +703,7 @@ var LookAlive = (function () {
   }
 
   function verdict(run) {
+    if (run.agents) return run.v;
     var P = run.P, D = run.dish, H = run.H, T = run.T, band = D.band, t;
     var inBand = 0, cnt = 0, maxStage = 0, exposedAt = -1, peakS = 0;
     for (t = band.warm; t <= T; t++) { cnt++; if (H.share[t] >= band.lo && H.share[t] <= band.hi) inBand++; }
@@ -895,8 +902,15 @@ var LookAlive = (function () {
 
   // Which of the five stats a loss is about, and a headline that starts with the stat in plain words.
   var CAUSE_STAT = { acid: 'acid', 'exposed:growth': 'growth', 'exposed:casualties': 'growth', overgrew: 'growth', below: 'growth', starved: 'growth', band: 'growth',
-    'exposed:waste': 'smell', 'exposed:regularity': 'natural', bust: 'crash', bloom: 'crash', cooked: 'heat', grazed: 'grazing' };
+    'exposed:waste': 'smell', 'exposed:regularity': 'natural', bust: 'crash', bloom: 'crash', cooked: 'heat', grazed: 'grazing', 'exposed:motion': 'motion' };
+  // The stat a loss is blamed on. Individual-cell dishes read the cause from sim3 (starved is a Food reach loss there, not a Growth one).
+  function causeStat(D, cause) { return D && D.agents ? S3().CAUSE_STAT[cause] || 'growth' : CAUSE_STAT[cause]; }
   function autopsy(run) {
+    if (run.agents) {
+      var D3 = run.dish, sn3 = checkedIds(D3), st3 = causeStat(D3, run.autopsy3 && run.autopsy3.cause || (run.autopsy && run.autopsy.cause));
+      if (sn3.length && sn3.indexOf(st3) < 0) st3 = sn3[0];
+      return S3().finishAutopsy(run, st3, STAT_INFO[st3].name);
+    }
     var a = autopsyBase(run);
     if (!a) return a;
     var D = run.dish, st = CAUSE_STAT[a.cause] || 'growth', sn = checkedIds(D), crashId = D.temp ? 'night' : 'crash';
@@ -1049,9 +1063,11 @@ var LookAlive = (function () {
     crash:   { id: 'crash',   name: 'Crash survival', ups: 'better', downs: 'worse' },
     heat:    { id: 'heat',    name: 'Heat tolerance', ups: 'higher', downs: 'lower' },
     grazing: { id: 'grazing', name: 'Grazing',        ups: 'safer', downs: 'worse' },
-    night:   { id: 'night',   name: 'Night survival', ups: 'better', downs: 'worse' }
+    night:   { id: 'night',   name: 'Night survival', ups: 'better', downs: 'worse' },
+    reach:   { id: 'reach',   name: 'Food reach',     ups: 'better', downs: 'worse' },                 // habitat 3 only
+    motion:  { id: 'motion',  name: 'Movement',       ups: 'closer to the locals', downs: 'further from the locals' }   // habitat 3 only
   };
-  var STAT_ORDER = ['acid', 'growth', 'smell', 'natural', 'crash', 'heat', 'grazing', 'night'];
+  var STAT_ORDER = ['acid', 'growth', 'smell', 'natural', 'crash', 'heat', 'grazing', 'night', 'reach', 'motion'];
   var ST = {
     acidScale: 0.25, acidSafeLoss: 0.06,        // value = 1 - loss/0.25; safe while the colony loses under 6% a tick to the acid
     shareLo: 0.0125, shareHi: 0.6,              // growth bar: log scale of the share from 1.25% to 60%
@@ -1067,7 +1083,18 @@ var LookAlive = (function () {
   var fcCache = {}, fcCount = 0;
   function qtile(a, p) { var s = a.slice().sort(function (x, y) { return x - y; }); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; }
   // The forecast: a 16 by 16 run of the real simulation, and the few numbers the five stats read from it.
+  var agCache = {}, agKeys = [];
+  // Individual-cell dishes: the forecast is the real run (same seed, same simulation), kept for the last 40 builds.
+  function forecastAgent(D, build) {
+    var b = normalize(build), key = D.id + '|' + JSON.stringify(D.agents) + '|' + JSON.stringify(b);
+    if (agCache[key]) return agCache[key];
+    var f = forecastOf(play(Lv().PLANET, D, b, { record: false }), D);
+    if (agKeys.length >= 40) delete agCache[agKeys.shift()];
+    agCache[key] = f; agKeys.push(key);
+    return f;
+  }
   function forecast(D, build) {
+    if (D.agents) return forecastAgent(D, build);
     var b = normalize(build), key = D.id + '|' + JSON.stringify(b);
     if (fcCache[key]) return fcCache[key];
     var run = play(Lv().PLANET, D, b, { n: D.forecastN || 16 }), f = forecastOf(run, D);
@@ -1078,6 +1105,7 @@ var LookAlive = (function () {
   }
   // The numbers the stats read, taken from any finished run of the dish (the forecast above, or the real replay for the result grade).
   function forecastOf(run, D) {
+    if (D.agents) return S3().forecastOf(run, D, agentHelpers(D));
     var H = run.H, T = run.T, band = D.band, t, ramp = Lv().PLANET.event.ramp || 10;
     var ev = D.event && D.event.tick > 0 ? D.event.tick : 0;
     var all = [], low = [], post = [], loss = 0, lossMax = 0, gpeak = 0, mx = { waste: 0, regularity: 0 }, mn = 1, below = 0, above = 0;
@@ -1097,7 +1125,9 @@ var LookAlive = (function () {
   function shareVal(s) { return clamp(Math.log(Math.max(s, 1e-4) / ST.shareLo) / Math.log(ST.shareHi / ST.shareLo), 0, 1); }
   function crashVal(s) { return clamp(Math.log(Math.max(s, 1e-4) / ST.crashLo) / Math.log(ST.crashHi / ST.crashLo), 0, 1); }
   function r3(x) { return Math.round(x * 1000) / 1000; }
+  function agentHelpers(D) { return { shareVal: shareVal, zone: function (id) { return [r3(shareVal(D.band.lo)), r3(shareVal(D.band.hi))]; } }; }
   function statZone(D, id) {
+    if (D.agents && id !== 'growth') return S3().zone3(id);
     if (id === 'acid') return [r3(1 - ST.acidSafeLoss / ST.acidScale), 1];
     if (id === 'growth') return [r3(shareVal(D.band.lo)), r3(shareVal(D.band.hi))];
     if (id === 'crash' || id === 'night') return [r3(crashVal(csafe(D))), 1];
@@ -1122,6 +1152,7 @@ var LookAlive = (function () {
     return o;
   }
   function statEval0(D, id, f) {
+    if (D.agents) { var e3 = f.agent[id]; return { id: id, name: STAT_INFO[id].name, value: e3.value, safe: e3.safe, state: e3.state, verdict: e3.verdict }; }
     var z = statZone(D, id), v, state = 'safe', verdict = 'Safe';
     if (id === 'acid') {
       v = clamp(1 - f.acidLoss / ST.acidScale, 0, 1);
@@ -1197,7 +1228,7 @@ var LookAlive = (function () {
   // A card already fitted (fitted: true, current: true) reports what it is doing: the cell with it against the cell without it.
   // Also: energy (the card's cost), used (energy of the build with it), fits (within the dish limit), preview (a legal preview build exists), build.
   // Old fields kept for the old page: helps and costs ({ stat, name, steps, dir +1|-1, delta }), checked stats only; `fitted` used to mean "preview exists" and now means "already fitted" (see `preview`).
-  var STAT_WORDS = { acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'],
+  var STAT_WORDS = { reach: ['Food reach better', 'Food reach worse'], motion: ['Movement more restless', 'Movement stiller'], acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'],
     natural: ['Naturalness up', 'Naturalness down'], crash: ['Crash survival up', 'Crash survival down'],
     heat: ['Heat tolerance up', 'Heat tolerance down'], grazing: ['Grazing safer', 'Grazing worse'], night: ['Night survival up', 'Night survival down'] };
   var STATE_RANK = { safe: 0, edge: 1, low: 2, high: 2, unchecked: 0 };
@@ -1281,6 +1312,13 @@ var LookAlive = (function () {
   }
   // The same stats read live off a finished run at tick t (for the replay). value is null when the stat has nothing to show yet (Crash survival before the crash).
   function liveStats(run, t) {
+    if (run.dish.agents) {
+      var D3 = run.dish, hp = agentHelpers(D3);
+      return shownIds(D3).map(function (id) {
+        var e = S3().liveStat(run, D3, id, t, hp), chk = isChecked(D3, id);
+        return { id: id, name: STAT_INFO[id].name, value: e.value, safe: e.safe, state: chk ? e.state : 'unchecked', verdict: chk ? e.verdict : 'Not checked on this dish', checked: chk };
+      });
+    }
     var D = run.dish, H = run.H, ev = D.event && D.event.tick > 0 ? D.event.tick : 0, i, tt = Math.max(1, Math.min(run.T, Math.floor(t)));
     return shownIds(D).map(function (id) {
       var z = statZone(D, id), v = null, state = 'safe', verdict = 'Safe';
@@ -1346,6 +1384,6 @@ var LookAlive = (function () {
   }
 
   return { grade: grade, energyOf: buildEnergy, dissolved: dissolved, stats: stats, liveStats: liveStats, runStats: runStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
-    channelsOn: channelsOn, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { ST: ST, newState: newState, step: step, HK: HK } };
+    channelsOn: channelsOn, causeStat: causeStat, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { ST: ST, newState: newState, step: step, HK: HK } };
 })();
 if (typeof module !== 'undefined') module.exports = LookAlive;

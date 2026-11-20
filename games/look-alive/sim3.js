@@ -212,7 +212,7 @@
     // shuffle initial order is not needed: ids are assigned in creation order
 
     // run state
-    var deaths = [], dCause = { starved: 0, guards: 0 };
+    var deaths = [], dCause = { starved: 0, guards: 0, born: 0 };
     var H = { share: null }, frames = null, foods = null;
     var mk = function () { return new Float32Array(T + 1); };
     H = { share: mk(), scouts: mk(), natives: mk(), total: mk(), food: mk(), stage: mk(), kill: mk(), moveS: mk(), moveN: mk(), susp: { growth: mk(), regularity: mk(), motion: mk() } };
@@ -349,6 +349,7 @@
         e[pa] = half; thr[pa] = drawThr(kind[pa]);
         var ch = addInd(kind[pa], x[pa] + Math.cos(ang) * 1.5, y[pa] + Math.sin(ang) * 1.5, rng() * TAU, half);
         if (ch >= 0) {
+          if (kind[pa] === 0) dCause.born++;
           var bb = Math.sqrt(x[ch] * x[ch] + y[ch] * y[ch]); if (bb > R - 0.5) { x[ch] = x[pa]; y[ch] = y[pa]; x0[ch] = x[ch]; y0[ch] = y[ch]; }
           cell[ch] = cellOf(x[ch], y[ch]); nap[ch] = nap[pa]; napT[ch] = napT[pa];
         }
@@ -548,7 +549,7 @@
 
   // Heading and position of the i-th individual of frame t, in micrometres and radians.
   function unpack(run, t, i) {
-    var fr = run.frames[t], R = run.P.R, kb = fr.k[i];
+    var fr = run.frames[t], R = (run.P3 || run.P).R, kb = fr.k[i];
     return {
       id: fr.id[i], x: fr.x[i] / 65535 * 2 * R - R, y: fr.y[i] / 65535 * 2 * R - R,
       heading: fr.h[i] / 256 * TAU, kind: kb & 7, moving: (kb & 8) !== 0, resting: (kb & 16) !== 0
@@ -570,7 +571,175 @@
     };
   }
 
-  var api = { P3: P3, play: play, unpack: unpack, summary: summary, defaults: defaults, FOOD_SCALE: P3.foodScale };
+
+  // ================================================================ the game-shaped run
+  // gameRun adapts a sim3 run to the run object the rest of the game reads (a field-model run of dishes 1 to 14): game P as run.P, `bp`, `channels`, `n` = 64,
+  // a full set of history arrays (H) under the game's names, and snapshots every 10 ticks binned onto the 64 x 64 grid. The sim3 run itself stays under run.P3, run.H3, run.frames, run.foods ...
+  // The caller (sim.js) passes the game's own P, params() result and channel table in opts: { P, bp, channels, record }. The seed is always dish.agents.seed.
+  // Display scale: sim3 stages sit at 1, 2.5 and 4 and the game's charts draw lines at 1.5, 4.5 and 8, so H.total (and the channel levels, in proportion) are mapped through the same piecewise line.
+  var HK_ALL = ['share', 'nativeShare', 'nat', 'rob', 'food', 'total', 'stage', 'kill', 'fires', 'lead', 'births', 'rate', 'nrate', 'qsig', 'radioMult',
+    'rawG', 'rawW', 'rawC', 'rawR', 'regT', 'regM', 'regF', 'regD', 'regR', 'sloppy', 'acid', 'dorm'];
+  var DISPLAY_NATIVE = 0.9;                       // mean native count per grid square at tick 0, in the density units the renderer expects
+  var LEAD_MOTION = -1;                            // the ribbon in draw.js knows four channels; a tick led by Motion is left unpainted until it learns a fifth (index 4)
+  function toGame(S) { var a = [0, 1, 2.5, 4], b = [0, 1.5, 4.5, 8], i; if (S >= 4) return 8 + (S - 4) * 2; for (i = 1; i < 4; i++) if (S <= a[i]) return b[i - 1] + (S - a[i - 1]) / (a[i] - a[i - 1]) * (b[i] - b[i - 1]); return S; }
+  function gameRun(dish, build, opts) {
+    opts = opts || {};
+    var run = play(dish, build, { record: opts.record !== false });
+    var P3r = run.P, T = run.T, N = P3r.N, R = P3r.R, NN = N * N, W = 2 * R / N, t, i, j, k, H0 = run.H;
+    var nMask = 0;
+    for (j = 0; j < N; j++) for (i = 0; i < N; i++) { var cx = (i + 0.5) * W - R, cy = (j + 0.5) * W - R; if (cx * cx + cy * cy <= R * R) nMask++; }
+    var n0 = H0.natives[0] || 1, kd = DISPLAY_NATIVE * NN / n0;   // density per individual, so the mean native density at tick 0 is DISPLAY_NATIVE
+    var G = {}, key;
+    for (key in H0) G[key] = H0[key];
+    for (k = 0; k < HK_ALL.length; k++) G[HK_ALL[k]] = new Float32Array(T + 1);
+    G.tick = new Uint16Array(T + 1);
+    var zeros = new Float32Array(T + 1);
+    var lead = G.lead;
+    for (t = 0; t <= T; t++) {
+      G.tick[t] = t; G.share[t] = H0.share[t]; G.nativeShare[t] = 1 - H0.share[t];
+      G.nat[t] = H0.natives[t] * kd / NN; G.rob[t] = H0.scouts[t] * kd / NN; G.food[t] = H0.food[t] * nMask / NN;
+      G.stage[t] = H0.stage[t]; G.kill[t] = H0.kill[t]; G.radioMult[t] = 1; G.sloppy[t] = 0;
+      var tot = H0.total[t], gt = toGame(tot), ratio = tot > 1e-9 ? gt / tot : 1;
+      G.total[t] = gt;
+      var lg = H0.susp.growth[t] * ratio, lr = H0.susp.regularity[t] * ratio, lm = H0.susp.motion[t] * ratio, best = -1, bw = 0.05 * ratio;
+      if (lg > bw) { bw = lg; best = 0; } if (lr > bw) { bw = lr; best = 3; } if (lm > bw) { bw = lm; best = LEAD_MOTION; }
+      lead[t] = best;
+    }
+    G.susp = { growth: new Float32Array(T + 1), waste: zeros, casualties: zeros, regularity: new Float32Array(T + 1), motion: new Float32Array(T + 1) };
+    for (t = 0; t <= T; t++) { var tt = H0.total[t], rr = tt > 1e-9 ? G.total[t] / tt : 1; G.susp.growth[t] = H0.susp.growth[t] * rr; G.susp.regularity[t] = H0.susp.regularity[t] * rr; G.susp.motion[t] = H0.susp.motion[t] * rr; }
+    var snaps = [];
+    if (run.frames) {
+      var Z = new Float32Array(NN), Q = new Float32Array(NN), WM = new Float32Array(NN); WM.fill(0.7);
+      var blur = function (a) {
+        var b = new Float32Array(NN), c = new Float32Array(NN), x, y, v;
+        for (y = 0; y < N; y++) for (x = 0; x < N; x++) { v = 2 * a[y * N + x]; v += x > 0 ? a[y * N + x - 1] : a[y * N + x]; v += x < N - 1 ? a[y * N + x + 1] : a[y * N + x]; b[y * N + x] = v * 0.25; }
+        for (y = 0; y < N; y++) for (x = 0; x < N; x++) { v = 2 * b[y * N + x]; v += y > 0 ? b[(y - 1) * N + x] : b[y * N + x]; v += y < N - 1 ? b[(y + 1) * N + x] : b[y * N + x]; c[y * N + x] = v * 0.25; }
+        return c;
+      };
+      for (t = 0; t <= T; t += 10) {
+        var fr = run.frames[t], rb = new Float32Array(NN), nb = new Float32Array(NN), fu = run.foods[t / 5], fd = new Float32Array(NN);
+        for (i = 0; i < fr.n; i++) {
+          var gx = Math.min(N - 1, Math.floor(fr.x[i] / 65535 * N)), gy = Math.min(N - 1, Math.floor(fr.y[i] / 65535 * N));
+          if ((fr.k[i] & 7) === 0) rb[gy * N + gx] += kd; else nb[gy * N + gx] += kd;
+        }
+        rb = blur(rb); nb = blur(nb);
+        for (i = 0; i < NN; i++) fd[i] = fu ? fu[i] / P3r.foodScale : 0;
+        snaps.push({ tick: t, st: { fast: [0, 0, 0, 0], slow: [0, 0, 0, 0], raw: [0, 0, 0, 0], lvl: [0, 0, 0, 0], Z: Z, SP: Z, N: nb, F: fd, WA: WM, WB: Z, Q: Q, tick: t },
+          robot: rb, native: nb, food: fd, waste: Z, quorum: Q });
+      }
+    }
+    var v = run.v;
+    var peakS = 0; for (t = 1; t <= T; t++) if (H0.total[t] > peakS) peakS = H0.total[t];
+    v.peakS = peakS; v.win = !!v.win;
+    run.autopsy3 = run.autopsy; run.H3 = H0; run.H = G; run.P3 = P3r; run.P = opts.P || P3r; run.bp = opts.bp || null; run.channels = opts.channels || { growth: true, waste: false, casualties: false, regularity: true, motion: true };
+    run.n = N; run.snaps = snaps; run.agents = true; run.v = v; run.sim3 = true;
+    return run;
+  }
+
+  // ---------------------------------------------------------------- stat bars read off the run
+  // Reach, Growth, Naturalness and Movement for an agent dish, from the run's own arrays (H3) up to tick `upTo` (T for the whole run, t for the live bars at tick t).
+  // Every number is in sim3 units: the guards act when the channels add to 4.0 (P3.stage[2]).
+  var STAT3 = { reachBad: 0.25, reachScale: 0.5, chanLimit: 4.0, chanSafe: 3.5 };
+  function analyse(run, upTo) {
+    var H = run.H3, P = run.P3, band = run.band, t, n = 0, inb = 0, above = 0, below = 0, floorNoGuards = 0, shares = [], cut = run.v.exposedAt >= 0 ? run.v.exposedAt : 1e9;
+    for (t = band.warm; t <= upTo; t++) {
+      n++; var sh = H.share[t]; shares.push(sh);
+      if (sh >= band.lo && sh <= band.hi) inb++; else if (sh > band.hi) above++; else below++;
+      if (sh < band.lo && t < cut) floorNoGuards++;   // under the floor before the guards began to act: that is reach, not the guards
+    }
+    var emaS = 0, emaN = 0, init = false, dirNow = 0, peakMot = 0, dirPeak = 0, peakReg = 0, peakGro = 0, curReg = H.susp.regularity[upTo] || 0, curMot = H.susp.motion[upTo] || 0, curGro = H.susp.growth[upTo] || 0;
+    for (t = 1; t <= upTo; t++) {
+      if (H.susp.regularity[t] > peakReg) peakReg = H.susp.regularity[t];
+      if (H.susp.growth[t] > peakGro) peakGro = H.susp.growth[t];
+      if (t >= band.warm && H.scouts[t] > 0) {
+        if (!init) { emaS = H.moveS[t]; emaN = H.moveN[t]; init = true; } else { emaS += (H.moveS[t] - emaS) * P.motionAlpha; emaN += (H.moveN[t] - emaN) * P.motionAlpha; }
+        dirNow = emaS >= emaN ? 1 : -1;
+      }
+      if (H.susp.motion[t] > peakMot) { peakMot = H.susp.motion[t]; dirPeak = dirNow || 1; }
+    }
+    shares.sort(function (a, b) { return a - b; });
+    return { n: n, inBand: inb, bandFrac: n ? inb / n : 0, above: above, below: below, rf: n ? floorNoGuards / n : 0, median: shares.length ? shares[Math.floor(shares.length / 2)] : 0,
+      peakReg: peakReg, peakMot: peakMot, dirPeak: dirPeak || 1, curReg: curReg, curMot: curMot, curGro: curGro, dirNow: dirNow || 1, alive: H.scouts[upTo] > 0 && H.natives[upTo] > 0, share: H.share[upTo] };
+  }
+  function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+  function r3(x) { return Math.round(x * 1000) / 1000; }
+  // Zone of the two stats that are new, and of Naturalness on these dishes. (Growth uses the share band like every other dish.)
+  function zone3(id) {
+    if (id === 'reach') return [r3(1 - STAT3.reachBad / STAT3.reachScale), 1];
+    if (id === 'natural') return [r3(1 - STAT3.chanSafe / STAT3.chanLimit), 1];
+    var w = 0.5 * STAT3.chanSafe / STAT3.chanLimit;            // motion: centred, a long bar either side
+    return [r3(0.5 - w), r3(0.5 + w)];
+  }
+  // One stat of a run up to tick `upTo`. S = { shareVal(share), zone(id) } from sim.js. `forced` = the stat the run's loss is blamed on (final read only).
+  // Returns { value, safe, state: 'safe' | 'low' | 'high', verdict }.
+  function statAt(run, D, id, upTo, S, forced) {
+    var a = analyse(run, upTo), final = upTo >= run.T, z = id === 'growth' ? S.zone('growth') : zone3(id), v = 0, state = 'safe', verdict = 'Safe', band = run.band;
+    if (id === 'reach') {
+      var rf = final ? a.rf : (a.n ? a.rf : 0);
+      v = 1 - clamp01(rf / STAT3.reachScale);
+      var wiped = !a.alive && run.dCause.starved >= run.dCause.guards;   // a colony the guards wiped out did not starve
+      if (wiped || v < z[0]) { state = 'low'; verdict = 'Too far from food: your scouts will starve'; if (wiped) v = 0; }
+    } else if (id === 'growth') {
+      var sh = final ? a.median : a.share;
+      if (final) {
+        if (!a.alive) { state = 'low'; sh = Math.min(sh, band.lo * 0.95); }
+        else if (a.bandFrac < band.need) { if (a.above >= a.below) { state = 'high'; sh = Math.max(sh, band.hi * 1.05); } else { state = 'low'; sh = Math.min(sh, band.lo * 0.95); } }
+      } else if (a.share > band.hi) { state = 'high'; } else if (a.share < band.lo) { state = 'low'; }
+      v = S.shareVal(sh);
+      if (state === 'high') verdict = 'Too fast: you will take over'; else if (state === 'low') verdict = 'Too slow: you will fade out';
+    } else if (id === 'natural') {
+      var pr = final ? a.peakReg : a.curReg;
+      v = clamp01(1 - pr / STAT3.chanLimit);
+      if (v < z[0]) { state = 'low'; verdict = 'Too perfect: you look like a machine'; }
+    } else {
+      var pm = final ? a.peakMot : a.curMot, dir = final ? a.dirPeak : a.dirNow;
+      v = clamp01(0.5 + dir * 0.5 * Math.min(1, pm / STAT3.chanLimit));
+      if (pm >= STAT3.chanSafe) { if (dir > 0) { state = 'high'; verdict = 'Too restless: the guards see you never stop'; } else { state = 'low'; verdict = 'Too still: the guards see you never move'; } }
+    }
+    if (forced && state === 'safe') {   // a loss is always blamed on one stat, and that stat must read as the trouble
+      if (id === 'reach') { state = 'low'; v = Math.min(v, z[0] - 0.02); verdict = 'Too far from food: your scouts will starve'; }
+      else if (id === 'growth') { state = a.above >= a.below ? 'high' : 'low'; v = state === 'high' ? S.shareVal(band.hi * 1.05) : S.shareVal(band.lo * 0.95); verdict = state === 'high' ? 'Too fast: you will take over' : 'Too slow: you will fade out'; }
+      else if (id === 'natural') { state = 'low'; v = Math.min(v, z[0] - 0.02); verdict = 'Too perfect: you look like a machine'; }
+      else { var d2 = a.dirPeak; state = d2 > 0 ? 'high' : 'low'; v = d2 > 0 ? Math.max(v, z[1] + 0.02) : Math.min(v, z[0] - 0.02); verdict = d2 > 0 ? 'Too restless: the guards see you never stop' : 'Too still: the guards see you never move'; }
+    }
+    return { id: id, value: r3(clamp01(v)), safe: z, state: state, verdict: verdict };
+  }
+  var CAUSE_STAT3 = { starved: 'reach', below: 'growth', overgrew: 'growth', band: 'growth', 'exposed:growth': 'growth', 'exposed:regularity': 'natural', 'exposed:motion': 'motion' };
+  // Same numbers as sim.js forecastOf, for a finished agent run: the figures the stat bars read, plus the four stats of this dish.
+  function forecastOf(run, D, S) {
+    var a = analyse(run, run.T), v = run.v, cause = (run.autopsy3 || run.autopsy) ? (run.autopsy3 || run.autopsy).cause : null, forcedId = v.win ? null : CAUSE_STAT3[cause] || 'growth';
+    var f = { heatLoss: 0, heatLossMax: 0, grazeLoss: 0, acidLoss: 0, acidLossMax: 0, p70: a.median, l70: a.median, p30: a.median, alive: v.alive, waste: 0, reg: a.peakReg,
+      crashMin: 1, pl30: 1, win: v.win, bandFrac: v.bandFrac, below: a.below, above: a.above, cnt: a.n, gpeak: a.peakGro, maxStage: v.maxStage, hasEvent: false, agent: {}, cause: cause };
+    ['reach', 'growth', 'natural', 'motion'].forEach(function (id) { f.agent[id] = statAt(run, D, id, run.T, S, forcedId === id); });
+    return f;
+  }
+  function liveStat(run, D, id, t, S) { return statAt(run, D, id, Math.max(1, Math.min(run.T, Math.floor(t))), S, false); }
+  // The autopsy the game shows: sim3's cause and numbers plus the stat it is blamed on, a headline that starts with that stat, and the fields a field-model autopsy has.
+  function finishAutopsy(run, statId, statName) {
+    var a = run.autopsy3 || run.autopsy; if (!a) return null;
+    var out = { cause: a.cause, channel: -1, from: a.from, to: a.to, text: a.text, second: null, dominance: 1, card: null }, H = run.H3, t, mS = 0, mN = 0, nn = 0, tail, verb, high = false;
+    for (t = Math.max(1, a.to - 20); t <= a.to; t++) { mS += H.moveS[t]; mN += H.moveN[t]; nn++; }
+    var restless = nn ? mS / nn >= mN / nn : true;
+    switch (a.cause) {
+      case 'starved': verb = 'was too low'; tail = 'Your scouts could not reach the food and starved by tick ' + a.to + '.'; break;
+      case 'below': verb = 'was too slow'; tail = 'You faded out of the band by tick ' + a.from + '.'; break;
+      case 'overgrew': verb = 'was too fast'; tail = 'You took over the dish by tick ' + a.from + '.'; high = true; break;
+      case 'band': verb = 'did not hold'; tail = 'You spent too little of the run inside the band.'; break;
+      case 'exposed:growth': verb = 'was too fast'; tail = 'You took over the dish and the guards noticed by tick ' + a.to + '.'; high = true; break;
+      case 'exposed:regularity': verb = 'was too low'; tail = 'You looked like a machine, and were caught by tick ' + a.to + '.'; break;
+      default: verb = restless ? 'was too restless' : 'was too still'; tail = restless ? 'Your colony never stopped moving, and the guards noticed by tick ' + a.to + '.' : 'Your colony hardly moved, and the guards noticed by tick ' + a.to + '.';
+    }
+    out.stat = statId; out.headline = statName + ' ' + verb + '. ' + tail; out.high = high;
+    return out;
+  }
+  // The snapshot in the shape sim.js restore() returns for a field-model run.
+  function restoreSnap(run, snapIndex) {
+    var sn = run.snaps[snapIndex], nn = run.n * run.n;
+    return { tick: sn.tick, n: run.n, robot: new Float32Array(sn.robot), native: new Float32Array(sn.native), food: new Float32Array(sn.food), waste: new Float32Array(nn), wasteMix: new Float32Array(sn.st.WA), quorum: new Float32Array(nn) };
+  }
+
+  var api = { P3: P3, play: play, unpack: unpack, summary: summary, defaults: defaults, FOOD_SCALE: P3.foodScale,
+    gameRun: gameRun, forecastOf: forecastOf, liveStat: liveStat, statAt: statAt, zone3: zone3, finishAutopsy: finishAutopsy, restoreSnap: restoreSnap, CAUSE_STAT: CAUSE_STAT3, STAT3: STAT3, LEAD_MOTION: LEAD_MOTION };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.LookAliveSim3 = api;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
