@@ -130,6 +130,10 @@ var LookAlive = (function () {
       p.tol = D.temp.base + (met.fx.heat || 0); p.grip = 0; p.grazeKeep = 1; p.coolBelow = met.fx.coolBelow || 0; p.coolMult = met.fx.coolMult || 1;
       (b.parts || []).forEach(function (id) { var c = Cards.part(id); if (!c) return; var f = c.fx; if (f.heat) p.tol += f.heat; if (f.grip) p.grip = Math.max(p.grip, f.grip); if (f.graze) p.grazeKeep *= 1 - f.graze; });
     }
+    if (D.acidHurry && p.acidKeep < 1 && p.ids.indexOf('acidproof') < 0) {   // fast dividers have newer, thinner membranes: a pump or a membrane leaks more of the acid as Pace goes up (acid-proof insides have nothing to leak)
+      var leak = D.acidHurry * Math.max(0, p.paceMult - (D.acidHurryFrom || 1));
+      p.acidKeep = Math.min(1, p.acidKeep + leak);
+    }
     p.acidBlock = 1 - p.acidKeep;
     p.acidRate = p.acid * p.acidKeep;                                  // fraction of the colony the acid dissolves each tick
     p.births = p.paceMult * p.yield * p.slopMult * p.partBirths;      // gross division multiplier of the build, before quorum, radio and rules
@@ -1005,6 +1009,7 @@ var LookAlive = (function () {
     function add(src, label, chips) { chips.forEach(function (c) { out.chips.push({ source: src, text: c }); }); cards.push({ id: src, label: label, chips: chips }); }
     out.pace = [Math.abs(bp.paceMult - 1) < 0.005 ? 'Births at the native rate' : 'Births ' + sgn(bp.paceMult - 1) + ' vs natives'];
     if (D.temp && D.temp.nightHurry && bp.paceMult > (D.temp.hurryFrom || 1) + 0.005) out.pace.push('Fast cells starve sooner in the dark');
+    if (D.acidHurry && bp.paceMult > (D.acidHurryFrom || 1) + 0.005 && bp.ids.indexOf('acidproof') < 0 && D.acid > 0 && bp.acidBlock > 0) out.pace.push('Fast cells have thin new membranes: more acid gets in');
     // Runaway is read off a short dry run of the model itself (16 by 16), so the warning cannot disagree with what the dish then does.
     var ab = D.abundance, runaway = false;
     if (ab && ab.run) {

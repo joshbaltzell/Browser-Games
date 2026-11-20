@@ -201,17 +201,17 @@ var LookAliveLevels = (function () {
       band: BAND, event: o.events ? o.events[0] : NONE, tips: examTips(o.tips || {}), tipFixes: {}, fixes: [], notebook: o.notebook };
     if (o.events) d.events = o.events;
     d.peakSafe = 6;   // exam dishes: Smell and Naturalness count as safe only while their weighted peak is under 6 (the usual line is 7.5), because on these dishes several channels share the 8 that ends a run
-    ['abundance', 'acidLoad', 'regWeight'].forEach(function (k) { if (o[k] != null) d[k] = o[k]; });
+    ['abundance', 'acidLoad', 'regWeight', 'acidHurry', 'acidHurryFrom'].forEach(function (k) { if (o[k] != null) d[k] = o[k]; });
     return d;
   }
   DISHES.push(
     exam({ id: 6, tips: {
-        acid: ['The acid is much stronger here, and your defence was not enough to stop it dissolving you.', 'A thin membrane will not do in this acid. Look at the Envelope and Insides slots, and at what a full defence takes from your energy and your births.'],
+        acid: ['The acid is much stronger here, and your defence was not enough to stop it dissolving you.', 'A thin membrane will not do in this acid. Look at the Envelope and Insides slots, and at what a full defence takes from your energy and your births. Fast dividers have thin, new membranes, so a high Pace lets more acid in.'],
         below: ['Your colony faded out of the band. Holding this acid out costs births, and yours could not replace the losses.', 'Check what your defence takes from Growth, then look at Pace and Sloppiness: a cell can pay for protection in births, but not more than it earns.'],
         starved: ['Your colony faded out. Holding this acid out costs births, and yours could not replace the losses.', 'Check what your defence takes from Growth, then look at Pace and Sloppiness: a cell can pay for protection in births, but not more than it earns.'],
         'exposed:regularity': ['Your cells divided in step, and the inspector read that as a machine.', 'Look at the Division slot and the Sloppiness dial, and at which Machine cards you fitted to keep the acid out: some of them look plainly like machine parts.'],
         overgrew: ['Your colony grew past the top of the band. Once the acid is kept out, nothing else here holds you back.', 'A defence that costs no births leaves your dials doing all the work. Check the Growth bar, then the Pace and Sloppiness dials. Spores from a reflex still count in your share.']
-      }, title: 'Strong Acid', energy: 5, acid: 0.8, acidLoad: 1.8, checked: ['acid', 'growth', 'smell', 'natural'],
+      }, title: 'Strong Acid', energy: 5, acid: 0.8, acidLoad: 2.2, acidHurry: 3, acidHurryFrom: 1.0, checked: ['acid', 'growth', 'smell', 'natural'],
       problem: 'The acid is much stronger here. A thin membrane is not enough, and holding the acid out takes more from you.', notebook: 'Acid-loving archaea such as Picrophilus grow in acid roughly as strong as battery acid, and can still grow at around pH 0. Holding any difference in acidity between a cell and its surroundings costs continuous proton pumping, so protection is paid for in energy all the time. Picrophilus lowers the bill by letting its insides go acidic too, but that means building every protein to cope with acid. Here a thin membrane is not enough in strong acid, and every full defence costs something: energy, growth, or looking like a machine.' }),
     exam({ id: 7, tips: {
         acid: ['The acid got in. Your defence was too weak, or your energy would not stretch to a better one.', 'Energy is 2 on this dish, so every card is a trade. Check what each defence costs before you fit it, and what a different Power card could save.'],

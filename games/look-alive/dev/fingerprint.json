@@ -71,17 +71,17 @@
  },
  "6:carried": {
   "win": false,
-  "cause": "exposed:regularity",
-  "final": 0.044058,
-  "H": "6e9c5712982e403c",
-  "snaps": "344107b2d9e81d9a"
+  "cause": "below",
+  "final": 0.031378,
+  "H": "6acffbaa01d3a8f4",
+  "snaps": "35482ec9907e1594"
  },
  "6:winner": {
   "win": true,
   "cause": null,
-  "final": 0.075427,
-  "H": "911463738262a07e",
-  "snaps": "1a220fd86d189fd7"
+  "final": 0.061807,
+  "H": "33320d8836b61bdb",
+  "snaps": "472e9d8707da9e0b"
  },
  "7:carried": {
   "win": false,

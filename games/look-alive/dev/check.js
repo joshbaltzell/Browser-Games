@@ -639,5 +639,14 @@ DISH_IDS.forEach(id => {   // a broad sample of the sweep builds that are legal 
 
 require('./check-exam.js')({ Sim, Lv, Cards, B, P, QUICK, SN, data, outcomes, result, f, pc, lap, play, peak, carryOf });
 
+// ------------------------------------------------------------------ DA6. none of dish 5's intended answers wins dish 6 unchanged (the dials alone are reported)
+{
+  const D5 = Lv.dish(5), D6 = Lv.dish(6), cl = x => JSON.parse(JSON.stringify(x)), won = [], rows = [];
+  D5.fixes.forEach(fx => { const b = Lv.applyFix(Lv.carry(5), fx), w = Sim.verdict(play(6, Sim.conform(D6, b), 64)).win; rows.push(fx.id + ': ' + (w ? 'WINS' : 'loses')); if (w) won.push(fx.id); });
+  const dw = []; for (let p = 0; p <= 8; p++) for (let s = 0; s <= 8; s++) { const b = cl(Lv.carry(6)); b.pace = p; b.slop = s; if (Sim.verdict(play(6, Sim.conform(D6, b), 64)).win) dw.push(p + '/' + s); }
+  const c7 = Sim.verdict(play(6, Sim.conform(D6, Lv.carry(7)), 64)).win;
+  result(won.length === 0 && c7, 'DA6 NO DISH 5 ANSWER WINS DISH 6 UNCHANGED', rows.join('; ') + '; carry(7) ' + (c7 ? 'wins' : 'LOSES') + '. Dial-only wins from carry(6) (Pace/Sloppiness, all 81): ' + dw.length + (dw.length ? ' (' + dw.join(' ') + ')' : ''));
+}
+
 console.log('\n' + (nLines - fails) + ' of ' + nLines + ' lines pass, ' + fails + ' fail. Total ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s.');
 process.exit(fails ? 1 : 0);
