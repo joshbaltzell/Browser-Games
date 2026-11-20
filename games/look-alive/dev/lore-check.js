@@ -11,7 +11,7 @@ const fs = require('fs'), path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const GAME = path.join(ROOT, 'games', 'look-alive');
 const ALLOW = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs', 'superpowers', 'plans', '2026-11-18-look-alive-wave-2', 'lore-allow.json'), 'utf8'));
-const JS_FILES = ['levels.js', 'game.js', 'cards.js', 'sim.js'].concat(fs.existsSync(path.join(__dirname, '..', 'levels2.js')) ? ['levels2.js'] : []);   // habitat 2 text is checked too
+const JS_FILES = ['levels.js', 'game.js', 'cards.js', 'sim.js', 'sim3.js'].concat(fs.existsSync(path.join(__dirname, '..', 'levels2.js')) ? ['levels2.js'] : []).concat(fs.existsSync(path.join(__dirname, '..', 'levels3.js')) ? ['levels3.js'] : []);   // habitat 2 and 3 text is checked too
 const HTML_FILES = ['index.html'];
 
 // ---------------------------------------------------------------- extraction

@@ -7,7 +7,8 @@ var LAD = (function () {
     { id: 'growth', name: 'Growth (speed)', color: PINK, pat: 'stripes' },
     { id: 'waste', name: 'Smell', color: AMB, pat: 'dots' },
     { id: 'casualties', name: 'Growth (share)', color: VIO, pat: 'cross' },
-    { id: 'regularity', name: 'Naturalness', color: CY, pat: 'zigzag' }
+    { id: 'regularity', name: 'Naturalness', color: CY, pat: 'zigzag' },
+    { id: 'motion', name: 'Movement', color: '#e6ebff', pat: 'checks' }   // habitat 3 only (index 4): ticks led by Movement; pale checks, so it is told apart by pattern as well as colour
   ];
   var dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
   var pats = {};
@@ -31,6 +32,7 @@ var LAD = (function () {
       g.strokeStyle = '#04050a'; g.fillStyle = '#04050a'; g.lineWidth = 2;
       if (kind === 'stripes') { g.beginPath(); g.moveTo(-2, 12); g.lineTo(12, -2); g.moveTo(-2, 7); g.lineTo(7, -2); g.moveTo(3, 12); g.lineTo(12, 3); g.stroke(); }
       else if (kind === 'dots') { g.beginPath(); g.arc(3, 3, 1.6, 0, 7); g.arc(8, 8, 1.6, 0, 7); g.fill(); }
+      else if (kind === 'checks') { g.fillRect(0, 0, 5, 5); g.fillRect(5, 5, 5, 5); }
       else if (kind === 'cross') { g.lineWidth = 1.5; g.beginPath(); g.moveTo(-1, 11); g.lineTo(11, -1); g.moveTo(-1, -1); g.lineTo(11, 11); g.stroke(); }
       else { g.lineWidth = 1.6; g.beginPath(); g.moveTo(0, 7); g.lineTo(2.5, 2); g.lineTo(5, 7); g.lineTo(7.5, 2); g.lineTo(10, 7); g.stroke(); }
       pats[key] = t;

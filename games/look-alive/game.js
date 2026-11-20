@@ -3,7 +3,7 @@
 // Flow: dish list -> (world) -> dish briefing -> Watch (carried cell, unchanged) -> Adapt (loadout) -> Run (replay) -> Result.
 (function () {
   'use strict';
-  var Cards = LookAliveCards, Lv = LookAliveLevels, Sim = LookAlive, P = Lv.PLANET, D = LAD, W = Lv.WORLD, Lv2 = window.LookAliveLevels2 || null;
+  var Cards = LookAliveCards, Lv = LookAliveLevels, Sim = LookAlive, P = Lv.PLANET, D = LAD, W = Lv.WORLD, Lv2 = window.LookAliveLevels2 || null, Lv3 = window.LookAliveLevels3 || null;
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -100,12 +100,20 @@
   var ORDER1 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], ORDER = ORDER1;
   var ORDER2 = Lv2 ? Lv2.ORDER : [];
   // Habitat 2 (levels2.js): world of a dish id, its order, its world object. World 1 stays the default everywhere.
-  function worldNo(id) { return ORDER2.indexOf(id) >= 0 ? 2 : 1; }
-  function orderOf(w) { return w === 2 ? ORDER2 : ORDER1; }
-  function orderForDish(d) { return orderOf(d && d.world === 2 ? 2 : 1); }
-  function worldObj(w) { return w === 2 && Lv2 ? Lv2.WORLD : W; }
+  // Habitat 3 (levels3.js, the thick water): dishes 15 and 16, the third tab. Its dishes carry `agents` (the individual-cell simulation in sim3.js).
+  var ORDER3 = Lv3 ? Lv3.ORDER : [];
+  function worldNo(id) { return ORDER3.indexOf(id) >= 0 ? 3 : ORDER2.indexOf(id) >= 0 ? 2 : 1; }
+  function worldOfDish(d) { return d && d.world === 3 ? 3 : d && d.world === 2 ? 2 : 1; }
+  function orderOf(w) { return w === 3 ? ORDER3 : w === 2 ? ORDER2 : ORDER1; }
+  function orderForDish(d) { return orderOf(worldOfDish(d)); }
+  function worldObj(w) { return w === 3 && Lv3 ? Lv3.WORLD : w === 2 && Lv2 ? Lv2.WORLD : W; }
+  function worldLv(w) { return w === 3 ? Lv3 : w === 2 ? Lv2 : null; }
   // Which dish pages may show the second tab's pictures: switch these on once the thumbnails exist (assets/thumbs/dish-N.jpg).
   var THUMBS2 = { 11: true, 12: true, 13: true, 14: true };
+  var THUMBS3 = { 15: false, 16: false };   // no wall thumbnails for the thick water yet (assets/thumbs/dish-15.jpg and dish-16.jpg): plain tiles until they exist
+  // Pictures for the third world's mini-intro, borrowed until it has its own: slide 1 intro-5 (the plan: a scout among the locals), slide 2 h2-3 (a flat, bright place), slide 3 intro-2 (big green shapes on the ground).
+  var INTRO3_IMG = ['assets/intro/intro-5.jpg', 'assets/intro/h2-3.jpg', 'assets/intro/intro-2.jpg'];
+  var WORLD3_IMG = 'assets/cards/world-banded.jpg';   // placeholder for the third world's picture on the world screen
   var GRADE_RANK = { Passable: 1, Convincing: 2, Benign: 3 };
   var GRADE_NEXT = { Passable: 'Convincing needs the guards never to reach Inspection.', Convincing: 'Benign needs every stat inside its zone the whole run, with 1 energy spare.', Benign: 'That is the best grade. Nothing more to earn here.' };
   var NB_TITLE = { 1: 'How acid-loving microbes keep acid out', 2: 'The growth curve and carrying capacity', 3: 'Fermentation and respiration', 4: 'Variation between cells', 5: 'Sensing and response', 6: 'How acid-lovers trade energy for safety', 7: 'Why real cells cannot have everything', 8: 'Bet-hedging: sleepers and spores', 9: 'Why variation is normal in living things', 10: 'A summary page from the lab' };
@@ -114,10 +122,12 @@
   var STAMPS = ['SUFFICIENTLY BACTERIAL', 'PASSES AS NATIVE', 'NOTHING TO SEE HERE', 'OF NO INTEREST TO THE GUARDS', 'UNREMARKABLE', 'CLEARED FOR COLONISATION'];
   var STAGE_NAMES = ['Calm', 'Curiosity', 'Inspection', 'Response'];
   var CAUSE_WORDS = { acid: 'Dissolved by the acid', 'exposed:growth': 'Cover blown: Growth (speed)', 'exposed:waste': 'Cover blown: Smell', 'exposed:casualties': 'Cover blown: Growth (share)', 'exposed:regularity': 'Cover blown: Naturalness',
-    overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band', cooked: 'Cooked by the heat', grazed: 'Eaten at the cool edge' };
+    'exposed:motion': 'Cover blown: Movement', overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band', cooked: 'Cooked by the heat', grazed: 'Eaten at the cool edge' };
   // Memo "from" line per loss cause (M5). Unknown causes fall back to the sample lab.
-  var MEMO_FROM = { acid: 'Desk of Dissolved Samples', 'exposed:growth': 'Guard-watch desk', 'exposed:waste': 'Guard-watch desk', 'exposed:casualties': 'Guard-watch desk', 'exposed:regularity': 'Guard-watch desk',
+  var MEMO_FROM = { acid: 'Desk of Dissolved Samples', 'exposed:growth': 'Guard-watch desk', 'exposed:waste': 'Guard-watch desk', 'exposed:casualties': 'Guard-watch desk', 'exposed:regularity': 'Guard-watch desk', 'exposed:motion': 'Guard-watch desk',
     overgrew: 'Head-count desk', below: 'Head-count desk', starved: 'Head-count desk', band: 'Head-count desk', bust: 'Meal-schedule desk', bloom: 'Meal-schedule desk', cooked: 'Warm-water desk', grazed: 'Cool-edge desk' };
+  // The thick water (dishes 15 and 16): a scout that starves is the food-route desk's business, not the head count's.
+  var MEMO_FROM3 = { starved: 'Food-route desk', 'exposed:motion': 'Guard-watch desk' };
   // Story pictures (section D). A missing file logs a console error even with onerror, so each picture is switched on only once it exists.
   var STORY_ART = { cell: false, crowd: false, ripple: true };
 
@@ -136,8 +146,8 @@
   function canonWins(w) { for (var k in w) canonBuild(w[k]); return w; }
 
   var S = {
-    screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null },
-    cleared: load('cleared2', {}), grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, introWorld: 1, afterIntro: 'list', worldView: 1, worldTab: load('worldTab', 1) === 2 ? 2 : 1, seenIntroB: load('introB', false), seenWorldB: load('worldB', false), unlocked: load('unlocked2', false),
+    screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null, otherwise: null },
+    cleared: load('cleared2', {}), grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, introWorld: 1, afterIntro: 'list', worldView: 1, worldTab: (function () { var v = load('worldTab', 1); return v === 2 || v === 3 ? v : 1; })(), seenIntroB: load('introB', false), seenWorldB: load('worldB', false), seenIntroC: load('introC', false), seenWorldC: load('worldC', false), unlocked: load('unlocked2', false),
     slot: null, layer: 0, preview: null, pointed: false,
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
@@ -237,29 +247,34 @@
     ['The plan', 'We must blend in.', 'Our scouts took samples. Every local is about our size, which is the size minds come in, so the crowd is full of them. Individuals can join another group: we will send one of ours to join theirs, once its disguise passes a test dish.']
   ];
   function renderIntro() {
-    var IL = S.introWorld === 2 && Lv2 ? Lv2.INTRO : INTRO, n = S.introAt, b = IL[n], img = $('introImg');
+    var IL = introList(), n = S.introAt, b = IL[n], img = $('introImg');
     $('introKicker').textContent = b[0] + ' · ' + (n + 1) + ' of ' + IL.length; $('introTitle').textContent = b[1]; $('introText').textContent = b[2];
-    var src = 'assets/intro/' + (S.introWorld === 2 ? 'h2-' : 'intro-') + (n + 1) + '.jpg';
+    var src = S.introWorld === 3 ? INTRO3_IMG[n] : 'assets/intro/' + (S.introWorld === 2 ? 'h2-' : 'intro-') + (n + 1) + '.jpg';
     if (img.getAttribute('src') !== src) { img.style.visibility = ''; if (reduced) img.src = src; else { img.classList.add('fade'); setTimeout(function () { img.src = src; img.classList.remove('fade'); }, 180); } }
     var dots = ''; for (var i = 0; i < IL.length; i++) dots += '<i' + (i === n ? ' class="on"' : '') + '></i>';
     $('introDots').innerHTML = dots;
     $('introBack').disabled = n === 0; $('introGo').textContent = n === IL.length - 1 ? 'Begin' : 'Next';
   }
-  function introLen() { return S.introWorld === 2 && Lv2 ? Lv2.INTRO.length : INTRO.length; }
+  function introList() { return S.introWorld === 3 && Lv3 ? Lv3.INTRO : S.introWorld === 2 && Lv2 ? Lv2.INTRO : INTRO; }
+  function introLen() { return introList().length; }
+  function seenIntroOf(w) { return w === 3 ? S.seenIntroC : S.seenIntroB; }
+  function seenWorldOf(w) { return w === 3 ? S.seenWorldC : S.seenWorldB; }
   function introNext() { if (S.introAt < introLen() - 1) { S.introAt++; renderIntro(); } else introDone(); }
   function introDone() {
-    if (S.introWorld === 2) {   // habitat 2 mini-intro, then its world facts (first visit only), then where the player was headed
-      S.seenIntroB = true; save('introB', true); S.introWorld = 1;
-      if (!S.seenWorldB) { S.worldView = 2; S.worldBack = S.afterIntro; show('world'); } else show(S.afterIntro);
+    if (S.introWorld >= 2) {   // habitat 2 or 3 mini-intro, then its world facts (first visit only), then where the player was headed
+      var iw = S.introWorld;
+      if (iw === 3) { S.seenIntroC = true; save('introC', true); } else { S.seenIntroB = true; save('introB', true); }
+      S.introWorld = 1;
+      if (!seenWorldOf(iw)) { S.worldView = iw; S.worldBack = S.afterIntro; show('world'); } else show(S.afterIntro);
       return;
     }
     S.seenIntro = true; save('intro2', true); show('list');
   }
-  // First time the second world is opened (tab or dish 11): mini-intro, then world facts. Returns true when it took over the screen.
-  function firstVisit2(back) {
-    if (!Lv2 || (S.seenIntroB && S.seenWorldB)) return false;
+  // First time the second or third world is opened (tab or its first dish): mini-intro, then world facts. Returns true when it took over the screen.
+  function firstVisit(w, back) {
+    if (!worldLv(w) || (seenIntroOf(w) && seenWorldOf(w))) return false;
     S.afterIntro = back; S.introAt = 0;
-    if (!S.seenIntroB) { S.introWorld = 2; show('intro'); } else { S.worldView = 2; S.worldBack = back; show('world'); }
+    if (!seenIntroOf(w)) { S.introWorld = w; show('intro'); } else { S.worldView = w; S.worldBack = back; show('world'); }
     return true;
   }
 
@@ -267,14 +282,15 @@
   function isLocked(id) {
     if (S.unlocked) return false;
     var w = worldNo(id), o = orderOf(w), i = o.indexOf(id);
-    if (w === 2 && i === 0) return !S.cleared[ORDER1[ORDER1.length - 1]];
+    if (w >= 2 && i === 0) return !S.cleared[prevWorldLast(w)];
     return i > 0 && !S.cleared[o[i - 1]];
   }
-  function tabLocked(w) { return w === 2 && (!Lv2 || (!S.unlocked && !S.cleared[ORDER1[ORDER1.length - 1]])); }
+  function prevWorldLast(w) { var o = orderOf(w - 1); return o[o.length - 1]; }   // the dish that opens world w: the last one of the world before it
+  function tabLocked(w) { return w >= 2 && (!worldLv(w) || (!S.unlocked && !S.cleared[prevWorldLast(w)])); }
   function setTab(w) {
     if (tabLocked(w)) return;
     S.worldTab = w; save('worldTab', w); renderList();
-    if (w === 2) firstVisit2('list');
+    if (w >= 2) firstVisit(w, 'list');
   }
   // The Scale of Mind strip: the state after the highest dish cleared (WORLD.scale in levels.js).
   function scaleIndex() { var n = 0; ORDER1.forEach(function (id) { if (S.cleared[id]) n = Math.max(n, id); }); return Math.min(n, W.scale.length - 1); }
@@ -289,26 +305,27 @@
     var box = $('worldTabs'); if (!box) return;
     if (!Lv2) { box.style.display = 'none'; return; }
     box.style.display = ''; box.innerHTML = '';
-    [1, 2].forEach(function (w) {
-      var lk = tabLocked(w), b = el('button', 'wtab' + (S.worldTab === w ? ' on' : '') + (lk ? ' locked' : ''), '<span class="wt">' + (w === 1 ? 'The warm crowd' : esc(Lv2.WORLD.name)) + '</span>' + (lk ? '<span class="wl">Locked: clear dish 10 first</span>' : ''));
+    (Lv3 ? [1, 2, 3] : [1, 2]).forEach(function (w) {
+      var lk = tabLocked(w), b = el('button', 'wtab' + (S.worldTab === w ? ' on' : '') + (lk ? ' locked' : ''), '<span class="wt">' + (w === 1 ? 'The warm crowd' : esc(worldObj(w).name)) + '</span>' + (lk ? '<span class="wl">Locked: clear dish ' + prevWorldLast(w) + ' first</span>' : ''));
       b.type = 'button'; b.setAttribute('data-world', w); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', S.worldTab === w ? 'true' : 'false'); b.disabled = lk;
       b.addEventListener('click', function () { setTab(w); }); box.appendChild(b);
     });
   }
   function renderList() {
-    var box = $('dishList'); box.innerHTML = ''; var wall = null, tw = Lv2 ? S.worldTab : 1;
-    if (tw === 2 && tabLocked(2)) tw = S.worldTab = 1;
+    var box = $('dishList'); box.innerHTML = ''; var wall = null, tw = S.worldTab;
+    if (tw >= 2 && tabLocked(tw)) tw = S.worldTab = 1;
     renderTabs();
     orderOf(tw).forEach(function (id) {
       var d = Lv.dish(id), locked = isLocked(id), cleared = !!S.cleared[id], gr = S.grades[id];
       if (id === 11) { box.appendChild(el('div', 'grouph', esc(Lv2.WORLD.name) + ' <span class="dim">dishes 11 to 14: heat, the cool edge, the night, then an exam</span>')); wall = el('div', 'wall'); box.appendChild(wall); }
+      if (tw === 3 && id === ORDER3[0]) { box.appendChild(el('div', 'grouph', esc(Lv3.WORLD.name) + ' <span class="dim">dishes 15 and 16: food in clumps, then stopping when fed</span>')); wall = el('div', 'wall'); box.appendChild(wall); }
       if (id === 1 || id === 6) {
         box.appendChild(el('div', 'grouph', id === 1 ? 'Learning the cell <span class="dim">dishes 1 to 5: one new problem each</span>' : 'Exams <span class="dim">dishes 6 to 10: no answer tips, several cells can pass</span>'));
         wall = el('div', 'wall'); box.appendChild(wall);
       }
       var st = locked ? 'Locked' : cleared ? (d.exam && gr ? gr : 'Cleared') : 'Open';
       var tile = el('div', 'dtile' + (locked ? ' locked' : cleared ? ' cleared' : ' open'));
-      tile.innerHTML = '<div class="dthumb">' + (locked || (tw === 2 && !THUMBS2[id]) ? '' : '<img alt="" src="assets/thumbs/dish-' + id + '.jpg">') + (cleared ? '<span class="dstamp' + (gr ? ' g-' + gr.toLowerCase() : '') + '">' + esc(st) + '</span>' : '') + '</div>' +
+      tile.innerHTML = '<div class="dthumb">' + (locked || (tw === 2 && !THUMBS2[id]) || (tw === 3 && !THUMBS3[id]) ? '' : '<img alt="" src="assets/thumbs/dish-' + id + '.jpg">') + (cleared ? '<span class="dstamp' + (gr ? ' g-' + gr.toLowerCase() : '') + '">' + esc(st) + '</span>' : '') + '</div>' +
         '<div class="dmeta"><span class="num">' + id + '</span><span class="t">' + esc(d.title) + '</span></div><div class="g">' + esc(d.problem) + '</div>' +
         '<div class="c">You start with: ' + esc(buildWords(carriedFor(id))) + '</div>';
       var im = tile.querySelector('img'); if (im) im.addEventListener('error', function () { im.remove(); });
@@ -317,36 +334,58 @@
     });
     renderScale('scaleList', tw);
   }
+  function blankRule() { return { sensor: null, cmp: null, value: null, action: null, otherwise: null }; }
   function selectDish(id) {
     compareSet(false); S.cmp = { held: false, kept: false, base: null, run: null, runFor: null, diff: '' }; ezReset();
     if (GL.failed && GL.reason === 'slow') { GL.failed = false; GL.reason = ''; glNote(''); }   // a slow spell on one dish does not lock the simple view in for the rest of the session
-    S.dish = id; S.carried = carriedFor(id); S.build = copy(S.carried); S.undo = []; S.rule = { sensor: null, cmp: null, value: null, action: null };
+    S.dish = id; S.carried = carriedFor(id); S.build = copy(S.carried); S.undo = []; S.rule = blankRule();
     S.slot = Lv.dish(id).opens[0] || Lv.dish(id).slots[0]; S.layer = 0; S.pointed = Lv.dish(id).opens.length > 0; S.whyOpen = false; S.runGrade = null; S.note = ''; S.preview = null; S.run = null; S.ghost = null; S.shownDish = -1; S.lastAutopsy = null; S.lastRunLost = false; S.tipLevel = 0; S.runCount = 0; S.overlayOpen = false; S.fail = null;
     closeOverlay();
     if (id === 1 && !S.seenWorld) { S.worldView = 1; S.worldBack = 'brief'; show('world'); }
-    else if (id === ORDER2[0] && firstVisit2('brief')) { /* mini-intro, then the world facts, then this briefing */ }
+    else if (id === ORDER2[0] && firstVisit(2, 'brief')) { /* mini-intro, then the world facts, then this briefing */ }
+    else if (id === ORDER3[0] && firstVisit(3, 'brief')) { /* the same for the thick water */ }
     else show('brief');
   }
 
   // ---------------------------------------------------------------- world and dish briefing
   function renderWorld() {
-    var w2 = S.worldView === 2 && Lv2, WW = worldObj(w2 ? 2 : 1), wimg = $('worldImg'), lk = $('localsKey');
+    var wv = S.worldView, w2 = wv >= 2 && !!worldLv(wv), WW = worldObj(w2 ? wv : 1), wimg = $('worldImg'), lk = $('localsKey');
     $('worldName').textContent = WW.name;
     if (lk) lk.style.display = w2 ? 'none' : '';
-    if (wimg) { var ws = w2 ? 'assets/cards/world-banded.jpg' : 'assets/cards/world-acidica.jpg'; if (wimg.getAttribute('src') !== ws) { wimg.style.display = ''; wimg.src = ws; } if (w2) wimg.alt = ''; }
+    if (wimg) { var ws = wv === 3 && w2 ? WORLD3_IMG : w2 ? 'assets/cards/world-banded.jpg' : 'assets/cards/world-acidica.jpg'; if (wimg.getAttribute('src') !== ws) { wimg.style.display = ''; wimg.src = ws; } if (w2) wimg.alt = ''; }
     var box = $('worldFacts'); box.innerHTML = '';
     WW.facts.forEach(function (f, i) { box.appendChild(el('div', 'fact', '<div class="fn">' + (i + 1) + '</div><p>' + esc(f) + '</p>')); });
     $('worldBadge').textContent = WW.badge || '';
     $('worldMission').textContent = WW.mission;
-    renderScale('scaleWorld', w2 ? 2 : 1);
+    renderScale('scaleWorld', w2 ? wv : 1);
   }
   function worldContinue() {
-    if (S.worldView === 2) { S.seenWorldB = true; save('worldB', true); S.worldView = 1; } else { S.seenWorld = true; save('world2', true); }
+    if (S.worldView === 3) { S.seenWorldC = true; save('worldC', true); S.worldView = 1; }
+    else if (S.worldView === 2) { S.seenWorldB = true; save('worldB', true); S.worldView = 1; } else { S.seenWorld = true; save('world2', true); }
     if (S.worldBack === 'brief' && S.dish != null) show('brief'); else show(S.worldBack || 'list');
   }
   // Environment analysis report: readings come from the dish's own parameters. Lines appear one by one (all at once with reduced motion).
-  var CH_WORDS = { growth: 'growth rate', waste: 'smell (waste trail)', casualties: 'casualties', regularity: 'regularity' };
+  var CH_WORDS = { growth: 'growth rate', waste: 'smell (waste trail)', casualties: 'casualties', regularity: 'regularity', motion: 'movement' };
+  // Habitat 3 (dishes with `agents`): every number below comes from the dish's own settings (levels3.js, defaults of sim3.js).
+  function pct0(x) { return Math.round(x * 100) + '%'; }
+  function nativeMixWords(nt) {
+    var q = nt.quad || 0, h = nt.halo || 0, sa = nt.sali || 0, tot = q + h + sa || 1;
+    function tenth(n) { return Math.max(n ? 1 : 0, Math.round(10 * n / tot)); }
+    return 'about ' + tenth(q) + ' in 10 are flat squares that sit still, about ' + tenth(h) + ' in 10 are rods that swim and stop to feed, about ' + tenth(sa) + ' in 10 are rods that swim';
+  }
+  function reportLines3(d) {
+    var A = d.agents, bo = A.boulders || {}, nt = A.natives || {}, tot = (nt.quad || 0) + (nt.halo || 0) + (nt.sali || 0), band = d.band;
+    return [
+      ['Food', (bo.count || 0) + ' green boulders leak the sweetness. Each lasts ' + bo.lifeMin + ' to ' + bo.lifeMax + ' ticks, then another one comes up somewhere new'],
+      ['Locals', tot + ' at the start: ' + nativeMixWords(nt)],
+      ['Inspectors', !d.suspicion ? 'none in this dish' : (d.channels || []).map(function (c) { return CH_WORDS[c] || c; }).join(', ')],
+      ['The band', 'stay between ' + pct0(band.lo) + ' and ' + pct0(band.hi) + ' of the dish for ' + pct0(band.need) + ' of the run'],
+      ['Time', 'scouts swim at their true speed, and grow about a hundred times faster than real ones'],
+      ['Energy budget', d.energy + ' of 5 units for your cell']
+    ];
+  }
   function reportLines(d) {
+    if (d.agents) return reportLines3(d);
     if (d.temp) {
       var T = d.temp, ev = eventsOf(d), nights = ev.length > 0 && !!T.o2Night, gap = T.hot - T.cool;
       var u40 = T.cool >= 40 ? 0 : Math.acos(1 - 2 * (40 - T.cool) / (T.hot - T.cool)) / (2 * Math.PI), pct40 = Math.round(200 * u40);
@@ -370,7 +409,7 @@
     ];
   }
   function renderReport(d) {
-    var box = $('briefReport'), rows = reportLines(d), html = '<div class="rh">Environment analysis · ' + esc(worldObj(d.world === 2 ? 2 : 1).name) + ' · site ' + (orderForDish(d).indexOf(d.id) + 1) + ' of ' + orderForDish(d).length + '</div>';
+    var box = $('briefReport'), rows = reportLines(d), html = '<div class="rh">Environment analysis · ' + esc(worldObj(worldOfDish(d)).name) + ' · site ' + (orderForDish(d).indexOf(d.id) + 1) + ' of ' + orderForDish(d).length + '</div>';
     rows.forEach(function (r) { html += '<div class="rl pending"><span class="rk">' + esc(r[0]) + '</span><span>' + esc(r[1]) + '</span></div>'; });
     html += '<div class="rl status pending">Building petri dish… ready. Your artificial microbe is loaded for a compatibility test.</div>';
     box.innerHTML = html;
@@ -420,7 +459,7 @@
     var run = simulate(S.carried);
     S.mode = 'watch'; S.run = run; S.ghost = null; S.stopAt = watchStop(run); S.watchDone = false; S.runFinished = false;
     S.lastAutopsy = run.autopsy; S.lastRunLost = false; S.tipLevel = 0; setFail(run, S.carried);
-    S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = d.aliveOnly ? 1 : 4; setSpeedUI();   // dish 1: the colony is gone in 12 ticks, so it is watched at 1x
+    S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = d.aliveOnly || d.agents ? 1 : 4; setSpeedUI();   // dish 1: the colony is gone in 12 ticks, so it is watched at 1x
     closeOverlay(); show('run');
   }
   function watchFinished() { S.watchDone = true; S.playing = false; setPlayLabel(); renderVerdict(); refresh(); }
@@ -519,10 +558,18 @@
     var ea = k === 'envelope' ? !a.length : !a, eb = k === 'envelope' ? !b.length : !b;
     return eb ? 'new' : ea ? 'removed' : 'swapped';
   }
+  // The thick water: words for what the slots do and why some are shut, in place of the first world's.
+  var BLURB3 = { signal: 'How a cell tastes the water around it, so it can steer by it.' };
+  var NOTE3 = { food: 'The sweetness in the water at the cell\'s own square. The reading is exact.', pause: 'The cell does not divide while the rule fires.' };
+  function lockedWords(d, k) {
+    if (!d.agents) return Sim.lockedReason(d, k);
+    var later = ORDER3.filter(function (id) { var o = Lv.dish(id); return id > d.id && o.slots.indexOf(k) >= 0 && (o.opens || []).indexOf(k) >= 0; })[0];
+    return later ? 'Opens on dish ' + later + '.' : 'Not used on these dishes.';
+  }
   function slotStateOf(k) { return Sim.slotState(dishObj(), k); }
   function selectable(k) { return slotStateOf(k) === 'open'; }
   function selectSlot(k) {
-    if (!selectable(k)) { var lr = Sim.lockedReason(dishObj(), k); setNote(Cards.slotInfo(k).name + ': ' + (lr || 'locked') + (slotStateOf(k) === 'factory' ? ' It cannot be changed yet.' : '')); return false; }
+    if (!selectable(k)) { var lr = Sim.lockedReason(dishObj(), k); setNote(Cards.slotInfo(k).name + ': ' + (dishObj().agents ? lockedWords(dishObj(), k) : lr || 'locked') + (slotStateOf(k) === 'factory' ? ' It cannot be changed yet.' : '')); return false; }
     S.slot = k; S.preview = null; renderAdapt(false); return true;
   }
 
@@ -597,15 +644,15 @@
     Array.prototype.forEach.call(box.children, function (b) {
       var k = b.getAttribute('data-slot'), hid = tagHidden(d, k); b.hidden = hid; b.style.display = hid ? 'none' : ''; if (hid) return;
       var st = state[k], info = Cards.slotInfo(k), ch = st === 'open' ? slotChange(k) : '', txt = slotText(k, sl), status = '';
-      if (st !== 'open') status = Sim.lockedReason(d, k);
+      if (st !== 'open') status = lockedWords(d, k);
       else if (fixSlots.indexOf(k) >= 0) status = '<span class="pill fx">changes ' + esc(fi.by[k].join(', ')) + '</span>';
       else if (S.pointed && d.opens.indexOf(k) >= 0) status = '<span class="pill pt">new slot</span>';
       else if (ch) status = '<span class="pill ' + ch + '">' + ch + '</span>';
       b.className = 'tag' + (fixSlots.indexOf(k) >= 0 ? ' fixhl' : '') + (S.slot === k && st === 'open' ? ' sel' : '') + (st === 'factory' ? ' factory' : st === 'locked' ? ' locked' : '') + (S.pointed && d.opens.indexOf(k) >= 0 ? ' new' : '');
       b.innerHTML = '<span class="tn">' + (st !== 'open' ? LOCK_SVG : '') + esc(info.name) + '</span><span class="tv">' + esc(txt) + '</span><span class="ts">' + status + '</span>';
       b.setAttribute('aria-disabled', st === 'open' ? 'false' : 'true');
-      b.setAttribute('aria-label', info.name + ': ' + txt + (st !== 'open' ? '. ' + Sim.lockedReason(d, k) : ''));
-      b.title = info.name + ' (' + info.where + '). ' + txt + (st !== 'open' ? '. ' + Sim.lockedReason(d, k) : '');
+      b.setAttribute('aria-label', info.name + ': ' + txt + (st !== 'open' ? '. ' + lockedWords(d, k) : ''));
+      b.title = info.name + ' (' + info.where + '). ' + txt + (st !== 'open' ? '. ' + lockedWords(d, k) : '');
     });
     var fl = $('factoryLine'), fac = SLOT_ORDER.filter(function (k) { return tagHidden(d, k) && slotStateOf(k) === 'factory'; });
     if (fac.length) { fl.innerHTML = LOCK_SVG + '<span>Factory fitted, cannot change yet: ' + fac.map(function (k) { return esc(cardName(Lv.FACTORY[k])) + ' (' + esc(Cards.slotInfo(k).name) + ')'; }).join(', ') + '</span>'; fl.style.display = ''; }
@@ -632,7 +679,8 @@
     return img;
   }
   // The one wording for a stat change, used on cards, in the preview line and for the ghost markers: { stat, words, direction, steps, tone, checked }.
-  var STAT_WORDS = { acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'], natural: ['Naturalness up', 'Naturalness down'], crash: ['Crash survival up', 'Crash survival down'] };
+  var STAT_WORDS = { acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'], natural: ['Naturalness up', 'Naturalness down'], crash: ['Crash survival up', 'Crash survival down'],
+    reach: ['Food reach better', 'Food reach worse'], motion: ['Movement closer', 'Movement further off'] };   // reach and motion: the thick water (dishes 15 and 16)
   function effArrows(x) { var a = x.direction === 'up' ? '\u25B2' : '\u25BC', o = ''; for (var i = 0; i < x.steps; i++) o += a; return o; }
   function changesHtml(list) { return list.map(function (x) { return '<span class="ef t-' + x.tone + '">' + esc(x.words) + ' <b>' + effArrows(x) + '</b></span>'; }).join(''); }
   function changesText(list) { return list.map(function (x) { return x.words + ' ' + effArrows(x); }).join(', '); }
@@ -674,7 +722,8 @@
     if (!fitted) { r = Sim.fit(dishObj(), S.build, c.id, layerArg(k)); if (!r.ok) why = r.reason; }
     w.setAttribute('aria-pressed', fitted ? 'true' : 'false');
     if (fitted) w.classList.add('fitted'); if (why) w.classList.add('blocked');
-    var real = c.real, game = c.game || c.sentence, ef = effectsFor(dishObj(), c, fitted);
+    var real = c.real, d0 = dishObj(), game = c.game || c.sentence, ef = effectsFor(d0, c, fitted), g3 = null;
+    if (d0.agents) { g3 = c.game3 || (c.world === 3 ? c.game : c.real); game = g3; }   // the thick water: a card's game3 text; its own text if it is new here; else the real biology
     var inn = el('div', 'in'), tb = el('div', 'thumbbox'), tx = el('div', 'otxt');
     tb.appendChild(thumbEl(c.id, 'thumb')); tb.appendChild(el('div', 'fittag', 'Fitted'));
     var en = c.kind === 'metabolism' || c.kind === 'part' ? (c.energy ? 'Energy ' + c.energy : 'No energy') : 'No energy';
@@ -684,7 +733,8 @@
     w.title = game + (c.layers > 1 ? ' Takes both Envelope layers.' : '');
     tx.innerHTML = '<div class="oh"><b>' + esc(c.name) + '</b><span class="shelf ' + (mach ? 'mach' : 'bio') + '">' + (mach ? 'Machine' : 'Biology') + '</span></div>' +
       '<div class="eff chg" title="' + esc(chgTxt) + '">' + (fitted ? lead : '<i>Changes:</i>') + '<span>' + chg + '<span class="ef en">' + en + '</span></span></div>' +
-      '<p class="real" title="' + esc(real) + '"><i>Real</i>' + esc(real) + '</p>' +
+      (g3 != null ? '<p class="g3" title="' + esc(g3) + '">' + esc(g3) + '</p>' : '') +
+      (g3 !== real ? '<p class="real" title="' + esc(real) + '"><i>Real</i>' + esc(real) + '</p>' : '') +
       '<div class="why">' + (why ? esc(why) : (c.layers > 1 ? 'Takes both Envelope layers.' : '')) + '</div>';
     inn.appendChild(tb); inn.appendChild(tx); w.appendChild(inn);
     w.addEventListener('click', function () { toggleOption(k, c.id); });
@@ -743,23 +793,48 @@
     var d = dishObj(), k = S.slot, info = Cards.slotInfo(k), list = $('optList');
     if (!selectable(k)) { k = S.slot = d.slots[0]; info = Cards.slotInfo(k); }
     $('optName').innerHTML = esc(info.name) + (S.pointed && d.opens.indexOf(k) >= 0 ? ' <span class="pill pt">new slot</span>' : '');
-    $('optBlurb').textContent = info.blurb + ' On the cell: ' + info.where + '.';
+    $('optBlurb').textContent = (d.agents && BLURB3[k] || info.blurb) + ' On the cell: ' + info.where + '.';
     renderLayers(k);
     var keepTop = list.scrollTop;
     list.innerHTML = '';
     Sim.offered(d, k).forEach(function (c) { list.appendChild(optionEl(k, c)); });
     if (info.empty) list.appendChild(emptyOptionEl(k));
     if (k === 'reflex' && d.allowed.sensors.length) { var rb = el('div', 'rulebox'); rb.id = 'ruleBox'; list.appendChild(rb); renderRuleBox(); }
-    list.classList.toggle('showreal', !!S.real);
+    list.classList.toggle('showreal', !!S.real); list.classList.toggle('g3', !!d.agents);
     list.scrollTop = S.lastOptSlot === k ? keepTop : 0; S.lastOptSlot = k;
     if (S.focusId) { var ft = list.querySelector('[data-id="' + S.focusId + '"]'); S.focusId = null; if (ft) ft.focus({ preventScroll: true }); }
   }
 
   // ---------------------------------------------------------------- machine rule: tap-to-fill sentence (the Reflex slot's Machine option)
   function ruleComplete() { var r = S.rule; return r.sensor && r.cmp && r.value != null && r.action; }
+  // Values a sensor offers on this dish: a dish with its own rule (habitat 3) lists them in d.rule.marks, every other dish uses the card's list.
+  function ruleValues(d, id) { return d && d.rule && d.rule.marks && d.rule.marks[id] ? d.rule.marks[id] : Cards.sensor(id).values; }
+  function ruleOtherwise(d) { return S.rule.otherwise || (d && d.rule && d.rule.defaultOtherwise) || null; }
+  // The rule of an agent dish (dish 16): WHEN <sensor> <is above | is below> <mark> / DO <action> / OTHERWISE <action>, on three fixed rows with fixed-width blanks.
+  function ruleBlank3(kind, text, filled, title) { return '<button type="button" class="blank b-' + kind + (filled ? '' : ' empty') + '" data-rule="' + kind + '" title="' + esc(title || text) + '">' + esc(text) + '</button>'; }
+  function renderRuleBox3() {
+    var d = dishObj(), box = $('ruleBox'), r = S.rule; if (!box) return;
+    var sn = r.sensor ? Cards.sensor(r.sensor) : null, ac = r.action ? Cards.action(r.action) : null, ow = ruleOtherwise(d), oa = ow ? Cards.action(ow) : null;
+    var inst = S.build.reflex && S.build.reflex.kind === 'machine';
+    var vtxt = r.value != null ? String(r.value) + (sn && sn.unit ? ' ' + sn.unit : '') : 'mark';
+    var rows = '<div class="r3row"><span class="r3k">WHEN</span>' + ruleBlank3('sensor', sn ? sn.name : 'sensor', !!sn) + ruleBlank3('cmp', r.cmp ? (r.cmp === 'lt' ? 'is below' : 'is above') : 'above / below', !!r.cmp) + ruleBlank3('value', vtxt, r.value != null) + '</div>' +
+      '<div class="r3row"><span class="r3k">DO</span>' + ruleBlank3('action', ac ? ac.name : 'action', !!ac) + '</div>' +
+      '<div class="r3row"><span class="r3k">OTHERWISE</span>' + ruleBlank3('otherwise', oa ? oa.name : 'action', !!oa) + '</div>';
+    var note = (sn ? (NOTE3[sn.id] || sn.note) + ' ' : '') + (ac ? (NOTE3[ac.id] || ac.note) : '');
+    box.className = 'rulebox' + (inst ? ' sel' : '');
+    box.innerHTML = '<div class="rulecard rule3"><div class="c-head"><b>Machine rule</b><span class="shelf mach">Machine</span><span class="cost">No energy</span></div>' + rows +
+      '<div class="rulenote">' + esc(note || 'Tap each blank to fill in the rule. A cell reads only its own square, and the reading is exact: no real cell can do that.') + '</div>' +
+      '<div class="rulebtns"><button type="button" id="ruleUse"' + (ruleComplete() && !inst ? '' : ' disabled') + '>Use this rule</button><button type="button" id="ruleClear"' + (inst ? '' : ' disabled') + '>Remove rule</button></div></div>';
+    Array.prototype.forEach.call(box.querySelectorAll('[data-rule]'), function (b) {
+      b.addEventListener('click', function (e) { e.stopPropagation(); openRulePop(b, b.getAttribute('data-rule')); });
+    });
+    $('ruleUse').addEventListener('click', installRule);
+    $('ruleClear').addEventListener('click', function () { doUnfit('reflex'); });
+  }
   function ruleBlank(kind, text, filled) { return '<button type="button" class="blank' + (filled ? '' : ' empty') + '" data-rule="' + kind + '">' + esc(text) + '</button>'; }
   function renderRuleBox() {
     var d = dishObj(), box = $('ruleBox'), r = S.rule; if (!box) return;
+    if (d.agents) { renderRuleBox3(); return; }
     var sn = r.sensor ? Cards.sensor(r.sensor) : null, ac = r.action ? Cards.action(r.action) : null;
     var inst = S.build.reflex && S.build.reflex.kind === 'machine';
     var sent = 'When ' + ruleBlank('sensor', sn ? sn.name : 'sensor', !!sn) + ' is ' + ruleBlank('cmp', r.cmp ? (r.cmp === 'lt' ? 'less than' : 'more than') : 'more / less', !!r.cmp) + ' ' +
@@ -778,7 +853,7 @@
   }
   function ruleChoose(kind, val) {
     var r = S.rule;
-    if (kind === 'sensor') { r.sensor = val; var sn = Cards.sensor(val); if (sn.values.indexOf(r.value) < 0) r.value = null; }
+    if (kind === 'sensor') { r.sensor = val; if (ruleValues(dishObj(), val).indexOf(r.value) < 0) r.value = null; }
     else r[kind] = val;
     var inst = S.build.reflex && S.build.reflex.kind === 'machine';
     if (ruleComplete() && inst) installRule(); else renderRuleBox();
@@ -786,17 +861,19 @@
   }
   function installRule() {
     if (!ruleComplete()) return;
-    var r = S.rule, res = Sim.fit(dishObj(), S.build, { kind: 'machine', sensor: r.sensor, cmp: r.cmp, value: r.value, action: r.action });
+    var r = S.rule, d = dishObj(), rf = { kind: 'machine', sensor: r.sensor, cmp: r.cmp, value: r.value, action: r.action };
+    if (d.agents) rf.otherwise = ruleOtherwise(d);   // an agent dish's rule is "when ..., X; otherwise Y"
+    var res = Sim.fit(d, S.build, rf);
     if (!res.ok) { setNote(res.reason); return; }
     commit(res.build);
   }
   function openRulePop(btn, kind) {
     var d = dishObj(), items = [], r = S.rule;
     if (kind === 'sensor') d.allowed.sensors.forEach(function (id) { var s = Cards.sensor(id); items.push({ label: s.name + (s.global ? '  (global)' : ''), note: s.note, v: id }); });
-    else if (kind === 'cmp') items = [{ label: 'more than', v: 'gt' }, { label: 'less than', v: 'lt' }];
+    else if (kind === 'cmp') items = d.agents ? [{ label: 'is above', v: 'gt' }, { label: 'is below', v: 'lt' }] : [{ label: 'more than', v: 'gt' }, { label: 'less than', v: 'lt' }];
     else if (kind === 'value') {
       if (!r.sensor) { setNote('Pick a sensor first.'); return; }
-      Cards.sensor(r.sensor).values.forEach(function (v) { items.push({ label: String(v) + (Cards.sensor(r.sensor).unit ? ' ' + Cards.sensor(r.sensor).unit : ''), v: v }); });
+      ruleValues(d, r.sensor).forEach(function (v) { items.push({ label: String(v) + (Cards.sensor(r.sensor).unit ? ' ' + Cards.sensor(r.sensor).unit : ''), v: v }); });
     } else d.allowed.actions.forEach(function (id) { var a = Cards.action(id); items.push({ label: a.name, note: a.note, v: id }); });
     openPop(btn, items, function (v) { ruleChoose(kind, v); });
   }
@@ -940,7 +1017,7 @@
   function startStandard() {
     var d = dishObj(); if (!isExam(d)) return;
     var c = Lv.standard(d.id); if (!c) return;
-    S.layer = 0; S.rule = { sensor: null, cmp: null, value: null, action: null };
+    S.layer = 0; S.rule = blankRule();
     commit(Sim.conform(d, c));
   }
   function renderAdapt(full) {
@@ -986,7 +1063,7 @@
     var run = simulate(S.build);
     S.mode = 'run'; S.run = run; S.runCount++; if (!(C.kept && C.base)) S.prev[d.id] = { share: run.H.share, total: run.H.total, build: copy(S.build) };
     ezReset(); S.ez.tPrev = 0; cmpSync();
-    S.stopAt = null; S.runFinished = false; S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = 2; setSpeedUI();
+    S.stopAt = null; S.runFinished = false; S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = d.agents ? 1 : 2; setSpeedUI();
     if (run.v.win) { S.cleared[d.id] = true; S.wins[d.id] = copy(S.build); save('cleared2', S.cleared); save('wins2', S.wins); S.lastRunLost = false; recordGrade(run, d, S.build); }
     else { S.lastAutopsy = run.autopsy; S.lastRunLost = true; S.tipLevel = 0; setFail(run, S.build); }
     closeOverlay(); show('run');
@@ -1065,7 +1142,7 @@
       if (!run.channels[c.id]) return;
       var bg = { stripes: 'repeating-linear-gradient(135deg,' + c.color + ' 0 2px,#10060a 2px 4px)', dots: 'radial-gradient(' + c.color + ' 1.3px,#0a0a05 1.7px) 0 0/4px 4px',
         cross: 'repeating-linear-gradient(45deg,' + c.color + ' 0 1px,#0a0814 1px 4px),repeating-linear-gradient(-45deg,' + c.color + ' 0 1px,transparent 1px 4px)',
-        zigzag: 'repeating-linear-gradient(90deg,' + c.color + ' 0 1px,#04101a 1px 3px)' }[c.pat];
+        zigzag: 'repeating-linear-gradient(90deg,' + c.color + ' 0 1px,#04101a 1px 3px)', checks: 'repeating-conic-gradient(' + c.color + ' 0 25%,#080a14 0 50%) 0 0/6px 6px' }[c.pat];
       keyHtml += '<span><i style="background:' + bg + ';border:1px solid ' + c.color + '"></i>' + c.name + '</span>';
     });
     $('ribbonKey').innerHTML = any ? keyHtml + '<span style="margin-left:auto">leading suspicion each tick</span>' : '';
@@ -1074,6 +1151,7 @@
     $('ribbon').style.display = any ? '' : 'none';
     $('ribbonKey').style.display = any ? '' : 'none';
     $('legGrn').style.display = any ? '' : 'none';
+    $('legWaste').hidden = !!d.agents; $('legBoul').hidden = !d.agents;   // the thick water has no waste trail; its green boulders are the food
     S.chartCaps = any ? ['Your share of the dish: band and event marked', 'Suspicion total: stage lines at 1.5, 4.5 and 8'] : ['Your colony: percent of what you started with', 'Lost to acid: share of your colony dissolved each tick'];
     $('tabShare').textContent = any ? 'Your share' : 'Your colony'; $('tabSusp').textContent = any ? 'Suspicion' : 'Lost to acid';
     setChartTab(S.chartTab || 'share');
@@ -1138,7 +1216,7 @@
   function advance(dt) {
     var run = S.run; if (!run || !S.playing) return;
     if (S.holdUntil && performance.now() < S.holdUntil) return;   // the rack focus plays before the action starts
-    S.t += dt * 12 * playRate();
+    S.t += dt * (run.agents ? 8 : 12) * playRate();   // 1x is 12 ticks a second; on the thick water's dishes (individual cells) it is 8, so swimmers can be followed
     var lim = S.mode === 'watch' && S.stopAt != null ? S.stopAt : run.T;
     if (S.t >= lim) {
       S.t = lim; S.playing = false; setPlayLabel();
@@ -1162,11 +1240,25 @@
     var showFail = lost && (S.mode === 'watch' ? S.watchDone : S.resultShown || S.runFinished);
     var key = (final ? 'F' : ti) + '|' + (showFail ? 1 : 0) + '|' + S.mode + run.build.pace;
     if (key === S.liveKey) return; S.liveKey = key;
+    if (box.getAttribute('data-ids') !== d.stats.join(',') || box.children.length !== d.stats.length) buildBars(box, d.stats);   // never draw into rows left over from another dish
     var fc = Sim.stats(d, run.build), live = final ? fc : Sim.liveStats(run, ti);
     $('liveTitle').innerHTML = final ? 'Forecast for your cell <span class="dim">the failing bar is marked</span>' : 'Live stats <span class="dim">outline marker = the forecast</span>';
     Array.prototype.forEach.call(box.children, function (row, i) {
       setBar(row, live[i], { forecast: final ? null : fc[i], fail: showFail && run.autopsy.stat === live[i].id });
     });
+  }
+  // The simple (non-WebGL) dish view of an agent dish: draw3.js draws every recorded cell at its own place.
+  function drawFallback3(c, run, t) {
+    var w = c.clientWidth, h = c.clientHeight; if (!w || !h) return;
+    var dpr = Math.min(2, window.devicePixelRatio || 1), pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+    if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
+    var ctx = c.getContext('2d'), size = Math.min(w, h);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+    ctx.save(); ctx.translate((w - size) / 2, (h - size) / 2);
+    // draw3.js reads sim3's own constants (dish radius, grid, food scale), which a game-shaped run keeps under P3 while run.P is the game's.
+    var r3 = run.__fb3 || (run.__fb3 = { frames: run.frames, foods: run.foods, boulders: run.boulders, P: run.P3, build: run.build });
+    window.LookAliveDraw3.frame(ctx, r3, t, { cx: 0, cy: 0, zoom: 1 }, { size: size, reduced: reduced, trails: false });
+    ctx.restore();
   }
   function drawRun(ts) {
     var run = S.run; if (!run) return;
@@ -1182,7 +1274,8 @@
       gdish.setTick(st); gdish.frame(ts);
     } else {
       $('runDish').style.display = '';
-      D.drawCells($('runDish'), A, B, f, { n: sr.n, nativeRef: sr.H.nat[0], stage: any ? H.stage[ti] : 0, kill: any ? H.kill[ti] : 0, time: tm, stress: d.acid ? Math.min(1, acidNow * 3) : 0, acid: !!d.acid });
+      if (sr.agents && window.LookAliveDraw3) drawFallback3($('runDish'), sr, st, tm);   // individual cells: drawn where they really are
+      else D.drawCells($('runDish'), A, B, f, { n: sr.n, nativeRef: sr.H.nat[0], stage: any ? H.stage[ti] : 0, kill: any ? H.kill[ti] : 0, time: tm, stress: d.acid ? Math.min(1, acidNow * 3) : 0, acid: !!d.acid });
     }
     var rl = d.aliveOnly ? 'Colony alive: ' + Math.round(H.rob[ti] / H.rob[0] * 100) + '%   Lost to acid: ' + (acidNow * 100).toFixed(0) + '% per tick'
       : 'Your share of the dish: ' + (H.share[ti] * 100).toFixed(1) + '%' + (acidNow > 0.005 ? '   Lost to acid: ' + (acidNow * 100).toFixed(0) + '% per tick' : '');
@@ -1234,7 +1327,7 @@
       var on = c.kind !== 'const' && acting(c, run, ti);
       c.e.classList.toggle('flash', on);
       if (c.kind === 'fire') {
-        var never = S.t >= T - 0.5 && !run.fired, tag = never ? 'never triggered' : on ? 'FIRING' : (S.t >= T - 0.5 ? 'fired ' + (function () { var n = 0; for (var q = 0; q <= T; q++) if (H.fires[q] > 0.03) n++; return n; })() + ' ticks' : 'armed');
+        var never = !run.agents && S.t >= T - 0.5 && !run.fired, tag = run.agents ? 'armed' :  never ? 'never triggered' : on ? 'FIRING' : (S.t >= T - 0.5 ? 'fired ' + (function () { var n = 0; for (var q = 0; q <= T; q++) if (H.fires[q] > 0.03) n++; return n; })() + ' ticks' : 'armed');
         c.e.classList.toggle('never', never); if (c.small.textContent !== tag) c.small.textContent = tag;
       }
     });
@@ -1249,6 +1342,15 @@
     var C2 = Lv2 ? Lv2.COVER : null, cb = C2 ? Cards.part(b.metabolism) : null;
     if (C2) {   // habitat 2 names (HABITAT-2 7.8): the world-1 lists plus the new cards; the genus follows the Power card
       genus = C2.genus[b.metabolism] || genus; for (var k in C2.epithet) { if (k === 'heatrule' || k === 'nightferm') continue; if (k === 'heatps') continue; ptx[k] = C2.epithet[k]; } bio.nightferm = C2.epithet.nightferm;
+    }
+    var d3 = dishObj(), C3 = d3 && d3.agents && Lv3 ? Lv3.COVER : null;
+    if (C3) {   // the thick water: Salinibacter or Haloquadratum, and epithets from the motor, the signal and the rule
+      var e3 = [];
+      b.parts.forEach(function (id) { if (C3.epithet[id]) e3.push(C3.epithet[id]); });
+      if (b.reflex && b.reflex.kind === 'machine' && b.reflex.action === 'stay') e3.push(C3.epithet.stayrule);
+      if (b.pace > 4) e3.push('festinans'); if (b.pace < 4) e3.push('modestus');
+      if (!e3.length) e3.push('normalis');
+      return '<i>' + (C3.genus[b.metabolism] || 'Salinibacter') + ' ' + e3[D.hash(JSON.stringify(b)) % e3.length] + '</i>';
     }
     if (b.reflex) epi.push(b.reflex.kind === 'bio' ? bio[b.reflex.id] : (C2 && b.reflex.sensor === 'temp' ? C2.epithet.heatrule : 'computans'));
     b.parts.forEach(function (id) { if (ptx[id]) epi.push(ptx[id]); });
@@ -1265,13 +1367,19 @@
     var a = run.autopsy, st = Sim.stats(dishObj(), run.build).filter(function (x) { return x.id === a.stat; })[0];
     return Sim.STAT_INFO[a.stat].name + (st && st.state !== 'unchecked' ? ': ' + st.verdict : '') + ' (' + (a.cause === 'bust' && run.dish && run.dish.temp ? 'Lost to the night' : (CAUSE_WORDS[a.cause] || a.cause)) + ')';
   }
+  // Why scouts died, from the run's own death log (habitat 3): "Scouts lost: 18 starved, 0 to the guards".
+  function deathsText(run) {
+    var n = { starved: 0, guards: 0 };
+    (run.deaths || []).forEach(function (x) { if (n[x.cause] != null && !x.kind) n[x.cause]++; });
+    return 'Scouts lost: ' + n.starved + ' starved, ' + n.guards + ' to the guards';
+  }
   function recordRow(run, d) {
     var v = run.v;
     var spare = d.exam ? ' Energy left: ' + (d.energy - Sim.energyOf(Sim.normalize(run.build))) + ' of ' + d.energy + '.' : '';
     if (d.aliveOnly) return '<div class="row"><b>Record</b><span>Colony at the end: ' + Math.round(run.H.rob[run.T] / run.H.rob[0] * 100) + '% of where it started.</span></div>';
     return '<div class="row"><b>Record</b><span>In the band ' + Math.round(v.bandFrac * 100) + '% of the time (needs ' + Math.round(d.band.need * 100) + '%). Final share ' + (v.finalShare * 100).toFixed(1) + '%. Highest guard alert: ' + STAGE_NAMES[v.maxStage] + '.' + spare + '</span></div>';
   }
-  var TAG_WORDS = { acid: 'DISSOLVED.', overgrew: 'TOOK OVER.', starved: 'STARVED OUT.', bust: 'STARVED OUT.', bloom: 'OUTGROWN.', below: 'TOO FEW.', band: 'OUT OF STEP.', cooked: 'COOKED.', grazed: 'EATEN.' };
+  var TAG_WORDS = { 'exposed:motion': 'NEVER STOPPED.', acid: 'DISSOLVED.', overgrew: 'TOOK OVER.', starved: 'STARVED OUT.', bust: 'STARVED OUT.', bloom: 'OUTGROWN.', below: 'TOO FEW.', band: 'OUT OF STEP.', cooked: 'COOKED.', grazed: 'EATEN.' };
   function slideTag(cause, d) { if (cause === 'bust' && d && d.temp) return 'LOST TO THE NIGHT.'; return TAG_WORDS[cause] || (/^exposed:/.test(cause) ? 'COVER BLOWN.' : 'FAILED.'); }
   function timelineSvg(T, from, to) {
     function x(t) { return 10 + 580 * Math.max(0, Math.min(T, t)) / T; }
@@ -1300,14 +1408,14 @@
       var last = next == null && ORD.every(function (i) { return S.cleared[i]; });
       html = '<div class="winwrap"><div class="paper memo"><h2>CLEARED</h2><div class="stampbox"><div class="stamp win' + (reduced ? '' : ' slam') + '" id="stamp">' + stamp + '</div></div>' +
         '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' + gradeHtml + '<div class="covercap">Final readings</div><div class="paperbars statbars" id="winBars"></div>' +
-        '<div class="row"><b>Dish</b><span>' + d.id + ': ' + esc(d.title) + '</span></div>' + recordRow(run, d) + (d.reading ? '<div class="row reading"><b>Reading</b><span id="winReading">' + esc(d.reading) + '</span></div>' : '') +
+        '<div class="row"><b>Dish</b><span>' + d.id + ': ' + esc(d.title) + '</span></div>' + recordRow(run, d) + (d.agents ? '<div class="deathline win" id="deathLine">' + esc(deathsText(run)) + '</div>' : '') + (d.reading ? '<div class="row reading"><b>Reading</b><span id="winReading">' + esc(d.reading) + '</span></div>' : '') +
         '<div class="pbtns">' + (next != null ? '<button type="button" data-act="next">Next dish</button>' : last ? '<button type="button" data-act="complete">Sampling complete</button>' : '') + '<button type="button" data-act="watch">Watch replay</button><button type="button" data-act="list">Dish list</button></div></div>' +
         '<div class="paper notebook"><h3>From our samples: notebook page ' + (ORD.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id] || d.nbTitle) + '</h4><p>' + esc(d.notebook) + '</p>' + (d.colony ? '<div class="scrawl colony"><b>Colony comment:</b> <span id="colonyNote">' + esc(d.colony) + '</span></div>' : '') + '</div></div>';
     } else {
       var a = run.autopsy;
       html = '<div class="losswrap"><div class="slide" id="lossSlide"><div class="slidetag" id="slideTag">' + slideTag(a.cause, d) + '</div>' +
-        '<div class="slidetop"><img class="slideimg" id="slideImg" alt="The dish at the moment it went wrong"><div class="slidebars statbars" id="slideBars"></div></div><div class="slidenote" id="slideNote"></div>' +
-        timelineSvg(run.T, a.from, a.to) + '</div><div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span id="memoFrom">' + esc(MEMO_FROM[a.cause] || 'Sample lab') + '</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
+        '<div class="slidetop"><img class="slideimg" id="slideImg" alt="The dish at the moment it went wrong"><div class="slidebars statbars" id="slideBars"></div></div><div class="slidenote" id="slideNote"></div>' + (d.agents ? '<div class="deathline" id="deathLine">' + esc(deathsText(run)) + '</div>' : '') +
+        timelineSvg(run.T, a.from, a.to) + '</div><div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span id="memoFrom">' + esc((d.agents && MEMO_FROM3[a.cause]) || MEMO_FROM[a.cause] || 'Sample lab') + '</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
         '<div class="row"><b>Finding</b><span class="head" id="memoFinding"><strong>' + esc(a.headline) + '</strong> <span class="rest">' + esc(findingBody(a)) + '</span></span></div>' +
         '<div class="row"><b>Stat that failed</b><span>' + esc(failStatLine(run)) + '</span></div>' +
         '<div class="row"><b>Also</b><span class="sec">' + (a.second ? esc(a.second.text) : 'No second cause of note.') + '</span></div>' +
@@ -1329,15 +1437,26 @@
       var src = dishSnapshot(run.autopsy.from), im = $('slideImg'); if (src) im.src = src; else im.style.display = 'none';
     }
   }
+  // The thick water's completion card, from its own text (levels3.js WORLD; its COMPLETE comes with the exam dish, which is not built yet).
+  function complete3() {
+    if (Lv3.COMPLETE) return Lv3.COMPLETE;
+    var WW = Lv3.WORLD;
+    return { title: 'THE THICK WATER, SO FAR', rows: [
+      ['Place', WW.facts[1]],
+      ['What we learned', 'A cell that cannot reach the sweetness starves, and a cell that swims past it for ever is noticed. Stopping where it is sweet is part of looking alive.'],
+      ['Our samples', WW.badge],
+      ['Next', 'There is more of the thick water. We will open it when our lab has grown the next dishes.']
+    ] };
+  }
   function completeCard() {
-    var cw = S.screen && dishObj() && dishObj().world === 2 && Lv2 ? 2 : 1, CO = cw === 2 ? Lv2.COMPLETE : null, ORD = orderOf(cw);
+    var cw = S.screen && dishObj() ? worldOfDish(dishObj()) : 1, CO = cw === 3 ? complete3() : cw === 2 ? Lv2.COMPLETE : null, ORD = orderOf(cw);
     var rows = ORD.map(function (id) {
       var d = Lv.dish(id), g = S.grades[id];
       return '<div class="crow2"><span class="cn">' + id + '</span><span class="ct">' + esc(d.title) + '</span><span class="cg ' + (g ? 'g-' + g.toLowerCase() : '') + '">' + (S.cleared[id] ? (d.exam ? (g || 'Cleared') : '\u2713 Cleared') : 'Not cleared') + '</span></div>';
     }).join('');
     var srows = CO ? CO.rows : (W.complete || []).map(function (r) { return r[0] === 'Next' && Lv2 ? [r[0], 'The banded water: a new site, with one rule turned upside down. Open it from the dish list.'] : r; });
     var story = srows.map(function (r) { return '<div class="row"><b>' + esc(r[0]) + '</b><span>' + esc(r[1]) + '</span></div>'; }).join('');
-    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>' + (CO ? esc(CO.title) : 'SAMPLING COMPLETE') + '</h2>' + (cw === 1 && STORY_ART.ripple ? '<img class="completeimg" src="assets/story/complete-ripple.jpg" alt="A slow ripple crossing the surface of the warm mountain">' : '') + '<div class="covercap">' + (cw === 2 ? 'The four dishes' : 'The ten dishes') + '</div><div class="clist">' + rows + '</div>' +
+    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>' + (CO ? esc(CO.title) : 'SAMPLING COMPLETE') + '</h2>' + (cw === 1 && STORY_ART.ripple ? '<img class="completeimg" src="assets/story/complete-ripple.jpg" alt="A slow ripple crossing the surface of the warm mountain">' : '') + '<div class="covercap">' + (cw === 3 ? 'The two dishes' : cw === 2 ? 'The four dishes' : 'The ten dishes') + '</div><div class="clist">' + rows + '</div>' +
       story + '<div class="pbtns"><button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
     $('overlay').hidden = false; S.overlayOpen = true;
   }
@@ -1378,17 +1497,17 @@
   $('replayIntro').addEventListener('click', function () { S.introAt = 0; S.introWorld = 1; show('intro'); });
   $('unlockAll').addEventListener('click', function () { S.unlocked = true; save('unlocked2', true); renderList(); });
   $('resetProgress').addEventListener('click', function () {
-    S.cleared = {}; S.wins = {}; S.grades = {}; save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro2', false); S.seenIntroB = false; S.seenWorldB = false; S.worldTab = 1; save('introB', false); save('worldB', false); save('worldTab', 1);
+    S.cleared = {}; S.wins = {}; S.grades = {}; save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro2', false); S.seenIntroB = false; S.seenWorldB = false; S.seenIntroC = false; S.seenWorldC = false; S.worldTab = 1; save('introB', false); save('worldB', false); save('introC', false); save('worldC', false); save('worldTab', 1);
     save('cleared2', {}); save('wins2', {}); save('unlocked2', false); save('world2', false); renderList();
   });
   $('undo').addEventListener('click', function () { if (!S.undo.length) return; S.build = S.undo.pop(); S.preview = null; syncRuleFromBuild(); renderAdapt(false); });
   $('reset').addEventListener('click', function () {
     mutate(function (b) { var n = copy(S.carried); b.pace = n.pace; b.slop = n.slop; b.metabolism = n.metabolism; b.parts = n.parts; b.reflex = n.reflex; });
     S.layer = 0;
-    S.rule = { sensor: null, cmp: null, value: null, action: null }; syncRuleFromBuild();
+    S.rule = blankRule(); syncRuleFromBuild();
   });
   function syncRuleFromBuild() {
-    var rf = S.build.reflex; if (rf && rf.kind === 'machine') S.rule = { sensor: rf.sensor, cmp: rf.cmp, value: rf.value, action: rf.action };
+    var rf = S.build.reflex; if (rf && rf.kind === 'machine') S.rule = { sensor: rf.sensor, cmp: rf.cmp, value: rf.value, action: rf.action, otherwise: rf.otherwise != null ? rf.otherwise : null };
     if ($('ruleBox')) renderRuleBox();
   }
   $('tipBtn').addEventListener('click', pressTip);
@@ -1428,6 +1547,7 @@
     glPortrait: function () { return GL.p; },
     forceFallback: function (on) { GL.forced = !!on; if (on) { glDestroy(); glNote('Simple dish view: forced for testing.'); if (GL.p) { $('cellWrap').classList.remove('cellglon'); $('cellGL').hidden = true; } } else { GL.failed = false; glNote(''); GL.pfailed = false; if (S.screen === 'adapt') renderCell(); } return { forced: GL.forced }; },
     S: S, show: show, selectDish: selectDish, enterWatch: enterWatch, run: doRun, seek: seek, skip: skip, showResult: showResult, advance: advance,
+    unlockWorld: function (w) { for (var v = 1; v < w; v++) orderOf(v).forEach(function (id) { S.cleared[id] = true; }); save('cleared2', S.cleared); renderList(); return { ok: !tabLocked(w), world: w }; },   // test setup: marks every dish before world w cleared, which opens its tab
     world: function (w) { if (tabLocked(w)) return { ok: false, reason: 'locked' }; S.worldTab = w; save('worldTab', w); renderList(); show('list'); return { ok: true, world: w }; }, worldOrder: function (w) { return orderOf(w == null ? S.worldTab : w).slice(); }, setTab: setTab,
     worldContinue: worldContinue, verdictAction: verdictAction, pressTip: pressTip,
     selectSlot: selectSlot, fit: function (id, layer) { var k = (Cards.part(id) || Cards.bio(id)).slot; if (layer != null) S.layer = layer; if (!selectable(k)) return { ok: false, reason: Sim.lockedReason(dishObj(), k) }; S.slot = k; return doFit(k, id); },

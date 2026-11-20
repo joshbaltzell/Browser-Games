@@ -37,7 +37,15 @@
   "Thermus": "habitat 2 (the banded water): real hot-spring organism named in cards or notebook pages (HABITAT-2.md section 9)",
   "Mastigocladus": "habitat 2 (the banded water): real hot-spring organism named in cards or notebook pages (HABITAT-2.md section 9)",
   "Paracoenia": "habitat 2 (the banded water): real hot-spring organism named in cards or notebook pages (HABITAT-2.md section 9)",
-  "Incendiamoeba": "habitat 2 (the banded water): real hot-spring organism named in cards or notebook pages (HABITAT-2.md section 9)"
+  "Incendiamoeba": "habitat 2 (the banded water): real hot-spring organism named in cards or notebook pages (HABITAT-2.md section 9)",
+  "Halobacterium": "habitat 3 (the thick water): real salt-flat organism named in levels3.js and cards.js",
+  "Halobacterium salinarum": "habitat 3 (the thick water): real salt-flat organism named in levels3.js and cards.js",
+  "Salinibacter": "habitat 3 (the thick water): real salt-flat organism named in levels3.js and cards.js",
+  "Salinibacter ruber": "habitat 3 (the thick water): real salt-flat organism named in levels3.js and cards.js",
+  "Haloquadratum": "habitat 3 (the thick water): real salt-flat organism named in levels3.js and cards.js",
+  "Haloquadratum walsbyi": "habitat 3 (the thick water): real salt-flat organism named in levels3.js and cards.js",
+  "Dunaliella": "habitat 3 (the thick water): real salt-flat organism named in levels3.js and cards.js",
+  "Dunaliella salina": "habitat 3 (the thick water): real salt-flat organism named in levels3.js and cards.js"
  },
  "genusWatch": [
   "Bacillus",

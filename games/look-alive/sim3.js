@@ -580,7 +580,7 @@
   var HK_ALL = ['share', 'nativeShare', 'nat', 'rob', 'food', 'total', 'stage', 'kill', 'fires', 'lead', 'births', 'rate', 'nrate', 'qsig', 'radioMult',
     'rawG', 'rawW', 'rawC', 'rawR', 'regT', 'regM', 'regF', 'regD', 'regR', 'sloppy', 'acid', 'dorm'];
   var DISPLAY_NATIVE = 0.9;                       // mean native count per grid square at tick 0, in the density units the renderer expects
-  var LEAD_MOTION = -1;                            // the ribbon in draw.js knows four channels; a tick led by Motion is left unpainted until it learns a fifth (index 4)
+  var LEAD_MOTION = 4;                             // the ribbon in draw.js has Movement as its fifth channel (index 4)
   function toGame(S) { var a = [0, 1, 2.5, 4], b = [0, 1.5, 4.5, 8], i; if (S >= 4) return 8 + (S - 4) * 2; for (i = 1; i < 4; i++) if (S <= a[i]) return b[i - 1] + (S - a[i - 1]) / (a[i] - a[i - 1]) * (b[i] - b[i - 1]); return S; }
   function gameRun(dish, build, opts) {
     opts = opts || {};
