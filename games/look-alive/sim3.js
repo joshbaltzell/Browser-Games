@@ -682,8 +682,9 @@
     } else if (id === 'growth') {
       var sh = final ? a.median : a.share;
       if (final) {
-        if (!a.alive) { state = 'low'; sh = Math.min(sh, band.lo * 0.95); }
-        else if (a.bandFrac < band.need) { if (a.above >= a.below) { state = 'high'; sh = Math.max(sh, band.hi * 1.05); } else { state = 'low'; sh = Math.min(sh, band.lo * 0.95); } }
+        // The marker always shows the measured median share. The state comes from the rule (alive, and in the band for `need` of the run), so a marker can sit inside the zone on a colony that still failed the rule.
+        if (!a.alive) { state = 'low'; }
+        else if (a.bandFrac < band.need) { state = a.above >= a.below ? 'high' : 'low'; }
       } else if (a.share > band.hi) { state = 'high'; } else if (a.share < band.lo) { state = 'low'; }
       v = S.shareVal(sh);
       if (state === 'high') verdict = 'Too fast: you will take over'; else if (state === 'low') verdict = 'Too slow: you will fade out';
@@ -696,11 +697,11 @@
       v = clamp01(0.5 + dir * 0.5 * Math.min(1, pm / STAT3.chanLimit));
       if (pm >= STAT3.chanSafe) { if (dir > 0) { state = 'high'; verdict = 'Too restless: the guards see you never stop'; } else { state = 'low'; verdict = 'Too still: the guards see you never move'; } }
     }
-    if (forced && state === 'safe') {   // a loss is always blamed on one stat, and that stat must read as the trouble
-      if (id === 'reach') { state = 'low'; v = Math.min(v, z[0] - 0.02); verdict = 'Too far from food: your scouts will starve'; }
-      else if (id === 'growth') { state = a.above >= a.below ? 'high' : 'low'; v = state === 'high' ? S.shareVal(band.hi * 1.05) : S.shareVal(band.lo * 0.95); verdict = state === 'high' ? 'Too fast: you will take over' : 'Too slow: you will fade out'; }
-      else if (id === 'natural') { state = 'low'; v = Math.min(v, z[0] - 0.02); verdict = 'Too perfect: you look like a machine'; }
-      else { var d2 = a.dirPeak; state = d2 > 0 ? 'high' : 'low'; v = d2 > 0 ? Math.max(v, z[1] + 0.02) : Math.min(v, z[0] - 0.02); verdict = d2 > 0 ? 'Too restless: the guards see you never stop' : 'Too still: the guards see you never move'; }
+    // A loss is blamed on one stat. When that stat's own reading is inside its zone (rare: several tells each under their line can add up past the guards' line),
+    // the value is left exactly as measured and only the state and the words say so. Nothing shown is moved.
+    if (forced && state === 'safe') {
+      state = id === 'growth' ? (a.above >= a.below ? 'high' : 'low') : id === 'motion' ? (a.dirPeak > 0 ? 'high' : 'low') : 'low';
+      verdict = 'Inside its zone, but the run was lost here';
     }
     return { id: id, value: r3(clamp01(v)), safe: z, state: state, verdict: verdict };
   }

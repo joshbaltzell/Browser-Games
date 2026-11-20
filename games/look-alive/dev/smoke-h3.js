@@ -173,6 +173,21 @@ function legalBuilds(D, count, seed) {
   line(wins.length === 0, 'S6 ' + NAME[id] + ' no Pace and Sloppiness setting on the carried cell wins', n + ' settings tried (Pace 0 to 8 by Sloppiness 0 to 8), ' + wins.length + ' win' + (wins.length ? ': ' + wins.join(', ') : ''));
 });
 
+// ---------------------------------------------------------------- S7: how honest the bars are on their own
+// A stat bar always shows the measured value. On a loss the blamed bar is marked as the trouble; S7 counts how often that bar's VALUE still sits inside its own safe zone
+// (several tells each under their line can add up past the guards' line). This is the rate at which a bar's position alone would not have warned the player. Limit 5%.
+[15, 16].forEach(function (id) {
+  var D = DISH[id], builds = legalBuilds(D, 80, 500 + id), losses = 0, inside = 0, ex = [];
+  builds.forEach(function (b) {
+    var run = Sim.play(P, D, JSON.parse(JSON.stringify(b)), { record: false });
+    if (run.v.win) return;
+    losses++;
+    var a = Sim.autopsy(run), cs = Sim.causeStat(D, a.cause), bar = Sim.runStats(run).filter(function (x) { return x.id === cs; })[0];
+    if (bar && bar.value >= bar.safe[0] && bar.value <= bar.safe[1]) { inside++; if (ex.length < 3) ex.push(a.cause + ' value ' + bar.value + ' zone ' + bar.safe.join(' to ')); }
+  });
+  line(losses > 0 && inside / losses <= 0.05, 'S7 ' + NAME[id] + ' on a loss, the blamed bar\'s measured value is outside its zone', inside + ' of ' + losses + ' losses had it inside (' + (100 * inside / Math.max(1, losses)).toFixed(1) + '%, limit 5%)' + (ex.length ? ': ' + ex.join('; ') : ''));
+});
+
 var allOk = results.every(Boolean);
 console.log('SMOKE-H3 ' + (allOk ? 'PASS' : 'FAIL') + ' (' + results.filter(Boolean).length + ' of ' + results.length + ' lines pass)');
 process.exit(allOk ? 0 : 1);
