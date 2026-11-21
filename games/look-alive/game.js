@@ -49,7 +49,7 @@
   }
   function glJump(target) { var g = GL.r; if (g && g.supported && S.run) { g.setTick(S.t); if (target) g.rackFocus('jump', target); else g.rackFocus('jump'); } }
   // ---------------------------------------------------------------- event zoom (Run mode, lost run): the camera goes to a spot the sim records
-  var EZ_KIND = { acid: 'colony', overgrew: 'colony', bloom: 'colony', starved: 'food', bust: 'food', below: 'thinning', band: 'thinning', cooked: 'thinning', grazed: 'thinning' };
+  var EZ_KIND = { acid: 'colony', overgrew: 'colony', bloom: 'colony', starved: 'food', bust: 'food', below: 'thinning', band: 'thinning', cooked: 'thinning', grazed: 'thinning', burned: 'thinning' };
   function ezKindFor(run) { var a = run && run.autopsy; return a && EZ_KIND[a.cause] || null; }
   // The located spot for the lost run's cause, or null (no spot, or the renderer has no locate yet). Falls back to the colony.
   function ezLocate(run) {
@@ -101,7 +101,8 @@
   var ORDER2 = Lv2 ? Lv2.ORDER : [];
   // Habitat 2 (levels2.js): world of a dish id, its order, its world object. World 1 stays the default everywhere.
   // Habitat 3 (levels3.js, the thick water): dishes 15 and 16, the third tab. Its dishes carry `agents` (the individual-cell simulation in sim3.js).
-  var ORDER3 = Lv3 ? Lv3.ORDER : [];
+  var ORDER3 = Lv3 ? Lv3.ORDER.slice() : [];
+  if (Lv3 && Lv.dish(17) && ORDER3.indexOf(17) < 0) ORDER3.push(17);   // dish 17 (the bright place) follows 16 even where levels3.js has not listed it in ORDER yet
   function worldNo(id) { return ORDER3.indexOf(id) >= 0 ? 3 : ORDER2.indexOf(id) >= 0 ? 2 : 1; }
   function worldOfDish(d) { return d && d.world === 3 ? 3 : d && d.world === 2 ? 2 : 1; }
   function orderOf(w) { return w === 3 ? ORDER3 : w === 2 ? ORDER2 : ORDER1; }
@@ -110,7 +111,7 @@
   function worldLv(w) { return w === 3 ? Lv3 : w === 2 ? Lv2 : null; }
   // Which dish pages may show the second tab's pictures: switch these on once the thumbnails exist (assets/thumbs/dish-N.jpg).
   var THUMBS2 = { 11: true, 12: true, 13: true, 14: true };
-  var THUMBS3 = { 15: false, 16: false };   // no wall thumbnails for the thick water yet (assets/thumbs/dish-15.jpg and dish-16.jpg): plain tiles until they exist
+  var THUMBS3 = { 15: false, 16: false, 17: false };   // no wall thumbnails for the thick water yet (assets/thumbs/dish-15.jpg and dish-16.jpg): plain tiles until they exist
   // Pictures for the third world's mini-intro, borrowed until it has its own: slide 1 intro-5 (the plan: a scout among the locals), slide 2 h2-3 (a flat, bright place), slide 3 intro-2 (big green shapes on the ground).
   var INTRO3_IMG = ['assets/intro/intro-5.jpg', 'assets/intro/h2-3.jpg', 'assets/intro/intro-2.jpg'];
   var WORLD3_IMG = 'assets/cards/world-banded.jpg';   // placeholder for the third world's picture on the world screen
@@ -122,12 +123,12 @@
   var STAMPS = ['SUFFICIENTLY BACTERIAL', 'PASSES AS NATIVE', 'NOTHING TO SEE HERE', 'OF NO INTEREST TO THE GUARDS', 'UNREMARKABLE', 'CLEARED FOR COLONISATION'];
   var STAGE_NAMES = ['Calm', 'Curiosity', 'Inspection', 'Response'];
   var CAUSE_WORDS = { acid: 'Dissolved by the acid', 'exposed:growth': 'Cover blown: Growth (speed)', 'exposed:waste': 'Cover blown: Smell', 'exposed:casualties': 'Cover blown: Growth (share)', 'exposed:regularity': 'Cover blown: Naturalness',
-    'exposed:motion': 'Cover blown: Movement', overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band', cooked: 'Cooked by the heat', grazed: 'Eaten at the cool edge' };
+    'exposed:motion': 'Cover blown: Movement', overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band', cooked: 'Cooked by the heat', grazed: 'Eaten at the cool edge', burned: 'Burned by the bright core' };
   // Memo "from" line per loss cause (M5). Unknown causes fall back to the sample lab.
   var MEMO_FROM = { acid: 'Desk of Dissolved Samples', 'exposed:growth': 'Guard-watch desk', 'exposed:waste': 'Guard-watch desk', 'exposed:casualties': 'Guard-watch desk', 'exposed:regularity': 'Guard-watch desk', 'exposed:motion': 'Guard-watch desk',
-    overgrew: 'Head-count desk', below: 'Head-count desk', starved: 'Head-count desk', band: 'Head-count desk', bust: 'Meal-schedule desk', bloom: 'Meal-schedule desk', cooked: 'Warm-water desk', grazed: 'Cool-edge desk' };
+    overgrew: 'Head-count desk', below: 'Head-count desk', starved: 'Head-count desk', band: 'Head-count desk', bust: 'Meal-schedule desk', bloom: 'Meal-schedule desk', cooked: 'Warm-water desk', grazed: 'Cool-edge desk', burned: 'Bright-place desk' };
   // The thick water (dishes 15 and 16): a scout that starves is the food-route desk's business, not the head count's.
-  var MEMO_FROM3 = { starved: 'Food-route desk', 'exposed:motion': 'Guard-watch desk' };
+  var MEMO_FROM3 = { starved: 'Food-route desk', burned: 'Bright-place desk', 'exposed:motion': 'Guard-watch desk' };
   // Story pictures (section D). A missing file logs a console error even with onerror, so each picture is switched on only once it exists.
   var STORY_ART = { cell: false, crowd: false, ripple: true };
 
@@ -147,7 +148,7 @@
 
   var S = {
     screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null, otherwise: null },
-    cleared: load('cleared2', {}), grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, introWorld: 1, afterIntro: 'list', worldView: 1, worldTab: (function () { var v = load('worldTab', 1); return v === 2 || v === 3 ? v : 1; })(), seenIntroB: load('introB', false), seenWorldB: load('worldB', false), seenIntroC: load('introC', false), seenWorldC: load('worldC', false), unlocked: load('unlocked2', false),
+    cleared: load('cleared2', {}), used: load('used3', {}), evolvedNew: [], grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, introWorld: 1, afterIntro: 'list', worldView: 1, worldTab: (function () { var v = load('worldTab', 1); return v === 2 || v === 3 ? v : 1; })(), seenIntroB: load('introB', false), seenWorldB: load('worldB', false), seenIntroC: load('introC', false), seenWorldC: load('worldC', false), unlocked: load('unlocked2', false),
     slot: null, layer: 0, preview: null, pointed: false,
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
@@ -318,7 +319,7 @@
     orderOf(tw).forEach(function (id) {
       var d = Lv.dish(id), locked = isLocked(id), cleared = !!S.cleared[id], gr = S.grades[id];
       if (id === 11) { box.appendChild(el('div', 'grouph', esc(Lv2.WORLD.name) + ' <span class="dim">dishes 11 to 14: heat, the cool edge, the night, then an exam</span>')); wall = el('div', 'wall'); box.appendChild(wall); }
-      if (tw === 3 && id === ORDER3[0]) { box.appendChild(el('div', 'grouph', esc(Lv3.WORLD.name) + ' <span class="dim">dishes 15 and 16: food in clumps, then stopping when fed</span>')); wall = el('div', 'wall'); box.appendChild(wall); }
+      if (tw === 3 && id === ORDER3[0]) { box.appendChild(el('div', 'grouph', esc(Lv3.WORLD.name) + ' <span class="dim">dishes 15 to 17: food in clumps, stopping when fed, then the bright place</span>')); wall = el('div', 'wall'); box.appendChild(wall); }
       if (id === 1 || id === 6) {
         box.appendChild(el('div', 'grouph', id === 1 ? 'Learning the cell <span class="dim">dishes 1 to 5: one new problem each</span>' : 'Exams <span class="dim">dishes 6 to 10: no answer tips, several cells can pass</span>'));
         wall = el('div', 'wall'); box.appendChild(wall);
@@ -373,16 +374,23 @@
     function tenth(n) { return Math.max(n ? 1 : 0, Math.round(10 * n / tot)); }
     return 'about ' + tenth(q) + ' in 10 are flat squares that sit still, about ' + tenth(h) + ' in 10 are rods that swim and stop to feed, about ' + tenth(sa) + ' in 10 are rods that swim';
   }
+  // The bright place on dish 17, from the dish's own numbers (micrometres): a patch whose outer band feeds a cell and whose middle burns.
+  function lightWords(L) {
+    var r = L.r != null ? L.r : L.radius, core = L.core != null ? L.core : L.coreR;
+    if (r == null || core == null) return 'one bright patch drifts across the dish. Its edge gives a cell a little energy, and its middle burns';
+    return 'one bright patch, ' + Math.round(2 * r) + ' micrometres across, drifts across the dish. Its edge gives a cell a little energy. The middle ' + Math.round(2 * core) + ' micrometres across burns. The locals are not harmed';
+  }
   function reportLines3(d) {
     var A = d.agents, bo = A.boulders || {}, nt = A.natives || {}, tot = (nt.quad || 0) + (nt.halo || 0) + (nt.sali || 0), band = d.band;
+    var L = A.light, lrows = L ? [['The bright place', lightWords(L)]] : [];
     return [
       ['Food', (bo.count || 0) + ' green boulders leak the sweetness. Each lasts ' + bo.lifeMin + ' to ' + bo.lifeMax + ' ticks, then another one comes up somewhere new'],
-      ['Locals', tot + ' at the start: ' + nativeMixWords(nt)],
+      ['Locals', tot + ' at the start: ' + nativeMixWords(nt)]].concat(lrows, [
       ['Inspectors', !d.suspicion ? 'none in this dish' : (d.channels || []).map(function (c) { return CH_WORDS[c] || c; }).join(', ')],
       ['The band', 'stay between ' + pct0(band.lo) + ' and ' + pct0(band.hi) + ' of the dish for ' + pct0(band.need) + ' of the run'],
       ['Time', 'scouts swim at their true speed, and grow about a hundred times faster than real ones'],
       ['Energy budget', d.energy + ' of 5 units for your cell']
-    ];
+    ]);
   }
   function reportLines(d) {
     if (d.agents) return reportLines3(d);
@@ -503,8 +511,44 @@
     S.runGrade = isExam(d) ? Sim.grade(run, d, build) : null;
     if (S.runGrade && (!S.grades[d.id] || GRADE_RANK[S.runGrade] > GRADE_RANK[S.grades[d.id]])) { S.grades[d.id] = S.runGrade; save('grades2', S.grades); }
   }
+  // ---- lineages: a stage of a lineage (Sim.lineageStage) is earned by clearing a dish with the stage before it fitted. Every call is guarded.
+  function lineageOf(id) { try { return typeof Sim.lineageStage === 'function' ? Sim.lineageStage(id) || null : null; } catch (e) { return null; } }
+  function lsId(x) { return x && typeof x === 'object' ? x.id : x || null; }
+  function buildCardIds(b) {
+    var n = Sim.normalize(b) || {}, o = [];
+    if (n.metabolism) o.push(Cards.canon(n.metabolism));
+    (n.parts || []).forEach(function (id) { o.push(Cards.canon(id)); });
+    if (n.reflex && n.reflex.kind === 'bio') o.push(Cards.canon(n.reflex.id));
+    return o;
+  }
+  // A dish was cleared with this cell: every fitted stage counts as used. S.evolvedNew lists the stages this win opened for the first time.
+  function recordUsed(build) {
+    var fresh = [], changed = false;
+    buildCardIds(build).forEach(function (id) {
+      var ls = lineageOf(id); if (!ls || S.used[id]) return;
+      S.used[id] = true; changed = true;
+      var nx = lsId(ls.next); if (nx && !S.used[nx] && fresh.indexOf(nx) < 0) fresh.push(nx);
+    });
+    if (changed) save('used3', S.used);
+    S.evolvedNew = fresh;
+  }
+  // Why a stage the player has not earned cannot be fitted, or '' when it can (a stage already fitted, a first stage and a card outside a lineage are never held back).
+  function earnLock(id) {
+    var ls = lineageOf(id); if (!ls || !(ls.stage > 1)) return '';
+    if (S.build && buildCardIds(S.build).indexOf(id) >= 0) return '';
+    var pv = lsId(ls.prev); if (!pv || S.used[pv]) return '';
+    var c = cardOrBio(pv);
+    return 'Clear a dish with ' + (c ? c.name : pv) + ' fitted to evolve this.';
+  }
+  // Dishes that offer a card, for "Offered on dish 17."
+  function offeredOn(id) {
+    var c = cardOrBio(id), out = []; if (!c) return out;
+    ORDER1.concat(ORDER2, ORDER3).forEach(function (n) { var o = Lv.dish(n); try { if (o && Sim.offered(o, c.slot).some(function (x) { return x.id === id; })) out.push(n); } catch (e) { /* skip */ } });
+    return out;
+  }
+  function dishWords(ids) { return ids.length < 2 ? 'dish ' + ids.join('') : 'dishes ' + ids.slice(0, -1).join(', ') + ' and ' + ids[ids.length - 1]; }
   function winCarried() {  // the carried cell already wins: take it as the win
-    var d = dishObj(); S.cleared[d.id] = true; S.wins[d.id] = copy(S.carried); save('cleared2', S.cleared); save('wins2', S.wins);
+    var d = dishObj(); S.cleared[d.id] = true; S.wins[d.id] = copy(S.carried); save('cleared2', S.cleared); save('wins2', S.wins); recordUsed(S.carried);
     recordGrade(S.run, d, S.carried);
     showResult();
   }
@@ -577,6 +621,8 @@
   function doFit(k, id) {
     var d = dishObj(), miss = treeMissingIds(id);
     if (miss.length) { r = { ok: false, reason: 'Needs ' + treeNames(miss) + ' fitted first' }; setNote(r.reason); showPreviewText(r.reason, true); return r; }
+    var lk = earnLock(id);
+    if (lk) { r = { ok: false, reason: lk }; setNote(lk); showPreviewText(lk, true); return r; }
     var r = Sim.fit(d, S.build, id, layerArg(k));
     if (!r.ok) { setNote(r.reason); showPreviewText(r.reason, true); return r; }
     commit(r.build); return r;
@@ -681,8 +727,9 @@
     return img;
   }
   // The one wording for a stat change, used on cards, in the preview line and for the ghost markers: { stat, words, direction, steps, tone, checked }.
+  function statWords(id, up) { var w = STAT_WORDS[id] || [Sim.STAT_INFO[id].name + ' better', Sim.STAT_INFO[id].name + ' worse']; return w[up ? 0 : 1]; }
   var STAT_WORDS = { acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'], natural: ['Naturalness up', 'Naturalness down'], crash: ['Crash survival up', 'Crash survival down'],
-    reach: ['Food reach better', 'Food reach worse'], motion: ['Movement closer', 'Movement further off'] };   // reach and motion: the thick water (dishes 15 and 16)
+    reach: ['Food reach better', 'Food reach worse'], motion: ['Movement closer', 'Movement further off'], light: ['Light safer', 'Light harsher'] };   // reach and motion: the thick water (dishes 15 and 16)
   function effArrows(x) { var a = x.direction === 'up' ? '\u25B2' : '\u25BC', o = ''; for (var i = 0; i < x.steps; i++) o += a; return o; }
   function changesHtml(list) { return list.map(function (x) { return '<span class="ef t-' + x.tone + '">' + esc(x.words) + ' <b>' + effArrows(x) + '</b></span>'; }).join(''); }
   function changesText(list) { return list.map(function (x) { return x.words + ' ' + effArrows(x); }).join(', '); }
@@ -693,7 +740,7 @@
       if (x.id !== 'acid' && (dis || Sim.dissolved(d, a))) return;
       var moved = x.better !== null || Math.abs(x.delta) >= 0.04 || x.fromState !== x.toState; if (!moved) return;
       var up = x.delta > 0 || (x.delta === 0 && x.health > 0);
-      out.push({ stat: x.id, direction: up ? 'up' : 'down', steps: Math.abs(x.health) >= 0.15 ? 2 : 1, words: STAT_WORDS[x.id][up ? 0 : 1], tone: !x.checked ? 'neutral' : x.better === true ? 'good' : x.better === false ? 'bad' : 'neutral', checked: x.checked });
+      out.push({ stat: x.id, direction: up ? 'up' : 'down', steps: Math.abs(x.health) >= 0.15 ? 2 : 1, words: statWords(x.id, up), tone: !x.checked ? 'neutral' : x.better === true ? 'good' : x.better === false ? 'bad' : 'neutral', checked: x.checked });
     });
     return out;
   }
@@ -714,7 +761,7 @@
       if (x.id === 'acid') return;
       var dl = x.value - ref[i].value; if (Math.abs(dl) < 0.03) return;
       var up = dl > 0;
-      ef.changes.push({ stat: x.id, name: x.name, direction: up ? 'up' : 'down', steps: Math.abs(dl) >= 0.15 ? 2 : 1, words: STAT_WORDS[x.id][up ? 0 : 1], tone: !x.checked ? 'neutral' : x.state === 'safe' ? 'good' : 'bad', checked: x.checked });
+      ef.changes.push({ stat: x.id, name: x.name, direction: up ? 'up' : 'down', steps: Math.abs(dl) >= 0.15 ? 2 : 1, words: statWords(x.id, up), tone: !x.checked ? 'neutral' : x.state === 'safe' ? 'good' : 'bad', checked: x.checked });
     });
     return ef;
   }
@@ -724,8 +771,9 @@
     var miss = fitted ? [] : treeMissingIds(c.id);
     if (!fitted) { r = Sim.fit(dishObj(), S.build, c.id, layerArg(k)); if (!r.ok) why = r.reason; }
     if (miss.length) why = 'Needs ' + treeNames(miss) + ' fitted first';
+    var lock = fitted ? '' : earnLock(c.id); if (lock) why = lock;
     w.setAttribute('aria-pressed', fitted ? 'true' : 'false');
-    if (fitted) w.classList.add('fitted'); if (why) w.classList.add('blocked');
+    if (fitted) w.classList.add('fitted'); if (why) w.classList.add('blocked'); if (miss.length || lock) w.classList.add('lk');
     var real = c.real, d0 = dishObj(), game = c.game || c.sentence, ef = effectsFor(d0, c, fitted), g3 = null;
     if (d0.agents) { g3 = c.game3 || (c.world === 3 ? c.game : c.real); game = g3; }   // the thick water: a card's game3 text; its own text if it is new here; else the real biology
     var inn = el('div', 'in'), tb = el('div', 'thumbbox'), tx = el('div', 'otxt');
@@ -739,7 +787,7 @@
       '<div class="eff chg" title="' + esc(chgTxt) + '">' + (fitted ? lead : '<i>Changes:</i>') + '<span>' + chg + '<span class="ef en">' + en + '</span></span></div>' +
       (g3 != null ? '<p class="g3" title="' + esc(g3) + '">' + esc(g3) + '</p>' : '') +
       (g3 !== real ? '<p class="real" title="' + esc(real) + '"><i>Real</i>' + esc(real) + '</p>' : '') +
-      '<div class="why' + (miss.length ? ' wlink' : '') + '">' + (why ? '<span class="wt">' + esc(why) + '</span>' : (c.layers > 1 ? 'Takes both Envelope layers.' : '')) + (miss.length ? '<button type="button" class="treelink">Show in the skill tree</button>' : '') + '</div>';
+      '<div class="why' + (miss.length || lock ? ' wlink' : '') + '">' + (why ? '<span class="wt">' + esc(why) + '</span>' : (c.layers > 1 ? 'Takes both Envelope layers.' : '')) + (miss.length || lock ? '<button type="button" class="treelink">Show in the skill tree</button>' : '') + '</div>';
     inn.appendChild(tb); inn.appendChild(tx); w.appendChild(inn);
     var tl = w.querySelector('.treelink');
     if (tl) { tl.addEventListener('click', function (e) { e.stopPropagation(); treeOpen(tl, c.id); }); tl.addEventListener('keydown', function (e) { e.stopPropagation(); }); }
@@ -951,7 +999,7 @@
     if (showG) { g.style.left = pos(gh.value); g.className = 'sb-ghost' + (o.forecast ? ' fc' : ' ' + gtone); }
     var txt = s.verdict, cls = unc ? 'neu' : ok ? 'ok' : edge ? 'amb' : 'bad';
     if (o.ghost && showG) { txt = '\u2192 ' + gh.verdict; cls = gtone + ' pv'; }
-    if (v.textContent !== txt) v.textContent = txt;
+    if (v.textContent !== txt) { v.textContent = txt; v.title = txt; }
     v.className = 'sb-verdict ' + cls;
     var arrow = '', acl = '';
     if (o.ghost && o.diff && showG) {
@@ -1070,7 +1118,8 @@
     S.mode = 'run'; S.run = run; S.runCount++; if (!(C.kept && C.base)) S.prev[d.id] = { share: run.H.share, total: run.H.total, build: copy(S.build) };
     ezReset(); S.ez.tPrev = 0; cmpSync();
     S.stopAt = null; S.runFinished = false; S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = d.agents ? 1 : 2; setSpeedUI();
-    if (run.v.win) { S.cleared[d.id] = true; S.wins[d.id] = copy(S.build); save('cleared2', S.cleared); save('wins2', S.wins); S.lastRunLost = false; recordGrade(run, d, S.build); }
+    S.evolvedNew = [];
+    if (run.v.win) { S.cleared[d.id] = true; S.wins[d.id] = copy(S.build); save('cleared2', S.cleared); save('wins2', S.wins); recordUsed(S.build); S.lastRunLost = false; recordGrade(run, d, S.build); }
     else { S.lastAutopsy = run.autopsy; S.lastRunLost = true; S.tipLevel = 0; setFail(run, S.build); }
     closeOverlay(); show('run');
     return run;
@@ -1152,12 +1201,12 @@
       keyHtml += '<span><i style="background:' + bg + ';border:1px solid ' + c.color + '"></i>' + c.name + '</span>';
     });
     $('ribbonKey').innerHTML = any ? keyHtml + '<span style="margin-left:auto">leading suspicion each tick</span>' : '';
-    buildBars($('liveBars'), d.stats); S.liveKey = '';
+    buildBars($('liveBars'), d.stats); $('liveBars').classList.toggle('three', d.stats.length > 4); S.liveKey = '';
     $('immune').style.display = any ? '' : 'none';
     $('ribbon').style.display = any ? '' : 'none';
     $('ribbonKey').style.display = any ? '' : 'none';
     $('legGrn').style.display = any ? '' : 'none';
-    $('legWaste').hidden = !!d.agents; $('legBoul').hidden = !d.agents;   // the thick water has no waste trail; its green boulders are the food
+    $('legWaste').hidden = !!d.agents; $('legBoul').hidden = !d.agents; $('legLight').hidden = !(d.agents && d.agents.light);   // the thick water has no waste trail; its green boulders are the food
     S.chartCaps = any ? ['Your share of the dish: band and event marked', 'Suspicion total: stage lines at 1.5, 4.5 and 8'] : ['Your colony: percent of what you started with', 'Lost to acid: share of your colony dissolved each tick'];
     $('tabShare').textContent = any ? 'Your share' : 'Your colony'; $('tabSusp').textContent = any ? 'Suspicion' : 'Lost to acid';
     setChartTab(S.chartTab || 'share');
@@ -1246,7 +1295,7 @@
     var showFail = lost && (S.mode === 'watch' ? S.watchDone : S.resultShown || S.runFinished);
     var key = (final ? 'F' : ti) + '|' + (showFail ? 1 : 0) + '|' + S.mode + run.build.pace;
     if (key === S.liveKey) return; S.liveKey = key;
-    if (box.getAttribute('data-ids') !== d.stats.join(',') || box.children.length !== d.stats.length) buildBars(box, d.stats);   // never draw into rows left over from another dish
+    if (box.getAttribute('data-ids') !== d.stats.join(',') || box.children.length !== d.stats.length) { buildBars(box, d.stats); box.classList.toggle('three', d.stats.length > 4); }   // never draw into rows left over from another dish
     var fc = Sim.stats(d, run.build), live = final ? fc : Sim.liveStats(run, ti);
     $('liveTitle').innerHTML = final ? 'Forecast for your cell <span class="dim">the failing bar is marked</span>' : 'Live stats <span class="dim">outline marker = the forecast</span>';
     Array.prototype.forEach.call(box.children, function (row, i) {
@@ -1262,7 +1311,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
     ctx.save(); ctx.translate((w - size) / 2, (h - size) / 2);
     // draw3.js reads sim3's own constants (dish radius, grid, food scale), which a game-shaped run keeps under P3 while run.P is the game's.
-    var r3 = run.__fb3 || (run.__fb3 = { frames: run.frames, foods: run.foods, boulders: run.boulders, P: run.P3, build: run.build });
+    var r3 = run.__fb3 || (run.__fb3 = { frames: run.frames, foods: run.foods, boulders: run.boulders, light: run.light || null, P: run.P3, build: run.build });
     window.LookAliveDraw3.frame(ctx, r3, t, { cx: 0, cy: 0, zoom: 1 }, { size: size, reduced: reduced, trails: false });
     ctx.restore();
   }
@@ -1375,9 +1424,9 @@
   }
   // Why scouts died, from the run's own death log (habitat 3): "Scouts lost: 18 starved, 0 to the guards".
   function deathsText(run) {
-    var n = { starved: 0, guards: 0 };
+    var n = { starved: 0, glare: 0, guards: 0 };
     (run.deaths || []).forEach(function (x) { if (n[x.cause] != null && !x.kind) n[x.cause]++; });
-    return 'Scouts lost: ' + n.starved + ' starved, ' + n.guards + ' to the guards';
+    return 'Scouts lost: ' + n.starved + ' starved, ' + (run.light ? n.glare + ' burned, ' : '') + n.guards + ' to the guards';
   }
   function recordRow(run, d) {
     var v = run.v;
@@ -1385,7 +1434,7 @@
     if (d.aliveOnly) return '<div class="row"><b>Record</b><span>Colony at the end: ' + Math.round(run.H.rob[run.T] / run.H.rob[0] * 100) + '% of where it started.</span></div>';
     return '<div class="row"><b>Record</b><span>In the band ' + Math.round(v.bandFrac * 100) + '% of the time (needs ' + Math.round(d.band.need * 100) + '%). Final share ' + (v.finalShare * 100).toFixed(1) + '%. Highest guard alert: ' + STAGE_NAMES[v.maxStage] + '.' + spare + '</span></div>';
   }
-  var TAG_WORDS = { 'exposed:motion': 'NEVER STOPPED.', acid: 'DISSOLVED.', overgrew: 'TOOK OVER.', starved: 'STARVED OUT.', bust: 'STARVED OUT.', bloom: 'OUTGROWN.', below: 'TOO FEW.', band: 'OUT OF STEP.', cooked: 'COOKED.', grazed: 'EATEN.' };
+  var TAG_WORDS = { 'exposed:motion': 'NEVER STOPPED.', acid: 'DISSOLVED.', overgrew: 'TOOK OVER.', starved: 'STARVED OUT.', bust: 'STARVED OUT.', bloom: 'OUTGROWN.', below: 'TOO FEW.', band: 'OUT OF STEP.', cooked: 'COOKED.', grazed: 'EATEN.', burned: 'BURNED.' };
   function slideTag(cause, d) { if (cause === 'bust' && d && d.temp) return 'LOST TO THE NIGHT.'; return TAG_WORDS[cause] || (/^exposed:/.test(cause) ? 'COVER BLOWN.' : 'FAILED.'); }
   function timelineSvg(T, from, to) {
     function x(t) { return 10 + 580 * Math.max(0, Math.min(T, t)) / T; }
@@ -1410,10 +1459,11 @@
     if (v.win) {
       var stamp = STAMPS[D.hash(JSON.stringify(run.build)) % STAMPS.length];
       var ORD = orderForDish(d), next = ORD[ORD.indexOf(d.id) + 1], gr = d.exam ? Sim.grade(run, d, run.build) : null;
+      var evoHtml = S.evolvedNew && S.evolvedNew.length ? '<div class="evolvedline" id="evolvedLine"><svg class="evoico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 14 8 8 14.5 2 8z" fill="currentColor"/><path d="M8 4.5v5M5.8 6.7 8 4.5l2.2 2.2" fill="none" stroke="#0b0820" stroke-width="1.5"/></svg><span>A new step has evolved: ' + esc(S.evolvedNew.map(cardName).join(', ')) + '. Find it in the skill tree.</span></div>' : '';
       var gradeHtml = gr ? '<div class="gradebox g-' + gr.toLowerCase() + '" id="gradeBox"><span class="gk">Exam grade</span><b>' + gr + '</b><span class="gn">' + esc(GRADE_NEXT[gr]) + '</span></div>' : '';
       var last = next == null && ORD.every(function (i) { return S.cleared[i]; });
-      html = '<div class="winwrap"><div class="paper memo"><h2>CLEARED</h2><div class="stampbox"><div class="stamp win' + (reduced ? '' : ' slam') + '" id="stamp">' + stamp + '</div></div>' +
-        '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' + gradeHtml + '<div class="covercap">Final readings</div><div class="paperbars statbars" id="winBars"></div>' +
+      html = '<div class="winwrap' + (d.stats.length > 4 ? ' tall' : '') + '"><div class="paper memo"><h2>CLEARED</h2><div class="stampbox"><div class="stamp win' + (reduced ? '' : ' slam') + '" id="stamp">' + stamp + '</div></div>' +
+        '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' + gradeHtml + '<div class="covercap">Final readings</div><div class="paperbars statbars' + (d.stats.length > 4 ? ' n5' : '') + '" id="winBars"></div>' + evoHtml +
         '<div class="row"><b>Dish</b><span>' + d.id + ': ' + esc(d.title) + '</span></div>' + recordRow(run, d) + (d.agents ? '<div class="deathline win" id="deathLine">' + esc(deathsText(run)) + '</div>' : '') + (d.reading ? '<div class="row reading"><b>Reading</b><span id="winReading">' + esc(d.reading) + '</span></div>' : '') +
         '<div class="pbtns">' + (next != null ? '<button type="button" data-act="next">Next dish</button>' : last ? '<button type="button" data-act="complete">Sampling complete</button>' : '') + '<button type="button" data-act="watch">Watch replay</button><button type="button" data-act="list">Dish list</button></div></div>' +
         '<div class="paper notebook"><h3>From our samples: notebook page ' + (ORD.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id] || d.nbTitle) + '</h4><p>' + esc(d.notebook) + '</p>' + (d.colony ? '<div class="scrawl colony"><b>Colony comment:</b> <span id="colonyNote">' + esc(d.colony) + '</span></div>' : '') + '</div></div>';
@@ -1449,7 +1499,7 @@
     var WW = Lv3.WORLD;
     return { title: 'THE THICK WATER, SO FAR', rows: [
       ['Place', WW.facts[1]],
-      ['What we learned', 'A cell that cannot reach the sweetness starves, and a cell that swims past it for ever is noticed. Stopping where it is sweet is part of looking alive.'],
+      ['What we learned', 'A cell that cannot reach the sweetness starves, and a cell that swims past it for ever is noticed. Stopping where it is sweet is part of looking alive. And there is a bright place that drifts: a little of its light feeds a cell, and its middle burns.'],
       ['Our samples', WW.badge],
       ['Next', 'There is more of the thick water. We will open it when our lab has grown the next dishes.']
     ] };
@@ -1462,7 +1512,7 @@
     }).join('');
     var srows = CO ? CO.rows : (W.complete || []).map(function (r) { return r[0] === 'Next' && Lv2 ? [r[0], 'The banded water: a new site, with one rule turned upside down. Open it from the dish list.'] : r; });
     var story = srows.map(function (r) { return '<div class="row"><b>' + esc(r[0]) + '</b><span>' + esc(r[1]) + '</span></div>'; }).join('');
-    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>' + (CO ? esc(CO.title) : 'SAMPLING COMPLETE') + '</h2>' + (cw === 1 && STORY_ART.ripple ? '<img class="completeimg" src="assets/story/complete-ripple.jpg" alt="A slow ripple crossing the surface of the warm mountain">' : '') + '<div class="covercap">' + (cw === 3 ? 'The two dishes' : cw === 2 ? 'The four dishes' : 'The ten dishes') + '</div><div class="clist">' + rows + '</div>' +
+    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>' + (CO ? esc(CO.title) : 'SAMPLING COMPLETE') + '</h2>' + (cw === 1 && STORY_ART.ripple ? '<img class="completeimg" src="assets/story/complete-ripple.jpg" alt="A slow ripple crossing the surface of the warm mountain">' : '') + '<div class="covercap">' + (cw === 3 ? 'The three dishes' : cw === 2 ? 'The four dishes' : 'The ten dishes') + '</div><div class="clist">' + rows + '</div>' +
       story + '<div class="pbtns"><button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
     $('overlay').hidden = false; S.overlayOpen = true;
   }
@@ -1503,7 +1553,7 @@
   $('replayIntro').addEventListener('click', function () { S.introAt = 0; S.introWorld = 1; show('intro'); });
   $('unlockAll').addEventListener('click', function () { S.unlocked = true; save('unlocked2', true); renderList(); });
   $('resetProgress').addEventListener('click', function () {
-    S.cleared = {}; S.wins = {}; S.grades = {}; save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro2', false); S.seenIntroB = false; S.seenWorldB = false; S.seenIntroC = false; S.seenWorldC = false; S.worldTab = 1; save('introB', false); save('worldB', false); save('introC', false); save('worldC', false); save('worldTab', 1);
+    S.cleared = {}; S.wins = {}; S.grades = {}; S.used = {}; S.evolvedNew = []; save('used3', {}); save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro2', false); S.seenIntroB = false; S.seenWorldB = false; S.seenIntroC = false; S.seenWorldC = false; S.worldTab = 1; save('introB', false); save('worldB', false); save('introC', false); save('worldC', false); save('worldTab', 1);
     save('cleared2', {}); save('wins2', {}); save('unlocked2', false); save('world2', false); renderList();
   });
   $('undo').addEventListener('click', function () { if (!S.undo.length) return; S.build = S.undo.pop(); S.preview = null; syncRuleFromBuild(); renderAdapt(false); });
@@ -1556,14 +1606,21 @@
     learned: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="1.6 2.2"/></svg>',
     unlearned: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7.2" width="9" height="6.8" rx="1.2" fill="currentColor"/><path d="M5.4 7.2V5.4a2.6 2.6 0 0 1 5.2 0v1.8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>'
   };
+  var EVO_MARK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 14 8 8 14.5 2 8z" fill="currentColor"/><path d="M8 4.8v5M5.9 6.9 8 4.8l2.1 2.1" fill="none" stroke="#0b0820" stroke-width="1.5"/></svg>';
   var TREE_STATE_WORD = { fitted: 'Fitted in this cell', available: 'Available here', learned: 'Learned, not offered here', unlearned: 'Not yet learned' };
-  function treeCall(fn, a, b, c) { try { return typeof Sim[fn] === 'function' ? Sim[fn](a, b, c) : null; } catch (e) { return null; } }
+  function treeCall(fn, a, b, c, d) { try { return typeof Sim[fn] === 'function' ? Sim[fn](a, b, c, d) : null; } catch (e) { return null; } }
   function treeMissingIds(id) { var m = S.build ? treeCall('treeMissing', S.build, id) : null; return m && m.length ? m : []; }
   function treeNames(ids) {
     var n = ids.map(function (i) { var c = cardOrBio(i); return c ? c.name : i; });
     return n.length < 2 ? n.join('') : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1];
   }
   function treeCtx() { var on = S.dish != null && S.build && S.screen !== 'list' && S.screen !== 'world' && S.screen !== 'intro'; return { D: on ? dishObj() : null, build: on ? S.build : null, adapt: !!(on && S.screen === 'adapt') }; }
+  function isEvolved(id) { var ls = lineageOf(id); return !!(ls && ls.stage > 1 && S.used[lsId(ls.prev)]); }
+  function treeReason(n, s) {
+    var r = s.reason || '', ls = lineageOf(n.id);
+    if (ls && ls.stage > 1 && s.state === 'unlearned' && /^Clear a dish with/.test(r)) { var w = offeredOn(lsId(ls.prev)); if (w.length) r += ' Offered on ' + dishWords(w) + '.'; }
+    return r;
+  }
   function treeBuild() {
     var nodes = treeCall('treeNodes') || [], br = treeCall('treeBranches') || [], grid = $('treeGrid');
     T.nodes = nodes; T.branches = br; T.byId = {}; T.tiles = {}; T.pos = {}; grid.innerHTML = '';
@@ -1576,7 +1633,8 @@
         var r = tiers.indexOf(n.tier); while (used[bi + ':' + r]) r++;
         used[bi + ':' + r] = 1; rows = Math.max(rows, r + 1);
         var t = el('button', 'tv-tile'); t.type = 'button'; t.setAttribute('data-id', n.id); t.style.gridColumn = String(bi + 1); t.style.gridRow = String(r + 2);
-        t.innerHTML = '<span class="tv-mark"></span><span class="tv-name">' + esc(n.name) + '</span><span class="tv-meta"><span>' + (n.energy ? 'Energy ' + n.energy : 'No energy') + '</span><span class="shelf ' + (n.shelf === 'machine' ? 'mach' : 'bio') + '">' + (n.shelf === 'machine' ? 'Machine' : 'Biology') + '</span></span>';
+        var ls = lineageOf(n.id);
+        t.innerHTML = '<span class="tv-mark"></span><span class="tv-name">' + (ls ? '<span class="tv-step" title="Step ' + ls.stage + ' of a path that grows by use">' + ls.stage + '</span><span class="tv-evo" hidden>' + EVO_MARK + '</span>' : '') + esc(n.name) + '</span><span class="tv-meta"><span>' + (n.energy ? 'Energy ' + n.energy : 'No energy') + '</span><span class="shelf ' + (n.shelf === 'machine' ? 'mach' : 'bio') + '">' + (n.shelf === 'machine' ? 'Machine' : 'Biology') + '</span></span>';
         t.addEventListener('click', function () { treeSelect(n.id, true); });
         t.addEventListener('keydown', treeTileKey);
         grid.appendChild(t); T.tiles[n.id] = t; T.pos[n.id] = { c: bi, r: r };
@@ -1628,14 +1686,15 @@
   }
   function treeRefresh() {
     var cx = treeCtx(), list = !cx.D; T.adapt = cx.adapt;
-    T.st = treeCall('treeState', cx.D, cx.build, S.cleared) || {};
+    T.st = treeCall('treeState', cx.D, cx.build, S.cleared, S.used) || {};
     T.nodes.forEach(function (n) {
       var s = (T.st[n.id] || {}).state || 'unlearned', t = T.tiles[n.id];
       t.className = 'tv-tile st-' + s + (n.shelf === 'machine' ? ' mach' : '') + (T.sel === n.id ? ' sel' : '');
       t.firstChild.innerHTML = TREE_MARK[s];
-      t.setAttribute('aria-label', n.name + ', ' + TREE_STATE_WORD[s].toLowerCase() + ', ' + (n.energy ? 'energy ' + n.energy : 'no energy') + ', ' + (n.shelf === 'machine' ? 'machine' : 'biology'));
+      var ev = isEvolved(n.id), eg = t.querySelector('.tv-evo'); t.classList.toggle('evolved', ev); if (eg) eg.hidden = !ev;
+      t.setAttribute('aria-label', n.name + (lineageOf(n.id) ? ', step ' + lineageOf(n.id).stage : '') + (ev ? ', evolved by use' : '') + ', ' + TREE_STATE_WORD[s].toLowerCase() + ', ' + (n.energy ? 'energy ' + n.energy : 'no energy') + ', ' + (n.shelf === 'machine' ? 'machine' : 'biology'));
     });
-    $('treeLegend').innerHTML = ['fitted', 'available', 'learned', 'unlearned'].filter(function (s) { return !list || s === 'learned' || s === 'unlearned'; }).map(function (s) { return '<span class="lg st-' + s + '"><i>' + TREE_MARK[s] + '</i>' + TREE_STATE_WORD[s] + '</span>'; }).join('') + '<span class="lg ln"><svg viewBox="0 0 30 8" aria-hidden="true"><path d="M1 4H29" stroke="#8a90a8" stroke-width="1.8"/></svg>Learn first</span><span class="lg ln"><svg viewBox="0 0 30 8" aria-hidden="true"><path d="M1 4H29" stroke="#5fd0ff" stroke-width="1.8" stroke-dasharray="4 3"/></svg>With (fitted together)</span>';
+    $('treeLegend').innerHTML = ['fitted', 'available', 'learned', 'unlearned'].filter(function (s) { return !list || s === 'learned' || s === 'unlearned'; }).map(function (s) { return '<span class="lg st-' + s + '"><i>' + TREE_MARK[s] + '</i>' + TREE_STATE_WORD[s] + '</span>'; }).join('') + '<span class="lg st-evo"><i>' + EVO_MARK + '</i>Evolved by use</span><span class="lg ln"><svg viewBox="0 0 30 8" aria-hidden="true"><path d="M1 4H29" stroke="#8a90a8" stroke-width="1.8"/></svg>Learn first</span><span class="lg ln"><svg viewBox="0 0 30 8" aria-hidden="true"><path d="M1 4H29" stroke="#5fd0ff" stroke-width="1.8" stroke-dasharray="4 3"/></svg>With (fitted together)</span>';
     $('treeNote').textContent = list ? 'No cell is open, so this shows only what is learned and what is not yet.' : (cx.adapt ? 'Cell on Dish ' + cx.D.id + '. Fit or take off a skill here and the Adapt page changes with it.' : 'Cell on Dish ' + cx.D.id + '. Open Adapt to fit skills.');
     $('treeEnergy').textContent = cx.adapt ? 'Energy ' + $('energyNum').textContent : '';
     treeDetail(); treeLight();
@@ -1653,7 +1712,7 @@
     $('tdName').textContent = n.name; $('tdShelf').className = 'shelf ' + (mach ? 'mach' : 'bio'); $('tdShelf').textContent = mach ? 'Machine' : 'Biology';
     $('tdEn').textContent = n.energy ? 'Energy ' + n.energy : 'No energy';
     $('tdGame').textContent = game; $('tdGame').title = game; $('tdReal').innerHTML = real ? '<i>Real</i>' + esc(real) : ''; $('tdReal').title = real;
-    $('tdState').innerHTML = '<b class="st-' + (s.state || 'unlearned') + '"><i>' + TREE_MARK[s.state || 'unlearned'] + '</i>' + TREE_STATE_WORD[s.state || 'unlearned'] + '</b> ' + esc(s.reason || '');
+    $('tdState').innerHTML = '<b class="st-' + (s.state || 'unlearned') + '"><i>' + TREE_MARK[s.state || 'unlearned'] + '</i>' + TREE_STATE_WORD[s.state || 'unlearned'] + '</b> ' + esc(treeReason(n, s));
     $('tdAfter').innerHTML = (n.after || []).length ? '<b>Learn first:</b> ' + esc((n.after || []).map(function (i) { return T.byId[i] ? T.byId[i].name : i; }).join(', ')) : '';
     $('tdWith').innerHTML = (n.with || []).length ? '<b>Needs fitted:</b> ' + esc((n.with || []).map(function (i) { var m = T.byId[i]; return m ? m.name + ' (' + Cards.slotInfo(m.slot).name + ')' : i; }).join(', ')) : '';
     var st = s.state, can = T.adapt && n.kind !== 'rule' && (st === 'available' || st === 'fitted');
@@ -1723,6 +1782,7 @@
     glSig: function (t) { return GL.r ? GL.r.signature(t) : null; },
     glPortrait: function () { return GL.p; },
     forceFallback: function (on) { GL.forced = !!on; if (on) { glDestroy(); glNote('Simple dish view: forced for testing.'); if (GL.p) { $('cellWrap').classList.remove('cellglon'); $('cellGL').hidden = true; } } else { GL.failed = false; glNote(''); GL.pfailed = false; if (S.screen === 'adapt') renderCell(); } return { forced: GL.forced }; },
+    used: function () { return JSON.parse(JSON.stringify(S.used)); }, setUsed: function (m) { S.used = JSON.parse(JSON.stringify(m || {})); save('used3', S.used); if (S.screen === 'adapt' && S.build) renderAdapt(false); if (T.open) treeRefresh(); return S.used; },
     tree: function (on) { if (on === false) treeClose(); else treeOpen($('navTree')); return T.open; }, treeSelect: function (id) { return treeSelect(id); }, treeInfo: treeInfo,
     S: S, show: show, selectDish: selectDish, enterWatch: enterWatch, run: doRun, seek: seek, skip: skip, showResult: showResult, advance: advance,
     unlockWorld: function (w) { for (var v = 1; v < w; v++) orderOf(v).forEach(function (id) { S.cleared[id] = true; }); save('cleared2', S.cleared); renderList(); return { ok: !tabLocked(w), world: w }; },   // test setup: marks every dish before world w cleared, which opens its tab

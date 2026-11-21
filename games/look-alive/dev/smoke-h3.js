@@ -1,4 +1,4 @@
-// Smoke test for dishes 15 and 16 (habitat 3) through the game's normal simulation API (sim.js hands them to sim3.js).
+// Smoke test for dishes 15, 16 and 17 (habitat 3) through the game's normal simulation API (sim.js hands them to sim3.js).
 // Run from the repo root:  node games/look-alive/dev/smoke-h3.js        (about 30 s)
 // Every line is PASS or FAIL with the numbers behind it. The last line is SMOKE-H3 PASS or SMOKE-H3 FAIL.
 'use strict';
@@ -14,16 +14,16 @@ function withSeed(D, seed) { var d = Object.assign({}, D); d.agents = JSON.parse
 function runOf(D, b, opts) { var run = Sim.play(P, D, b, opts || { n: 64, snapEvery: 10 }); run.v = Sim.verdict(run); run.autopsy = run.v.win ? null : Sim.autopsy(run); return run; }
 function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; var t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
 var STAY = { kind: 'machine', sensor: 'food', cmp: 'gt', value: 0.015, action: 'stay', otherwise: 'seek' };
-var DISH = { 15: Lv.dish(15), 16: Lv.dish(16) };
-var NAME = { 15: 'dish 15 (Where the Food Is)', 16: 'dish 16 (Stop When Fed)' };
-var FIX = { 15: Lv.applyFix(Lv.carry(15), DISH[15].fixes[0]), 16: Lv.applyFix(Lv.carry(16), DISH[16].fixes[0]) };
+var DISH = { 15: Lv.dish(15), 16: Lv.dish(16), 17: Lv.dish(17) };
+var NAME = { 15: 'dish 15 (Where the Food Is)', 16: 'dish 16 (Stop When Fed)', 17: 'dish 17 (A Little Light)' };
+var FIX = { 15: Lv.applyFix(Lv.carry(15), DISH[15].fixes[0]), 16: Lv.applyFix(Lv.carry(16), DISH[16].fixes[0]), 17: Lv.applyFix(Lv.carry(17), DISH[17].fixes[0]) };
 var T = 300;
 
 // ---------------------------------------------------------------- S1: every field of a run
 var H_KEYS = ['tick', 'share', 'nativeShare', 'nat', 'rob', 'food', 'total', 'stage', 'kill', 'fires', 'lead', 'births', 'rate', 'nrate', 'qsig', 'radioMult', 'rawG', 'rawW', 'rawC', 'rawR', 'regT', 'regM', 'regF', 'regD', 'regR', 'sloppy', 'acid', 'dorm'];
 var SUSP_KEYS = ['growth', 'waste', 'casualties', 'regularity', 'motion'];
 var SNAP_ARR = ['robot', 'native', 'food', 'waste', 'quorum'], ST_ARR = ['Z', 'SP', 'N', 'F', 'WA', 'WB', 'Q'];
-[15, 16].forEach(function (id) {
+[15, 16, 17].forEach(function (id) {
   var D = DISH[id], miss = [], run = Sim.play(P, D, Lv.carry(id), { n: 16, snapEvery: 3 });   // n and snapEvery must be ignored
   ['P', 'dish', 'build', 'bp', 'channels', 'n', 'T', 'H', 'snaps', 'v', 'frames', 'foods', 'boulders', 'deaths', 'agents'].forEach(function (k) { if (run[k] == null) miss.push(k); });
   if (run.n !== 64) miss.push('n=' + run.n + ' (want 64)');
@@ -50,6 +50,18 @@ var SNAP_ARR = ['robot', 'native', 'food', 'waste', 'quorum'], ST_ARR = ['Z', 'S
   if (!Array.isArray(run.boulders) || !run.boulders.length) miss.push('boulders');
   if (!Array.isArray(run.deaths)) miss.push('deaths');
   ['win', 'alive', 'bandFrac', 'maxStage', 'peakS', 'finalShare', 'exposedAt'].forEach(function (k) { if (run.v[k] == null) miss.push('v.' + k); });
+  if (id === 17) {
+    var Lt = run.light;
+    if (!Lt || !(Lt.r > 0) || !(Lt.core > 0 && Lt.core < Lt.r) || !(Lt.x instanceof Float32Array) || !(Lt.y instanceof Float32Array) || Lt.x.length !== T + 1 || Lt.y.length !== T + 1) miss.push('run.light shape');
+    if (!(run.H.light instanceof Float32Array) || run.H.light.length !== T + 1 || !(run.H.glare instanceof Float32Array) || run.H.glare.length !== T + 1) miss.push('H.light / H.glare');
+    else { var mxl = 0, mxg = 0, tt; for (tt = 0; tt <= T; tt++) { if (run.H.light[tt] > mxl) mxl = run.H.light[tt]; if (run.H.glare[tt] > mxg) mxg = run.H.glare[tt]; if (run.H.light[tt] < 0 || run.H.light[tt] > 1 || run.H.glare[tt] < 0 || run.H.glare[tt] > 1) miss.push('H.light/H.glare outside 0..1 at ' + tt); } if (!(mxl > 0)) miss.push('no scout was ever in useful light'); }
+    var S3 = require(path.join(G, 'sim3.js')), la = S3.lightAt(run, 10, Lt.x[10], Lt.y[10]), lb = S3.lightAt(run, 10, Lt.x[10] + Lt.r + 5, Lt.y[10]);
+    if (!(la.glare > 0.99 && la.useful < 0.01) || lb.useful !== 0 || lb.glare !== 0) miss.push('lightAt at the centre ' + JSON.stringify(la) + ' and outside ' + JSON.stringify(lb));
+    var mid = S3.lightAt(run, 10, Lt.x[10] + (Lt.core + Lt.r) / 2, Lt.y[10]); if (!(mid.useful > 0.1 && mid.glare === 0)) miss.push('lightAt in the useful band ' + JSON.stringify(mid));
+    var inD = true; for (tt = 0; tt <= T; tt++) if (Math.sqrt(Lt.x[tt] * Lt.x[tt] + Lt.y[tt] * Lt.y[tt]) > 250) inD = false; if (!inD) miss.push('the patch centre leaves the dish');
+    var cross = 0, was = false; for (tt = 0; tt <= T; tt++) { var inside = Math.sqrt(Lt.x[tt] * Lt.x[tt] + Lt.y[tt] * Lt.y[tt]) < 250 * 0.55; if (inside && !was) cross++; was = inside; } if (cross < 2) miss.push('the patch crosses the boulder area ' + cross + ' time(s) on seed 1');
+    run.deaths.forEach(function (d) { if (['starved', 'guards', 'glare'].indexOf(d.cause) < 0) miss.push('death cause ' + d.cause); });
+  } else if (run.light !== null) miss.push('run.light should be null on a dish with no light');
   var r2 = Sim.resume(run, 5); if (!r2 || r2.v.win !== run.v.win || r2.H.share[T] !== run.H.share[T]) miss.push('resume does not replay the same run');
   var rs = Sim.restore(run, 5); if (!rs || rs.tick !== 50 || rs.n !== 64 || rs.robot.length !== 4096 || rs.native.length !== 4096 || rs.food.length !== 4096 || rs.waste.length !== 4096 || rs.wasteMix.length !== 4096 || rs.quorum.length !== 4096) miss.push('restore');
   run.v = Sim.verdict(run); var a = Sim.autopsy(run);
@@ -58,8 +70,8 @@ var SNAP_ARR = ['robot', 'native', 'food', 'waste', 'quorum'], ST_ARR = ['Z', 'S
 });
 
 // ---------------------------------------------------------------- S2: the carried cell loses, the fix wins, and not by luck of the seed
-[15, 16].forEach(function (id) {
-  var D = DISH[id], want = id === 15 ? ['starved', 'below'] : ['exposed:motion'];
+[15, 16, 17].forEach(function (id) {
+  var D = DISH[id], want = id === 16 ? ['exposed:motion'] : ['starved', 'below'];
   var c = runOf(D, Lv.carry(id)), f = runOf(D, FIX[id]);
   line(!c.v.win && want.indexOf(c.autopsy.cause) >= 0 && f.v.win, 'S2 ' + NAME[id] + ' carried cell loses by ' + want.join(' or ') + ', the intended fix wins',
     'carried: ' + (c.v.win ? 'WON' : 'lost by ' + c.autopsy.cause + ' at tick ' + c.autopsy.to) + '; fix: ' + (f.v.win ? 'won (band ' + Math.round(f.v.bandFrac * 100) + '%, peak stage ' + f.v.maxStage + ')' : 'LOST by ' + f.autopsy.cause));
@@ -83,8 +95,9 @@ function legalBuilds(D, count, seed) {
     if (m) parts.push(m);
     if (R() < 0.5) parts.push('chemo');
     if (R() < 0.3) parts.push('naps');
+    if (D.id === 17 && R() < 0.6) parts.push(['lightpump', 'lightsense', 'lightcolor'][Math.floor(R() * 3)]);
     var rule = null;
-    if (D.id === 16 && R() < 0.6) {
+    if (D.id >= 16 && R() < 0.6) {
       var kind = Math.floor(R() * 3);
       rule = kind === 0 ? { kind: 'machine', sensor: 'food', cmp: 'gt', value: [0.005, 0.01, 0.015, 0.025, 0.04][Math.floor(R() * 5)], action: 'stay', otherwise: 'seek' }
         : kind === 1 ? { kind: 'machine', sensor: 'crowd', cmp: 'gt', value: [2, 4, 6, 8][Math.floor(R() * 4)], action: 'pause', otherwise: 'seek' }
@@ -95,7 +108,7 @@ function legalBuilds(D, count, seed) {
   }
   return out;
 }
-[15, 16].forEach(function (id) {
+[15, 16, 17].forEach(function (id) {
   var D = DISH[id], builds = legalBuilds(D, 12, 100 + id), bad = [], wins = 0, losses = 0, allSafeWins = 0;
   builds.forEach(function (b, i) {
     var st = Sim.stats(D, b), run = runOf(D, b), rs = Sim.runStats(run);
@@ -116,7 +129,7 @@ function legalBuilds(D, count, seed) {
 });
 
 // ---------------------------------------------------------------- S4: nothing throws
-[15, 16].forEach(function (id) {
+[15, 16, 17].forEach(function (id) {
   var D = DISH[id], errs = [], notes = [];
   function tryIt(name, fn) { try { return fn(); } catch (e) { errs.push(name + ': ' + (e && e.message)); return undefined; } }
   var carried = Lv.carry(id), fix = FIX[id];
@@ -162,7 +175,7 @@ function legalBuilds(D, count, seed) {
 })();
 
 // ---------------------------------------------------------------- S6: Pace and Sloppiness alone never win
-[15, 16].forEach(function (id) {
+[15, 16, 17].forEach(function (id) {
   var D = DISH[id], wins = [], n = 0, base = Lv.carry(id);
   for (var pace = 0; pace <= 8; pace++) for (var slop = 0; slop <= 8; slop++) {
     var b = { pace: pace, slop: slop, metabolism: base.metabolism, parts: base.parts.slice(), reflex: base.reflex };
@@ -176,7 +189,7 @@ function legalBuilds(D, count, seed) {
 // ---------------------------------------------------------------- S7: how honest the bars are on their own
 // A stat bar always shows the measured value. On a loss the blamed bar is marked as the trouble; S7 counts how often that bar's VALUE still sits inside its own safe zone
 // (several tells each under their line can add up past the guards' line). This is the rate at which a bar's position alone would not have warned the player. Limit 5%.
-[15, 16].forEach(function (id) {
+[15, 16, 17].forEach(function (id) {
   var D = DISH[id], builds = legalBuilds(D, 80, 500 + id), losses = 0, inside = 0, ex = [];
   builds.forEach(function (b) {
     var run = Sim.play(P, D, JSON.parse(JSON.stringify(b)), { record: false });

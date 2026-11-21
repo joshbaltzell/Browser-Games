@@ -251,6 +251,12 @@ var LookAlive = (function () {
         if (D.agents && rf.otherwise != null && (!Cards.action(rf.otherwise) || A.actions.indexOf(rf.otherwise) < 0)) pr.push('Unknown action "' + rf.otherwise + '".');
       } else pr.push('Reflex kind must be bio or machine.');
     }
+    var lin = {};   // one stage of a lineage at most
+    parts.forEach(function (id) {
+      var ls = lineageStage(id); if (!ls) return;
+      if (lin[ls.lineage] && lin[ls.lineage] !== id) pr.push('Only one stage of the ' + lineageName(ls.lineage) + ' lineage fits in a cell.');
+      lin[ls.lineage] = id;
+    });
     treeProblems(b).forEach(function (p) { pr.push(p); });
     return { ok: pr.length === 0, problems: pr };
   }
@@ -316,7 +322,7 @@ var LookAlive = (function () {
 
   // ---------------------------------------------------------------- skill tree
   // Data lives on the cards (`tree`: branch, tier, after = learn first, with = fit together). The Machine rule is not a card, so its node is defined here.
-  var TREE_BRANCHES = [{ id: 'power', name: 'Power' }, { id: 'skin', name: 'Skin' }, { id: 'insides', name: 'Insides' }, { id: 'divide', name: 'Divide' }, { id: 'sense', name: 'Sense' }, { id: 'move', name: 'Move' }, { id: 'react', name: 'React' }];
+  var TREE_BRANCHES = [{ id: 'power', name: 'Power' }, { id: 'skin', name: 'Skin' }, { id: 'insides', name: 'Insides' }, { id: 'divide', name: 'Divide' }, { id: 'sense', name: 'Sense' }, { id: 'move', name: 'Move' }, { id: 'react', name: 'React' }, { id: 'light', name: 'Light' }];
   var RULE_NODE = { id: 'rule', name: 'Machine rule', slot: 'reflex', branch: 'react', tier: 2, after: [], 'with': [], energy: 0, shelf: 'machine', kind: 'rule' };
   function treeBranches() { return TREE_BRANCHES.map(function (b) { return { id: b.id, name: b.name }; }); }
   function offersNode(D, n) {
@@ -329,7 +335,9 @@ var LookAlive = (function () {
     TREE_BRANCHES.forEach(function (b, i) { bi[b.id] = i; });
     function add(c, kind) {
       var t = c.tree || {};
-      list.push({ id: c.id, name: c.name, slot: c.slot, branch: t.branch, tier: t.tier, after: (t.after || []).slice(), 'with': (t['with'] || []).slice(), energy: c.energy || 0, shelf: c.shelf, kind: kind, learnedOn: null });
+      var nd = { id: c.id, name: c.name, slot: c.slot, branch: t.branch, tier: t.tier, after: (t.after || []).slice(), 'with': (t['with'] || []).slice(), energy: c.energy || 0, shelf: c.shelf, kind: kind, learnedOn: null };
+      if (t.lineage) { nd.lineage = t.lineage; nd.stage = t.stage; }
+      list.push(nd);
     }
     Cards.parts.forEach(function (c) { add(c, 'part'); });
     Cards.bioReflexes.forEach(function (c) { add(c, 'reflex'); });
@@ -338,6 +346,18 @@ var LookAlive = (function () {
     list.sort(function (a, b) { return (bi[a.branch] - bi[b.branch]) || (a.tier - b.tier) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); });
     return list;
   }
+  // The stage of a card in an evolutionary lineage: { lineage, stage, prev, next } (prev and next are card ids or null), or null for a card outside any lineage.
+  function lineageStage(id) {
+    var c = Cards.part(id) || Cards.bio(id), t = c && c.tree;
+    if (!t || !t.lineage) return null;
+    var prev = null, next = null;
+    Cards.parts.concat(Cards.bioReflexes).forEach(function (o) {
+      var u = o.tree; if (!u || u.lineage !== t.lineage) return;
+      if (u.stage === t.stage - 1) prev = o.id; else if (u.stage === t.stage + 1) next = o.id;
+    });
+    return { lineage: t.lineage, stage: t.stage, prev: prev, next: next };
+  }
+  function lineageName(l) { for (var i = 0; i < TREE_BRANCHES.length; i++) if (TREE_BRANCHES[i].id === l) return TREE_BRANCHES[i].name; return l; }
   function fittedIds(build) {
     var b = normalize(build) || {}, o = {};
     if (b.metabolism) o[Cards.canon(b.metabolism)] = true;
@@ -368,8 +388,9 @@ var LookAlive = (function () {
   }
   // State of every skill, keyed by id: { state: 'fitted' | 'available' | 'learned' | 'unlearned', reason }.
   // D is the dish being viewed (null from the dish list), build the cell being built (or null), cleared the game's { dishId: true } map.
-  function treeState(D, build, cleared) {
-    var nodes = treeNodes(), by = {}, fit = fittedIds(build), out = {}, cl = cleared || {};
+  // `used` (optional, default empty) is the { cardId: true } map of stages the player has cleared a dish with. A lineage stage after the first opens only when the stage before it is used.
+  function treeState(D, build, cleared, used) {
+    var nodes = treeNodes(), by = {}, fit = fittedIds(build), out = {}, cl = cleared || {}, us = used || {};
     nodes.forEach(function (n) { by[n.id] = n; });
     function learned(n) {
       if (n.learnedOn == null) return false;
@@ -378,6 +399,10 @@ var LookAlive = (function () {
     }
     nodes.forEach(function (n) {
       if (fit[n.id]) { out[n.id] = { state: 'fitted', reason: '' }; return; }
+      if (n.stage > 1) {
+        var pv = n.after.length ? by[n.after[0]] : null;
+        if (pv && !us[pv.id]) { out[n.id] = { state: 'unlearned', reason: 'Clear a dish with ' + pv.name + ' fitted to evolve this.' }; return; }
+      }
       var unmet = n.after.filter(function (a) { return by[a] && !learned(by[a]); });
       var ln = learned(n), here = !!D && offersNode(D, n);
       if (ln && here && !unmet.length) {
@@ -1158,9 +1183,10 @@ var LookAlive = (function () {
     grazing: { id: 'grazing', name: 'Grazing',        ups: 'safer', downs: 'worse' },
     night:   { id: 'night',   name: 'Night survival', ups: 'better', downs: 'worse' },
     reach:   { id: 'reach',   name: 'Food reach',     ups: 'better', downs: 'worse' },                 // habitat 3 only
-    motion:  { id: 'motion',  name: 'Movement',       ups: 'closer to the locals', downs: 'further from the locals' }   // habitat 3 only
+    motion:  { id: 'motion',  name: 'Movement',       ups: 'closer to the locals', downs: 'further from the locals' },   // habitat 3 only
+    light:   { id: 'light',   name: 'Light',          ups: 'safer', downs: 'harsher' }                                   // habitat 3, dishes with light only
   };
-  var STAT_ORDER = ['acid', 'growth', 'smell', 'natural', 'crash', 'heat', 'grazing', 'night', 'reach', 'motion'];
+  var STAT_ORDER = ['acid', 'growth', 'smell', 'natural', 'crash', 'heat', 'grazing', 'night', 'reach', 'light', 'motion'];
   var ST = {
     acidScale: 0.25, acidSafeLoss: 0.06,        // value = 1 - loss/0.25; safe while the colony loses under 6% a tick to the acid
     shareLo: 0.0125, shareHi: 0.6,              // growth bar: log scale of the share from 1.25% to 60%
@@ -1321,7 +1347,7 @@ var LookAlive = (function () {
   // A card already fitted (fitted: true, current: true) reports what it is doing: the cell with it against the cell without it.
   // Also: energy (the card's cost), used (energy of the build with it), fits (within the dish limit), preview (a legal preview build exists), build.
   // Old fields kept for the old page: helps and costs ({ stat, name, steps, dir +1|-1, delta }), checked stats only; `fitted` used to mean "preview exists" and now means "already fitted" (see `preview`).
-  var STAT_WORDS = { reach: ['Food reach better', 'Food reach worse'], motion: ['Movement more restless', 'Movement stiller'], acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'],
+  var STAT_WORDS = { reach: ['Food reach better', 'Food reach worse'], motion: ['Movement more restless', 'Movement stiller'], light: ['Light safer', 'Light harsher'], acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'],
     natural: ['Naturalness up', 'Naturalness down'], crash: ['Crash survival up', 'Crash survival down'],
     heat: ['Heat tolerance up', 'Heat tolerance down'], grazing: ['Grazing safer', 'Grazing worse'], night: ['Night survival up', 'Night survival down'] };
   var STATE_RANK = { safe: 0, edge: 1, low: 2, high: 2, unchecked: 0 };
@@ -1476,7 +1502,7 @@ var LookAlive = (function () {
     return out;
   }
 
-  return { grade: grade, energyOf: buildEnergy, dissolved: dissolved, stats: stats, liveStats: liveStats, runStats: runStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, treeNodes: treeNodes, treeBranches: treeBranches, treeState: treeState, treeMissing: treeMissing, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
+  return { grade: grade, energyOf: buildEnergy, dissolved: dissolved, stats: stats, liveStats: liveStats, runStats: runStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, treeNodes: treeNodes, treeBranches: treeBranches, lineageStage: lineageStage, treeState: treeState, treeMissing: treeMissing, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
     channelsOn: channelsOn, causeStat: causeStat, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { ST: ST, newState: newState, step: step, HK: HK } };
 })();
 if (typeof module !== 'undefined') module.exports = LookAlive;

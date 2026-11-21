@@ -1,6 +1,6 @@
 // Measurements for sim3.js (habitat 3 individual-cell simulation).
 // Run: node games/look-alive/dev/measure-h3.js        (about a minute)
-// Every line is PASS or FAIL with the numbers behind it. Seeds 1..10 unless noted. Dish: LookAliveSim3.defaults().
+// Every line is PASS or FAIL with the numbers behind it. Seeds 1..10 unless noted. Dish: LookAliveSim3.defaults(); M9 to M13 use dish 17 (A Little Light) from levels3.js.
 'use strict';
 var path = require('path');
 var L = require(path.join(__dirname, '..', 'sim3.js'));
@@ -171,6 +171,86 @@ function cell(b, seeds, mut, tune) {
     slops.forEach(function (sl) { row += (cell(build(FC, { pace: p, slop: sl, reflex: stayRule(MARK) }), SEEDS).wins + '/10     '); });
     console.log(row);
   });
+})();
+
+// ================================================================ dish 17 and the Light lineage (M9 to M13)
+var Lv = require(path.join(__dirname, '..', 'levels.js'));
+require(path.join(__dirname, '..', 'levels2.js')); require(path.join(__dirname, '..', 'levels3.js'));
+var D15 = Lv.dish(15), D16 = Lv.dish(16), D17 = Lv.dish(17);
+function cp(o) { return JSON.parse(JSON.stringify(o)); }
+function run17(b, seed, record, tune) { return L.play(D17, b, { seed: seed, record: record === true, tune: tune }); }
+var CARRY17 = Lv.carry(17), STAGE = ['', 'lightpump', 'lightsense', 'lightcolor'];
+function withStage(k, extra) { var b = cp(CARRY17); if (k) b.parts.push(STAGE[k]); for (var key in (extra || {})) b[key] = extra[key]; return b; }
+
+// M9 dishes 15 and 16 are unchanged by the light work: hash of H and frames for the carried cell and the intended fix, seed 1 (the dish default), recorded before the first edit
+(function () {
+  var WANT = { '15 carry': '9d7f2c77', '15 fix': '7e6aa053', '16 carry': '4fca2220', '16 fix': '2036660c' }, got = {}, ok = true, bad = [];
+  [[15, D15], [16, D16]].forEach(function (p) {
+    var id = p[0], D = p[1];
+    [['carry', Lv.carry(id)], ['fix', Lv.applyFix(Lv.carry(id), D.fixes[0])]].forEach(function (q) {
+      var key = id + ' ' + q[0], h = hashRun(L.play(D, q[1], { seed: D.agents.seed })).toString(16);
+      got[key] = h; if (h !== WANT[key]) { ok = false; bad.push(key + ' is ' + h + ', was ' + WANT[key]); }
+    });
+  });
+  results.push(line(ok, 'M9 dishes 15 and 16 unchanged', 'hashes ' + JSON.stringify(got) + (bad.length ? ' :: ' + bad.join('; ') : ' (all four equal the hashes from before the light edits)')));
+})();
+
+// M10 dish 17: the carried cell (dish 16's answer) loses by starving or staying small; the Light-driven pump wins
+var M = {};   // per-stage numbers kept for the lines below
+function stageRuns(k) {
+  if (M[k]) return M[k];
+  var o = { wins: 0, causes: {}, ib: [], fin: [], lit: [], glare: [], burned: 0, ms: [] }, last = null;
+  SEEDS.forEach(function (s) {
+    var b = withStage(k), t0 = process.hrtime.bigint(), r = run17(b, s, true), ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    o.ms.push(ms);
+    if (r.v.win) o.wins++;
+    var c = r.autopsy ? r.autopsy.cause : 'win'; o.causes[c] = (o.causes[c] || 0) + 1;
+    o.ib.push(r.v.bandFrac); o.fin.push(r.H.share[300]);
+    var a = 0, n = 0, t; for (t = D17.band.warm; t <= 300; t++) if (r.H.scouts[t] > 0) { a += r.H.light[t]; n++; }
+    o.lit.push(n ? a / n : 0); o.glare.push(r.dCause.glare);
+  });
+  M[k] = o; return o;
+}
+(function () {
+  var c = stageRuns(0), p = stageRuns(1), lose = (c.causes.starved || 0) + (c.causes.below || 0);
+  results.push(line(lose >= 9 && p.wins >= 9, 'M10 dish 17: carried cell loses, Light-driven pump wins',
+    'carried cell loses by starved or below on ' + lose + '/10 (causes ' + JSON.stringify(c.causes) + '; wins ' + c.wins + '); with lightpump wins ' + p.wins + '/10 (outcomes ' + JSON.stringify(p.causes) + '); mean in-band ' + f2(mean(c.ib)) + ' -> ' + f2(mean(p.ib)) + ', mean final share ' + f3(mean(c.fin)) + ' -> ' + f3(mean(p.fin))));
+})();
+
+// M11 Light sensing in place of the pump: at least as good, and the scouts spend more of their time in useful light
+(function () {
+  var p = stageRuns(1), s = stageRuns(2), k = stageRuns(3);
+  var asGood = mean(s.ib) >= mean(p.ib) - 1e-9 || mean(s.fin) >= mean(p.fin) - 1e-9, up = mean(s.lit) > mean(p.lit);
+  results.push(line(s.wins >= 9 && asGood && up, 'M11 dish 17: Light sensing',
+    'wins ' + s.wins + '/10 (outcomes ' + JSON.stringify(s.causes) + '); mean in-band ' + f2(mean(p.ib)) + ' (stage 1) -> ' + f2(mean(s.ib)) + ' (stage 2); mean final share ' + f3(mean(p.fin)) + ' -> ' + f3(mean(s.fin)) +
+    '; mean fraction of scouts in useful light: stage 1 ' + f3(mean(p.lit)) + ', stage 2 ' + f3(mean(s.lit)) + ', stage 3 ' + f3(mean(k.lit))));
+})();
+
+// M12 Colour sensing: wins, and loses far fewer scouts to glare than Light sensing
+(function () {
+  var p = stageRuns(1), s = stageRuns(2), k = stageRuns(3), gs = mean(s.glare), gk = mean(k.glare);
+  results.push(line(k.wins >= 9 && gk <= 0.6 * gs, 'M12 dish 17: Colour sensing',
+    'wins ' + k.wins + '/10 (outcomes ' + JSON.stringify(k.causes) + '); mean scouts lost to glare per run: stage 1 ' + f2(mean(p.glare)) + ', stage 2 ' + f2(gs) + ', stage 3 ' + f2(gk) + ' (need stage 3 at most 0.6 of stage 2); mean in-band ' + f2(mean(k.ib)) + ', mean final share ' + f3(mean(k.fin))));
+})();
+
+// M13 dials alone never win dish 17; each answer survives one Pace step either side; run time
+(function () {
+  var best = 0, bestAt = '', n = 0, solid = [];
+  for (var pace = 0; pace <= 8; pace++) for (var slop = 0; slop <= 8; slop++) {
+    var w = 0; n++;
+    SEEDS.forEach(function (s) { if (run17(withStage(0, { pace: pace, slop: slop }), s).v.win) w++; });
+    if (w > best) { best = w; bestAt = 'pace ' + pace + ' slop ' + slop; }
+    if (w >= 9) solid.push('pace ' + pace + ' slop ' + slop);
+  }
+  var steps = [], stepOk = true;
+  [1, 2, 3].forEach(function (k) {
+    var row = [];
+    [3, 5].forEach(function (pc) { var w = 0; SEEDS.forEach(function (s) { if (run17(withStage(k, { pace: pc }), s).v.win) w++; }); row.push('pace ' + pc + ': ' + w + '/10'); if (w < 7) stepOk = false; });
+    steps.push(STAGE[k] + ' ' + row.join(', '));
+  });
+  var ms = stageRuns(3).ms, m = mean(ms);
+  results.push(line(solid.length === 0 && stepOk && m < 150, 'M13 dish 17: dials alone, one Pace step either side, speed',
+    n + ' Pace/Sloppiness settings on the carried cell x 10 seeds: best wins ' + best + '/10 (' + bestAt + '), settings winning 9 or more: ' + solid.length + (solid.length ? ' (' + solid.join(', ') + ')' : '') + '; stage answers one Pace step either side (need 7/10): ' + steps.join('; ') + '; mean recorded run ' + m.toFixed(0) + ' ms (worst ' + Math.max.apply(null, ms).toFixed(0) + ' ms, target under 150)'));
 })();
 
 var fails = results.filter(function (x) { return !x; }).length;

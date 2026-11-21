@@ -3,7 +3,9 @@
 // Env: SHOTS=<folder> writes screenshots there (1280x720 clips, or the phone size); without it no screenshots are taken.
 // Flow: third tab locked until dish 14 is cleared, opens through a real click, mini-intro (3 slides), world facts, dish 15 briefing (report lines), Watch (starves),
 // Adapt with real clicks (Flagellum, Chemoreceptor array), bars read Safe, Run wins, deaths line, dish 16 (carried cell loses by Movement, memo desk, tip),
-// the rule built by real clicks in the editor (WHEN food here is above 0.015 DO stay and feed OTHERWISE swim toward food), Run wins, completion card,
+// the rule built by real clicks in the editor (WHEN food here is above 0.015 DO stay and feed OTHERWISE swim toward food), Run wins,
+// dish 17 (the bright place): light report line, the carried cell loses, the pump is fittable and Light sensing is blocked with its reason and link, the pump fitted by real clicks wins,
+// the win card says the next step evolved, the used map is saved, Light sensing is then fittable and Colour sensing still blocked, winning with Light sensing opens Colour sensing, completion card after 17,
 // reload keeps the rule and the cleared marks, hold-to-compare swaps runs, the Run page does not scroll, the fallback 2D view draws.
 // Prints one JSON row per step group and a SUMMARY line ("failed" lists every check that did not hold). The driver adds "0 errors" or the errors.
 module.exports = async (a) => {
@@ -36,7 +38,7 @@ module.exports = async (a) => {
   check('hookWorldLocked', (await ev(`__la.world(3)`)).ok === false);
   await a.eval(`__la.S.cleared[14]=true;__la.show('list');1`); await a.sleep(300);
   check('tab3OpenAfterFourteen', await ev(`!document.querySelector('.wtab[data-world="3"]').disabled`));
-  check('hookWorldOrder', JSON.stringify(await ev(`__la.worldOrder(3)`)) === '[15,16]');
+  check('hookWorldOrder', JSON.stringify(await ev(`__la.worldOrder(3)`)) === '[15,16,17]');
 
   // ---------------------------------------------------------------- 2. real click on the tab: three-slide mini-intro, world facts, the list
   check('tabClick', await W.click('.wtab[data-world="3"]')); await a.sleep(500);
@@ -51,7 +53,7 @@ module.exports = async (a) => {
   check('worldFacts', (await ev(`document.querySelectorAll('#worldFacts .fact').length`)) === 6);
   await W.click('#worldGo'); await a.sleep(400);
   const lst = await ev(`({screen:__la.info().screen,tab:document.querySelector('.wtab.on')&&document.querySelector('.wtab.on').getAttribute('data-world'),tiles:document.querySelectorAll('#dishList button[data-dish]').length,t15:!document.querySelector('#dishList button[data-dish="15"]').disabled,t16:!document.querySelector('#dishList button[data-dish="16"]').disabled,w:document.documentElement.scrollWidth,cw:document.documentElement.clientWidth})`);
-  check('listTab3', lst.screen === 'list' && lst.tab === '3' && lst.tiles === 2 && lst.t15 === true && lst.t16 === false && lst.w <= lst.cw + 1);
+  check('listTab3', lst.screen === 'list' && lst.tab === '3' && lst.tiles === 3 && lst.t15 === true && lst.t16 === false && lst.w <= lst.cw + 1);
   await shot('h3-list-tab3.png', MOB);
   check('introSavedKeys', (await ev(`localStorage.getItem('bg.look-alive.introC')+'|'+localStorage.getItem('bg.look-alive.worldC')+'|'+localStorage.getItem('bg.look-alive.worldTab')`)) === 'true|true|3');
 
@@ -159,20 +161,97 @@ module.exports = async (a) => {
   check('d16RuleWins', r16b.win === true);
   await shot('h3-d16-win.png', MOB);
   check('d16WinDeathsLine', /^Scouts lost: \d+ starved, \d+ to the guards$/.test(await ev(`(document.getElementById('deathLine')||{}).textContent||''`)));
-  check('d16CompleteButton', await ev(`!!document.querySelector('#overlay button[data-act="complete"]')`));
+  check('d16NextButtonIsDish17', await ev(`!!document.querySelector('#overlay button[data-act="next"]')`) && !(await ev(`!!document.querySelector('#overlay button[data-act="complete"]')`)));
+  check('d17UnlockedBy16', await ev(`!!__la.S.cleared[16]`));
+
+  // ---------------------------------------------------------------- 4b. dish 17, the bright place
+  await W.click('#overlay button[data-act="next"]'); await a.sleep(500);
+  check('d17Brief', (await ev(`__la.info().screen`)) === 'brief' && (await ev(`__la.S.dish`)) === 17);
+  await a.sleep(3200);
+  const rep17 = await ev(`document.getElementById('briefReport').innerText`); sum.report17 = rep17.replace(/\s+/g, ' ').slice(0, 700);
+  check('d17ReportLight', /bright place/i.test(rep17) && /micrometres across/.test(rep17) && /green boulders/.test(rep17));
+  await shot('h3-d17-brief.png', MOB);
+  await W.click('#briefGo'); await a.sleep(200); await W.click('#speeds button[data-sp="16"]');
+  await W.waitFor(`__la.S.watchDone===true`, 40000);
+  const wa17 = await ev(`(function(){var i=__la.info();return {win:i.verdict.win,cause:i.autopsy&&i.autopsy.cause}})()`); sum.d17Watch = wa17;
+  check('d17CarriedLoses', wa17.win === false);
+  await W.click('#verdictBtn'); await a.sleep(400);
+  check('d17AdaptScreen', (await ev(`__la.info().screen`)) === 'adapt');
+  // the carried cell, run for real: it loses; the loss slide counts the burned
+  const r17a = await play(16); sum.d17CarriedRun = r17a;
+  check('d17RunLoses', r17a.win === false);
+  const dl17 = await ev(`(document.getElementById('deathLine')||{}).textContent||''`); sum.d17LossDeaths = dl17;
+  check('d17LossDeathsLineHasBurned', /^Scouts lost: \d+ starved, \d+ burned, \d+ to the guards$/.test(dl17));
+  const memo17 = await memoRows(); sum.d17Memo = memo17;
+  if (r17a.cause === 'burned') { check('d17BurnedMemoDesk', memo17.From === 'Bright-place desk'); check('d17BurnedSlideTag', (await ev(`document.getElementById('slideTag').textContent`)) === 'BURNED.'); }
+  await shot('h3-d17-loss.png', MOB);
+  await closeOv();
+  if (big) { const sc = await noScroll(); sum.d17RunScroll = sc; check('d17RunNoScroll', sc.h <= sc.vh + 1 && sc.w <= sc.vw + 1); }
+  check('d17LegendBrightPlace', await ev(`(function(){var e=document.getElementById('legLight');return !e.hidden&&/the bright place/.test(e.textContent)})()`));
+  check('d17FiveLiveBars', (await ev(`__la.liveBars().length`)) === 5);
+  await a.eval(`__la.show('adapt');1`); await a.sleep(300);
+  check('d17FiveBars', (await ev(`document.querySelectorAll('#statBars .sb').length`)) === 5 && await ev(`!!document.querySelector('#statBars .sb[data-stat="light"]')`));
+  check('d17PickEnvelope', await slotClick('envelope'));
+  const o17 = await ev(`__la.options().filter(function(o){return /^light/.test(o.id)})`); sum.d17Options = o17.map(o => o.id + ':' + (o.blocked ? 'blocked' : 'open') + (o.why ? ' (' + o.why + ')' : ''));
+  const oo = (id) => o17.find((o) => o.id === id) || {};
+  check('d17PumpFittable', oo('lightpump').blocked === false);
+  check('d17SenseBlockedWithReason', oo('lightsense').blocked === true && /^Clear a dish with Light-driven pump fitted to evolve this\./.test(oo('lightsense').why));
+  check('d17ColourBlocked', oo('lightcolor').blocked === true && /^Clear a dish with Light sensing fitted to evolve this\./.test(oo('lightcolor').why));
+  check('d17BlockedHasTreeLink', await ev(`!!document.querySelector('#optList .opt[data-id="lightsense"] .treelink')&&!!document.querySelector('#optList .opt[data-id="lightcolor"] .treelink')&&!document.querySelector('#optList .opt[data-id="lightpump"] .treelink')`));
+  await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(300);
+  await shot('h3-d17-adapt.png', MOB);
+  const b17 = await ev(`JSON.stringify(__la.S.build)`);
+  check('d17ClickBlockedRefuses', await optClick('lightsense') && (await ev(`JSON.stringify(__la.S.build)`)) === b17 && /Clear a dish with Light-driven pump fitted to evolve this\./.test(await ev(`document.getElementById('pvT').textContent+' '+document.getElementById('problems').textContent`)));
+  check('d17HookFitRefuses', (await ev(`__la.fit('lightcolor')`)).ok === false && (await ev(`JSON.stringify(__la.S.build)`)) === b17);
+  check('d17FitPump', await optClick('lightpump') && await ev(`__la.S.build.parts.indexOf('lightpump')>=0`));
+  await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(400);
+  sum.d17BarsPump = await ev(`__la.bars().map(function(b){return b.stat+':'+b.verdict})`);
+  const r17b = await play(16); sum.d17PumpRun = r17b;
+  check('d17PumpWins', r17b.win === true);
+  const evl = await ev(`(document.getElementById('evolvedLine')||{}).textContent||''`); sum.d17EvolvedLine = evl;
+  check('d17EvolvedLineSensing', evl.trim() === 'A new step has evolved: Light sensing. Find it in the skill tree.');
+  check('d17EvolvedLineFixedHeight', await ev(`(function(){var e=document.getElementById('evolvedLine');return !!e&&e.offsetHeight===(innerWidth<=640?36:22)})()`));
+  check('d17UsedHasPump', (await ev(`__la.used()`)).lightpump === true && !(await ev(`__la.used()`)).lightsense);
+  check('d17DeathsLineWin', /^Scouts lost: \d+ starved, \d+ burned, \d+ to the guards$/.test(await ev(`(document.getElementById('deathLine')||{}).textContent||''`)));
+  if (big) check('d17WinCardFits', await ev(`(function(){var a=document.querySelector('#overlay .winwrap .memo').getBoundingClientRect(),b=document.querySelector('#overlay .winwrap .notebook').getBoundingClientRect();return a.top>=100&&a.bottom<=innerHeight&&b.top>=100&&b.bottom<=innerHeight})()`));
+  await shot('h3-d17-win.png', MOB);
+  check('d17WinHasNext', !(await ev(`!!document.querySelector('#overlay button[data-act="next"]')`)));
+  await closeOv();
+  // reopen dish 17: Light sensing is now fittable, Colour sensing is still blocked
+  await a.eval(`__la.selectDish(17);__la.show('adapt');1`); await a.sleep(500);
+  await slotClick('envelope');
+  const o17b = await ev(`__la.options().filter(function(o){return /^light/.test(o.id)})`); const oo2 = (id) => o17b.find((o) => o.id === id) || {};
+  check('d17SenseFittableAfterPump', oo2('lightsense').blocked === false && !oo2('lightsense').why);
+  check('d17ColourStillBlocked', oo2('lightcolor').blocked === true && /^Clear a dish with Light sensing fitted to evolve this\./.test(oo2('lightcolor').why));
+  check('d17FitSense', await optClick('lightsense') && await ev(`__la.S.build.parts.indexOf('lightsense')>=0`));
+  const r17c = await play(16); sum.d17SenseRun = r17c;
+  check('d17SenseWins', r17c.win === true);
+  check('d17EvolvedLineColour', (await ev(`(document.getElementById('evolvedLine')||{}).textContent||''`)).trim() === 'A new step has evolved: Colour sensing. Find it in the skill tree.');
+  check('d17UsedHasSense', (await ev(`__la.used()`)).lightsense === true);
+  await closeOv();
+  await a.eval(`__la.selectDish(17);__la.show('adapt');1`); await a.sleep(500);
+  await slotClick('envelope');
+  const o17c = await ev(`__la.options().filter(function(o){return o.id==='lightcolor'})[0]`);
+  check('d17ColourFittableAfterSense', !!o17c && o17c.blocked === false);
+  // winning with Light sensing a second time says nothing new; dish 17 is the last of its world, so the completion button shows
+  await optClick('lightsense');
+  const r17d = await play(16); check('d17SenseWinsAgain', r17d.win === true);
+  check('d17NoEvolvedLineSecondTime', (await ev(`!document.getElementById('evolvedLine')`)));
+  check('d17CompleteButton', await ev(`!!document.querySelector('#overlay button[data-act="complete"]')`));
   await W.click('#overlay button[data-act="complete"]'); await a.sleep(400);
   const card = await ev(`(function(){var c=document.getElementById('completeCard');return c?c.textContent.replace(/\\s+/g,' '):null})()`);
-  sum.complete = card && card.slice(0, 300); check('completionCard', !!card && /THICK WATER/.test(card) && /Where the Food Is/.test(card) && /Stop When Fed/.test(card));
+  sum.complete = card && card.slice(0, 300); check('completionCard', !!card && /THICK WATER/.test(card) && /Where the Food Is/.test(card) && /Stop When Fed/.test(card) && /bright place/i.test(card) && /The three dishes/.test(card) && !/The two dishes/.test(card));
   await shot('h3-complete.png', MOB);
 
   // ---------------------------------------------------------------- 5. reload keeps the rule and the cleared marks; compare swaps runs
   await a.eval(`location.reload();1`); await a.sleep(1800);
-  const kept = await ev(`(function(){var S=__la.S;return {c15:!!S.cleared[15],c16:!!S.cleared[16],rule:S.wins[16]&&S.wins[16].reflex,tab:S.worldTab,intro:S.seenIntroC,world:S.seenWorldC}})()`);
+  const kept = await ev(`(function(){var S=__la.S;return {used:S.used,c17:!!S.cleared[17],c15:!!S.cleared[15],c16:!!S.cleared[16],rule:S.wins[16]&&S.wins[16].reflex,tab:S.worldTab,intro:S.seenIntroC,world:S.seenWorldC}})()`);
   sum.afterReload = kept;
-  check('reloadKeepsCleared', kept.c15 && kept.c16 && kept.tab === 3 && kept.intro === true && kept.world === true);
+  check('reloadKeepsUsed', kept.used && kept.used.lightpump === true && kept.used.lightsense === true);
+  check('reloadKeepsCleared', kept.c15 && kept.c16 && kept.c17 && kept.tab === 3 && kept.intro === true && kept.world === true);
   check('reloadKeepsRule', JSON.stringify(kept.rule) === JSON.stringify({ kind: 'machine', sensor: 'food', cmp: 'gt', value: 0.015, action: 'stay', otherwise: 'seek' }));
   await a.eval(`__la.show('list');1`); await a.sleep(300);
-  check('reloadTilesCleared', (await ev(`document.querySelectorAll('#dishList .dtile.cleared').length`)) === 2);
+  check('reloadTilesCleared', (await ev(`document.querySelectorAll('#dishList .dtile.cleared').length`)) === 3);
   await W.click('#dishList button[data-dish="16"]'); await a.sleep(400);
   check('reloadD16Brief', (await ev(`__la.info().screen`)) === 'brief');
   await a.eval(`__la.show('adapt');1`); await a.sleep(300);

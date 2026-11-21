@@ -124,6 +124,19 @@
       var fc = foodCanvas(run, fi);
       if (fc) { ctx.imageSmoothingEnabled = true; ctx.drawImage(fc, G.mx - G.ppu, G.my - G.ppu, 2 * G.ppu, 2 * G.ppu); }
     }
+    // dish 17's light: a soft pale band (useful), a thin ring at its edge, a harder white core (glare). Cool white, so it never reads as the warm food glow.
+    var LG = run.light;
+    if (LG && LG.x && LG.x.length) {
+      var li = Math.min(LG.x.length - 1, Math.floor(t)), lj = Math.min(LG.x.length - 1, li + 1), lf = t - li;
+      var lx0 = G.mx + (LG.x[li] + (LG.x[lj] - LG.x[li]) * lf) / R * G.ppu, ly0 = G.my + (LG.y[li] + (LG.y[lj] - LG.y[li]) * lf) / R * G.ppu, lr = LG.r / R * G.ppu, lc = LG.core / R * G.ppu;
+      var lg = ctx.createRadialGradient(lx0, ly0, lr * 0.4, lx0, ly0, lr);
+      lg.addColorStop(0, 'rgba(150,185,255,0.30)'); lg.addColorStop(1, 'rgba(150,185,255,0)');
+      ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(lx0, ly0, lr, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(170,200,255,0.35)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(lx0, ly0, lr, 0, TAU); ctx.stroke();
+      var cg = ctx.createRadialGradient(lx0, ly0, lc * 0.5, lx0, ly0, lc);
+      cg.addColorStop(0, 'rgba(235,242,255,0.75)'); cg.addColorStop(1, 'rgba(235,242,255,0.55)');
+      ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(lx0, ly0, lc, 0, TAU); ctx.fill();
+    }
     // boulders
     var bl = run.boulders || [];
     for (i = 0; i < bl.length; i++) {

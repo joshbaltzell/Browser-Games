@@ -10,7 +10,7 @@ var Sim = require(path.join(G, 'sim.js'));
 var fails = 0;
 function line(ok, tag, msg) { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + tag + ' ' + msg); return ok; }
 function cp(o) { return JSON.parse(JSON.stringify(o)); }
-var BRANCHES = ['power', 'skin', 'insides', 'divide', 'sense', 'move', 'react'];
+var BRANCHES = ['power', 'skin', 'insides', 'divide', 'sense', 'move', 'react', 'light'];
 var BRANCH_OF_SLOT = { power: 'power', envelope: 'skin', insides: 'insides', division: 'divide', signal: 'sense', motor: 'move', reflex: 'react' };
 var DISHES = Lv.DISHES.slice().sort(function (a, b) { return a.id - b.id; });
 function dishById(id) { for (var i = 0; i < DISHES.length; i++) if (DISHES[i].id === id) return DISHES[i]; return null; }
@@ -28,6 +28,7 @@ nodes.forEach(function (n) { by[n.id] = n; });
   cards.forEach(function (c) {
     var t = c.tree;
     if (!t || BRANCHES.indexOf(t.branch) < 0 || !(t.tier >= 1 && t.tier === Math.floor(t.tier)) || !Array.isArray(t.after) || !Array.isArray(t.with)) bad.push(c.id + ': bad tree field');
+    else if (t.lineage) { if (t.branch !== t.lineage || !(t.stage >= 1)) bad.push(c.id + ': lineage card needs branch = lineage and a stage'); }   // the Light lineage lives in the Skin slot but has its own branch
     else if (t.branch !== BRANCH_OF_SLOT[c.slot]) bad.push(c.id + ': branch ' + t.branch + ' does not follow slot ' + c.slot);
   });
   nodes.forEach(function (n) { if (ids[n.id]) dup.push(n.id); ids[n.id] = true; });
@@ -40,7 +41,7 @@ nodes.forEach(function (n) { by[n.id] = n; });
     if (n.shelf !== 'biology' && n.shelf !== 'machine') bad.push(n.id + ' shelf ' + n.shelf);
   });
   var br = Sim.treeBranches();
-  if (br.map(function (b) { return b.id; }).join() !== BRANCHES.join() || br.map(function (b) { return b.name; }).join() !== 'Power,Skin,Insides,Divide,Sense,Move,React') bad.push('treeBranches wrong');
+  if (br.map(function (b) { return b.id; }).join() !== BRANCHES.join() || br.map(function (b) { return b.name; }).join() !== 'Power,Skin,Insides,Divide,Sense,Move,React,Light') bad.push('treeBranches wrong');
   // stable order: branch, then tier, then name
   for (var i = 1; i < nodes.length; i++) {
     var a = nodes[i - 1], b = nodes[i], ka = [BRANCHES.indexOf(a.branch), a.tier, a.name], kb = [BRANCHES.indexOf(b.branch), b.tier, b.name];
@@ -129,7 +130,7 @@ nodes.forEach(function (n) { by[n.id] = n; });
     ids.forEach(function (id) {
       var s = st[id], c = Cards.part(id) || Cards.bio(id), open = D.slots.indexOf(c.slot) >= 0;
       if (!open) { if (s && s.state === 'available') bad.push('dish ' + D.id + ' ' + id + ' is available in a locked slot'); if (sb[id] && sb[id].state !== 'fitted' && sb[id].state !== 'unlearned') bad.push('dish ' + D.id + ' ' + id + ' locked-slot state ' + sb[id].state); if (Lv.FACTORY && Lv.FACTORY[c.slot] === id && sb[id].state !== 'fitted') bad.push('dish ' + D.id + ' Factory part ' + id + ' not fitted in the carried cell'); if (s && s.state === 'unlearned' && !/^Opens on dish|^Learn /.test(s.reason)) bad.push('dish ' + D.id + ' ' + id + ' locked-slot reason: ' + s.reason); return; }
-      if (!s) bad.push('dish ' + D.id + ' shelf card ' + id + ' not in the tree'); else if (s.state !== 'available') bad.push('dish ' + D.id + ' shelf card ' + id + ' is ' + s.state + ': ' + s.reason); });
+      if (!s) bad.push('dish ' + D.id + ' shelf card ' + id + ' not in the tree'); else if (by[id].stage > 1) { if (s.state !== 'unlearned' || !/^Clear a dish with .* fitted to evolve this\.$/.test(s.reason)) bad.push('dish ' + D.id + ' later stage ' + id + ' with nothing used is ' + s.state + ': ' + s.reason); } else if (s.state !== 'available') bad.push('dish ' + D.id + ' shelf card ' + id + ' is ' + s.state + ': ' + s.reason); });
     var cb = Sim.treeState(D, Lv.carry(D.id), {}); sane(cb, 'dish ' + D.id + ' carry');
     var f = Sim.fromSlots ? Sim.toSlots(Lv.carry(D.id)) : null;
     if (f) { var fid = [f.power, f.insides, f.division, f.signal, f.motor].concat(f.envelope).filter(Boolean); fid.forEach(function (id) { if (cb[id].state !== 'fitted') bad.push('dish ' + D.id + ' carried ' + id + ' not reported fitted'); }); }
@@ -139,7 +140,7 @@ nodes.forEach(function (n) { by[n.id] = n; });
   sane(none, 'null dish');
   var all = {}; DISHES.forEach(function (D) { all[D.id] = true; });
   var done = Sim.treeState(null, null, all);
-  nodes.forEach(function (n) { var want = n.learnedOn == null ? 'unlearned' : 'learned'; if (done[n.id].state !== want) bad.push('null dish, all cleared: ' + n.id + ' is ' + done[n.id].state); });
+  nodes.forEach(function (n) { var want = n.learnedOn == null || n.stage > 1 ? 'unlearned' : 'learned'; if (done[n.id].state !== want) bad.push('null dish, all cleared: ' + n.id + ' is ' + done[n.id].state); });
   sane(done, 'all cleared');
   DISHES.forEach(function (D) { sane(Sim.treeState(D, Lv.carry(D.id), all), 'dish ' + D.id + ' all cleared'); });
   line(!bad.length, 'T5', 'treeState: every shelf card is available on its own dish with nothing cleared; dish list view and all-cleared view as specified; every non-fitted state has a reason' + (bad.length ? ' :: ' + bad.join('; ') : ''));
@@ -181,6 +182,54 @@ nodes.forEach(function (n) { by[n.id] = n; });
   } finally { pump.tree['with'] = saved; }
   if (Sim.treeMissing(Lv.carry(1), 'pump').length || pump.tree['with'].length) bad.push('card not restored');
   line(!bad.length, 'T6', 'the with rule works in memory (treeMissing, validate sentence, fit refuses, fitting the other card clears it, treeState reason) and the card is restored' + (bad.length ? ' :: ' + bad.join('; ') : ''));
+})();
+
+// ---------------------------------------------------------------- T7 (the Light lineage)
+(function () {
+  var bad = [], D = dishById(17), ids = ['lightpump', 'lightsense', 'lightcolor'], carry = Lv.carry(17), LIGHT_RE = /^Clear a dish with (.*) fitted to evolve this\.$/;
+  if (!D) { line(false, 'T7', 'dish 17 is missing'); return; }
+  ids.forEach(function (id, i) {
+    var n = by[id], c = Cards.part(id);
+    if (!n || n.branch !== 'light') bad.push(id + ' is not a node in branch light');
+    else if (n.tier !== i + 1 || n.energy !== i + 1 || n.slot !== 'envelope' || n.shelf !== 'biology' || n.kind !== 'part') bad.push(id + ' has the wrong tier, energy, slot, shelf or kind');
+    if (c && (c.world !== 3 || !c.real || !c.game || !c.effect || !c.name)) bad.push(id + ' lacks a text field');
+    var ls = Sim.lineageStage(id), want = { lineage: 'light', stage: i + 1, prev: i ? ids[i - 1] : null, next: i < 2 ? ids[i + 1] : null };
+    if (!ls || JSON.stringify(ls) !== JSON.stringify(want)) bad.push('lineageStage(' + id + ') = ' + JSON.stringify(ls));
+    if (n && JSON.stringify(n.after) !== JSON.stringify(i ? [ids[i - 1]] : [])) bad.push(id + ' after is ' + JSON.stringify(n.after));
+  });
+  if (Sim.lineageStage('chemo') !== null || Sim.lineageStage('respiration') !== null || Sim.lineageStage('nosuchcard') !== null) bad.push('lineageStage should be null outside a lineage');
+  var br = Sim.treeBranches(); if (br[br.length - 1].id !== 'light' || br[br.length - 1].name !== 'Light') bad.push('Light is not the last branch');
+  var st0 = Sim.treeState(D, carry, {}), st0u = Sim.treeState(D, carry, {}, {});
+  if (st0.lightpump.state !== 'available') bad.push('stage 1 with nothing used is ' + st0.lightpump.state + ': ' + st0.lightpump.reason);
+  [['lightsense', 'Light-driven pump'], ['lightcolor', 'Light sensing']].forEach(function (p) {
+    [st0, st0u].forEach(function (st) {
+      var m = LIGHT_RE.exec(st[p[0]].reason || '');
+      if (st[p[0]].state !== 'unlearned' || !m || m[1] !== p[1]) bad.push(p[0] + ' with nothing used: ' + st[p[0]].state + ' / ' + st[p[0]].reason);
+    });
+  });
+  var st1 = Sim.treeState(D, carry, {}, { lightpump: true });
+  if (st1.lightsense.state !== 'available') bad.push('lightsense with used.lightpump is ' + st1.lightsense.state + ': ' + st1.lightsense.reason);
+  if (st1.lightcolor.state !== 'unlearned') bad.push('lightcolor with only used.lightpump is ' + st1.lightcolor.state);
+  var st2 = Sim.treeState(D, carry, {}, { lightpump: true, lightsense: true });
+  if (st2.lightcolor.state !== 'available') bad.push('lightcolor with used.lightsense is ' + st2.lightcolor.state + ': ' + st2.lightcolor.reason);
+  if (Sim.treeState(D, carry, {}, { lightsense: true }).lightcolor.state !== 'available') bad.push('stage 3 needs only the stage before it used');
+  var fitted = Sim.fit(D, carry, 'lightpump', null, true);
+  if (!fitted.ok) bad.push('lightpump does not fit: ' + fitted.reason); else if (Sim.treeState(D, fitted.build, {}, {}).lightpump.state !== 'fitted') bad.push('lightpump not reported fitted');
+  // cards outside any lineage behave as before when `used` is passed
+  var plain = Sim.treeState(D, carry, {}), withUsed = Sim.treeState(D, carry, {}, { lightpump: true, chemo: true });
+  nodes.forEach(function (n) { if (!n.lineage && JSON.stringify(plain[n.id]) !== JSON.stringify(withUsed[n.id])) bad.push(n.id + ' changed when used was passed'); });
+  // validate: two stages in one build
+  var good = Sim.validate(D, Object.assign({}, carry, { parts: carry.parts.concat(['lightpump']) }));
+  if (!good.ok) bad.push('carry + lightpump does not validate: ' + good.problems.join(' / '));
+  var WANT = 'Only one stage of the Light lineage fits in a cell.';
+  [['lightpump', 'lightsense'], ['lightsense', 'lightcolor'], ['lightpump', 'lightcolor']].forEach(function (pr) {
+    var v = Sim.validate(D, Object.assign({}, carry, { parts: ['flagellum'].concat(pr) }));
+    if (v.ok || v.problems.indexOf(WANT) < 0) bad.push(pr.join(' + ') + ' not rejected with the sentence: ' + v.problems.join(' / '));
+  });
+  var v3 = Sim.validate(D, Object.assign({}, carry, { parts: ['flagellum', 'chemo', 'lightcolor'] }));
+  if (!v3.ok) bad.push('flagellum + chemo + lightcolor (energy 6) does not fit dish 17: ' + v3.problems.join(' / '));
+  if (D.energy !== 6) bad.push('dish 17 energy is ' + D.energy);
+  line(!bad.length, 'T7', 'Light lineage: three nodes in branch light, lineageStage, treeState with used (stage 1 available; later stages need the stage before used), validate rejects two stages' + (bad.length ? ' :: ' + bad.join('; ') : ''));
 })();
 
 // ---------------------------------------------------------------- listing

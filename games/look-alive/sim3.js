@@ -8,6 +8,9 @@
 //   h    : Uint8 heading, 256 steps over a full turn: h = floor(rad / 2pi * 256) & 255
 //   k    : Uint8, low 3 bits = kind (0 scout, 1 quad, 2 halo, 3 sali), bit 3 (8) = moving this tick, bit 4 (16) = resting or paused
 // foods: the food grid every 5 ticks (index t/5) as Uint8Array(N*N), row-major, value = min(255, round(food * FOOD_SCALE)); FOOD_SCALE = P3.foodScale (1500, so a byte is 0.00067 food units and 255 is 0.17).
+// Light (dish.agents.light = { r, core, speed, useful, harm, lead }; only dish 17 so far): one bright patch drifts across the dish on a seeded straight path. Inside `core` the light is glare (it kills any scout at `harm` a second at full glare);
+// between `core` and `r` it is useful (a scout with a Light stage gains up to `useful` energy a second). The build's Light stage (lightpump 1, lightsense 2, lightcolor 3) includes the stages before it.
+// run.light = { r, core, x, y } (patch centre per tick, micrometres) or null; H.light and H.glare are the fractions of scouts in useful light and in glare each tick; deaths may have cause 'glare'; the autopsy may be 'burned'.
 (function (root) {
   'use strict';
   var TAU = 6.283185307179586;
@@ -41,7 +44,16 @@
     fastKeep: 0.7, slowKeep: 0.97, slowGain: 0.08, weight: [1, 1, 1],
     stage: [1.0, 2.5, 4.0], kill: 0.05,
     machineIds: ['fuelcell', 'clock', 'shell', 'radio', 'copier', 'repair'],
-    foodScale: 1500
+    foodScale: 1500,
+    // light (dish.agents.light only; no dish before 17 reaches any of this). One bright patch drifts across the dish; its core is glare.
+    lightE: 0.006,                 // energy per second a pigmented scout gains at useful = 1 (dish.agents.light.useful overrides)
+    glareHarm: 0.2,                // chance per second of dying in full glare (dish.agents.light.harm overrides)
+    glareEdge: 0.4,                // the glare fades in over this fraction of the core radius, inside the core's edge
+    lightMark: 0.5,                // sensed light at or above which a Light-sensing scout counts "enough light here" and stops climbing
+    lightGain: 6, glareGain: 8,    // steering: how strongly a change in light (or in glare) changes how often a swimmer tumbles
+    glareSense: 0.05,              // glare above which Colour sensing counts itself "in glare"
+    lightUseMin: 0.05,             // useful light above which a scout counts as "in useful light" (H.light)
+    lightScale: 0.5, lightBad: 0.15 // Light stat: value = 1 - (share of scouts lost to glare) / lightScale; unsafe when more than lightBad of them were lost
   };
 
   function mulberry32(a) {
@@ -81,6 +93,31 @@
     for (i = 0; i < b.parts.length; i++) if (P.machineIds.indexOf(b.parts[i]) >= 0) n++;
     if (b.metabolism === 'fuelcell') n++;
     return n;
+  }
+
+  // The light field. d = distance from the patch centre. Returns [useful, glare, brightness], each 0..1.
+  // brightness falls smoothly from 1 at the centre to 0 at r. Glare fades in inside the core's edge; useful light is the brightness that is not glare.
+  function lightProfile(d, r, core, edge) {
+    if (d >= r) return [0, 0, 0];
+    var br = 0.5 * (1 + Math.cos(Math.PI * d / r)), gl = 0;
+    if (d < core) { gl = (core - d) / (edge * core); if (gl > 1) gl = 1; gl = gl * gl * (3 - 2 * gl); }
+    return [br * (1 - gl), gl, br];
+  }
+  // The patch's path: it starts near where the scouts land, then crosses the middle of the dish (where the boulders are) back and forth on a slow straight path.
+  // Own random stream, so nothing else in a run moves. Returns { x: Float32Array(T + 1), y: Float32Array(T + 1) } in micrometres.
+  function lightPath(seed, T, R, LA, sx, sy) {
+    var lr = mulberry32(seed * 1299709 + 271828), x = new Float32Array(T + 1), y = new Float32Array(T + 1);
+    var sp = LA.speed, rw = 0.72 * R, px = sx, py = sy, t = 0, th = Math.atan2(sy, sx);
+    var pl = Math.sqrt(px * px + py * py); if (pl > rw) { px *= rw / pl; py *= rw / pl; pl = rw; }
+    var off = LA.lead != null ? LA.lead : LA.r + 10;                 // it starts this far from the landing site, toward the middle, so no scout is born in the glare
+    if (pl > off) { px *= (pl - off) / pl; py *= (pl - off) / pl; } else { px = 0; py = 0; }
+    while (t <= T) {
+      th = th + Math.PI + (lr() - 0.5) * 1.0;                // the far side, a little off straight across
+      var qx = rw * Math.cos(th), qy = rw * Math.sin(th), dx = qx - px, dy = qy - py, len = Math.sqrt(dx * dx + dy * dy), steps = Math.ceil(len / sp);
+      for (var q = 0; q < steps && t <= T; q++, t++) { var f = q / steps; x[t] = px + dx * f; y[t] = py + dy * f; }
+      px = qx; py = qy;
+    }
+    return { x: x, y: y };
   }
 
   function play(dish, build, opts) {
@@ -135,6 +172,20 @@
       { mot: 2, chemo: true, upt: 1, yld: P.yield, up: P.upBase + P.upFlag + P.upChemo, swimUp: P.upSwim }
     ];
     var slopSd = P.slopSd * b.slop;
+    // light: the stage of the Light lineage the cell carries (0 none, 1 pump, 2 sensing, 3 colour); a stage includes the ones before it
+    var LA = A.light || null, lightStage = b.parts.indexOf('lightcolor') >= 0 ? 3 : b.parts.indexOf('lightsense') >= 0 ? 2 : b.parts.indexOf('lightpump') >= 0 ? 1 : 0;
+    var lightE = LA ? (LA.useful != null ? LA.useful : P.lightE) : 0, glareHarm = LA ? (LA.harm != null ? LA.harm : P.glareHarm) : 0;
+    var lPath = null, lcx = 0, lcy = 0, fU = 0, fG = 0, fB = 0, subNow = 0, mot12 = mot === 1 || mot === 2;
+    function lightPos(tf) {
+      if (tf < 0) tf = 0; if (tf > T) tf = T;
+      var i0 = Math.floor(tf), i1 = i0 < T ? i0 + 1 : i0, fr = tf - i0;
+      lcx = lPath.x[i0] + (lPath.x[i1] - lPath.x[i0]) * fr; lcy = lPath.y[i0] + (lPath.y[i1] - lPath.y[i0]) * fr;
+    }
+    function fieldAt(px, py) {
+      var dx = px - lcx, dy = py - lcy, d2 = dx * dx + dy * dy;
+      if (d2 >= LA.r * LA.r) { fU = 0; fG = 0; fB = 0; return; }
+      var q = lightProfile(Math.sqrt(d2), LA.r, LA.core, P.glareEdge); fU = q[0]; fG = q[1]; fB = q[2];
+    }
     var needCrowd = rSensor === 2;
 
     // individuals
@@ -143,6 +194,7 @@
     var kind = new Uint8Array(cap), id = new Int32Array(cap), ph = new Uint8Array(cap), aux = new Float64Array(cap), ref = new Float64Array(cap);
     var swim = new Uint8Array(cap), cell = new Int32Array(cap), dem = new Float64Array(cap), act = new Uint8Array(cap);
     var x0 = new Float64Array(cap), y0 = new Float64Array(cap), mv = new Uint8Array(cap), nap = new Uint8Array(cap), napT = new Float64Array(cap);
+    var refL = new Float64Array(cap), refG = new Float64Array(cap), lu = new Float64Array(cap), lg = new Float64Array(cap);   // light memories and the useful light and glare a scout stood in this substep
 
     function sampleFood(px, py) {
       var gx = (px + R) * inv - 0.5, gy = (py + R) * inv - 0.5;
@@ -167,6 +219,8 @@
       x[m] = px; y[m] = py; x0[m] = px; y0[m] = py; h[m] = hd; e[m] = en; kind[m] = kd; id[m] = nextId++;
       thr[m] = drawThr(kd); ph[m] = 0; aux[m] = rng() * P.piliPause; swim[m] = 0; mv[m] = 0; act[m] = 0;
       cell[m] = cellOf(px, py); ref[m] = sampleFood(px, py);
+      refL[m] = 0; refG[m] = 0; lu[m] = 0; lg[m] = 0;
+      if (LA && lPath && kd === 0) { fieldAt(px, py); refL[m] = lightStage === 3 ? fU : fB; refG[m] = fG; }
       nap[m] = 0; napT[m] = 0;
       if (kd === 0 && hasNaps) {
         if (rng() < P.napShare) { nap[m] = 1; napT[m] = -Math.log(rng() || 1e-12) * P.napOn; }
@@ -212,10 +266,10 @@
     // shuffle initial order is not needed: ids are assigned in creation order
 
     // run state
-    var deaths = [], dCause = { starved: 0, guards: 0, born: 0 };
+    var deaths = [], dCause = { starved: 0, guards: 0, born: 0, glare: 0 };
     var H = { share: null }, frames = null, foods = null;
     var mk = function () { return new Float32Array(T + 1); };
-    H = { share: mk(), scouts: mk(), natives: mk(), total: mk(), food: mk(), stage: mk(), kill: mk(), moveS: mk(), moveN: mk(), susp: { growth: mk(), regularity: mk(), motion: mk() } };
+    H = { share: mk(), scouts: mk(), natives: mk(), total: mk(), food: mk(), stage: mk(), kill: mk(), moveS: mk(), moveN: mk(), susp: { growth: mk(), regularity: mk(), motion: mk() }, light: mk(), glare: mk(), born: mk(), gdead: mk() };
     if (record) { frames = new Array(T + 1); foods = []; }
     var fast = [0, 0, 0], slow = [0, 0, 0], contrib = [0, 0, 0], peakCh = [0, 0, 0], S = 0, stage = 0, exposedAt = -1, firstStage1 = -1;
     var emaS = 0, emaN = 0, emaInit = false;
@@ -243,13 +297,26 @@
       }
     }
 
+    function piliLight(px, py, cand0) {   // a crawler's tug: keep the direction whose tip is brighter (or, in glare, less glaring); try one more if not
+      var cand = cand0, k;
+      fieldAt(px, py);
+      var hv = lightStage === 3 ? fU : fB, hg = fG, ing = lightStage === 3 && hg > P.glareSense;
+      for (k = 0; k < 2; k++) {
+        if (k > 0) cand = rng() * TAU;
+        fieldAt(px + Math.cos(cand) * P.piliTip, py + Math.sin(cand) * P.piliTip);
+        if (ing ? fG < hg * 0.98 : (lightStage === 3 ? fU : fB) > hv * 1.02) return cand;
+      }
+      return cand;
+    }
+
     function substep() {
       var sdB = Math.sqrt(2 * P.DB * dt), sdQ = Math.sqrt(2 * P.DQuad * dt), sdR = Math.sqrt(2 * P.DrotB * dt), sdV = Math.sqrt(2 * P.DVes * dt), i, kk;
       var tr = 0;
+      if (LA && lPath) lightPos(tickNow + (subNow + 1) / SUB);
       if (needCrowd) { cnt.fill(0); for (i = 0; i < n; i++) cnt[cell[i]]++; }
       demand.fill(0);
       for (i = 0; i < n; i++) {
-        var kd = kind[i], sp = SP[kd], a = 0, cl = cell[i];
+        var kd = kind[i], sp = SP[kd], a = 0, cl = cell[i], relL = 0, relG = 0, litHere = 0, glareHere = false;
         if (kd === 0) {
           if (hasNaps) {
             napT[i] -= dt;
@@ -272,6 +339,17 @@
             a = (rGt ? v > rVal : v < rVal) ? rAct : rOther;
           } else a = 0;
           if (sp.mot === 0 && a === 0) a = 1;
+          if (LA && lightStage >= 2) {
+            // what the cell senses here, and how it changed over the last moment (the same comparison the chemoreceptor makes with food)
+            fieldAt(x[i], y[i]);
+            var curL = lightStage === 3 ? fU : fB, rl0 = refL[i], rg0 = refG[i];
+            relL = (curL - rl0) / (curL + rl0 + P.chemoEps); refL[i] = rl0 + (curL - rl0) * dt / P.memTau; litHere = curL;
+            relG = (fG - rg0) / (fG + rg0 + P.chemoEps); refG[i] = rg0 + (fG - rg0) * dt / P.memTau; glareHere = lightStage === 3 && fG > P.glareSense;
+            if (mot12) {
+              if (a === 0 && litHere >= P.lightMark) a = 1;                    // enough light here: stop climbing and stay
+              if (glareHere) a = 0;                                           // colour sensing: in the glare, swim out (overrides whatever the cell was doing)
+            }
+          }
         } else if (kd === 2) a = food[cl] > P.haloMark ? 1 : 0;
         else if (kd === 1) a = 1;
         act[i] = a;
@@ -296,6 +374,7 @@
                   if (sampleFood(xi + Math.cos(cand) * P.piliTip, yi + Math.sin(cand) * P.piliTip) > here * 1.02) break;
                 }
               } else cand = rng() * TAU;
+              if (LA && lightStage >= 2 && kd === 0) cand = piliLight(xi, yi, cand);
               hi = cand; ph[i] = 1; aux[i] = P.piliTugMin + (P.piliTugMax - P.piliTugMin) * rng();
             }
           } else {
@@ -309,6 +388,11 @@
             var cur = sampleFood(xi, yi), r0 = ref[i], rel = (cur - r0) / (cur + r0 + P.chemoEps);
             ref[i] = r0 + (cur - r0) * dt / P.memTau;
             rate = P.tumbleRate * (1 - P.chemoGain * rel);
+            if (rate < P.tumbleRate * 0.15) rate = P.tumbleRate * 0.15; else if (rate > P.tumbleRate * 2.5) rate = P.tumbleRate * 2.5;
+          }
+          if (LA && kd === 0 && lightStage >= 2) {
+            if (glareHere) rate = P.tumbleRate * (1 + P.glareGain * relG);   // in the glare: tumble more while it grows, run while it fades
+            else rate -= P.tumbleRate * P.lightGain * relL;                  // climb toward light
             if (rate < P.tumbleRate * 0.15) rate = P.tumbleRate * 0.15; else if (rate > P.tumbleRate * 2.5) rate = P.tumbleRate * 2.5;
           }
           if (rng() < rate * dt) {
@@ -327,6 +411,7 @@
         }
         x[i] = xi; y[i] = yi; h[i] = hi;
         kk = cellOf(xi, yi); cell[i] = kk;
+        if (LA && kd === 0) { fieldAt(xi, yi); lu[i] = fU; lg[i] = fG; }
         var c = food[kk], d = P.vmax * dt * sp.upt * c / (c + P.K);
         dem[i] = d; demand[kk] += d;
       }
@@ -338,7 +423,9 @@
         var up = sp2.up + (swim[i] ? sp2.swimUp : 0);
         if (a2 === 3) up *= 0.5;
         e[i] += dem[i] * sh * sp2.yld - up * dt;
-        if (e[i] <= 0) { e[i] = -1; dead++; }
+        if (lightStage && kind[i] === 0 && lu[i] > 0) e[i] += lightE * lu[i] * dt;   // pigment: a little energy in useful light (natives carry their own and are left out)
+        if (LA && kind[i] === 0 && lg[i] > 0 && rng() < glareHarm * lg[i] * dt) { e[i] = -2; dead++; }   // the white middle burns any scout, pigmented or not
+        else if (e[i] <= 0) { e[i] = -1; dead++; }
         else if (e[i] >= thr[i] && a2 !== 2 && a2 !== 3) divs.push(i);
       }
       for (kk = 0; kk < NN; kk++) { var dmk = demand[kk]; if (dmk > 0) { var f0 = food[kk]; food[kk] = dmk > f0 ? 0 : f0 - dmk; } }
@@ -352,12 +439,14 @@
           if (kind[pa] === 0) dCause.born++;
           var bb = Math.sqrt(x[ch] * x[ch] + y[ch] * y[ch]); if (bb > R - 0.5) { x[ch] = x[pa]; y[ch] = y[pa]; x0[ch] = x[ch]; y0[ch] = y[ch]; }
           cell[ch] = cellOf(x[ch], y[ch]); nap[ch] = nap[pa]; napT[ch] = napT[pa];
+          refL[ch] = refL[pa]; refG[ch] = refG[pa]; lu[ch] = lu[pa]; lg[ch] = lg[pa];
         }
       }
       if (dead) {
         for (i = 0; i < n; i++) if (e[i] < 0 && kind[i] === 0) {
-          dCause.starved++;
-          deaths.push({ tick: tickNow + 1, id: id[i], kind: 0, x: x[i], y: y[i], cause: 'starved' });
+          var burned = e[i] === -2;
+          if (burned) dCause.glare++; else dCause.starved++;
+          deaths.push({ tick: tickNow + 1, id: id[i], kind: 0, x: x[i], y: y[i], cause: burned ? 'glare' : 'starved' });
         }
         compact();
       }
@@ -370,7 +459,7 @@
         if (w !== i) {
           x[w] = x[i]; y[w] = y[i]; h[w] = h[i]; e[w] = e[i]; thr[w] = thr[i]; kind[w] = kind[i]; id[w] = id[i]; ph[w] = ph[i]; aux[w] = aux[i];
           ref[w] = ref[i]; swim[w] = swim[i]; cell[w] = cell[i]; dem[w] = dem[i]; act[w] = act[i]; x0[w] = x0[i]; y0[w] = y0[i]; mv[w] = mv[i];
-          nap[w] = nap[i]; napT[w] = napT[i];
+          nap[w] = nap[i]; napT[w] = napT[i]; refL[w] = refL[i]; refG[w] = refG[i]; lu[w] = lu[i]; lg[w] = lg[i];
         }
         w++;
       }
@@ -395,7 +484,7 @@
       var i, kk;
       for (i = 0; i < n; i++) { x0[i] = x[i]; y0[i] = y[i]; }
       tickEnv();
-      for (var s = 0; s < SUB; s++) substep();
+      for (var s = 0; s < SUB; s++) { subNow = s; substep(); }
       tickNow++;
       if (!scored) return;
       var t = tickNow, nS = 0, nN = 0, mS = 0, mN = 0, mm = P.moveMin * P.moveMin;
@@ -440,6 +529,11 @@
       var fsum = 0; for (kk = 0; kk < NN; kk++) fsum += food[kk];
       H.share[t] = share; H.scouts[t] = nS; H.natives[t] = nN; H.total[t] = S; H.food[t] = fsum / nMask;
       H.stage[t] = stage; H.kill[t] = kill; H.moveS[t] = fs; H.moveN[t] = fn;
+      if (LA) {
+        lightPos(t); var inL = 0, inG = 0;
+        for (i = 0; i < n; i++) if (kind[i] === 0) { fieldAt(x[i], y[i]); if (fU > P.lightUseMin) inL++; if (fG > 0) inG++; }
+        H.light[t] = nS ? inL / nS : 0; H.glare[t] = nS ? inG / nS : 0; H.born[t] = dCause.born; H.gdead[t] = dCause.glare;
+      }
       H.susp.growth[t] = lv[0]; H.susp.regularity[t] = lv[1]; H.susp.motion[t] = lv[2];
       if (record) snapshot(t);
     }
@@ -481,6 +575,7 @@
         if (sum < best) { best = sum; sx = cx; sy = cy; }
       }
     })();
+    if (LA) { lPath = lightPath(seed, T, R, LA, sx, sy); lightPos(0); }
     var nStart = A.start == null ? 16 : A.start;
     for (i = 0; i < nStart; i++) {
       var rad = P.startRadius * Math.sqrt(rng()), an = rng() * TAU, px = sx + rad * Math.cos(an), py = sy + rad * Math.sin(an);
@@ -493,12 +588,13 @@
       for (var q = 0; q < n; q++) { if (kind[q] === 0) nS++; else nN++; }
       for (kk = 0; kk < NN; kk++) fsum += food[kk];
       H.share[0] = nS + nN ? nS / (nS + nN) : 0; H.scouts[0] = nS; H.natives[0] = nN; H.food[0] = fsum / nMask;
+      if (LA) { var l0 = 0, g0 = 0; for (var q2 = 0; q2 < n; q2++) if (kind[q2] === 0) { fieldAt(x[q2], y[q2]); if (fU > P.lightUseMin) l0++; if (fG > 0) g0++; } H.light[0] = nS ? l0 / nS : 0; H.glare[0] = nS ? g0 / nS : 0; }
       if (record) snapshot(0);
     })();
     // boulder clocks: the pre-roll ran from tick -preroll, so absolute ticks line up with tickNow = 0 here
     for (i = 0; i < T; i++) doTick(true);
 
-    var run = { dish: dish, build: b, T: T, seed: seed, H: H, frames: frames, foods: foods, boulders: boulders, deaths: deaths, v: null, autopsy: null, P: P, contrib: contrib, peakCh: peakCh, dCause: dCause, band: band, uniform: uniform };
+    var run = { dish: dish, build: b, T: T, seed: seed, H: H, frames: frames, foods: foods, boulders: boulders, deaths: deaths, v: null, autopsy: null, P: P, contrib: contrib, peakCh: peakCh, dCause: dCause, band: band, uniform: uniform, light: LA ? { r: LA.r, core: LA.core, x: lPath.x, y: lPath.y } : null };
     run.v = verdict(run, exposedAt, firstStage1);
     run.autopsy = run.v.win ? null : autopsy(run, exposedAt, firstStage1);
     return run;
@@ -534,6 +630,14 @@
       if (firstOut < 0) firstOut = t; lastOut = t;
     }
     var finalBelow = H.share[T] < band.lo, mostStarved = run.dCause.starved > run.dCause.guards;
+    var dc = run.dCause;
+    if (dc.glare > 0 && dc.glare > dc.starved && dc.glare > dc.guards && (extinctAt >= 0 || finalBelow || below > above)) {
+      // most of the scouts that died were burned in the glare, and the colony fell under the floor or died out
+      var fromB = band.warm;
+      for (t = T; t >= band.warm; t--) if (H.share[t] >= band.lo) { fromB = t; break; }
+      var toB = extinctAt >= 0 ? extinctAt : T;
+      return { cause: 'burned', from: fromB, to: toB, text: 'Your scouts burned in the white middle of the bright place: ' + dc.glare + ' were lost to the glare, ' + dc.starved + ' starved, and the share ' + (extinctAt >= 0 ? 'fell to nothing by tick ' + extinctAt : 'sank to ' + pct(H.share[T]) + ' (the floor is ' + pct(band.lo) + ')') + '.' };
+    }
     var fromOut = firstOut < 0 ? band.warm : firstOut;
     if (extinctAt >= 0 || (finalBelow && mostStarved)) {
       // the trouble starts when the share first falls under the floor and stays there
@@ -639,7 +743,7 @@
   // ---------------------------------------------------------------- stat bars read off the run
   // Reach, Growth, Naturalness and Movement for an agent dish, from the run's own arrays (H3) up to tick `upTo` (T for the whole run, t for the live bars at tick t).
   // Every number is in sim3 units: the guards act when the channels add to 4.0 (P3.stage[2]).
-  var STAT3 = { reachBad: 0.25, reachScale: 0.5, chanLimit: 4.0, chanSafe: 3.5 };
+  var STAT3 = { reachBad: 0.25, reachScale: 0.5, chanLimit: 4.0, chanSafe: 3.5, lightBad: 0.15, lightScale: 0.5 };
   function analyse(run, upTo) {
     var H = run.H3, P = run.P3, band = run.band, t, n = 0, inb = 0, above = 0, below = 0, floorNoGuards = 0, shares = [], cut = run.v.exposedAt >= 0 ? run.v.exposedAt : 1e9;
     for (t = band.warm; t <= upTo; t++) {
@@ -667,6 +771,7 @@
   function zone3(id) {
     if (id === 'reach') return [r3(1 - STAT3.reachBad / STAT3.reachScale), 1];
     if (id === 'natural') return [r3(1 - STAT3.chanSafe / STAT3.chanLimit), 1];
+    if (id === 'light') return [r3(1 - STAT3.lightBad / STAT3.lightScale), 1];
     var w = 0.5 * STAT3.chanSafe / STAT3.chanLimit;            // motion: centred, a long bar either side
     return [r3(0.5 - w), r3(0.5 + w)];
   }
@@ -688,6 +793,11 @@
       } else if (a.share > band.hi) { state = 'high'; } else if (a.share < band.lo) { state = 'low'; }
       v = S.shareVal(sh);
       if (state === 'high') verdict = 'Too fast: you will take over'; else if (state === 'low') verdict = 'Too slow: you will fade out';
+    } else if (id === 'light') {
+      // the share of the scouts that ever lived that the glare took, up to this tick; 1 minus that share over lightScale
+      var lostG = run.H3.gdead[upTo] || 0, ever = (run.H3.scouts[0] || 0) + (run.H3.born[upTo] || 0), shG = ever ? lostG / ever : 0;
+      v = 1 - clamp01(shG / STAT3.lightScale);
+      if (v < z[0]) { state = 'high'; verdict = 'Too much glare: your scouts will burn'; }
     } else if (id === 'natural') {
       var pr = final ? a.peakReg : a.curReg;
       v = clamp01(1 - pr / STAT3.chanLimit);
@@ -700,18 +810,18 @@
     // A loss is blamed on one stat. When that stat's own reading is inside its zone (rare: several tells each under their line can add up past the guards' line),
     // the value is left exactly as measured and only the state and the words say so. Nothing shown is moved.
     if (forced && state === 'safe') {
-      state = id === 'growth' ? (a.above >= a.below ? 'high' : 'low') : id === 'motion' ? (a.dirPeak > 0 ? 'high' : 'low') : 'low';
+      state = id === 'growth' ? (a.above >= a.below ? 'high' : 'low') : id === 'motion' ? (a.dirPeak > 0 ? 'high' : 'low') : id === 'light' ? 'high' : 'low';
       verdict = 'Inside its zone, but the run was lost here';
     }
     return { id: id, value: r3(clamp01(v)), safe: z, state: state, verdict: verdict };
   }
-  var CAUSE_STAT3 = { starved: 'reach', below: 'growth', overgrew: 'growth', band: 'growth', 'exposed:growth': 'growth', 'exposed:regularity': 'natural', 'exposed:motion': 'motion' };
+  var CAUSE_STAT3 = { burned: 'light', starved: 'reach', below: 'growth', overgrew: 'growth', band: 'growth', 'exposed:growth': 'growth', 'exposed:regularity': 'natural', 'exposed:motion': 'motion' };
   // Same numbers as sim.js forecastOf, for a finished agent run: the figures the stat bars read, plus the four stats of this dish.
   function forecastOf(run, D, S) {
     var a = analyse(run, run.T), v = run.v, cause = (run.autopsy3 || run.autopsy) ? (run.autopsy3 || run.autopsy).cause : null, forcedId = v.win ? null : CAUSE_STAT3[cause] || 'growth';
     var f = { heatLoss: 0, heatLossMax: 0, grazeLoss: 0, acidLoss: 0, acidLossMax: 0, p70: a.median, l70: a.median, p30: a.median, alive: v.alive, waste: 0, reg: a.peakReg,
       crashMin: 1, pl30: 1, win: v.win, bandFrac: v.bandFrac, below: a.below, above: a.above, cnt: a.n, gpeak: a.peakGro, maxStage: v.maxStage, hasEvent: false, agent: {}, cause: cause };
-    ['reach', 'growth', 'natural', 'motion'].forEach(function (id) { f.agent[id] = statAt(run, D, id, run.T, S, forcedId === id); });
+    ['reach', 'growth', 'natural', 'motion'].concat(run.light ? ['light'] : []).forEach(function (id) { f.agent[id] = statAt(run, D, id, run.T, S, forcedId === id); });
     return f;
   }
   function liveStat(run, D, id, t, S) { return statAt(run, D, id, Math.max(1, Math.min(run.T, Math.floor(t))), S, false); }
@@ -725,6 +835,7 @@
       case 'starved': verb = 'was too low'; tail = 'Your scouts could not reach the food and starved by tick ' + a.to + '.'; break;
       case 'below': verb = 'was too slow'; tail = 'You faded out of the band by tick ' + a.from + '.'; break;
       case 'overgrew': verb = 'was too fast'; tail = 'You took over the dish by tick ' + a.from + '.'; high = true; break;
+      case 'burned': verb = 'was too harsh'; tail = 'Your scouts burned in the white middle of the bright place, and the colony was gone from the band by tick ' + a.to + '.'; high = true; break;
       case 'band': verb = 'did not hold'; tail = 'You spent too little of the run inside the band.'; break;
       case 'exposed:growth': verb = 'was too fast'; tail = 'You took over the dish and the guards noticed by tick ' + a.to + '.'; high = true; break;
       case 'exposed:regularity': verb = 'was too low'; tail = 'You looked like a machine, and were caught by tick ' + a.to + '.'; break;
@@ -739,7 +850,16 @@
     return { tick: sn.tick, n: run.n, robot: new Float32Array(sn.robot), native: new Float32Array(sn.native), food: new Float32Array(sn.food), waste: new Float32Array(nn), wasteMix: new Float32Array(sn.st.WA), quorum: new Float32Array(nn) };
   }
 
-  var api = { P3: P3, play: play, unpack: unpack, summary: summary, defaults: defaults, FOOD_SCALE: P3.foodScale,
+  // The light at a point and tick of a run: { useful: 0..1, glare: 0..1 }. Both are 0 on a dish with no light. Same field the cells feel.
+  function lightAt(run, t, x, y) {
+    var L = run.light; if (!L) return { useful: 0, glare: 0 };
+    var P = run.P3 || run.P, T = L.x.length - 1, tt = t < 0 ? 0 : t > T ? T : t, i0 = Math.floor(tt), i1 = i0 < T ? i0 + 1 : i0, fr = tt - i0;
+    var cx = L.x[i0] + (L.x[i1] - L.x[i0]) * fr, cy = L.y[i0] + (L.y[i1] - L.y[i0]) * fr, dx = x - cx, dy = y - cy;
+    var q = lightProfile(Math.sqrt(dx * dx + dy * dy), L.r, L.core, (P && P.glareEdge) || P3.glareEdge);
+    return { useful: q[0], glare: q[1] };
+  }
+
+  var api = { P3: P3, lightAt: lightAt, play: play, unpack: unpack, summary: summary, defaults: defaults, FOOD_SCALE: P3.foodScale,
     gameRun: gameRun, forecastOf: forecastOf, liveStat: liveStat, statAt: statAt, zone3: zone3, finishAutopsy: finishAutopsy, restoreSnap: restoreSnap, CAUSE_STAT: CAUSE_STAT3, STAT3: STAT3, LEAD_MOTION: LEAD_MOTION };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.LookAliveSim3 = api;

@@ -33,7 +33,7 @@ module.exports = async (a) => {
   check('tilesAtLeast44', t.tiles.every((x) => x.h >= 44 && x.w >= 100));
   check('everyLinkHasLine', t.lines === links && links > 0);
   check('linesAreDistinct', await ev(`(function(){var k=document.querySelectorAll('#treeLineG path.after').length,w=document.querySelectorAll('#treeLineG path.with').length;return k>0&&getComputedStyle(document.querySelector('#treeLineG path.after')).strokeDasharray==='none'&&(w===0||getComputedStyle(document.querySelector('#treeLineG path.with')).strokeDasharray!=='none')})()`));
-  check('sevenBranchHeadings', JSON.stringify(await ev(`Array.prototype.map.call(document.querySelectorAll('.tv-bh'),function(e){return e.textContent})`)) === JSON.stringify((await ev(`LookAlive.treeBranches()`)).map((b) => b.name)));
+  check('branchHeadingsMatchData', JSON.stringify(await ev(`Array.prototype.map.call(document.querySelectorAll('.tv-bh'),function(e){return e.textContent})`)) === JSON.stringify((await ev(`LookAlive.treeBranches()`)).map((b) => b.name)));
   if (!MOB) {
     const sc = await ev(`(function(){var d=document.documentElement,s=document.getElementById('treeScroll');return {pageV:d.scrollHeight-innerHeight,pageH:d.scrollWidth-innerWidth,boxV:s.scrollHeight-s.clientHeight,boxH:s.scrollWidth-s.clientWidth}})()`);
     check('desktopNoScroll', sc.pageV <= 0 && sc.pageH <= 0 && sc.boxV <= 0 && sc.boxH <= 0);
@@ -51,9 +51,9 @@ module.exports = async (a) => {
   await shot('tree-list.png');
   const w0 = await ev(`window.__w=1`);
   // everything cleared
-  await a.eval(`__la.tree(false);for(var i=1;i<=16;i++)__la.S.cleared[i]=true;__la.tree(true);1`); await a.sleep(200);
+  await a.eval(`__la.tree(false);for(var i=1;i<=17;i++)__la.S.cleared[i]=true;__la.tree(true);1`); await a.sleep(200);
   t = await info();
-  check('allClearedAllLearned', t.tiles.every((x) => x.state === 'learned') || t.tiles.filter((x) => x.state === 'learned').length >= t.tiles.length - 2);
+  check('allClearedAllLearned', t.tiles.every((x) => x.state === 'learned') || t.tiles.filter((x) => x.state === 'learned').length >= t.tiles.length - 2);   // the two later Light stages stay 'not yet learned' until their earlier stage has been used
   await a.eval(`__la.treeSelect('flagellum');1`);
   await shot('tree-list-all.png');
   // Escape closes, focus returns to the button
@@ -77,7 +77,7 @@ module.exports = async (a) => {
   check('d5OnlyCarriedFitted', t.tiles.filter((x) => x.state === 'fitted').length === dstate.fit.length);
   check('d5ShelfAvailable', dstate.offered.length > 0 && dstate.offered.every((id) => stOf(id) === 'available' || stOf(id) === 'fitted'));
   check('d5EnergySlot', /^Energy \d+\/\d+$/.test(await ev(`document.getElementById('treeEnergy').textContent`)));
-  check('d5LegendFour', await ev(`document.querySelectorAll('#treeLegend .lg:not(.ln)').length`) === 4);
+  check('d5LegendFour', await ev(`document.querySelectorAll('#treeLegend .lg:not(.ln):not(.st-evo)').length`) === 4);
   // a not-yet-learned node shows its reason
   const locked = t.tiles.find((x) => x.state === 'unlearned');
   check('d5HasUnlearned', !!locked);
@@ -175,6 +175,41 @@ module.exports = async (a) => {
   await a.eval(`__la.selectSlot('signal');1`); await a.sleep(150);
   const wo2 = await ev(`(function(){var o=__la.options().filter(function(x){return x.id==='chemo'})[0];return o?o.blocked:null})()`);
   check('withRestored', wo2 === false || wo2 === null);
+
+
+  // ---------------------------------------------------------------- 5b. the Light lineage: eighth column, step numbers, earned-by-use reasons, the evolved mark
+  await W.fresh({ seenWorld: true, unlocked: false });
+  await a.eval(`for(var i=1;i<=16;i++)__la.S.cleared[i]=true;__la.selectDish(17);__la.show('adapt');1`); await a.sleep(500);
+  check('dish17Exists', await ev(`!!LookAliveLevels.dish(17)`));
+  await a.eval(`__la.setUsed({});__la.tree(true);1`); await a.sleep(300);
+  t = await info();
+  const brs = await ev(`Array.prototype.map.call(document.querySelectorAll('.tv-bh'),function(e){return e.textContent})`);
+  check('eightColumnsLightLast', brs.length === 8 && brs[7] === 'Light');
+  check('lightNoOverlap', overlap(t.tiles) === 0);
+  if (!MOB) {
+    const sc2 = await ev(`(function(){var d=document.documentElement,s=document.getElementById('treeScroll');return {pageV:d.scrollHeight-innerHeight,pageH:d.scrollWidth-innerWidth,boxV:s.scrollHeight-s.clientHeight,boxH:s.scrollWidth-s.clientWidth}})()`);
+    check('lightDesktopNoScroll', sc2.pageV <= 0 && sc2.pageH <= 0 && sc2.boxV <= 0 && sc2.boxH <= 0);
+  }
+  const steps = await ev(`['lightpump','lightsense','lightcolor'].map(function(id){var e=document.querySelector('.tv-tile[data-id="'+id+'"] .tv-step');return e?e.textContent:null})`);
+  check('lightStepNumbers', JSON.stringify(steps) === JSON.stringify(['1', '2', '3']));
+  const col = await ev(`(function(){var r=['lightpump','lightsense','lightcolor'].map(function(id){var b=document.querySelector('.tv-tile[data-id="'+id+'"]').getBoundingClientRect();return Math.round(b.left)});return r})()`);
+  check('lightTilesOneColumn', col[0] === col[1] && col[1] === col[2]);
+  check('legendHasEvolved', await ev(`!!document.querySelector('#treeLegend .lg.st-evo svg')`));
+  await a.eval(`__la.treeSelect('lightsense');1`); await a.sleep(120);
+  t = await info();
+  check('stage2UnearnedReason', t.detail.indexOf('Clear a dish with Light-driven pump fitted to evolve this. Offered on dish 17.') >= 0 && /Not yet learned/.test(t.detail));
+  check('stage2NoFitButton', await ev(`document.getElementById('treeAct').hidden===true`));
+  check('noEvolvedMarkYet', await ev(`document.querySelectorAll('.tv-tile.evolved').length`) === 0);
+  if (!MOB) await shot('light-tree.png');
+  await a.eval(`__la.setUsed({lightpump:true});1`); await a.sleep(200);
+  t = await info();
+  check('stage2AvailableAfterUse', (t.tiles.find((x) => x.id === 'lightsense') || {}).state === 'available' && (t.tiles.find((x) => x.id === 'lightcolor') || {}).state === 'unlearned');
+  check('stage2FitButton', await ev(`(function(){var b=document.getElementById('treeAct');return !b.hidden&&b.textContent==='Fit this'})()`));
+  check('stage2EvolvedMark', await ev(`(function(){var t=document.querySelector('.tv-tile[data-id="lightsense"]');var g=t.querySelector('.tv-evo');return t.classList.contains('evolved')&&!g.hidden&&g.querySelector('svg path')!==null})()`));
+  await a.eval(`__la.treeSelect('lightcolor');1`); await a.sleep(100);
+  check('stage3StillReason', (await ev(`document.getElementById('treeDetail').textContent.replace(/\\s+/g,' ')`)).indexOf('Clear a dish with Light sensing fitted to evolve this. Offered on dish 17.') >= 0);
+  await a.eval(`__la.tree(false);__la.setUsed({});1`);
+  if (MOB) { await a.eval(`__la.tree(true);1`); await a.sleep(200); await a.eval(`__la.treeSelect('lightsense');1`); await a.sleep(150); await shot('light-tree-390.png'); await a.eval(`__la.tree(false);1`); }
 
   // ---------------------------------------------------------------- 6. phone-size picture
   if (MOB) { await a.eval(`__la.tree(true);1`); await a.sleep(200); await a.eval(`__la.treeSelect('flagellum');1`); await a.sleep(150); await shot('tree-390.png'); await a.eval(`__la.tree(false);1`); }

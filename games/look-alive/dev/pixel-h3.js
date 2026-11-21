@@ -6,6 +6,8 @@
 // (d) locate('food'|'colony'|'thinning') and colonyAt return points inside the dish
 // (e) setRun(..., { keepView: true }) keeps view and tick
 // (f) mean frame time over 60 frames at tick 150 under 8 ms (CPU submit plus a synchronous 1 px readback)
+// (g) dish 17 (the bright place): water inside the light band is brighter than water outside it, away from cells and boulders, and the core is brighter than the band;
+//     the same measure on dish 15 (same places) finds no patch
 module.exports = async (a) => {
   const W = require('./walk-lib.js')(a), ev = W.ev;
   await W.fresh({ seenWorld: true, unlocked: true });
@@ -55,5 +57,32 @@ module.exports = async (a) => {
   const ft = await ev(`(function(){var g=__la.gl();g.resetView();g.setTick(150);g.warm=99;var gl=g.eng.gl,p=new Uint8Array(4),i,t0,sum=0,cpu=0;for(i=0;i<5;i++){g.frame(performance.now());gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,p)}
     for(i=0;i<60;i++){t0=performance.now();g.frame(t0+i*16);var t1=performance.now();gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,p);sum+=performance.now()-t0;cpu+=t1-t0}return {total:sum/60,cpu:cpu/60,size:[g.eng.W,g.eng.H]}})()`);
   line(ft.total < 8, `mean frame time over 60 frames at tick 150: ${ft.total.toFixed(2)} ms with synchronous readback (CPU submit ${ft.cpu.toFixed(2)} ms), drawing buffer ${ft.size.join('x')} (want < 8 ms)`);
+
+  // (g) the light on dish 17, measured on water pixels only (every pixel near a recorded cell or boulder is left out)
+  const MEASURE = (t, geo) => `(function(){var g=__la.gl(),r=__la.S.run;g.resetView();g.setTick(${t});g.frame(performance.now());
+    var gl=g.eng.gl,W=gl.drawingBufferWidth,H=gl.drawingBufferHeight,px=new Uint8Array(W*H*4);gl.readPixels(0,0,W,H,gl.RGBA,gl.UNSIGNED_BYTE,px);
+    var sc=g.scNow,R=g.agR,geo=${JSON.stringify(geo)},fr=r.frames[${t}],k16=2*R/65535,bad=new Uint8Array(W*H),i,j;
+    function mark(wx,wy,rad){var cx=W/2+wx*sc,cy=H/2+wy*sc,r2=rad*rad,x0=Math.max(0,Math.floor(cx-rad)),x1=Math.min(W-1,Math.ceil(cx+rad)),y0=Math.max(0,Math.floor(cy-rad)),y1=Math.min(H-1,Math.ceil(cy+rad));for(var y=y0;y<=y1;y++)for(var x=x0;x<=x1;x++)if((x-cx)*(x-cx)+(y-cy)*(y-cy)<=r2)bad[y*W+x]=1}
+    for(i=0;i<fr.n;i++)mark((fr.x[i]*k16-R)/R,(fr.y[i]*k16-R)/R,16);
+    (r.boulders||[]).forEach(function(b){if(${t}>=b.birth&&(b.death==null||${t}<b.death+8))mark(b.x/R,b.y/R,Math.max(30,b.sigma*0.9/R*sc))});
+    var cx0=geo.x/R,cy0=geo.y/R,rb=geo.r/R,rc=geo.core/R,acc={core:[0,0],band:[0,0],out:[0,0]};
+    for(var y=0;y<H;y++){var yt=H-1-y,wy=(yt-H/2)/sc;for(var x=0;x<W;x++){if(bad[yt*W+x])continue;var wx=(x-W/2)/sc,rd=Math.hypot(wx,wy);if(rd>0.9)continue;var ld=Math.hypot(wx-cx0,wy-cy0),o=(y*W+x)*4,lum=(px[o]*0.3+px[o+1]*0.59+px[o+2]*0.11),key=ld<rc*0.7?'core':(ld>rc*1.2&&ld<rb*0.8)?'band':ld>rb*1.08?'out':null;if(key){acc[key][0]+=lum;acc[key][1]++}}}
+    function m(a){return a[1]?a[0]/a[1]:null}
+    return {core:m(acc.core),band:m(acc.band),out:m(acc.out),n:[acc.core[1],acc.band[1],acc.out[1]]}})()`;
+  if (await ev(`!!LookAliveLevels.dish(17)`)) {
+    await a.eval(`__la.selectDish(17);__la.show('adapt');1`); await a.sleep(600);
+    await a.eval(`__la.run();__la.S.playing=false;1`); await a.sleep(500);
+    const lg = await ev(`(function(){var l=__la.S.run.light;if(!l)return null;var T=l.x.length-1,best=null;for(var t=40;t<=T-20;t+=10){var d=Math.hypot(l.x[t],l.y[t]);if(!best||d>best.d)best={t:t,d:d}}   /* the tick with the patch furthest to one side, so there is bare water outside it */return {t:best.t,x:l.x[best.t],y:l.y[best.t],r:l.r,core:l.core,T:T}})()`);
+    line(!!lg, 'dish 17 run carries run.light ' + JSON.stringify(lg));
+    if (lg) {
+      const m17 = await ev(MEASURE(lg.t, lg)); console.log('  dish 17 light at tick ' + lg.t + ' (patch pushed to one side): water luma core ' + (m17.core && m17.core.toFixed(1)) + ', band ' + (m17.band && m17.band.toFixed(1)) + ', outside ' + (m17.out && m17.out.toFixed(1)) + ', pixels ' + m17.n.join('/'));
+      line(m17.band != null && m17.out != null && m17.band - m17.out > 6, `band water is brighter than water outside the patch by ${m17.band && m17.out ? (m17.band - m17.out).toFixed(1) : 'n/a'} (want > 6)`);
+      line(m17.core != null && m17.band != null && m17.core - m17.band > 25, `core is brighter than the band by ${m17.core && m17.band ? (m17.core - m17.band).toFixed(1) : 'n/a'} (want > 25)`);
+      await a.eval(`__la.selectDish(15);__la.show('adapt');__la.setBuild({pace:4,slop:3,metabolism:'respiration',parts:['flagellum'],reflex:null});__la.run();__la.S.playing=false;1`); await a.sleep(600);
+      const m15 = await ev(MEASURE(lg.t, lg)); console.log('  dish 15 at the same places: core ' + (m15.core && m15.core.toFixed(1)) + ', band ' + (m15.band && m15.band.toFixed(1)) + ', outside ' + (m15.out && m15.out.toFixed(1)));
+      line(await ev(`__la.S.run.light==null`), 'dish 15 run has no run.light');
+      line(m15.band != null && m15.out != null && Math.abs(m15.band - m15.out) < 3 && m15.core != null && Math.abs(m15.core - m15.out) < 4, `dish 15 shows no patch: band minus outside ${m15.band && m15.out ? (m15.band - m15.out).toFixed(1) : 'n/a'}, core minus outside ${m15.core && m15.out ? (m15.core - m15.out).toFixed(1) : 'n/a'} (want within 3 and 4)`);
+    }
+  } else line(false, 'dish 17 does not exist yet');
   console.log('PIXEL-H3 ' + (out.every(Boolean) ? 'PASS' : 'FAIL'));
 };

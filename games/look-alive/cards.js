@@ -117,6 +117,26 @@ var LookAliveCards = (function () {
       tree: { branch: 'sense', tier: 4, after: [], with: [] },
       fx: {} },
 
+    // ---- the Light lineage (habitat 3, dish 17): three stages in the Skin slot, each doing what the one before did and one thing more. Only one stage fits in a cell. Card pictures are borrowed until the cards have their own.
+    { id: 'lightpump', slot: 'envelope', name: 'Light-driven pump', shelf: 'biology', kind: 'part', energy: 1, counterpart: null, world: 3,
+      real: 'Halobacterium salinarum carries bacteriorhodopsin, a purple protein in its skin. When light falls on it, it pushes protons out of the cell, and the push is energy the cell can spend without eating.',
+      game: 'Changed for the game: a cell with it gains a little energy while it sits in the useful light of a bright patch. That is small next to food. It cannot tell where the light is, and the white middle of the patch burns every cell, with the pump or without it.',
+      effect: 'Skin. A little energy in useful light. Cannot find the light.',
+      tree: { branch: 'light', tier: 1, after: [], with: [], lineage: 'light', stage: 1 },
+      fx: {} },
+    { id: 'lightsense', slot: 'envelope', name: 'Light sensing', shelf: 'biology', kind: 'part', energy: 2, counterpart: null, world: 3,
+      real: 'Halobacterium salinarum also makes sensory rhodopsins beside its pump. They make no energy. They tell the cell how bright it is, and the cell swims toward orange light.',
+      game: 'Changed for the game: a swimmer with it climbs toward light the way a Chemoreceptor array climbs toward food, and stays where there is enough. It cannot tell harmful light from useful light, so a bright patch that drifts over it burns it. Needs a Flagellum or Twitching pili to move. Does everything the Light-driven pump does. Opens when you clear a dish with the pump fitted.',
+      effect: 'Skin. Everything the pump does, and a moving cell climbs toward light and stays where it is bright enough.',
+      tree: { branch: 'light', tier: 2, after: ['lightpump'], with: [], lineage: 'light', stage: 2 },
+      fx: {} },
+    { id: 'lightcolor', slot: 'envelope', name: 'Colour sensing', shelf: 'biology', kind: 'part', energy: 3, counterpart: null, world: 3,
+      real: 'Halobacterium salinarum has two sensory rhodopsins. One sends it toward orange light. The other sends it away from blue and near-ultraviolet light, which harms cells.',
+      game: 'Changed for the game: it tells the harmful middle of a bright patch from the useful edge. A cell in the glare swims out, and its climbing toward light never goes into the glare. Needs a Flagellum or Twitching pili to swim out. Does everything Light sensing does. Opens when you clear a dish with Light sensing fitted.',
+      effect: 'Skin. Everything Light sensing does, and a moving cell senses glare and swims out of it.',
+      tree: { branch: 'light', tier: 3, after: ['lightsense'], with: [], lineage: 'light', stage: 3 },
+      fx: {} },
+
     // ---- Machine shelf (powerful, raises Regularity) ----
     { id: 'fuelcell', slot: 'power', name: 'Fuel cell', shelf: 'machine', kind: 'metabolism', energy: 1, counterpart: 'respiration',
       real: 'No cell does this. It burns sugar completely and leaves nothing.',

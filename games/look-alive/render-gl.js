@@ -43,6 +43,7 @@ var LookAliveRender = (function () {
   };
 
   var INT_RE = /^i[A-Z]/;
+  var LT0 = [0, 0, 0, 0];
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
   function smooth(a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
   function mul(seed) { return function () { seed = (seed + 0x6D2B79F5) | 0; var t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -76,7 +77,7 @@ var LookAliveRender = (function () {
   // background: dish field, rim, waste haze, acid ambient, immune glow, acid fizz
   var FS_BG = [
     '#version 300 es', 'precision highp float; precision highp int;',
-    'uniform vec2 uRes,uCen; uniform float uScale,uTime,uBgBlur,uAcid,uHaze,uDish,uFizz,uTH,uTC; uniform sampler2D uF;',
+    'uniform vec2 uRes,uCen; uniform float uScale,uTime,uBgBlur,uAcid,uHaze,uDish,uFizz,uTH,uTC,uLtA; uniform vec4 uLt; uniform sampler2D uF;',
     'out vec4 o;', GL_COMMON,
     'float tkm(float x,float f0){ if(f0<=0.||f0>=1.) return 0.; float x0=acos(1.-2.*f0)/3.14159265-1.; return exp(-sq((x-x0)/.006))+exp(-sq((x+x0)/.006)); }',
     'void main(){',
@@ -107,6 +108,11 @@ var LookAliveRender = (function () {
     '    float fz=exp(-sq((length(fq)-ph*(.2+.28*h21(id+1.7)))/.05))*(1.-ph)*step(.55,hh)*uFizz*min(1.,fzl*4.)*inside;',
     '    hc+=vec3(1.,.85,.45)*fz*1.4;',
     '    c+=hc*inside;',
+    '  }',
+    '  if(uLtA>.5){',   // dish 17's light: a soft pale-blue band (the useful light), a thin ring where it ends, and a harder white core (the glare); the amber food haze stays warm
+    '    float ld=length(w-uLt.xy);',
+    '    float lb=1.-smoothstep(uLt.z*.5,uLt.z,ld), lc=1.-smoothstep(uLt.w*.8,uLt.w,ld), le=exp(-sq((ld-uLt.z)/(.007+bb*.8)));',
+    '    c+=(vec3(.12,.16,.27)*lb+vec3(.08,.11,.19)*le+vec3(.5,.54,.62)*lc)*inside;',
     '  }',
     '  if(uDish>.5){',
     '    float ring=exp(-sq((rd-1.)/(.0065+bb*.9)));',
@@ -544,7 +550,7 @@ var LookAliveRender = (function () {
     gl.disable(gl.BLEND);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.fieldTex);
     this.pBg.tx = { uF: 0 };
-    this.U(this.pBg, { uRes: [W, H], uCen: [P.cx, P.cy], uScale: P.sc, uTime: P.time, uBgBlur: P.bgBlur, uAcid: P.acid, uFizz: P.fizz, uHaze: P.haze, uDish: P.dish, uTH: P.tH || 0, uTC: P.tC || 0 });
+    this.U(this.pBg, { uRes: [W, H], uCen: [P.cx, P.cy], uScale: P.sc, uTime: P.time, uBgBlur: P.bgBlur, uAcid: P.acid, uFizz: P.fizz, uHaze: P.haze, uDish: P.dish, uTH: P.tH || 0, uTC: P.tC || 0, uLtA: P.lt ? 1 : 0, uLt: P.lt || LT0 });
     gl.bindVertexArray(this.vaoEmpty); gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
     gl.bindVertexArray(this.vaoCell);
@@ -1203,13 +1209,15 @@ var LookAliveRender = (function () {
     var tm = this.reduced ? 0 : this.time;
     var r = this.pack(Math.min(this.T, Math.max(0, this.tick)), tm, sc, false), fx = this.fx;
     var cellPx = 0.0105 * this.ss * 1.45 * 2.5 * sc, cloud = cellPx < 8 && !this.ag;
+    var lt = null, LG = this.ag && this.run && this.run.light;   // dish 17: the moving light patch, micrometres to dish units
+    if (LG && LG.x && LG.x.length) { var lti = Math.min(LG.x.length - 1, Math.max(0, Math.floor(this.tick))), ltj = Math.min(LG.x.length - 1, lti + 1), ltf = clamp(this.tick, 0, LG.x.length - 1) - lti, uR = 1 / this.agR; lt = this.ltBuf || (this.ltBuf = [0, 0, 0, 0]); lt[0] = (LG.x[lti] + (LG.x[ltj] - LG.x[lti]) * ltf) * uR; lt[1] = (LG.y[lti] + (LG.y[ltj] - LG.y[lti]) * ltf) * uR; lt[2] = LG.r * uR; lt[3] = LG.core * uR; }
     var D = this.D, acidAmb = D && D.acid ? Math.min(1, D.acid * 2) * 0.25 : 0;
     var expo = this.exposure * (r.n > 1500 ? Math.max(0.55, 1 - 0.3 * Math.log(r.n / 1500) / Math.LN10) : 1);
     eng.render({
       n: r.n, ns: r.ns, cx: this.view.cx, cy: this.view.cy, sc: sc, zoom: zoom, focus: focus, K: K, tol: TUNE.tol, depth: 1, bgBlur: bgBlur,
       acid: acidAmb, fizz: clamp(fx.acidLoss * 2.5, 0, 1), time: tm, exposure: expo, cloud: cloud, dish: 1, haze: 1, bloom: TUNE.bloom, bloomThr: TUNE.bloomThr, cloudK: TUNE.cloud, vig: TUNE.vignette, chroma: TUNE.chroma, grain: TUNE.grain,
       field: this.field, bld: { env: this.bf.env, ee: 0, tight: this.bf.tight, pump: this.bf.pump, shell: this.bf.shell, acidIn: this.bf.acidIn, sync: this.bf.sync, head: this.bf.head, reflex: this.bf.reflex, core: this.bf.core, refA: -2.356 },
-      shadow: this.gzMax > 0 ? 1 : 0, tH: D && D.temp ? D.temp.hot : 0, tC: D && D.temp ? D.temp.cool : 0,
+      lt: lt, shadow: this.gzMax > 0 ? 1 : 0, tH: D && D.temp ? D.temp.hot : 0, tC: D && D.temp ? D.temp.cool : 0,
       pulse: fx.pulse, lowBloom: this.tierName === 'phone', pulseGlow: TUNE.pulseGlow, glint: TUNE.glint,
       sp: { helAmp: TUNE.helAmp, helWaves: TUNE.helWaves, tailW: TUNE.tailW, gap: TUNE.chainGap, strPitch: TUNE.strPitch, granS: TUNE.granS, bokK: 1 - TUNE.bokehCut * smooth(TUNE.bokehZ0, TUNE.bokehZ1, zoom) }
     });
