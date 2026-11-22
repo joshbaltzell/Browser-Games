@@ -206,7 +206,7 @@ var LookAliveLevels = (function () {
   }
   DISHES.push(
     exam({ id: 6, tips: {
-        acid: ['The acid is much stronger here, and your defence was not enough to stop it dissolving you.', 'A thin membrane will not do in this acid. Look at the Envelope and Insides slots, and at what a full defence takes from your energy and your births. Fast dividers have thin, new membranes, so a high Pace lets more acid in.'],
+        acid: ['The acid is much stronger here, and your defence was not enough to stop it dissolving you.', 'A thin membrane will not do in this acid. Look at the Envelope and Insides slots, and at what a full defence takes from your energy and your births. In this dish a high Pace lets more acid in. That is a rule of our dish, not a known fact.'],
         below: ['Your colony faded out of the band. Holding this acid out costs births, and yours could not replace the losses.', 'Check what your defence takes from Growth, then look at Pace and Sloppiness: a cell can pay for protection in births, but not more than it earns.'],
         starved: ['Your colony faded out. Holding this acid out costs births, and yours could not replace the losses.', 'Check what your defence takes from Growth, then look at Pace and Sloppiness: a cell can pay for protection in births, but not more than it earns.'],
         'exposed:regularity': ['Your cells divided in step, and the inspector read that as a machine.', 'Look at the Division slot and the Sloppiness dial, and at which Machine cards you fitted to keep the acid out: some of them look plainly like machine parts.'],

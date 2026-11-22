@@ -77,6 +77,7 @@ module.exports = async (a) => {
   check('d15CarriedStarves', wa.win === false && wa.cause === 'starved');
   await W.click('#verdictBtn'); await a.sleep(400);
   check('d15AdaptScreen', (await ev(`__la.info().screen`)) === 'adapt');
+  check('d15PortraitNoLightMarks', await ev(`!document.querySelector('#cellSvg .lmarks')&&!document.querySelector('#cellSvg .lpatch')`));
   const tg = await ev(`__la.tags().map(function(t){return t.slot+':'+(t.selectable?'open':'locked')})`);
   sum.d15Tags = tg; check('d15SlotsOpenLocked', tg.indexOf('motor:open') >= 0 && tg.indexOf('signal:open') >= 0 && tg.indexOf('reflex:locked') >= 0);
   // Adapt: real clicks, Motor then Signal
@@ -229,6 +230,22 @@ module.exports = async (a) => {
   await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(300);
   check('d17PumpMarksOnCell', await ev(`document.querySelectorAll('#cellSvg .lpatch').length>0&&!document.querySelector('#cellSvg .lspot')`));
   check('d17PumpTileFitted', (await ev(`__la.path().steps.map(function(t){return t.state})`)).join() === 'fitted,next,far' && (await rectNow('pumpFitted')) === seenRects[0][1]);
+  // ---- the big portrait on Adapt shows the Light steps: the marks are laid over the WebGL portrait in the same 600 x 410 space (#cellSvg over #cellGL)
+  const lmeasure = () => ev(`(function(){var gl=document.getElementById('cellGL').getBoundingClientRect(),sv=document.getElementById('cellSvg').getBoundingClientRect(),m=document.querySelector('#cellSvg .lmarks');if(!m)return {has:false,glOn:document.getElementById('cellWrap').classList.contains('cellglon')};var b=m.getBoundingClientRect();return {has:true,glOn:document.getElementById('cellWrap').classList.contains('cellglon'),step:+m.getAttribute('data-step'),ghost:m.classList.contains('ghost'),patch:m.querySelectorAll('.lpatch').length/2,spot:m.querySelectorAll('.lspot').length,len:m.innerHTML.length,inside:b.left>=gl.left-1&&b.right<=gl.right+1&&b.top>=gl.top-1&&b.bottom<=gl.bottom+1,aligned:Math.abs(gl.left-sv.left)<1.5&&Math.abs(gl.top-sv.top)<1.5&&Math.abs(gl.width-sv.width)<1.5&&Math.abs(gl.height-sv.height)<1.5,pe:getComputedStyle(m).pointerEvents}})()`);
+  const preParts = await ev(`__la.S.build.parts.slice()`), pm = {};
+  pm.s1 = await lmeasure();
+  for (const [nm, id] of [['s2', 'lightsense'], ['s3', 'lightcolor']]) { await a.eval(`(function(){var b=JSON.parse(JSON.stringify(__la.S.build));b.parts=b.parts.filter(function(p){return !/^light/.test(p)}).concat(['${id}']);__la.setBuild(b);return 1})()`); await a.sleep(250); pm[nm] = await lmeasure(); }
+  await a.eval(`(function(){var b=JSON.parse(JSON.stringify(__la.S.build));b.parts=b.parts.filter(function(p){return !/^light/.test(p)});__la.setBuild(b);return 1})()`); await a.sleep(250); pm.none = await lmeasure();
+  await a.eval(`__la.preview('envelope','lightpump');1`); await a.sleep(250); pm.ghost = await lmeasure(); await a.eval(`__la.clearPreview();1`); await a.sleep(150);
+  await a.eval(`(function(){var b=JSON.parse(JSON.stringify(__la.S.build));b.parts=${JSON.stringify(preParts)};__la.setBuild(b);return 1})()`); await a.sleep(300);
+  sum.d17PortraitMarks = pm;
+  check('d17PortraitNoneNoMarks', pm.none.has === false && pm.none.glOn === true);
+  check('d17PortraitStep1', pm.s1.has && pm.s1.step === 1 && pm.s1.patch === 5 && pm.s1.spot === 0 && pm.s1.inside && pm.s1.aligned && pm.s1.pe === 'none');
+  check('d17PortraitStep2', pm.s2.has && pm.s2.step === 2 && pm.s2.patch === 5 && pm.s2.spot === 1 && pm.s2.inside && pm.s2.aligned);
+  check('d17PortraitStep3', pm.s3.has && pm.s3.step === 3 && pm.s3.patch === 5 && pm.s3.spot === 1 && pm.s3.inside && pm.s3.len > pm.s2.len);
+  check('d17PortraitStepsDiffer', pm.s1.len < pm.s2.len && pm.s2.len < pm.s3.len);
+  check('d17PortraitGhostPreview', pm.ghost.has && pm.ghost.ghost === true && pm.ghost.step === 1);
+  check('d17PortraitRestored', JSON.stringify(await ev(`__la.S.build.parts`)) === JSON.stringify(preParts) && (await lmeasure()).step === 1);
   sum.d17BarsPump = await ev(`__la.bars().map(function(b){return b.stat+':'+b.verdict})`);
   // cellArt: the three steps are told apart by their marks
   const art3 = await ev(`['lightpump','lightsense','lightcolor'].map(function(id){var sl=LookAlive.toSlots(__la.S.build);sl.envelope=[id];var h=LAD.cellArt(sl,{});return {patch:(h.match(/class="lpatch"/g)||[]).length/2,spot:(h.match(/class="lspot"/g)||[]).length,len:h.length}})`);
@@ -275,7 +292,7 @@ module.exports = async (a) => {
   check('d17FocusKeptOnStep', await ev(`document.activeElement&&document.activeElement.getAttribute('data-id')==='lightsense'`));
   check('d17StepReplacesStep', await ev(`__la.S.build.parts.filter(function(p){return /^light/.test(p)}).join()==='lightsense'`));
   await a.eval(`document.activeElement&&document.activeElement.blur();1`); await a.sleep(300);
-  check('d17Step2Marks', await ev(`document.querySelectorAll('#cellSvg .lpatch').length>0&&document.querySelectorAll('#cellSvg .lspot').length===1`));
+  check('d17Step2Marks', await ev(`document.querySelectorAll('#cellSvg .lpatch').length>0&&document.querySelectorAll('#cellSvg .lspot').length===(document.querySelector('#cellSvg .lmarks')?2:1)`));
   // fitting step 1 again from step 2 replaces it too, and the layer is kept
   check('d17PumpReplacesSense', await W.click('#pathBox .step[data-id="lightpump"]') && await ev(`__la.S.build.parts.filter(function(p){return /^light/.test(p)}).join()==='lightpump'`));
   check('d17FitSense', await W.click('#pathBox .step[data-id="lightsense"]') && await ev(`__la.S.build.parts.filter(function(p){return /^light/.test(p)}).join()==='lightsense'`));
@@ -357,7 +374,7 @@ module.exports = async (a) => {
   check('d17FitColour', await W.click('#pathBox .step[data-id="lightcolor"]') && await ev(`__la.S.build.parts.filter(function(p){return /^light/.test(p)}).join()==='lightcolor'`));
   await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(300);
   await a.eval(`document.activeElement&&document.activeElement.blur();1`); await a.sleep(200);
-  check('d17ColourMarks', await ev(`document.querySelectorAll('#cellSvg .lpatch').length>0&&document.querySelectorAll('#cellSvg .lspot').length===1&&document.querySelectorAll('#cellSvg .lspot ~ path').length>0`));
+  check('d17ColourMarks', await ev(`document.querySelectorAll('#cellSvg .lpatch').length>0&&document.querySelectorAll('#cellSvg .lspot').length===(document.querySelector('#cellSvg .lmarks')?2:1)&&document.querySelectorAll('#cellSvg .lspot ~ path').length>0`));
   check('d17AllStatesNoTileMoved', (await rectNow('allFitted')) === seenRects[0][1] && seenRects.every(r => r[1] === seenRects[0][1]));
   await shotD('path-d17-all.png');
   await a.eval(`window.__mvSave={f:JSON.stringify(LookAliveCards.part('flagellum').tree),p:JSON.stringify(LookAliveCards.part('pili').tree)};var F=LookAliveCards.part('flagellum').tree,P=LookAliveCards.part('pili').tree;F.lineage='move';F.stage=2;P.lineage='move';P.stage=1;__la.setUsed({lightpump:true,pili:true});__la.setEvolved({});1`);

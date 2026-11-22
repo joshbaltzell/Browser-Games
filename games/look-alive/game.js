@@ -95,6 +95,9 @@
     var eff = sl;
     if (gh && gh.slot) { eff = {}; for (var k in sl) eff[k] = sl[k]; var gs = Sim.toSlots(gh.build); eff[gh.slot] = gs[gh.slot]; }
     p.draw(eff);
+    // the Light steps: the shader has no marks for them, so the same marks cellArt draws sit over the portrait in the same 600 x 410 space
+    var lm = D.lightMarks ? D.lightMarks(eff) : '';
+    if (lm) $('cellSvg').insertAdjacentHTML('beforeend', gh && gh.slot === 'envelope' ? lm.replace('class="lmarks"', 'class="lmarks ghost"') : lm);
   }
 
   var ORDER1 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], ORDER = ORDER1;
@@ -148,7 +151,7 @@
 
   var S = {
     screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null, otherwise: null },
-    cleared: load('cleared2', {}), used: load('used3', {}), evolved: load('evolved3', {}), evo: null, evoShown: false, pathSel: null, pathFocus: null, evolvedNew: [], grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, introWorld: 1, afterIntro: 'list', worldView: 1, worldTab: (function () { var v = load('worldTab', 1); return v === 2 || v === 3 ? v : 1; })(), seenIntroB: load('introB', false), seenWorldB: load('worldB', false), seenIntroC: load('introC', false), seenWorldC: load('worldC', false), unlocked: load('unlocked2', false),
+    cleared: load('cleared2', {}), used: load('used3', {}), evolved: load('evolved3', {}), evo: null, evoShown: false, pathSel: null, pathMore: null, pathFocus: null, evolvedNew: [], grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, introWorld: 1, afterIntro: 'list', worldView: 1, worldTab: (function () { var v = load('worldTab', 1); return v === 2 || v === 3 ? v : 1; })(), seenIntroB: load('introB', false), seenWorldB: load('worldB', false), seenIntroC: load('introC', false), seenWorldC: load('worldC', false), unlocked: load('unlocked2', false),
     slot: null, layer: 0, preview: null, pointed: false,
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
@@ -190,6 +193,8 @@
     var t = a && a.text ? a.text.replace(/^[^:]{0,70}\btick \d+(?: to \d+)?:\s*/, '') : '';
     return t.charAt(0).toUpperCase() + t.slice(1);
   }
+  // The headline above the finding. For a burned colony the headline's second sentence says what the finding then says again with its counts, so only the first sentence is kept.
+  function headlineOf(a) { return a && a.cause === 'burned' && a.headline ? a.headline.split('. ')[0].replace(/\.$/, '') + '.' : (a ? a.headline : ''); }
   function failSentence(a) { return a && a.headline ? a.headline.split('. ')[0].replace(/\.$/, '') : ''; }
   function refresh() {
     var step = 0, text = '', d = dishObj(), a = S.lastAutopsy;
@@ -837,10 +842,12 @@
     return w;
   }
   function emptyOptionEl(k) {
-    var sl = slotsNow(), isEmpty = fittedIds(k).length === 0, w = el('div', 'optempty' + (isEmpty ? ' fitted' : ''));
+    // This row is the way to take the part off. Its state word says whether the slot (the chosen layer, on the Skin) is empty now.
+    // A Machine rule in the Reflex slot is a part too, though it is not a card id, so it counts as fitted here.
+    var sl = slotsNow(), isEmpty = k === 'reflex' ? !sl.reflex : k === 'envelope' ? !sl.envelope[S.layer] : fittedIds(k).length === 0, w = el('div', 'optempty' + (isEmpty ? ' fitted' : ''));
     w.setAttribute('role', 'button'); w.tabIndex = 0; w.setAttribute('data-id', 'empty'); w.setAttribute('aria-pressed', isEmpty ? 'true' : 'false');
     var target = k === 'envelope' ? sl.envelope[S.layer] : undefined;
-    w.innerHTML = '<span>Empty' + (k === 'envelope' ? ' (this layer)' : '') + '</span><span>' + (isEmpty ? 'Fitted' : 'take it off') + '</span>';
+    w.innerHTML = '<span>Empty' + (k === 'envelope' ? ' (this layer)' : '') + '</span><span>' + (isEmpty ? 'Nothing fitted' : 'take it off') + '</span>';
     function go() { if (isEmpty || (k === 'envelope' && !target)) { showPreviewText('This slot is already empty.', false); return; } doUnfit(k, target); }
     w.addEventListener('click', go); w.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); S.focusId = 'empty'; go(); } });
     w.addEventListener('mouseenter', function () { if (!isEmpty && !(k === 'envelope' && !target)) previewOption(k, null); });
@@ -876,10 +883,13 @@
     });
   }
   function stepGame(c) { var d0 = dishObj(); return d0.agents ? (c.game3 || (c.world === 3 ? c.game : c.real)) : (c.game || c.sentence); }
+  // The detail shows the game text's first sentence and the real line first; the rest of the game text is behind a fixed "more" toggle (the box never changes size).
+  function firstSentence(t) { var m = /^[\s\S]*?[.!?](?=\s|$)/.exec(t); return m ? m[0] : t; }
   function pathDetailHtml(m, n) {
-    var c = m.c, g = stepGame(c) || '';
-    return '<div class="pd-h"><b>' + esc(c.name) + '</b><span>Step ' + m.stage + ' of ' + n + ' · ' + (c.energy ? 'Energy ' + c.energy : 'No energy') + ' · ' + STEP_WORD[m.state] + '</span></div>' +
-      '<div class="pd-t"><p class="pd-g">' + esc(g) + '</p><p class="pd-r"><i>Real</i>' + esc(c.real || '') + '</p></div>' +
+    var c = m.c, g = stepGame(c) || '', f1 = firstSentence(g), more = g.length > f1.length + 1, open = more && S.pathMore === m.id;
+    return '<div class="pd-h"><b>' + esc(c.name) + '</b><span>Step ' + m.stage + ' of ' + n + ' \u00B7 ' + (c.energy ? 'Energy ' + c.energy : 'No energy') + ' \u00B7 ' + STEP_WORD[m.state] + '</span>' +
+      '<button type="button" class="pd-more" aria-expanded="' + (open ? 'true' : 'false') + '"' + (more ? '' : ' hidden') + '>' + (open ? 'less' : 'more') + '</button></div>' +
+      '<div class="pd-t' + (open ? ' open' : '') + '"><p class="pd-g">' + esc(open ? g : f1) + '</p><p class="pd-r" title="' + esc(c.real || '') + '"><i>Real</i>' + esc(c.real || '') + '</p></div>' +
       '<div class="pd-w">' + (m.reason ? esc(m.reason) : '') + '</div>' +
       '<div class="pd-k">' + (m.stage > 1 ? 'This step still does everything the earlier steps do.' : 'Every later step does everything this step does.') + '</div>';
   }
@@ -895,6 +905,7 @@
       var m = (S.pathFocus && by[S.pathFocus]) || model.filter(function (x) { return x.state === 'fitted'; })[0] || (S.pathSel && by[S.pathSel]) || ready[ready.length - 1] || model[0];
       return m;
     }
+    det.addEventListener('click', function (e) { var b = e.target.closest ? e.target.closest('.pd-more') : null; if (!b) return; var id = det.getAttribute('data-id'); S.pathMore = S.pathMore === id ? null : id; paint(); var nb = det.querySelector('.pd-more'); if (nb) nb.focus({ preventScroll: true }); });
     function paint() { var m = shown(); det.innerHTML = pathDetailHtml(m, n); det.setAttribute('data-id', m.id); Array.prototype.forEach.call(strip.querySelectorAll('.step'), function (t) { t.classList.toggle('sel', t.getAttribute('data-id') === m.id); }); }
     model.forEach(function (m, i) {
       if (i) strip.insertAdjacentHTML('beforeend', '<svg class="parr' + (m.state === 'next' || m.state === 'far' ? ' dash' : '') + '" viewBox="0 0 14 24" aria-hidden="true"><path d="M1 12h9M6.5 7.5 11 12l-4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>');
@@ -1341,10 +1352,10 @@
     if (S.mode === 'watch') {
       if (!S.watchDone) text = '';
       else if (run.v.win) { text = 'Your carried cell already survives this dish.'; btn = 'Continue'; }
-      else { text = run.autopsy.headline + ' ' + findingBody(run.autopsy); btn = 'Adapt your cell'; }
+      else { text = headlineOf(run.autopsy) + ' ' + findingBody(run.autopsy); btn = 'Adapt your cell'; }
     } else if (!S.runFinished) text = '';
     else if (run.v.win) { text = 'Your cell made it. The guards did not notice.'; btn = 'See result'; }
-    else { text = run.autopsy.headline + ' ' + findingBody(run.autopsy); btn = 'Back to Adapt'; }
+    else { text = headlineOf(run.autopsy) + ' ' + findingBody(run.autopsy); btn = 'Back to Adapt'; }
     var key = text + '|' + btn; if (key === S.vcache) return; S.vcache = key;
     $('verdictText').textContent = text; $('verdictText').title = text;
     var b = $('verdictBtn'); b.textContent = btn || 'Adapt your cell'; b.style.visibility = btn ? 'visible' : 'hidden';
@@ -1582,7 +1593,7 @@
       html = '<div class="losswrap"><div class="slide" id="lossSlide"><div class="slidetag" id="slideTag">' + slideTag(a.cause, d) + '</div>' +
         '<div class="slidetop"><img class="slideimg" id="slideImg" alt="The dish at the moment it went wrong"><div class="slidebars statbars" id="slideBars"></div></div><div class="slidenote" id="slideNote"></div>' + (d.agents ? '<div class="deathline" id="deathLine">' + esc(deathsText(run)) + '</div>' : '') +
         timelineSvg(run.T, a.from, a.to) + '</div><div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span id="memoFrom">' + esc((d.agents && MEMO_FROM3[a.cause]) || MEMO_FROM[a.cause] || 'Sample lab') + '</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
-        '<div class="row"><b>Finding</b><span class="head" id="memoFinding"><strong>' + esc(a.headline) + '</strong> <span class="rest">' + esc(findingBody(a)) + '</span></span></div>' +
+        '<div class="row"><b>Finding</b><span class="head" id="memoFinding"><strong>' + esc(headlineOf(a)) + '</strong> <span class="rest">' + esc(findingBody(a)) + '</span></span></div>' +
         '<div class="row"><b>Stat that failed</b><span>' + esc(failStatLine(run)) + '</span></div>' +
         '<div class="row"><b>Also</b><span class="sec">' + (a.second ? esc(a.second.text) : 'No second cause of note.') + '</span></div>' +
         recordRow(run, d) +
@@ -1615,6 +1626,13 @@
     return sl;
   }
   function evoFig(slots) { return '<svg viewBox="150 50 300 300" aria-hidden="true">' + D.cellArt(slots, {}) + '</svg>'; }
+  // A fixed label on the "Gained" figure pointing at what is new (the Light marks only; nothing else moves).
+  var EVO_CALL = { 1: 'new:<br>light patches', 2: 'new:<br>sensing spot', 3: 'new:<br>colour spot' };
+  function evoCall(slots) {
+    var sp = D.lightSpot ? D.lightSpot(slots) : null; if (!sp) return '';
+    var ex = sp.step < 2 ? sp.x - 6 : sp.x - 23, ey = sp.step < 2 ? sp.y - 4 : sp.y - 10;
+    return '<svg class="evolead" viewBox="150 50 300 300" aria-hidden="true"><line x1="284" y1="80" x2="' + ex + '" y2="' + ey + '" stroke="#fff" stroke-width="2.4"/><circle cx="' + ex + '" cy="' + ey + '" r="3.4" fill="#fff"/></svg><span class="evocall">' + EVO_CALL[sp.step] + '</span>';
+  }
   function evoDishOf(cd) { return S.evo.build && buildCardIds(S.evo.build).indexOf(cd.from) >= 0 ? S.evo.dish : (offeredOn(cd.from)[0] || S.evo.dish); }
   function lineageLen(l) { var n = 0; Cards.parts.concat(Cards.bioReflexes).forEach(function (o) { if (o.tree && o.tree.lineage === l) n++; }); return n; }
   function showEvolve() {
@@ -1629,7 +1647,7 @@
     ov.innerHTML = '<div class="evowrap"><div class="paper memo evo' + (many ? ' many' : '') + '" id="evoCard" role="dialog" aria-modal="true" aria-labelledby="evoH"><h2 id="evoH">OUR CELL HAS CHANGED</h2>' + picks +
       '<div class="evopair"><figure class="evofig"><div class="evobox" id="evoFigA">' + evoFig(slotsWithStep(E.build, cd.lineage, cd.from)) + '</div><figcaption><span class="k">Used</span><b>' + esc(from ? from.name : cd.from) + '</b></figcaption></figure>' +
       '<svg class="evoarr" viewBox="0 0 40 24" aria-hidden="true"><path d="M2 12h30M26 5l8 7-8 7" fill="none" stroke="currentColor" stroke-width="3"/></svg>' +
-      '<figure class="evofig gain' + (reduced ? '' : ' anim') + '"><div class="evobox" id="evoFigB">' + evoFig(slotsWithStep(E.build, cd.lineage, cd.id)) + '</div><figcaption><span class="k">Gained</span><b>' + esc(to ? to.name : cd.id) + '</b></figcaption></figure></div>' +
+      '<figure class="evofig gain' + (reduced ? '' : ' anim') + '"><div class="evobox" id="evoFigB">' + evoFig(slotsWithStep(E.build, cd.lineage, cd.id)) + evoCall(slotsWithStep(E.build, cd.lineage, cd.id)) + '</div><figcaption><span class="k">Gained</span><b>' + esc(to ? to.name : cd.id) + '</b></figcaption></figure></div>' +
       '<div class="evoname"><b id="evoName">' + esc(to ? to.name : cd.id) + '</b><span>Step ' + cd.stage + ' of ' + lineageLen(cd.lineage) + ' on the ' + esc(nm) + ' path</span></div>' +
       '<p class="evoadd" id="evoAdd">' + esc(add) + '</p>' +
       '<p class="evocause" id="evoCause">It lived through dish ' + evoDishOf(cd) + ' with ' + esc(from ? from.name : cd.from) + ' fitted. That is how a path grows.</p>' +

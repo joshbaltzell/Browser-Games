@@ -43,15 +43,15 @@ var LookAliveLevels3 = (function () {
     return a;
   }
   // Dish 17: less food than dish 16 and one bright patch of light drifting across it. Numbers are in micrometres and seconds.
-  //   Food: seven boulders leaking 0.6 each that die sooner (40 to 90 s; dish 16: five, 60 to 120 s), a colony of natives to match, and 20 scouts. The carried cell (dish 16's answer) lands hungry and fades below the band.
-  //   Light: the patch (radius 180, glare core 30) starts 70 from the landing site, toward the middle, and drifts across the boulders at 2.7 per second. Useful light gives a pigmented scout up to 0.012 energy a second
-  //   (its upkeep is about 0.008); the glare kills 3% a second at the centre of the core, for every scout.
-  var LIGHT17 = { r: 180, core: 30, speed: 2.7, useful: 0.012, harm: 0.03, lead: 70 };
+  //   Food: seven tighter boulders (spread 20; dish 16: 28) leaking 0.6 each that die sooner (40 to 90 s; dish 16: five, 60 to 120 s), a colony of natives to match, and 20 scouts. The carried cell (dish 16's answer) lands hungry and fades below the band.
+  //   Light: the patch (radius 125, glare core 29: small, so a cell that cannot follow it spends most of its time outside) starts 70 from the landing site, toward the middle, and drifts across the boulders at 2.7 per second. Useful light gives a pigmented scout up to 0.0205 energy a second
+  //   (its upkeep is about 0.008); the glare kills 4% a second at the centre of the core, for every scout.
+  var LIGHT17 = { r: 125, core: 29, speed: 2.7, useful: 0.0205, harm: 0.04, lead: 70 };
   function agents17(seed) {
     var a = agents(seed);
     a.start = 20;
     a.natives = { quad: 260, halo: 120, sali: 35 };
-    a.boulders = { count: 7, leak: 0.6, sigma: 24, lifeMin: 40, lifeMax: 90 };
+    a.boulders = { count: 7, leak: 0.6, sigma: 20, lifeMin: 40, lifeMax: 90 };
     a.light = { r: LIGHT17.r, core: LIGHT17.core, speed: LIGHT17.speed, useful: LIGHT17.useful, harm: LIGHT17.harm, lead: LIGHT17.lead };
     return a;
   }

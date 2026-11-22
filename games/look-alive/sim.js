@@ -1122,7 +1122,7 @@ var LookAlive = (function () {
     function add(src, label, chips) { chips.forEach(function (c) { out.chips.push({ source: src, text: c }); }); cards.push({ id: src, label: label, chips: chips }); }
     out.pace = [Math.abs(bp.paceMult - 1) < 0.005 ? 'Births at the native rate' : 'Births ' + sgn(bp.paceMult - 1) + ' vs natives'];
     if (D.temp && D.temp.nightHurry && bp.paceMult > (D.temp.hurryFrom || 1) + 0.005) out.pace.push('Fast cells starve sooner in the dark');
-    if (D.acidHurry && bp.paceMult > (D.acidHurryFrom || 1) + 0.005 && bp.ids.indexOf('acidproof') < 0 && D.acid > 0 && bp.acidBlock > 0) out.pace.push('Fast cells have thin new membranes: more acid gets in');
+    if (D.acidHurry && bp.paceMult > (D.acidHurryFrom || 1) + 0.005 && bp.ids.indexOf('acidproof') < 0 && D.acid > 0 && bp.acidBlock > 0) out.pace.push('In this acid a fast cell lets more in. This is a rule of our dish, not a known fact');
     // Runaway is read off a short dry run of the model itself (16 by 16), so the warning cannot disagree with what the dish then does.
     var ab = D.abundance, runaway = false;
     if (ab && ab.run) {

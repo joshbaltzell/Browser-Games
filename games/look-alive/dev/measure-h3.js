@@ -199,22 +199,22 @@ function withStage(k, extra) { var b = cp(CARRY17); if (k) b.parts.push(STAGE[k]
 var M = {};   // per-stage numbers kept for the lines below
 function stageRuns(k) {
   if (M[k]) return M[k];
-  var o = { wins: 0, causes: {}, ib: [], fin: [], lit: [], glare: [], burned: 0, ms: [] }, last = null;
+  var o = { wins: 0, causes: {}, ib: [], fin: [], lit: [], glare: [], gt: [], out: [], burned: 0, ms: [], carriedSeed1: null }, last = null;
   SEEDS.forEach(function (s) {
     var b = withStage(k), t0 = process.hrtime.bigint(), r = run17(b, s, true), ms = Number(process.hrtime.bigint() - t0) / 1e6;
     o.ms.push(ms);
     if (r.v.win) o.wins++;
     var c = r.autopsy ? r.autopsy.cause : 'win'; o.causes[c] = (o.causes[c] || 0) + 1;
     o.ib.push(r.v.bandFrac); o.fin.push(r.H.share[300]);
-    var a = 0, n = 0, t; for (t = D17.band.warm; t <= 300; t++) if (r.H.scouts[t] > 0) { a += r.H.light[t]; n++; }
-    o.lit.push(n ? a / n : 0); o.glare.push(r.dCause.glare);
+    var a = 0, g = 0, n = 0, t; for (t = D17.band.warm; t <= 300; t++) if (r.H.scouts[t] > 0) { a += r.H.light[t]; g += r.H.glare[t]; n++; }
+    o.lit.push(n ? a / n : 0); o.glare.push(r.dCause.glare); o.gt.push(n ? g / n : 0); o.out.push(n ? Math.max(0, 1 - (a + g) / n) : 0);   // gt: scout-time in glare; out: scout-time in no light (glare and useful light overlap a little at the core's edge, so the three need not sum to 1)
   });
   M[k] = o; return o;
 }
 (function () {
-  var c = stageRuns(0), p = stageRuns(1), lose = (c.causes.starved || 0) + (c.causes.below || 0);
+  var c = stageRuns(0), p = stageRuns(1), lose = 10 - c.wins;   // any loss counts (starved, below, burned...)
   results.push(line(lose >= 9 && p.wins >= 9, 'M10 dish 17: carried cell loses, Light-driven pump wins',
-    'carried cell loses by starved or below on ' + lose + '/10 (causes ' + JSON.stringify(c.causes) + '; wins ' + c.wins + '); with lightpump wins ' + p.wins + '/10 (outcomes ' + JSON.stringify(p.causes) + '); mean in-band ' + f2(mean(c.ib)) + ' -> ' + f2(mean(p.ib)) + ', mean final share ' + f3(mean(c.fin)) + ' -> ' + f3(mean(p.fin))));
+    'carried cell loses on ' + lose + '/10 (causes ' + JSON.stringify(c.causes) + '; wins ' + c.wins + '); with lightpump wins ' + p.wins + '/10 (outcomes ' + JSON.stringify(p.causes) + '); mean in-band ' + f2(mean(c.ib)) + ' -> ' + f2(mean(p.ib)) + ', mean final share ' + f3(mean(c.fin)) + ' -> ' + f3(mean(p.fin))));
 })();
 
 // M11 Light sensing in place of the pump: at least as good, and the scouts spend more of their time in useful light
@@ -235,10 +235,10 @@ function stageRuns(k) {
 
 // M13 dials alone never win dish 17; each answer survives one Pace step either side; run time
 (function () {
-  var best = 0, bestAt = '', n = 0, solid = [];
+  var best = 0, bestAt = '', n = 0, solid = [], seed1 = [];
   for (var pace = 0; pace <= 8; pace++) for (var slop = 0; slop <= 8; slop++) {
     var w = 0; n++;
-    SEEDS.forEach(function (s) { if (run17(withStage(0, { pace: pace, slop: slop }), s).v.win) w++; });
+    SEEDS.forEach(function (s) { if (run17(withStage(0, { pace: pace, slop: slop }), s).v.win) { w++; if (s === 1) seed1.push('pace ' + pace + ' slop ' + slop); } });
     if (w > best) { best = w; bestAt = 'pace ' + pace + ' slop ' + slop; }
     if (w >= 9) solid.push('pace ' + pace + ' slop ' + slop);
   }
@@ -249,8 +249,41 @@ function stageRuns(k) {
     steps.push(STAGE[k] + ' ' + row.join(', '));
   });
   var ms = stageRuns(3).ms, m = mean(ms);
-  results.push(line(solid.length === 0 && stepOk && m < 150, 'M13 dish 17: dials alone, one Pace step either side, speed',
-    n + ' Pace/Sloppiness settings on the carried cell x 10 seeds: best wins ' + best + '/10 (' + bestAt + '), settings winning 9 or more: ' + solid.length + (solid.length ? ' (' + solid.join(', ') + ')' : '') + '; stage answers one Pace step either side (need 7/10): ' + steps.join('; ') + '; mean recorded run ' + m.toFixed(0) + ' ms (worst ' + Math.max.apply(null, ms).toFixed(0) + ' ms, target under 150)'));
+  results.push(line(solid.length === 0 && seed1.length === 0 && stepOk && m < 150, 'M13 dish 17: dials alone (none wins 9 of 10, none wins on seed 1), one Pace step either side, speed',
+    n + ' Pace/Sloppiness settings on the carried cell x 10 seeds: best wins ' + best + '/10 (' + bestAt + '; the aim of 5 or fewer is ' + (best <= 5 ? 'met' : 'NOT met') + '), settings winning 9 or more: ' + solid.length + (solid.length ? ' (' + solid.join(', ') + ')' : '') + '; settings winning on seed 1: ' + seed1.length + (seed1.length ? ' (' + seed1.join(', ') + ')' : '') + '; stage answers one Pace step either side (need 7/10): ' + steps.join('; ') + '; mean recorded run ' + m.toFixed(0) + ' ms (worst ' + Math.max.apply(null, ms).toFixed(0) + ' ms, target under 150)'));
+})();
+
+// M14 to M17: each step of the Light path is clearly better than the one before, on something the player sees
+function lightRow(o) { return 'wins ' + o.wins + '/' + o.ib.length + ', in band ' + f2(mean(o.ib)) + ', scout-time in useful light ' + f2(mean(o.lit)) + ' / in glare ' + f3(mean(o.gt)) + ' / in no light ' + f2(mean(o.out)) + ', glare deaths a run ' + f2(mean(o.glare)); }
+(function () {
+  var c = stageRuns(0), p = stageRuns(1), s = stageRuns(2), ratio = mean(s.lit) / mean(p.lit);
+  var ok = p.wins >= 9 && c.wins <= 1 && ratio >= 1.3 && s.wins >= p.wins && mean(s.ib) >= mean(p.ib);
+  results.push(line(ok, 'M14 dish 17: step 2 is clearly better than step 1 (useful light at least 1.3x, wins and in-band no lower); step 1 still wins, carried cell loses',
+    'carried: ' + lightRow(c) + ' | step 1: ' + lightRow(p) + ' | step 2: ' + lightRow(s) + ' | step 2 / step 1 time in useful light ' + f2(ratio)));
+})();
+(function () {
+  var s = stageRuns(2), k = stageRuns(3), gs = mean(s.glare), gk = mean(k.glare);
+  results.push(line(k.wins >= s.wins && gk <= 0.5 * gs, 'M15 dish 17: step 3 wins as often as step 2 and its glare deaths are at most half',
+    'step 2: ' + lightRow(s) + ' | step 3: ' + lightRow(k) + ' | step 3 glare deaths / step 2 ' + f2(gk / gs)));
+})();
+(function () {
+  var p = stageRuns(1), s = stageRuns(2), gp = mean(p.glare), gs = mean(s.glare);
+  results.push(line(gs >= 0.85 * gp, 'M16 dish 17: step 2 cannot tell harmful light (its glare deaths are not lower than step 1\'s by more than a little)',
+    'glare deaths a run: step 1 ' + f2(gp) + ', step 2 ' + f2(gs) + ' (need step 2 at least 0.85 of step 1)'));
+})();
+// M17 the same on seeds 11 to 40 (reported, with loose limits: the player meets seed 1, but the lesson should not depend on it)
+(function () {
+  var more = [], i; for (i = 11; i <= 40; i++) more.push(i);
+  var R = [0, 1, 2, 3].map(function (k) {
+    var o = { wins: 0, ib: [], lit: [], glare: [], gt: [], out: [] };
+    more.forEach(function (sd) { var r = run17(withStage(k), sd, true); if (r.v.win) o.wins++; o.ib.push(r.v.bandFrac);
+      var a = 0, g = 0, n = 0, t; for (t = D17.band.warm; t <= 300; t++) if (r.H.scouts[t] > 0) { a += r.H.light[t]; g += r.H.glare[t]; n++; }
+      o.lit.push(n ? a / n : 0); o.gt.push(n ? g / n : 0); o.out.push(n ? Math.max(0, 1 - (a + g) / n) : 0); o.glare.push(r.dCause.glare); });
+    return o;
+  });
+  var ok = R[0].wins <= 10 && R[1].wins >= 20 && R[2].wins >= R[1].wins && mean(R[2].lit) >= 1.3 * mean(R[1].lit) && mean(R[3].glare) <= 0.5 * mean(R[2].glare);
+  results.push(line(ok, 'M17 dish 17 on seeds 11 to 40 (loose limits: carried at most 10/30, step 1 at least 20/30, step 2 no worse than step 1, 1.3x light, step 3 half the glare)',
+    'carried: ' + lightRow(R[0]) + ' | step 1: ' + lightRow(R[1]) + ' | step 2: ' + lightRow(R[2]) + ' | step 3: ' + lightRow(R[3])));
 })();
 
 var fails = results.filter(function (x) { return !x; }).length;

@@ -279,8 +279,8 @@ var LAD = (function () {
   // Step 2 adds one sensing spot with a ring. Step 3 makes the spot two halves with different fills and marks. Told apart by shape and pattern, not colour alone.
   var LIGHT_STEP = { lightpump: 1, lightsense: 2, lightcolor: 3 };
   function arcPath(r, a0, a1) { var p = pol(r, a0), q = pol(r, a1); return 'M' + n1(p[0]) + ' ' + n1(p[1]) + ' A' + r + ' ' + r + ' 0 0 1 ' + n1(q[0]) + ' ' + n1(q[1]); }
-  function lightRing(r, id) {
-    var st = LIGHT_STEP[id], o = '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="' + PINK + '" stroke-width="6"/><circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + (r + 4) + '" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="1.2"/>';
+  function lightRing(r, id, over) {   // over: only the marks, for laying over the glowing 3D portrait (which already draws the skin itself)
+    var st = LIGHT_STEP[id], o = over ? '' : '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="' + PINK + '" stroke-width="6"/><circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + (r + 4) + '" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="1.2"/>';
     [-122, -12, 52, 118, 188].forEach(function (a) {
       o += '<path class="lpatch" d="' + arcPath(r, a - 11, a + 11) + '" fill="none" stroke="#2a1470" stroke-width="16" stroke-linecap="butt"/><path class="lpatch" d="' + arcPath(r, a - 10, a + 10) + '" fill="none" stroke="#8b5cf6" stroke-width="12" stroke-linecap="butt"/>';
     });
@@ -292,6 +292,18 @@ var LAD = (function () {
       '<circle cx="' + n1(x - 7) + '" cy="' + n1(y - 5) + '" r="1.9" fill="#3a2305"/><circle cx="' + n1(x - 6) + '" cy="' + n1(y + 5) + '" r="1.9" fill="#3a2305"/><circle cx="' + n1(x - 3) + '" cy="' + y + '" r="1.5" fill="#3a2305"/>' +
       '<path d="M' + n1(x + 3) + ' ' + n1(y - 10) + ' L' + n1(x + 11) + ' ' + n1(y - 4) + ' M' + n1(x + 3) + ' ' + n1(y - 3) + ' L' + n1(x + 12) + ' ' + n1(y + 3) + ' M' + n1(x + 3) + ' ' + n1(y + 4) + ' L' + n1(x + 9) + ' ' + n1(y + 9) + '" stroke="#06364a" stroke-width="2" fill="none"/>' +
       '<line x1="' + x + '" y1="' + n1(y - 14) + '" x2="' + x + '" y2="' + n1(y + 14) + '" stroke="#fff" stroke-width="1.6"/>';
+  }
+  // The Light marks alone, in the same 600 x 410 space as cellArt, for the WebGL portrait on Adapt (the shader draws the skin; these sit over it, in register).
+  function lightMarks(slots) {
+    var env = (slots && slots.envelope) || [], i;
+    for (i = 0; i < 2; i++) if (LIGHT_STEP[env[i]]) return '<g class="lmarks" data-step="' + LIGHT_STEP[env[i]] + '" pointer-events="none">' + lightRing(i ? CG.r2 : CG.r1, env[i], true) + '</g>';
+    return '';
+  }
+  // Where the newest Light mark is, for a callout: step 1 a patch, steps 2 and 3 the spot. { step, x, y } or null.
+  function lightSpot(slots) {
+    var env = (slots && slots.envelope) || [], i, st, r, p;
+    for (i = 0; i < 2; i++) if (LIGHT_STEP[env[i]]) { st = LIGHT_STEP[env[i]]; r = i ? CG.r2 : CG.r1; p = pol(r, st < 2 ? -12 : -67); return { step: st, x: n1(p[0]), y: n1(p[1]) }; }
+    return null;
   }
   function ringArt(r, id, idx) {
     var o = '';
@@ -418,5 +430,5 @@ var LAD = (function () {
       g('envelope', function (s) { return envelopeArt(s.envelope); }) + g('signal', function (s) { return signalArt(s.signal); }) + g('motor', function (s) { return motorArt(s.motor); }) + g('reflex', function (s) { return reflexArt(s.reflex); });
   }
 
-  return { cellArt: cellArt, ANCHOR: ANCHOR, CG: CG, VIO: VIO, PINK: PINK, AMB: AMB, GRN: GRN, CY: CY, RED: RED, CH: CH, MACH: MACH, fit: fit, pattern: pattern, drawCells: drawCells, chart: chart, ribbon: ribbon, foodStrip: foodStrip, portrait: portrait, hash: hash };
+  return { cellArt: cellArt, lightMarks: lightMarks, lightSpot: lightSpot, ANCHOR: ANCHOR, CG: CG, VIO: VIO, PINK: PINK, AMB: AMB, GRN: GRN, CY: CY, RED: RED, CH: CH, MACH: MACH, fit: fit, pattern: pattern, drawCells: drawCells, chart: chart, ribbon: ribbon, foodStrip: foodStrip, portrait: portrait, hash: hash };
 })();

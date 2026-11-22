@@ -103,6 +103,9 @@ canvas { display: block; }
 .cellpanel { padding: 0; flex: none; height: 412px; overflow: hidden; background: radial-gradient(circle at 50% 50%, #0d0f1c 0, #04050a 75%); }
 .cellwrap { position: relative; width: 100%; height: 410px; }
 #cellSvg { width: 100%; height: 100%; display: block; position: relative; }
+/* the Light marks laid over the 3D portrait: a soft glow so they read as part of it; a preview of a different step is dimmer */
+.lmarks { filter: drop-shadow(0 0 5px rgba(180,140,255,.85)); }
+.lmarks.ghost { opacity: .7; }
 #cellGL { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 /* with the GL portrait on, the SVG keeps its slot targets, highlights and empty-slot outlines; the fitted parts are drawn by the shader */
 .cellglon .slotg:not(.s-division) .art > *:not(.emptyring):not(.emptyline):not(.emptydot) { visibility: hidden; }
@@ -111,6 +114,8 @@ canvas { display: block; }
 .tag .tn { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); display: flex; align-items: center; gap: 5px; height: 14px; }
 .tag .tv { font-size: 12px; color: var(--ink); white-space: normal; overflow-wrap: anywhere; overflow: hidden; height: auto; max-height: 28px; line-height: 14px; }
 .tag .ts { font-size: 10px; color: var(--dim); height: 24px; line-height: 12px; overflow: hidden; }
+.tag .ts:has(.pill) { height: 14px; line-height: 14px; }   /* a status pill is one line: keeps a two-line value from running under it */
+.tag .tv { max-height: 26px; line-height: 13px; }
 .tag[hidden] { display: none; }
 #cellWrap.hidelocked .slotg.locked { display: none; }
 .tag.sel { border-color: var(--cy); box-shadow: 0 0 0 1px var(--cy); }
@@ -819,12 +824,17 @@ html.tree-open { overflow: hidden; }   /* no page scrollbar behind the tree, so 
 .parr { flex: none; width: 13px; height: 24px; color: var(--vio); }
 .parr.dash { color: #5a5290; stroke-dasharray: 2 2; }
 .pathdetail { height: 150px; display: flex; flex-direction: column; gap: 3px; overflow: hidden; padding: 0 2px; }
-.pd-h { flex: none; height: 32px; display: flex; flex-direction: column; justify-content: center; line-height: 15px; }
+.pathdetail { position: relative; }
+.pd-h { flex: none; height: 32px; padding-right: 62px; display: flex; flex-direction: column; justify-content: center; line-height: 15px; }
 .pd-h b { font-size: 13px; }
 .pd-h span { font-size: 10.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pd-t { flex: 1; min-height: 0; overflow-y: auto; font-size: 11px; line-height: 14px; }
 .pd-t p { margin: 0 0 4px; }
-.pd-r { color: var(--dim); }
+.pd-more { position: absolute; top: 2px; right: 2px; width: 56px; height: 28px; min-height: 0; padding: 0; font-size: 12px; background: transparent; border: 1px solid var(--line2); border-radius: 6px; color: var(--cy); }
+.pd-more[hidden] { display: none; }
+.pd-more:focus-visible { outline: 2px solid var(--cy); outline-offset: 2px; }
+.pd-r { color: var(--dim); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.pd-t.open .pd-r { display: block; }
 .pd-r i { font-style: normal; font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; margin-right: 5px; color: var(--vio); }
 .pd-w { flex: none; height: 14px; font-size: 11px; line-height: 14px; color: var(--amb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pd-k { flex: none; height: 14px; font-size: 11px; line-height: 14px; color: var(--cy); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -847,6 +857,9 @@ html.tree-open { overflow: hidden; }   /* no page scrollbar behind the tree, so 
 .evopair { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
 .evofig { margin: 0; width: 190px; }
 .evobox { width: 190px; height: 190px; box-sizing: border-box; border: 2px solid #2b2418; border-radius: 4px; background: #14122c; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.evobox { position: relative; }
+.evobox .evolead { position: absolute; inset: 0; pointer-events: none; }
+.evocall { position: absolute; top: 2px; left: 2px; width: 84px; height: 30px; box-sizing: border-box; line-height: 14px; padding: 1px 6px; border-radius: 3px; background: #1d6b4a; color: #fff; font-size: 12px; white-space: nowrap; overflow: hidden; box-shadow: 0 0 0 1px #fff; }
 .evobox svg { width: 100%; height: 100%; display: block; }
 .evofig figcaption { height: 38px; padding-top: 4px; display: flex; flex-direction: column; line-height: 17px; font-size: 14px; }
 .evofig figcaption .k { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: #6b5a3a; }
@@ -863,6 +876,7 @@ html.tree-open { overflow: hidden; }   /* no page scrollbar behind the tree, so 
 .evo .pbtns { margin-top: 8px; }
 @media (max-width: 640px) {
   .evo { padding: 14px 14px; }
+  .evocall { font-size: 9px; width: 78px; height: 24px; line-height: 11px; padding: 1px 3px; top: 2px; left: 2px; }
   .evofig, .evobox { width: 132px; } .evobox { height: 132px; } .evoarr { width: 22px; }
   .evopair { gap: 6px; }
   .evofig figcaption { height: 54px; } .evofig figcaption b { white-space: normal; line-height: 15px; font-size: 13px; }
