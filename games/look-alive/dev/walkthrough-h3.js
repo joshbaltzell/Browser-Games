@@ -192,62 +192,129 @@ module.exports = async (a) => {
   await a.eval(`__la.show('adapt');1`); await a.sleep(300);
   check('d17FiveBars', (await ev(`document.querySelectorAll('#statBars .sb').length`)) === 5 && await ev(`!!document.querySelector('#statBars .sb[data-stat="light"]')`));
   check('d17PickEnvelope', await slotClick('envelope'));
-  const o17 = await ev(`__la.options().filter(function(o){return /^light/.test(o.id)})`); sum.d17Options = o17.map(o => o.id + ':' + (o.blocked ? 'blocked' : 'open') + (o.why ? ' (' + o.why + ')' : ''));
-  const oo = (id) => o17.find((o) => o.id === id) || {};
-  check('d17PumpFittable', oo('lightpump').blocked === false);
-  check('d17SenseBlockedWithReason', oo('lightsense').blocked === true && /^Clear a dish with Light-driven pump fitted to evolve this\./.test(oo('lightsense').why));
-  check('d17ColourBlocked', oo('lightcolor').blocked === true && /^Clear a dish with Light sensing fitted to evolve this\./.test(oo('lightcolor').why));
-  check('d17BlockedHasTreeLink', await ev(`!!document.querySelector('#optList .opt[data-id="lightsense"] .treelink')&&!!document.querySelector('#optList .opt[data-id="lightcolor"] .treelink')&&!document.querySelector('#optList .opt[data-id="lightpump"] .treelink')`));
+  // ---- the path row (replaces the three separate light option cards)
+  const RED = !!process.env.REDUCED, shotD = async (n) => { if (big) await shot(n); }, shotM = async (n) => { if (MOB) await shot(n, true); };
+  const rectsOf = async () => { const p = await ev(`__la.path()`), o = MOB ? await ev(`(function(){var b=document.querySelector('#pathBox .pathstrip').getBoundingClientRect();return {x:b.x,y:b.y+scrollY}})()`) : { x: 0, y: 0 }; return p ? p.steps.map(t => [t.id, Math.round(t.x - o.x), Math.round(t.y - o.y), t.w, t.h].join(':')).join('|') : null; };   // on the phone the page above the row can change height (bar text), so tiles are compared relative to their strip
+  const seenRects = []; const rectNow = async (label) => { const r = await rectsOf(); seenRects.push([label, r]); return r; };
+  const pth = await ev(`__la.path()`); sum.d17Path = pth && pth.steps.map(t => t.id + ':' + t.state);
+  check('d17PathThreeSteps', !!pth && pth.lineage === 'light' && JSON.stringify(pth.steps.map(t => t.id)) === JSON.stringify(['lightpump', 'lightsense', 'lightcolor']) && JSON.stringify(pth.steps.map(t => t.stage)) === '[1,2,3]');
+  check('d17PathStatesStart', !!pth && pth.steps[0].state === 'ready' && pth.steps[1].state === 'next' && pth.steps[2].state === 'far');
+  check('d17PathReasons', !!pth && pth.steps[0].reason === '' && /^Clear a dish with Light-driven pump fitted\./.test(pth.steps[1].reason) && pth.steps[2].reason.length > 0);
+  check('d17PathHeading', (await ev(`document.querySelector('#pathBox .path-h b').textContent`)) === 'Light' && (await ev(`document.querySelector('#pathBox .path-sub').textContent`)) === 'Each step opens when a dish is cleared with the step before it.');
+  check('d17PathTilesSameSize', !!pth && new Set(pth.steps.map(t => t.w + 'x' + t.h)).size === 1);
+  check('d17PathFitsPanel', await ev(`(function(){var p=document.getElementById('optPanel').getBoundingClientRect(),s=document.querySelector('#pathBox .pathstrip'),l=document.querySelector('#pathBox .step:last-of-type').getBoundingClientRect();return l.right<=p.right+1&&s.scrollWidth<=s.clientWidth+1})()`));
+  check('d17PathTileTextInside', await ev(`(function(){return [].every.call(document.querySelectorAll('#pathBox .step'),function(t){return [].every.call(t.children,function(c){return c.scrollHeight<=c.clientHeight+1&&c.scrollWidth<=c.clientWidth+1})})})()`));
+  check('d17LightNotInOptionList', await ev(`__la.options().filter(function(o){return /^light/.test(o.id)}).length===0&&!document.querySelector('#optList .opt[data-id^="light"]')`) && (await ev(`__la.options().map(function(o){return o.id})`)).join() === 'empty');
+  check('d17PathDetailArea', await ev(`(function(){var d=document.querySelector('#pathBox .pathdetail');return !!d&&/Changed for the game/.test(d.textContent)&&/Real/.test(d.textContent)&&/Every later step does everything this step does\./.test(d.textContent)&&d.querySelector('.pd-h b').textContent==='Light-driven pump'})()`));
   await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(300);
-  await shot('h3-d17-adapt.png', MOB);
+  await rectNow('start'); await shotD('path-d17-start.png'); await shotM('path-d17-390.png');
+  // hover previews like an option card: the preview line and the ghost on the cell, which shows the marks
+  if (big) {
+    const hc = await ev(`(function(){var b=document.querySelector('#pathBox .step[data-id="lightsense"]').getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2}})()`);
+    await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hc.x, y: hc.y, button: 'none' }); await a.sleep(300);
+    check('d17PathHoverPreview', /Fit Light sensing/.test(await ev(`document.getElementById('pvT').textContent`)) || /Clear a dish with Light-driven pump fitted/.test(await ev(`document.getElementById('pvT').textContent`)));
+    check('d17PathHoverGhostMarks', await ev(`!!document.querySelector('#cellSvg .slotg.ghost .lpatch')&&!!document.querySelector('#cellSvg .slotg.ghost .lspot')`));
+    check('d17PathHoverDetail', (await ev(`document.querySelector('#pathBox .pathdetail .pd-h b').textContent`)) === 'Light sensing' && /Clear a dish with Light-driven pump fitted\./.test(await ev(`document.querySelector('#pathBox .pd-w').textContent`)));
+    await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(300);
+  }
   const b17 = await ev(`JSON.stringify(__la.S.build)`);
-  check('d17ClickBlockedRefuses', await optClick('lightsense') && (await ev(`JSON.stringify(__la.S.build)`)) === b17 && /Clear a dish with Light-driven pump fitted to evolve this\./.test(await ev(`document.getElementById('pvT').textContent+' '+document.getElementById('problems').textContent`)));
+  check('d17ClickLockedDoesNothing', await W.click('#pathBox .step[data-id="lightsense"]') && (await ev(`JSON.stringify(__la.S.build)`)) === b17 && (await rectNow('afterLockedClick')) === seenRects[0][1]);
+  check('d17ClickLockedShowsReason', /Clear a dish with Light-driven pump fitted/.test(await ev(`document.getElementById('pvT').textContent+' '+document.getElementById('problems').textContent+' '+document.querySelector('#pathBox .pd-w').textContent`)));
+  check('d17ClickFarDoesNothing', await W.click('#pathBox .step[data-id="lightcolor"]') && (await ev(`JSON.stringify(__la.S.build)`)) === b17 && (await rectNow('afterFarClick')) === seenRects[0][1]);
   check('d17HookFitRefuses', (await ev(`__la.fit('lightcolor')`)).ok === false && (await ev(`JSON.stringify(__la.S.build)`)) === b17);
-  check('d17FitPump', await optClick('lightpump') && await ev(`__la.S.build.parts.indexOf('lightpump')>=0`));
-  await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(400);
+  check('d17HookFitSenseRefuses', (await ev(`__la.fit('lightsense')`)).ok === false && (await ev(`JSON.stringify(__la.S.build)`)) === b17);
+  await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(300);
+  check('d17NoMarksBeforeFit', await ev(`!document.querySelector('#cellSvg .lpatch')`));
+  check('d17FitPump', await W.click('#pathBox .step[data-id="lightpump"]') && await ev(`__la.S.build.parts.indexOf('lightpump')>=0`)); await a.sleep(300);
+  await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(300);
+  check('d17PumpMarksOnCell', await ev(`document.querySelectorAll('#cellSvg .lpatch').length>0&&!document.querySelector('#cellSvg .lspot')`));
+  check('d17PumpTileFitted', (await ev(`__la.path().steps.map(function(t){return t.state})`)).join() === 'fitted,next,far' && (await rectNow('pumpFitted')) === seenRects[0][1]);
   sum.d17BarsPump = await ev(`__la.bars().map(function(b){return b.stat+':'+b.verdict})`);
+  // cellArt: the three steps are told apart by their marks
+  const art3 = await ev(`['lightpump','lightsense','lightcolor'].map(function(id){var sl=LookAlive.toSlots(__la.S.build);sl.envelope=[id];var h=LAD.cellArt(sl,{});return {patch:(h.match(/class="lpatch"/g)||[]).length/2,spot:(h.match(/class="lspot"/g)||[]).length,len:h.length}})`);
+  sum.d17Art = art3; check('d17ArtStepsDiffer', art3[0].patch === 5 && art3[0].spot === 0 && art3[1].patch === 5 && art3[1].spot === 1 && art3[2].spot === 1 && art3[1].len !== art3[2].len && art3[0].len < art3[1].len);
   const r17b = await play(16); sum.d17PumpRun = r17b;
   check('d17PumpWins', r17b.win === true);
+  // ---- the evolution moment comes before the win card
+  const evo1 = await ev(`(function(){var c=document.getElementById('evoCard');if(!c)return null;var ov=document.getElementById('overlay');return {title:c.querySelector('h2').textContent,a:!!document.querySelector('#evoFigA svg .lpatch'),aSpot:!!document.querySelector('#evoFigA svg .lspot'),b:!!document.querySelector('#evoFigB svg .lspot'),cap:[].map.call(c.querySelectorAll('figcaption'),function(f){return f.textContent}),name:document.getElementById('evoName').textContent,step:c.querySelector('.evoname span').textContent,add:document.getElementById('evoAdd').textContent,cause:document.getElementById('evoCause').textContent,focus:document.activeElement&&document.activeElement.id,btns:c.querySelectorAll('.pbtns button').length,winCard:!!document.querySelector('#overlay .winwrap'),evLine:!!document.getElementById('evolvedLine'),ovScroll:ov.scrollHeight-ov.clientHeight,boxes:[].map.call(c.querySelectorAll('.evobox'),function(b){var r=b.getBoundingClientRect();return [Math.round(r.width),Math.round(r.height)]})}})()`);
+  sum.d17Evo = evo1;
+  check('d17EvoPanelBeforeWinCard', !!evo1 && evo1.title === 'OUR CELL HAS CHANGED' && evo1.winCard === false && evo1.evLine === false);
+  check('d17EvoPortraits', !!evo1 && evo1.a === true && evo1.aSpot === false && evo1.b === true && evo1.boxes.length === 2 && evo1.boxes[0].join() === evo1.boxes[1].join());
+  check('d17EvoNames', !!evo1 && /Used\s*Light-driven pump/.test(evo1.cap[0]) && /Gained\s*Light sensing/.test(evo1.cap[1]) && evo1.name === 'Light sensing' && evo1.step === 'Step 2 of 3 on the Light path' && /everything the pump does/i.test(evo1.add));
+  check('d17EvoCause', !!evo1 && evo1.cause === 'It lived through dish 17 with Light-driven pump fitted. That is how a path grows.');
+  check('d17EvoContinueFocused', !!evo1 && evo1.focus === 'evoGo' && evo1.btns === 1);
+  check('d17EvoNotYetEvolved', !(await ev(`__la.evolved()`)).lightsense);
+  if (big) { check('d17EvoNoScroll', !!evo1 && evo1.ovScroll <= 0 && (await noScroll()).h <= 721); check('d17EvoFitsView', await ev(`(function(){var c=document.getElementById('evoCard').getBoundingClientRect();return c.top>=0&&c.bottom<=innerHeight})()`)); }
+  check('d17EvoMotion', await ev(`(function(){var g=document.querySelector('#evoCard .evofig.gain'),red=!!(matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches),sv=g.querySelector('svg'),an=getComputedStyle(sv).animationName;return red?(an==='none'&&+getComputedStyle(sv).opacity===1):true})()`));
+  if (RED) check('d17EvoReducedEndState', await ev(`!document.querySelector('#evoCard .evofig.gain.anim')&&getComputedStyle(document.querySelector('#evoCard .evofig.gain svg')).animationName==='none'`));
+  await a.sleep(1200); await shotD('evolve-panel.png'); await shotM('evolve-panel-390.png');
+  await W.press('Enter'); await a.sleep(500);   // Enter on the focused Continue button
   const evl = await ev(`(document.getElementById('evolvedLine')||{}).textContent||''`); sum.d17EvolvedLine = evl;
-  check('d17EvolvedLineSensing', evl.trim() === 'A new step has evolved: Light sensing. Find it in the skill tree.');
+  check('d17ContinueShowsWinCard', await ev(`!document.getElementById('evoCard')&&!!document.querySelector('#overlay .winwrap')`));
+  check('d17EvolvedLineSensing', evl.trim() === 'Evolved here: Light sensing');
   check('d17EvolvedLineFixedHeight', await ev(`(function(){var e=document.getElementById('evolvedLine');return !!e&&e.offsetHeight===(innerWidth<=640?36:22)})()`));
   check('d17UsedHasPump', (await ev(`__la.used()`)).lightpump === true && !(await ev(`__la.used()`)).lightsense);
+  check('d17EvolvedHasSense', JSON.stringify(await ev(`__la.evolved()`)) === '{"lightsense":true}');
   check('d17DeathsLineWin', /^Scouts lost: \d+ starved, \d+ burned, \d+ to the guards$/.test(await ev(`(document.getElementById('deathLine')||{}).textContent||''`)));
   if (big) check('d17WinCardFits', await ev(`(function(){var a=document.querySelector('#overlay .winwrap .memo').getBoundingClientRect(),b=document.querySelector('#overlay .winwrap .notebook').getBoundingClientRect();return a.top>=100&&a.bottom<=innerHeight&&b.top>=100&&b.bottom<=innerHeight})()`));
   await shot('h3-d17-win.png', MOB);
   check('d17WinHasNext', !(await ev(`!!document.querySelector('#overlay button[data-act="next"]')`)));
   await closeOv();
-  // reopen dish 17: Light sensing is now fittable, Colour sensing is still blocked
+  // reopen dish 17: step 2 is ready, step 3 is still locked, and no tile moved
   await a.eval(`__la.selectDish(17);__la.show('adapt');1`); await a.sleep(500);
   await slotClick('envelope');
-  const o17b = await ev(`__la.options().filter(function(o){return /^light/.test(o.id)})`); const oo2 = (id) => o17b.find((o) => o.id === id) || {};
-  check('d17SenseFittableAfterPump', oo2('lightsense').blocked === false && !oo2('lightsense').why);
-  check('d17ColourStillBlocked', oo2('lightcolor').blocked === true && /^Clear a dish with Light sensing fitted to evolve this\./.test(oo2('lightcolor').why));
-  check('d17FitSense', await optClick('lightsense') && await ev(`__la.S.build.parts.indexOf('lightsense')>=0`));
+  const p2 = await ev(`__la.path()`); sum.d17Path2 = p2.steps.map(t => t.id + ':' + t.state);
+  check('d17Step2ReadyStep3Locked', p2.steps.map(t => t.state).join() === 'ready,ready,next' && /^Clear a dish with Light sensing fitted\./.test(p2.steps[2].reason));
+  check('d17OptionsStillNoLight', (await ev(`__la.options().map(function(o){return o.id})`)).join() === 'empty');
+  await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(300);
+  await rectNow('step2Ready'); await shotD('path-d17-step2-ready.png');
+  // keyboard only: Tab to the step, Enter fits it
+  check('d17TabToStep2', (await W.tabTo('#pathBox .step[data-id="lightsense"]')) > 0);
+  await W.press('Enter'); await a.sleep(400);
+  check('d17KeyboardFitStep2', await ev(`__la.S.build.parts.indexOf('lightsense')>=0`));
+  check('d17FocusKeptOnStep', await ev(`document.activeElement&&document.activeElement.getAttribute('data-id')==='lightsense'`));
+  check('d17StepReplacesStep', await ev(`__la.S.build.parts.filter(function(p){return /^light/.test(p)}).join()==='lightsense'`));
+  await a.eval(`document.activeElement&&document.activeElement.blur();1`); await a.sleep(300);
+  check('d17Step2Marks', await ev(`document.querySelectorAll('#cellSvg .lpatch').length>0&&document.querySelectorAll('#cellSvg .lspot').length===1`));
+  // fitting step 1 again from step 2 replaces it too, and the layer is kept
+  check('d17PumpReplacesSense', await W.click('#pathBox .step[data-id="lightpump"]') && await ev(`__la.S.build.parts.filter(function(p){return /^light/.test(p)}).join()==='lightpump'`));
+  check('d17FitSense', await W.click('#pathBox .step[data-id="lightsense"]') && await ev(`__la.S.build.parts.filter(function(p){return /^light/.test(p)}).join()==='lightsense'`));
+  check('d17TakeOffFitted', await W.click('#pathBox .step[data-id="lightsense"]') && await ev(`__la.S.build.parts.filter(function(p){return /^light/.test(p)}).length===0`));
+  await W.click('#pathBox .step[data-id="lightsense"]'); await a.sleep(200);
+  await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(300);
+  check('d17NoTileMovedSoFar', (await rectNow('step2Fitted')) === seenRects[0][1] && seenRects.every(r => r[1] === seenRects[0][1]));
+  sum.d17RectStates = seenRects.map(r => r[0]); sum.d17Rects = seenRects;
   const r17c = await play(16); sum.d17SenseRun = r17c;
   check('d17SenseWins', r17c.win === true);
-  check('d17EvolvedLineColour', (await ev(`(document.getElementById('evolvedLine')||{}).textContent||''`)).trim() === 'A new step has evolved: Colour sensing. Find it in the skill tree.');
+  check('d17EvoPanelForStep3', await ev(`!!document.getElementById('evoCard')&&document.getElementById('evoName').textContent==='Colour sensing'&&document.querySelector('#evoCard .evoname span').textContent==='Step 3 of 3 on the Light path'&&/It lived through dish 17 with Light sensing fitted\\./.test(document.getElementById('evoCause').textContent)`));
+  // Escape is sent as a page key event: a real CDP Escape makes headless Chrome report the page hidden, which stops requestAnimationFrame for the rest of the run
+  await a.eval(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));1`); await a.sleep(500);   // Escape continues
+  check('d17EscapeContinues', await ev(`!document.getElementById('evoCard')&&!!document.querySelector('#overlay .winwrap')`));
+  check('d17EvolvedLineColour', (await ev(`(document.getElementById('evolvedLine')||{}).textContent||''`)).trim() === 'Evolved here: Colour sensing');
   check('d17UsedHasSense', (await ev(`__la.used()`)).lightsense === true);
+  check('d17EvolvedHasBoth', JSON.stringify(await ev(`__la.evolved()`)) === '{"lightsense":true,"lightcolor":true}');
   await closeOv();
   await a.eval(`__la.selectDish(17);__la.show('adapt');1`); await a.sleep(500);
   await slotClick('envelope');
-  const o17c = await ev(`__la.options().filter(function(o){return o.id==='lightcolor'})[0]`);
-  check('d17ColourFittableAfterSense', !!o17c && o17c.blocked === false);
-  // winning with Light sensing a second time says nothing new; dish 17 is the last of its world, so the completion button shows
-  await optClick('lightsense');
+  check('d17ColourReadyAfterSense', (await ev(`__la.path().steps.map(function(t){return t.state})`)).join() === 'ready,ready,ready');
+  // winning with Light sensing a second time shows no evolution panel and no evolved line; dish 17 is the last of its world, so the completion button shows
+  await W.click('#pathBox .step[data-id="lightsense"]');
   const r17d = await play(16); check('d17SenseWinsAgain', r17d.win === true);
+  check('d17NoEvoPanelSecondTime', (await ev(`!document.getElementById('evoCard')&&!!document.querySelector('#overlay .winwrap')`)));
+  sum.d17SecondDebug = await ev(`({line:(document.getElementById('evolvedLine')||{}).textContent,en:__la.S.evolvedNew,shown:__la.S.evoShown,ev:__la.evolved(),used:__la.used(),build:__la.S.build.parts})`);
   check('d17NoEvolvedLineSecondTime', (await ev(`!document.getElementById('evolvedLine')`)));
   check('d17CompleteButton', await ev(`!!document.querySelector('#overlay button[data-act="complete"]')`));
-  await W.click('#overlay button[data-act="complete"]'); await a.sleep(400);
+  sum.completeBtn = await W.click('#overlay button[data-act="complete"]'); await a.sleep(400);
   const card = await ev(`(function(){var c=document.getElementById('completeCard');return c?c.textContent.replace(/\\s+/g,' '):null})()`);
   sum.complete = card && card.slice(0, 300); check('completionCard', !!card && /THICK WATER/.test(card) && /Where the Food Is/.test(card) && /Stop When Fed/.test(card) && /bright place/i.test(card) && /The three dishes/.test(card) && !/The two dishes/.test(card));
   await shot('h3-complete.png', MOB);
 
   // ---------------------------------------------------------------- 5. reload keeps the rule and the cleared marks; compare swaps runs
   await a.eval(`location.reload();1`); await a.sleep(1800);
-  const kept = await ev(`(function(){var S=__la.S;return {used:S.used,c17:!!S.cleared[17],c15:!!S.cleared[15],c16:!!S.cleared[16],rule:S.wins[16]&&S.wins[16].reflex,tab:S.worldTab,intro:S.seenIntroC,world:S.seenWorldC}})()`);
+  const kept = await ev(`(function(){var S=__la.S;return {used:S.used,evolved:S.evolved,c17:!!S.cleared[17],c15:!!S.cleared[15],c16:!!S.cleared[16],rule:S.wins[16]&&S.wins[16].reflex,tab:S.worldTab,intro:S.seenIntroC,world:S.seenWorldC}})()`);
   sum.afterReload = kept;
   check('reloadKeepsUsed', kept.used && kept.used.lightpump === true && kept.used.lightsense === true);
+  check('reloadKeepsEvolved', !!kept.evolved && kept.evolved.lightsense === true && kept.evolved.lightcolor === true && kept.evolved.lightpump === undefined);
   check('reloadKeepsCleared', kept.c15 && kept.c16 && kept.c17 && kept.tab === 3 && kept.intro === true && kept.world === true);
   check('reloadKeepsRule', JSON.stringify(kept.rule) === JSON.stringify({ kind: 'machine', sensor: 'food', cmp: 'gt', value: 0.015, action: 'stay', otherwise: 'seek' }));
   await a.eval(`__la.show('list');1`); await a.sleep(300);
@@ -282,6 +349,45 @@ module.exports = async (a) => {
   sum.fallback = px; check('fallbackDraws', !!px && px.visible && px.lit > 2000 && px.pink > 10);
   await shot('h3-d15-fallback.png', MOB);
   await a.eval(`__la.forceFallback(false);1`);
+
+
+  // ---------------------------------------------------------------- 7. all three evolved, step 3 fitted; then the choice between two lineages (a second one made in memory, never in cards.js)
+  await a.eval(`__la.selectDish(17);__la.show('adapt');1`); await a.sleep(500); await slotClick('envelope');
+  check('d17AllEvolvedAfterReload', (await ev(`__la.path().steps.map(function(t){return t.state})`)).join() === 'ready,ready,ready');
+  check('d17FitColour', await W.click('#pathBox .step[data-id="lightcolor"]') && await ev(`__la.S.build.parts.filter(function(p){return /^light/.test(p)}).join()==='lightcolor'`));
+  await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(300);
+  await a.eval(`document.activeElement&&document.activeElement.blur();1`); await a.sleep(200);
+  check('d17ColourMarks', await ev(`document.querySelectorAll('#cellSvg .lpatch').length>0&&document.querySelectorAll('#cellSvg .lspot').length===1&&document.querySelectorAll('#cellSvg .lspot ~ path').length>0`));
+  check('d17AllStatesNoTileMoved', (await rectNow('allFitted')) === seenRects[0][1] && seenRects.every(r => r[1] === seenRects[0][1]));
+  await shotD('path-d17-all.png');
+  await a.eval(`window.__mvSave={f:JSON.stringify(LookAliveCards.part('flagellum').tree),p:JSON.stringify(LookAliveCards.part('pili').tree)};var F=LookAliveCards.part('flagellum').tree,P=LookAliveCards.part('pili').tree;F.lineage='move';F.stage=2;P.lineage='move';P.stage=1;__la.setUsed({lightpump:true,pili:true});__la.setEvolved({});1`);
+  check('choiceSetup', (await ev(`JSON.stringify(__la.evolved())`)) === '{}' && (await ev(`__la.used()`)).pili === true);
+  await a.eval(`__la.selectDish(17);__la.show('adapt');1`); await a.sleep(500); await slotClick('envelope');
+  check('choiceFitPump', await W.click('#pathBox .step[data-id="lightpump"]') && await ev(`__la.S.build.parts.indexOf('lightpump')>=0`));
+  const rc = await play(16); check('choiceRunWins', rc.win === true);
+  const ch1 = await ev(`(function(){var c=document.getElementById('evoCard');if(!c)return null;var p=[].map.call(c.querySelectorAll('.evopick'),function(b){var r=b.getBoundingClientRect();var cr=c.getBoundingClientRect();return {t:b.textContent,on:b.className.indexOf('on')>=0,r:[Math.round(r.x-cr.x),Math.round(r.y-cr.y),Math.round(r.width),Math.round(r.height)]}});return {picks:p,name:document.getElementById('evoName').textContent,box:c.getBoundingClientRect().height,focus:document.activeElement&&document.activeElement.id,winCard:!!document.querySelector('#overlay .winwrap')}})()`);
+  sum.choice1 = ch1;
+  check('choiceTwoTiles', !!ch1 && ch1.picks.length === 2 && /Light/.test(ch1.picks[0].t) && /Light sensing/.test(ch1.picks[0].t) && /Move/.test(ch1.picks[1].t) && /Flagellum/.test(ch1.picks[1].t) && ch1.winCard === false && ch1.focus === 'evoGo');
+  check('choiceTilesFixed', !!ch1 && !!ch1.picks && ch1.picks[0].r[2] === ch1.picks[1].r[2] && ch1.picks[0].r[3] === ch1.picks[1].r[3]);
+  await a.sleep(1200); await shotD('evolve-choice.png');
+  sum.choiceDebug = await ev(`({win:__la.info().verdict&&__la.info().verdict.win,build:__la.S.build.parts,evoS:__la.S.evo&&__la.S.evo.cands.length,used:__la.used()})`);
+  await W.click('#evoCard .evopick[data-i="1"]'); await a.sleep(300);
+  const ch2 = !ch1 ? { p: [], name: '', cause: '', box: 0 } : await ev(`(function(){var p=[].map.call(document.querySelectorAll('#evoCard .evopick'),function(b){var r=b.getBoundingClientRect(),cr=document.getElementById('evoCard').getBoundingClientRect();return [b.className.indexOf('on')>=0,Math.round(r.x-cr.x),Math.round(r.y-cr.y),Math.round(r.width),Math.round(r.height)].join()});return {p:p,name:document.getElementById('evoName').textContent,cause:document.getElementById('evoCause').textContent,box:document.getElementById('evoCard').getBoundingClientRect().height}})()`);
+  check('choicePickChangesPanel', !!ch1 && ch2.name === 'Flagellum' && /with Twitching pili fitted/.test(ch2.cause) && ch2.p[1].split(',')[0] === 'true' && ch2.p[0].split(',')[0] === 'false' && Math.abs(ch2.box - ch1.box) < 1);
+  check('choiceTilesDidNotMove', !!ch1 && ch2.p.map(x => x.split(',').slice(1).join()).join('|') === ch1.picks.map(x => x.r.join()).join('|'));
+  await W.click('#evoGo'); await a.sleep(500);
+  check('choiceEvolvedOnlyPicked', JSON.stringify(await ev(`__la.evolved()`)) === '{"flagellum":true}');
+  check('choiceWinCardLine', (await ev(`(document.getElementById('evolvedLine')||{}).textContent||''`)).trim() === 'Evolved here: Flagellum');
+  await closeOv();
+  await a.eval(`__la.selectDish(17);__la.show('adapt');1`); await a.sleep(500); await slotClick('envelope');
+  await W.click('#pathBox .step[data-id="lightpump"]');
+  const rc2 = await play(16); check('choiceSecondWins', rc2.win === true);
+  check('choiceOtherOfferedAgain', await ev(`!!document.getElementById('evoCard')&&document.querySelectorAll('#evoCard .evopick').length===0&&document.getElementById('evoName').textContent==='Light sensing'`));
+  await W.click('#evoGo'); await a.sleep(400);
+  check('choiceBothEvolvedNow', JSON.stringify(await ev(`__la.evolved()`)) === '{"flagellum":true,"lightsense":true}');
+  await closeOv();
+  await a.eval(`var T=LookAliveCards.part('flagellum').tree,P=LookAliveCards.part('pili').tree,sv=window.__mvSave;delete T.lineage;delete T.stage;delete P.lineage;delete P.stage;T.lineage=JSON.parse(sv.f).lineage;P.lineage=JSON.parse(sv.p).lineage;__la.setUsed({lightpump:true,lightsense:true});1`);
+  check('choiceRestored', (await ev(`LookAliveCards.part('flagellum').tree.lineage===undefined&&LookAliveCards.part('pili').tree.lineage===undefined&&LookAlive.lineageStage('flagellum')===null`)));
 
   sum.failed = failed; sum.checks = Object.keys(sum).filter(k => sum[k] === true).length;
   console.log('SUMMARY ' + JSON.stringify(sum));

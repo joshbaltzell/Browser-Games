@@ -790,3 +790,84 @@ html.tree-open { overflow: hidden; }   /* no page scrollbar behind the tree, so 
 @media (min-width: 561px) { #instBox .statbars.two.three { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, 44px); gap: 2px 10px; } #instBox .statbars.two.three .sb { height: 44px; } }
 .optlist.g3 .opt.lk .otxt p.g3 { -webkit-line-clamp: 1; height: 14px; }   /* a card with a reason and a tree link gives them room by showing one line of its own text (the tree shows the rest) */
 .winwrap.tall .notebook p { line-height: 24px; }   /* a long notebook page next to a card with five bars stays inside 1280 x 720 */
+
+/* ---- the path row (a lineage on the slot's shelf) and the evolution panel. Fixed sizes: nothing changes size when a step changes state. */
+.pathbox { flex: none; display: flex; flex-direction: column; gap: 6px; }
+.pathbox[hidden] { display: none; }
+.pathblock { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line2); border-radius: 10px; padding: 6px 6px 6px; background: #0a0c16; }
+.path-h { height: 20px; display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.path-h b { font-weight: 600; letter-spacing: .02em; }
+.path-tag { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--vio); border: 1px solid var(--vio); border-radius: 8px; padding: 1px 6px; }
+.path-sub { height: 28px; font-size: 11px; line-height: 14px; color: var(--dim); overflow: hidden; }
+.pathstrip { height: 146px; display: flex; align-items: center; overflow-x: auto; overflow-y: hidden; padding: 2px 1px 8px; }
+.step { flex: none; box-sizing: border-box; width: 92px; height: 130px; padding: 5px 5px 4px; border: 2px solid #3a3166; border-radius: 10px; background: var(--panel2); cursor: pointer; display: flex; flex-direction: column; gap: 2px; overflow: hidden; position: relative; }
+.step:focus-visible { outline: 2px solid var(--cy); outline-offset: 2px; }
+.step.pv, .step.sel { outline: 2px dashed var(--cy); outline-offset: 1px; }
+.step .s1 { height: 14px; display: flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); }
+.step .smark { flex: none; width: 13px; height: 13px; }
+.step .s2 { height: 30px; font-size: 11.5px; font-weight: 600; line-height: 15px; overflow: hidden; }
+.step .s3 { height: 13px; font-size: 10.5px; color: var(--dim); }
+.step .s4 { height: 14px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.step .s5 { flex: 1; min-height: 0; font-size: 10px; line-height: 12px; color: var(--ink); overflow: hidden; }
+.step.st-fitted { border-color: var(--vio); border-style: solid; background: #14122c; box-shadow: inset 0 0 0 2px rgba(167,139,250,.35); }
+.step.st-fitted .s1, .step.st-fitted .s4 { color: var(--vio); }
+.step.st-ready { border-color: var(--cy); border-style: solid; }
+.step.st-ready .s1, .step.st-ready .s4 { color: var(--cy); }
+.step.st-next { border-color: #8a7fbf; border-style: dashed; }
+.step.st-next .s4 { color: var(--amb); }
+.step.st-far { border-color: #3a3166; border-style: dotted; opacity: .6; }
+.parr { flex: none; width: 13px; height: 24px; color: var(--vio); }
+.parr.dash { color: #5a5290; stroke-dasharray: 2 2; }
+.pathdetail { height: 150px; display: flex; flex-direction: column; gap: 3px; overflow: hidden; padding: 0 2px; }
+.pd-h { flex: none; height: 32px; display: flex; flex-direction: column; justify-content: center; line-height: 15px; }
+.pd-h b { font-size: 13px; }
+.pd-h span { font-size: 10.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pd-t { flex: 1; min-height: 0; overflow-y: auto; font-size: 11px; line-height: 14px; }
+.pd-t p { margin: 0 0 4px; }
+.pd-r { color: var(--dim); }
+.pd-r i { font-style: normal; font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; margin-right: 5px; color: var(--vio); }
+.pd-w { flex: none; height: 14px; font-size: 11px; line-height: 14px; color: var(--amb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pd-k { flex: none; height: 14px; font-size: 11px; line-height: 14px; color: var(--cy); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.optpanel.haspath .optlist { flex: 1 1 60px; min-height: 60px; }
+@media (max-width: 1100px) { .optpanel.haspath { height: 600px; } }
+
+.evowrap { max-width: 100%; }
+.evo { width: 600px; max-width: 100%; box-sizing: border-box; padding: 18px 24px; }
+.evo h2 { text-align: left; }
+.evochoose { margin-top: 8px; }
+.evoq { margin: 0 0 6px; font-size: 13px; line-height: 17px; height: 34px; overflow: hidden; }
+.evopicks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.evopick { height: 58px; box-sizing: border-box; text-align: left; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 0 10px; border: 2px dashed #6b5a3a; background: transparent !important; color: #2b2418 !important; border-radius: 6px; }
+.evopick .pk { display: flex; align-items: center; gap: 5px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #6b5a3a; }
+.evopick .smark { width: 13px; height: 13px; }
+.evopick b { font-weight: 400; font-size: 15px; }
+.evopick small { font-size: 11px; color: #6b5a3a; }
+.evopick.on { border-style: solid; border-color: #2b2418; background: rgba(43,36,24,.1) !important; }
+.evopick:hover:not(:disabled) { border-color: #2b2418 !important; }
+.evopair { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
+.evofig { margin: 0; width: 190px; }
+.evobox { width: 190px; height: 190px; box-sizing: border-box; border: 2px solid #2b2418; border-radius: 4px; background: #14122c; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.evobox svg { width: 100%; height: 100%; display: block; }
+.evofig figcaption { height: 38px; padding-top: 4px; display: flex; flex-direction: column; line-height: 17px; font-size: 14px; }
+.evofig figcaption .k { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: #6b5a3a; }
+.evofig figcaption b { font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.evoarr { flex: none; width: 40px; height: 24px; color: #2b2418; margin-bottom: 38px; }
+.evofig.gain .evobox { border-color: #1d6b4a; box-shadow: 0 0 0 3px rgba(29,107,74,.25); }
+.evofig.gain.anim .evobox svg { animation: evoIn .9s ease-out both; }
+@keyframes evoIn { 0% { opacity: .2; transform: scale(.92); } 100% { opacity: 1; transform: scale(1); } }
+.evoname { margin-top: 4px; height: 22px; display: flex; align-items: baseline; gap: 10px; }
+.evoname b { font-weight: 400; font-size: 18px; }
+.evoname span { font-size: 12px; color: #6b5a3a; }
+.evoadd { margin: 2px 0 0; height: 40px; font-size: 14px; line-height: 19px; overflow: hidden; }
+.evocause { margin: 4px 0 0; height: 40px; font-size: 14px; line-height: 19px; color: #1d6b4a; overflow: hidden; }
+.evo .pbtns { margin-top: 8px; }
+@media (max-width: 640px) {
+  .evo { padding: 14px 14px; }
+  .evofig, .evobox { width: 132px; } .evobox { height: 132px; } .evoarr { width: 22px; }
+  .evopair { gap: 6px; }
+  .evofig figcaption { height: 54px; } .evofig figcaption b { white-space: normal; line-height: 15px; font-size: 13px; }
+  .evoarr { margin-bottom: 54px; }
+  .evoadd { height: 78px; } .evocause { height: 58px; }
+  .evoname { height: 40px; flex-direction: column; gap: 0; align-items: flex-start; }
+  .evoq { height: 52px; }
+}

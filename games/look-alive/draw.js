@@ -275,8 +275,27 @@ var LAD = (function () {
   var DOTS = [[-78, 18], [-70, 34], [-62, 16], [-56, 30], [-48, 14], [-42, 28], [-34, 18], [-28, 34], [-20, 16], [-66, 46]];   // signal dots: angle, extra distance
   var FLUID = [[-40, 20], [30, 50], [150, 40], [200, 30], [260, 55], [320, 35], [100, 60], [350, 62], [60, 30], [230, 62], [290, 22], [10, 70]];
 
+  // The Light lineage in the Skin: the skin ring with flat purple patches set in it (real: bacteriorhodopsin sits in purple patches of the membrane).
+  // Step 2 adds one sensing spot with a ring. Step 3 makes the spot two halves with different fills and marks. Told apart by shape and pattern, not colour alone.
+  var LIGHT_STEP = { lightpump: 1, lightsense: 2, lightcolor: 3 };
+  function arcPath(r, a0, a1) { var p = pol(r, a0), q = pol(r, a1); return 'M' + n1(p[0]) + ' ' + n1(p[1]) + ' A' + r + ' ' + r + ' 0 0 1 ' + n1(q[0]) + ' ' + n1(q[1]); }
+  function lightRing(r, id) {
+    var st = LIGHT_STEP[id], o = '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="' + PINK + '" stroke-width="6"/><circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + (r + 4) + '" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="1.2"/>';
+    [-122, -12, 52, 118, 188].forEach(function (a) {
+      o += '<path class="lpatch" d="' + arcPath(r, a - 11, a + 11) + '" fill="none" stroke="#2a1470" stroke-width="16" stroke-linecap="butt"/><path class="lpatch" d="' + arcPath(r, a - 10, a + 10) + '" fill="none" stroke="#8b5cf6" stroke-width="12" stroke-linecap="butt"/>';
+    });
+    if (st < 2) return o;
+    var p = pol(r, -67), x = n1(p[0]), y = n1(p[1]);
+    if (st === 2) return o + '<circle class="lspot" cx="' + x + '" cy="' + y + '" r="18" fill="none" stroke="#ffe08a" stroke-width="2.4"/><circle cx="' + x + '" cy="' + y + '" r="11" fill="#ffe08a"/>';
+    return o + '<circle class="lspot" cx="' + x + '" cy="' + y + '" r="21" fill="none" stroke="#fff" stroke-width="2.4"/>' +
+      '<path d="M' + x + ' ' + n1(y - 14) + ' A14 14 0 0 0 ' + x + ' ' + n1(y + 14) + ' Z" fill="' + AMB + '"/><path d="M' + x + ' ' + n1(y - 14) + ' A14 14 0 0 1 ' + x + ' ' + n1(y + 14) + ' Z" fill="' + CY + '"/>' +
+      '<circle cx="' + n1(x - 7) + '" cy="' + n1(y - 5) + '" r="1.9" fill="#3a2305"/><circle cx="' + n1(x - 6) + '" cy="' + n1(y + 5) + '" r="1.9" fill="#3a2305"/><circle cx="' + n1(x - 3) + '" cy="' + y + '" r="1.5" fill="#3a2305"/>' +
+      '<path d="M' + n1(x + 3) + ' ' + n1(y - 10) + ' L' + n1(x + 11) + ' ' + n1(y - 4) + ' M' + n1(x + 3) + ' ' + n1(y - 3) + ' L' + n1(x + 12) + ' ' + n1(y + 3) + ' M' + n1(x + 3) + ' ' + n1(y + 4) + ' L' + n1(x + 9) + ' ' + n1(y + 9) + '" stroke="#06364a" stroke-width="2" fill="none"/>' +
+      '<line x1="' + x + '" y1="' + n1(y - 14) + '" x2="' + x + '" y2="' + n1(y + 14) + '" stroke="#fff" stroke-width="1.6"/>';
+  }
   function ringArt(r, id, idx) {
     var o = '';
+    if (LIGHT_STEP[id]) return lightRing(r, id);
     if (!id) return '<circle class="emptyring" cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '"/>';
     if (id === 'lipids') return '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="' + PINK + '" stroke-width="10"/><circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + (r + 3) + '" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>';
     if (id === 'tetraether') {   // one fused ring, no leaflet gap: a solid amber-white band with a bright core line and tiny cross-links

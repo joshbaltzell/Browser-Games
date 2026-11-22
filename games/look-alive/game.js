@@ -148,7 +148,7 @@
 
   var S = {
     screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null, otherwise: null },
-    cleared: load('cleared2', {}), used: load('used3', {}), evolvedNew: [], grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, introWorld: 1, afterIntro: 'list', worldView: 1, worldTab: (function () { var v = load('worldTab', 1); return v === 2 || v === 3 ? v : 1; })(), seenIntroB: load('introB', false), seenWorldB: load('worldB', false), seenIntroC: load('introC', false), seenWorldC: load('worldC', false), unlocked: load('unlocked2', false),
+    cleared: load('cleared2', {}), used: load('used3', {}), evolved: load('evolved3', {}), evo: null, evoShown: false, pathSel: null, pathFocus: null, evolvedNew: [], grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, introWorld: 1, afterIntro: 'list', worldView: 1, worldTab: (function () { var v = load('worldTab', 1); return v === 2 || v === 3 ? v : 1; })(), seenIntroB: load('introB', false), seenWorldB: load('worldB', false), seenIntroC: load('introC', false), seenWorldC: load('worldC', false), unlocked: load('unlocked2', false),
     slot: null, layer: 0, preview: null, pointed: false,
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
@@ -512,8 +512,34 @@
     if (S.runGrade && (!S.grades[d.id] || GRADE_RANK[S.runGrade] > GRADE_RANK[S.grades[d.id]])) { S.grades[d.id] = S.runGrade; save('grades2', S.grades); }
   }
   // ---- lineages: a stage of a lineage (Sim.lineageStage) is earned by clearing a dish with the stage before it fitted. Every call is guarded.
+  // Two saved maps: `used3` (stages cleared with, recorded on every win) and `evolved3` (steps the player has evolved: a win offers the step after a used one, and the player evolves it from the evolution panel).
+  // A saved game from before `evolved3` existed gets the steps its `used3` entries had opened.
   function lineageOf(id) { try { return typeof Sim.lineageStage === 'function' ? Sim.lineageStage(id) || null : null; } catch (e) { return null; } }
   function lsId(x) { return x && typeof x === 'object' ? x.id : x || null; }
+  function impliedEvolved(used) {
+    var out = {}; Object.keys(used || {}).forEach(function (id) { if (!used[id]) return; var ls = lineageOf(id), nx = ls && lsId(ls.next); if (nx) out[nx] = true; });
+    return out;
+  }
+  (function migrateEvolved() {
+    var raw = null; try { raw = localStorage.getItem(KEY + 'evolved3'); } catch (e) { raw = null; }
+    if (raw === null && Object.keys(S.used).length) { S.evolved = impliedEvolved(S.used); save('evolved3', S.evolved); }
+  })();
+  // What Sim.treeState reads as `used`: exactly the stages before each evolved step, so the tree opens exactly the evolved steps.
+  function derivedUsed() {
+    var out = {}; Object.keys(S.evolved).forEach(function (id) { if (!S.evolved[id]) return; var ls = lineageOf(id), pv = ls && lsId(ls.prev); if (pv && ls.stage > 1) out[pv] = true; });
+    return out;
+  }
+  // Steps a win has made ready but the player has not evolved yet: the step after each used stage.
+  function pendingEvolutions() {
+    var out = [];
+    Object.keys(S.used).forEach(function (id) {
+      if (!S.used[id]) return;
+      var ls = lineageOf(id), nx = ls && lsId(ls.next); if (!nx || S.evolved[nx]) return;
+      var n = lineageOf(nx); out.push({ id: nx, from: id, lineage: ls.lineage, stage: n ? n.stage : ls.stage + 1 });
+    });
+    out.sort(function (a, b) { return a.lineage < b.lineage ? -1 : a.lineage > b.lineage ? 1 : a.stage - b.stage; });
+    return out;
+  }
   function buildCardIds(b) {
     var n = Sim.normalize(b) || {}, o = [];
     if (n.metabolism) o.push(Cards.canon(n.metabolism));
@@ -521,23 +547,26 @@
     if (n.reflex && n.reflex.kind === 'bio') o.push(Cards.canon(n.reflex.id));
     return o;
   }
-  // A dish was cleared with this cell: every fitted stage counts as used. S.evolvedNew lists the stages this win opened for the first time.
-  function recordUsed(build) {
-    var fresh = [], changed = false;
+  // A dish was cleared with this cell: every fitted stage counts as used. S.evo lists the steps this win makes ready; the player evolves one (or the only one) from the evolution panel.
+  function recordUsed(build, dishId) {
+    var changed = false;
     buildCardIds(build).forEach(function (id) {
       var ls = lineageOf(id); if (!ls || S.used[id]) return;
       S.used[id] = true; changed = true;
-      var nx = lsId(ls.next); if (nx && !S.used[nx] && fresh.indexOf(nx) < 0) fresh.push(nx);
     });
     if (changed) save('used3', S.used);
-    S.evolvedNew = fresh;
+    var cands = pendingEvolutions();
+    S.evolvedNew = cands.map(function (c) { return c.id; });
+    S.evo = cands.length ? { cands: cands, sel: 0, dish: dishId, build: copy(build) } : null;
   }
   // Why a stage the player has not earned cannot be fitted, or '' when it can (a stage already fitted, a first stage and a card outside a lineage are never held back).
   function earnLock(id) {
     var ls = lineageOf(id); if (!ls || !(ls.stage > 1)) return '';
     if (S.build && buildCardIds(S.build).indexOf(id) >= 0) return '';
-    var pv = lsId(ls.prev); if (!pv || S.used[pv]) return '';
+    if (S.evolved[id]) return '';
+    var pv = lsId(ls.prev); if (!pv) return '';
     var c = cardOrBio(pv);
+    if (S.used[pv]) return 'It is ready to evolve. Win a dish and choose it.';
     return 'Clear a dish with ' + (c ? c.name : pv) + ' fitted to evolve this.';
   }
   // Dishes that offer a card, for "Offered on dish 17."
@@ -548,7 +577,7 @@
   }
   function dishWords(ids) { return ids.length < 2 ? 'dish ' + ids.join('') : 'dishes ' + ids.slice(0, -1).join(', ') + ' and ' + ids[ids.length - 1]; }
   function winCarried() {  // the carried cell already wins: take it as the win
-    var d = dishObj(); S.cleared[d.id] = true; S.wins[d.id] = copy(S.carried); save('cleared2', S.cleared); save('wins2', S.wins); recordUsed(S.carried);
+    var d = dishObj(); S.cleared[d.id] = true; S.wins[d.id] = copy(S.carried); save('cleared2', S.cleared); save('wins2', S.wins); recordUsed(S.carried, d.id);
     recordGrade(S.run, d, S.carried);
     showResult();
   }
@@ -623,9 +652,17 @@
     if (miss.length) { r = { ok: false, reason: 'Needs ' + treeNames(miss) + ' fitted first' }; setNote(r.reason); showPreviewText(r.reason, true); return r; }
     var lk = earnLock(id);
     if (lk) { r = { ok: false, reason: lk }; setNote(lk); showPreviewText(lk, true); return r; }
+    var sib = lineageSibling(k, id); if (sib && sib.layer != null) S.layer = sib.layer;   // a step takes the place of the step of its lineage that is fitted
     var r = Sim.fit(d, S.build, id, layerArg(k));
     if (!r.ok) { setNote(r.reason); showPreviewText(r.reason, true); return r; }
     commit(r.build); return r;
+  }
+  // The fitted card of the same lineage as `id` in slot k, as { id, layer }, or null.
+  function lineageSibling(k, id) {
+    var ls = lineageOf(id); if (!ls) return null;
+    var ids = fittedIds(k), i;
+    for (i = 0; i < ids.length; i++) { var o = lineageOf(ids[i]); if (ids[i] !== id && o && o.lineage === ls.lineage) return { id: ids[i], layer: k === 'envelope' ? i : null }; }
+    return null;
   }
   function doUnfit(k, id) {
     var d = dishObj(), r = Sim.unfit(d, S.build, k, id);
@@ -643,7 +680,7 @@
     if (id && Cards.bio(id)) name = Cards.bio(id).name;
     if (id === null) { r = Sim.unfit(d, S.build, k, k === 'envelope' ? slotsNow().envelope[S.layer] : undefined); name = 'this slot'; }
     else if (fitted) r = Sim.unfit(d, S.build, k, id);
-    else r = Sim.fit(d, S.build, id, layerArg(k));
+    else { var sib = lineageSibling(k, id); r = Sim.fit(d, S.build, id, sib && sib.layer != null ? sib.layer : layerArg(k)); }
     if (!r.ok) { S.preview = null; showPreviewText(r.reason, true); renderCell(); return; }
     S.preview = { slot: k, build: r.build };
     var list = (id === null || fitted) ? changesBetween(d, S.build, r.build) : effectsFor(d, Cards.part(id) || Cards.bio(id), false).changes;
@@ -811,6 +848,77 @@
     w.addEventListener('mouseleave', clearPreview); w.addEventListener('blur', clearPreview);
     return w;
   }
+
+  // ---------------------------------------------------------------- the path row: a lineage on this slot's shelf, shown as steps in order (fixed-size tiles, joined by arrows)
+  var STEP_MARK = {
+    fitted: TREE_MARK_FITTED(), ready: TREE_MARK_READY(), next: TREE_MARK_LOCK(), far: TREE_MARK_LOCK()
+  };
+  function TREE_MARK_FITTED() { return '<svg class="smark" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.5 8.3l2.3 2.3 4.7-5" fill="none" stroke="#0b0820" stroke-width="2"/></svg>'; }
+  function TREE_MARK_READY() { return '<svg class="smark" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 5v6M5 8h6" stroke="currentColor" stroke-width="1.6"/></svg>'; }
+  function TREE_MARK_LOCK() { return '<svg class="smark" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7.2" width="9" height="6.8" rx="1.2" fill="currentColor"/><path d="M5.4 7.2V5.4a2.6 2.6 0 0 1 5.2 0v1.8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>'; }
+  var STEP_WORD = { fitted: 'Fitted', ready: 'Ready', next: 'Locked', far: 'Locked' };
+  function lineageTitle(l) { var br = treeCall('treeBranches') || [], i; for (i = 0; i < br.length; i++) if (br[i].id === l) return br[i].name; return l; }
+  // The lineages whose cards are on this slot's shelf on this dish: [{ lineage, items: [{ c, ls }] }], items in step order.
+  function lineageGroups(d, k) {
+    var gs = {}, order = [];
+    Sim.offered(d, k).forEach(function (c) { var ls = lineageOf(c.id); if (!ls) return; if (!gs[ls.lineage]) { gs[ls.lineage] = []; order.push(ls.lineage); } gs[ls.lineage].push({ c: c, ls: ls }); });
+    return order.map(function (l) { gs[l].sort(function (a, b) { return a.ls.stage - b.ls.stage; }); return { lineage: l, items: gs[l] }; });
+  }
+  function stepModel(g) {
+    var ids = S.build ? buildCardIds(S.build) : [], gone = false;
+    return g.items.map(function (it, i) {
+      var id = it.c.id, fit = ids.indexOf(id) >= 0, ready = it.ls.stage <= 1 || !!S.evolved[id], st = fit ? 'fitted' : ready ? 'ready' : !gone ? 'next' : 'far', reason = '';
+      if (!fit && !ready) gone = true;
+      var pv = i ? g.items[i - 1].c : null;
+      if (st === 'next') reason = S.used[lsId(it.ls.prev)] ? 'It is ready to evolve. Win a dish and choose it.' : 'Clear a dish with ' + (pv ? pv.name : 'the step before') + ' fitted.';
+      else if (st === 'far') reason = 'Evolve ' + (pv ? pv.name : 'the step before') + ' first.';
+      return { id: id, c: it.c, stage: it.ls.stage, state: st, reason: reason, i: i };
+    });
+  }
+  function stepGame(c) { var d0 = dishObj(); return d0.agents ? (c.game3 || (c.world === 3 ? c.game : c.real)) : (c.game || c.sentence); }
+  function pathDetailHtml(m, n) {
+    var c = m.c, g = stepGame(c) || '';
+    return '<div class="pd-h"><b>' + esc(c.name) + '</b><span>Step ' + m.stage + ' of ' + n + ' · ' + (c.energy ? 'Energy ' + c.energy : 'No energy') + ' · ' + STEP_WORD[m.state] + '</span></div>' +
+      '<div class="pd-t"><p class="pd-g">' + esc(g) + '</p><p class="pd-r"><i>Real</i>' + esc(c.real || '') + '</p></div>' +
+      '<div class="pd-w">' + (m.reason ? esc(m.reason) : '') + '</div>' +
+      '<div class="pd-k">' + (m.stage > 1 ? 'This step still does everything the earlier steps do.' : 'Every later step does everything this step does.') + '</div>';
+  }
+  function pathBlock(d, k, g) {
+    var blk = el('div', 'pathblock'), model = stepModel(g), n = model.length;
+    blk.setAttribute('data-lineage', g.lineage);
+    blk.innerHTML = '<div class="path-h"><b>' + esc(lineageTitle(g.lineage)) + '</b><span class="path-tag">Path</span></div><div class="path-sub">Each step opens when a dish is cleared with the step before it.</div>' +
+      '<div class="pathstrip" role="group" aria-label="' + esc(lineageTitle(g.lineage)) + ' path, steps in order"></div><div class="pathdetail" aria-live="polite"></div>';
+    var strip = blk.querySelector('.pathstrip'), det = blk.querySelector('.pathdetail');
+    function shown() {
+      var by = {}; model.forEach(function (m) { by[m.id] = m; });
+      var ready = model.filter(function (x) { return x.state === 'ready'; });
+      var m = (S.pathFocus && by[S.pathFocus]) || model.filter(function (x) { return x.state === 'fitted'; })[0] || (S.pathSel && by[S.pathSel]) || ready[ready.length - 1] || model[0];
+      return m;
+    }
+    function paint() { var m = shown(); det.innerHTML = pathDetailHtml(m, n); det.setAttribute('data-id', m.id); Array.prototype.forEach.call(strip.querySelectorAll('.step'), function (t) { t.classList.toggle('sel', t.getAttribute('data-id') === m.id); }); }
+    model.forEach(function (m, i) {
+      if (i) strip.insertAdjacentHTML('beforeend', '<svg class="parr' + (m.state === 'next' || m.state === 'far' ? ' dash' : '') + '" viewBox="0 0 14 24" aria-hidden="true"><path d="M1 12h9M6.5 7.5 11 12l-4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>');
+      var t = el('div', 'step st-' + m.state); t.tabIndex = 0; t.setAttribute('role', 'button'); t.setAttribute('data-id', m.id); t.setAttribute('data-stage', m.stage); t.setAttribute('data-state', m.state); t.setAttribute('data-reason', m.reason);
+      t.setAttribute('aria-pressed', m.state === 'fitted' ? 'true' : 'false');
+      t.setAttribute('aria-label', 'Step ' + m.stage + ', ' + m.c.name + ', ' + (m.c.energy ? 'energy ' + m.c.energy : 'no energy') + ', ' + STEP_WORD[m.state].toLowerCase() + (m.reason ? '. ' + m.reason : ''));
+      t.innerHTML = '<div class="s1">' + STEP_MARK[m.state] + '<span>Step ' + m.stage + '</span></div><div class="s2">' + esc(m.c.name) + '</div><div class="s3">' + (m.c.energy ? 'Energy ' + m.c.energy : 'No energy') + '</div><div class="s4">' + STEP_WORD[m.state] + '</div><div class="s5">' + (m.state === 'next' ? esc(m.reason) : '') + '</div>';
+      function toggle() { S.pathSel = m.id; S.focusId = m.id; var r = m.state === 'fitted' ? doUnfit(k, m.id) : doFit(k, m.id); if (!r || !r.ok) { S.focusId = null; paint(); } }
+      t.addEventListener('click', toggle);
+      t.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggle(); } });
+      function on() { S.pathFocus = m.id; previewOption(k, m.id); if (m.state === 'next' || m.state === 'far') showPreviewText(m.reason, true); t.classList.add('pv'); paint(); }
+      function off() { S.pathFocus = null; t.classList.remove('pv'); clearPreview(); paint(); }
+      t.addEventListener('mouseenter', on); t.addEventListener('focus', on); t.addEventListener('mouseleave', off); t.addEventListener('blur', off);
+      strip.appendChild(t);
+    });
+    paint();
+    return blk;
+  }
+  function renderPath(d, k) {
+    var box = $('pathBox'), gs = lineageGroups(d, k);
+    box.innerHTML = ''; box.hidden = !gs.length; $('optPanel').classList.toggle('haspath', gs.length > 0);
+    gs.forEach(function (g) { box.appendChild(pathBlock(d, k, g)); });
+    return gs;
+  }
   function renderLayers(k) {
     var box = $('layerRows'); box.innerHTML = '';
     if (k !== 'envelope') return;
@@ -851,12 +959,13 @@
     renderLayers(k);
     var keepTop = list.scrollTop;
     list.innerHTML = '';
-    Sim.offered(d, k).forEach(function (c) { list.appendChild(optionEl(k, c)); });
+    var pg = renderPath(d, k), inPath = {}; pg.forEach(function (g) { g.items.forEach(function (it) { inPath[it.c.id] = true; }); });
+    Sim.offered(d, k).forEach(function (c) { if (!inPath[c.id]) list.appendChild(optionEl(k, c)); });
     if (info.empty) list.appendChild(emptyOptionEl(k));
     if (k === 'reflex' && d.allowed.sensors.length) { var rb = el('div', 'rulebox'); rb.id = 'ruleBox'; list.appendChild(rb); renderRuleBox(); }
     list.classList.toggle('showreal', !!S.real); list.classList.toggle('g3', !!d.agents);
     list.scrollTop = S.lastOptSlot === k ? keepTop : 0; S.lastOptSlot = k;
-    if (S.focusId) { var ft = list.querySelector('[data-id="' + S.focusId + '"]'); S.focusId = null; if (ft) ft.focus({ preventScroll: true }); }
+    if (S.focusId) { var ft = $('pathBox').querySelector('[data-id="' + S.focusId + '"]') || list.querySelector('[data-id="' + S.focusId + '"]'); S.focusId = null; if (ft) ft.focus({ preventScroll: true }); }
   }
 
   // ---------------------------------------------------------------- machine rule: tap-to-fill sentence (the Reflex slot's Machine option)
@@ -1118,8 +1227,8 @@
     S.mode = 'run'; S.run = run; S.runCount++; if (!(C.kept && C.base)) S.prev[d.id] = { share: run.H.share, total: run.H.total, build: copy(S.build) };
     ezReset(); S.ez.tPrev = 0; cmpSync();
     S.stopAt = null; S.runFinished = false; S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = d.agents ? 1 : 2; setSpeedUI();
-    S.evolvedNew = [];
-    if (run.v.win) { S.cleared[d.id] = true; S.wins[d.id] = copy(S.build); save('cleared2', S.cleared); save('wins2', S.wins); recordUsed(S.build); S.lastRunLost = false; recordGrade(run, d, S.build); }
+    S.evolvedNew = []; S.evo = null;
+    if (run.v.win) { S.cleared[d.id] = true; S.wins[d.id] = copy(S.build); save('cleared2', S.cleared); save('wins2', S.wins); recordUsed(S.build, d.id); S.lastRunLost = false; recordGrade(run, d, S.build); }
     else { S.lastAutopsy = run.autopsy; S.lastRunLost = true; S.tipLevel = 0; setFail(run, S.build); }
     closeOverlay(); show('run');
     return run;
@@ -1390,7 +1499,7 @@
   }
 
   // ---------------------------------------------------------------- Result overlay
-  function closeOverlay() { $('overlay').hidden = true; S.overlayOpen = false; if (S.screen === 'run') refresh(); }
+  function closeOverlay() { if (S.evoShown) evolveCommit(); $('overlay').hidden = true; S.overlayOpen = false; if (S.screen === 'run') refresh(); }
   function coverName(b) {
     var genus = { respiration: 'Helicobacter', fermentation: 'Lactobacillus', fuelcell: 'Vibrio' }[b.metabolism] || 'Helicobacter';
     var epi = [], bio = { stringent: 'parcus', sporulate: 'sporans', sos: 'reparans' }, ptx = { wall: 'armatus', quorum: 'sociabilis', naps: 'dormiens', acidproof: 'acidotolerans', flagellum: 'natans', clock: 'horarius', radio: 'radiatus', copier: 'perfectus', repair: 'reparatus', pump: 'protonicus', lipids: 'densus', shell: 'testaceus' };
@@ -1456,10 +1565,11 @@
   function showResult() {
     var run = S.run, d = dishObj(); if (!run) return; compareSet(false);
     S.resultShown = true; var v = run.v, ov = $('overlay'), html;
+    if (v.win && S.evo) { showEvolve(); return; }
     if (v.win) {
       var stamp = STAMPS[D.hash(JSON.stringify(run.build)) % STAMPS.length];
       var ORD = orderForDish(d), next = ORD[ORD.indexOf(d.id) + 1], gr = d.exam ? Sim.grade(run, d, run.build) : null;
-      var evoHtml = S.evolvedNew && S.evolvedNew.length ? '<div class="evolvedline" id="evolvedLine"><svg class="evoico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 14 8 8 14.5 2 8z" fill="currentColor"/><path d="M8 4.5v5M5.8 6.7 8 4.5l2.2 2.2" fill="none" stroke="#0b0820" stroke-width="1.5"/></svg><span>A new step has evolved: ' + esc(S.evolvedNew.map(cardName).join(', ')) + '. Find it in the skill tree.</span></div>' : '';
+      var evoHtml = S.evolvedNew && S.evolvedNew.length ? '<div class="evolvedline" id="evolvedLine"><svg class="evoico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 14 8 8 14.5 2 8z" fill="currentColor"/><path d="M8 4.5v5M5.8 6.7 8 4.5l2.2 2.2" fill="none" stroke="#0b0820" stroke-width="1.5"/></svg><span>Evolved here: ' + esc(S.evolvedNew.map(cardName).join(', ')) + '</span></div>' : '';
       var gradeHtml = gr ? '<div class="gradebox g-' + gr.toLowerCase() + '" id="gradeBox"><span class="gk">Exam grade</span><b>' + gr + '</b><span class="gn">' + esc(GRADE_NEXT[gr]) + '</span></div>' : '';
       var last = next == null && ORD.every(function (i) { return S.cleared[i]; });
       html = '<div class="winwrap' + (d.stats.length > 4 ? ' tall' : '') + '"><div class="paper memo"><h2>CLEARED</h2><div class="stampbox"><div class="stamp win' + (reduced ? '' : ' slam') + '" id="stamp">' + stamp + '</div></div>' +
@@ -1493,6 +1603,48 @@
       var src = dishSnapshot(run.autopsy.from), im = $('slideImg'); if (src) im.src = src; else im.style.display = 'none';
     }
   }
+
+  // ---------------------------------------------------------------- the evolution moment: after a win that makes a step ready, before the win card
+  function slotsWithStep(build, lineage, id) {
+    var sl = JSON.parse(JSON.stringify(Sim.toSlots(build))), c = cardOrBio(id), k = c.slot;
+    if (k === 'envelope') {
+      var idx = -1; sl.envelope.forEach(function (x, i) { var l = lineageOf(x); if (l && l.lineage === lineage) idx = i; });
+      if (idx >= 0) sl.envelope[idx] = id; else if (sl.envelope.length < 2) sl.envelope.push(id);
+    } else if (k === 'reflex') sl.reflex = { kind: 'bio', id: id };
+    else sl[k] = id;
+    return sl;
+  }
+  function evoFig(slots) { return '<svg viewBox="150 50 300 300" aria-hidden="true">' + D.cellArt(slots, {}) + '</svg>'; }
+  function evoDishOf(cd) { return S.evo.build && buildCardIds(S.evo.build).indexOf(cd.from) >= 0 ? S.evo.dish : (offeredOn(cd.from)[0] || S.evo.dish); }
+  function lineageLen(l) { var n = 0; Cards.parts.concat(Cards.bioReflexes).forEach(function (o) { if (o.tree && o.tree.lineage === l) n++; }); return n; }
+  function showEvolve() {
+    var E = S.evo, ov = $('overlay'), cd = E.cands[E.sel], from = cardOrBio(cd.from), to = cardOrBio(cd.id), nm = lineageTitle(cd.lineage), many = E.cands.length > 1, i;
+    var picks = '';
+    if (many) {
+      picks = '<div class="evochoose" role="group" aria-label="Choose one path to evolve now"><p class="evoq">Two paths are ready. Choose one to evolve now. The other stays ready for the next win.</p><div class="evopicks">';
+      E.cands.forEach(function (c, j) { var cc = cardOrBio(c.id); picks += '<button type="button" class="evopick' + (j === E.sel ? ' on' : '') + '" data-act="pick" data-i="' + j + '" aria-pressed="' + (j === E.sel ? 'true' : 'false') + '"><span class="pk">' + (j === E.sel ? TREE_MARK_FITTED() : TREE_MARK_READY()) + esc(lineageTitle(c.lineage)) + '</span><b>' + esc(cc ? cc.name : c.id) + '</b><small>Step ' + c.stage + '</small></button>'; });
+      picks += '</div></div>';
+    }
+    var add = String((to && (to.effect || to.sentence)) || '').replace(/^[A-Za-z ]+\. /, '');
+    ov.innerHTML = '<div class="evowrap"><div class="paper memo evo' + (many ? ' many' : '') + '" id="evoCard" role="dialog" aria-modal="true" aria-labelledby="evoH"><h2 id="evoH">OUR CELL HAS CHANGED</h2>' + picks +
+      '<div class="evopair"><figure class="evofig"><div class="evobox" id="evoFigA">' + evoFig(slotsWithStep(E.build, cd.lineage, cd.from)) + '</div><figcaption><span class="k">Used</span><b>' + esc(from ? from.name : cd.from) + '</b></figcaption></figure>' +
+      '<svg class="evoarr" viewBox="0 0 40 24" aria-hidden="true"><path d="M2 12h30M26 5l8 7-8 7" fill="none" stroke="currentColor" stroke-width="3"/></svg>' +
+      '<figure class="evofig gain' + (reduced ? '' : ' anim') + '"><div class="evobox" id="evoFigB">' + evoFig(slotsWithStep(E.build, cd.lineage, cd.id)) + '</div><figcaption><span class="k">Gained</span><b>' + esc(to ? to.name : cd.id) + '</b></figcaption></figure></div>' +
+      '<div class="evoname"><b id="evoName">' + esc(to ? to.name : cd.id) + '</b><span>Step ' + cd.stage + ' of ' + lineageLen(cd.lineage) + ' on the ' + esc(nm) + ' path</span></div>' +
+      '<p class="evoadd" id="evoAdd">' + esc(add) + '</p>' +
+      '<p class="evocause" id="evoCause">It lived through dish ' + evoDishOf(cd) + ' with ' + esc(from ? from.name : cd.from) + ' fitted. That is how a path grows.</p>' +
+      '<div class="pbtns"><button type="button" data-act="evolve" id="evoGo">Continue</button></div></div></div>';
+    ov.hidden = false; S.overlayOpen = true; S.evoShown = true; refresh();
+    var go = $('evoGo'); if (go) go.focus({ preventScroll: true });
+  }
+  function evolveCommit() {
+    var E = S.evo; if (!E) return;
+    var cd = E.cands[E.sel]; S.evolved[cd.id] = true; save('evolved3', S.evolved);
+    S.evolvedNew = [cd.id]; S.evo = null; S.evoShown = false;
+    if (S.screen === 'adapt' && S.build) renderAdapt(false);
+  }
+  function evolveContinue() { if (!S.evo) return; evolveCommit(); showResult(); }
+  function evoPick(j) { if (!S.evo || j < 0 || j >= S.evo.cands.length) return; S.evo.sel = j; showEvolve(); var b = $('overlay').querySelector('.evopick[data-i="' + j + '"]'); if (b) b.focus({ preventScroll: true }); }
   // The thick water's completion card, from its own text (levels3.js WORLD; its COMPLETE comes with the exam dish, which is not built yet).
   function complete3() {
     if (Lv3.COMPLETE) return Lv3.COMPLETE;
@@ -1518,9 +1670,11 @@
   }
   $('overlay').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button[data-act]') : null;
-    if (!b) { if (e.target === $('overlay')) closeOverlay(); return; }
+    if (!b) { if (e.target === $('overlay') && !S.evoShown) closeOverlay(); return; }
     var a = b.getAttribute('data-act');
     if (a === 'tip') pressTip();
+    else if (a === 'evolve') evolveContinue();
+    else if (a === 'pick') evoPick(+b.getAttribute('data-i'));
     else if (a === 'adapt') { closeOverlay(); show('adapt'); }
     else if (a === 'watch') { closeOverlay(); }
     else if (a === 'jump') { closeOverlay(); S.playing = false; S.t = S.run.autopsy.from; setPlayLabel(); glJump(S.mode === 'run' && !S.run.v.win ? ezLocate(S.run) : null); }
@@ -1553,7 +1707,7 @@
   $('replayIntro').addEventListener('click', function () { S.introAt = 0; S.introWorld = 1; show('intro'); });
   $('unlockAll').addEventListener('click', function () { S.unlocked = true; save('unlocked2', true); renderList(); });
   $('resetProgress').addEventListener('click', function () {
-    S.cleared = {}; S.wins = {}; S.grades = {}; S.used = {}; S.evolvedNew = []; save('used3', {}); save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro2', false); S.seenIntroB = false; S.seenWorldB = false; S.seenIntroC = false; S.seenWorldC = false; S.worldTab = 1; save('introB', false); save('worldB', false); save('introC', false); save('worldC', false); save('worldTab', 1);
+    S.cleared = {}; S.wins = {}; S.grades = {}; S.used = {}; S.evolved = {}; S.evo = null; S.evoShown = false; S.evolvedNew = []; save('used3', {}); save('evolved3', {}); save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro2', false); S.seenIntroB = false; S.seenWorldB = false; S.seenIntroC = false; S.seenWorldC = false; S.worldTab = 1; save('introB', false); save('worldB', false); save('introC', false); save('worldC', false); save('worldTab', 1);
     save('cleared2', {}); save('wins2', {}); save('unlocked2', false); save('world2', false); renderList();
   });
   $('undo').addEventListener('click', function () { if (!S.undo.length) return; S.build = S.undo.pop(); S.preview = null; syncRuleFromBuild(); renderAdapt(false); });
@@ -1594,7 +1748,8 @@
     } else if (S.screen === 'run' && S.run && !ovOpen && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault(); S.playing = false; setPlayLabel();
       seek(S.t + (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 10 : 1));
-    } else if (e.key === 'Escape') { closeOverlay(); hidePop(); }
+    } else if (e.key === 'Enter' && S.evoShown && tg !== 'BUTTON') { e.preventDefault(); evolveContinue();
+    } else if (e.key === 'Escape') { if (S.evoShown) { evolveContinue(); return; } closeOverlay(); hidePop(); }
   });
 
   // ---------------------------------------------------------------- skill tree: a full-cover overlay (the page behind keeps its screen, dish and build)
@@ -1615,7 +1770,7 @@
     return n.length < 2 ? n.join('') : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1];
   }
   function treeCtx() { var on = S.dish != null && S.build && S.screen !== 'list' && S.screen !== 'world' && S.screen !== 'intro'; return { D: on ? dishObj() : null, build: on ? S.build : null, adapt: !!(on && S.screen === 'adapt') }; }
-  function isEvolved(id) { var ls = lineageOf(id); return !!(ls && ls.stage > 1 && S.used[lsId(ls.prev)]); }
+  function isEvolved(id) { var ls = lineageOf(id); return !!(ls && ls.stage > 1 && S.evolved[id]); }
   function treeReason(n, s) {
     var r = s.reason || '', ls = lineageOf(n.id);
     if (ls && ls.stage > 1 && s.state === 'unlearned' && /^Clear a dish with/.test(r)) { var w = offeredOn(lsId(ls.prev)); if (w.length) r += ' Offered on ' + dishWords(w) + '.'; }
@@ -1686,7 +1841,7 @@
   }
   function treeRefresh() {
     var cx = treeCtx(), list = !cx.D; T.adapt = cx.adapt;
-    T.st = treeCall('treeState', cx.D, cx.build, S.cleared, S.used) || {};
+    T.st = treeCall('treeState', cx.D, cx.build, S.cleared, derivedUsed()) || {};
     T.nodes.forEach(function (n) {
       var s = (T.st[n.id] || {}).state || 'unlearned', t = T.tiles[n.id];
       t.className = 'tv-tile st-' + s + (n.shelf === 'machine' ? ' mach' : '') + (T.sel === n.id ? ' sel' : '');
@@ -1782,7 +1937,12 @@
     glSig: function (t) { return GL.r ? GL.r.signature(t) : null; },
     glPortrait: function () { return GL.p; },
     forceFallback: function (on) { GL.forced = !!on; if (on) { glDestroy(); glNote('Simple dish view: forced for testing.'); if (GL.p) { $('cellWrap').classList.remove('cellglon'); $('cellGL').hidden = true; } } else { GL.failed = false; glNote(''); GL.pfailed = false; if (S.screen === 'adapt') renderCell(); } return { forced: GL.forced }; },
-    used: function () { return JSON.parse(JSON.stringify(S.used)); }, setUsed: function (m) { S.used = JSON.parse(JSON.stringify(m || {})); save('used3', S.used); if (S.screen === 'adapt' && S.build) renderAdapt(false); if (T.open) treeRefresh(); return S.used; },
+    used: function () { return JSON.parse(JSON.stringify(S.used)); }, setUsed: function (m) { S.used = JSON.parse(JSON.stringify(m || {})); save('used3', S.used); S.evolved = impliedEvolved(S.used); save('evolved3', S.evolved); if (S.screen === 'adapt' && S.build) renderAdapt(false); if (T.open) treeRefresh(); return S.used; },
+    evolved: function () { return JSON.parse(JSON.stringify(S.evolved)); }, setEvolved: function (m) { S.evolved = JSON.parse(JSON.stringify(m || {})); save('evolved3', S.evolved); if (S.screen === 'adapt' && S.build) renderAdapt(false); if (T.open) treeRefresh(); return S.evolved; },
+    path: function () {
+      var box = $('pathBox'); if (!box || box.hidden) return null; var blk = box.querySelector('.pathblock'); if (!blk) return null;
+      return { lineage: blk.getAttribute('data-lineage'), steps: Array.prototype.map.call(blk.querySelectorAll('.step'), function (t) { var b = t.getBoundingClientRect(); return { id: t.getAttribute('data-id'), stage: +t.getAttribute('data-stage'), state: t.getAttribute('data-state'), x: Math.round(b.x), y: Math.round(b.y + window.scrollY), w: Math.round(b.width), h: Math.round(b.height), reason: t.getAttribute('data-reason') || '' }; }) };
+    },
     tree: function (on) { if (on === false) treeClose(); else treeOpen($('navTree')); return T.open; }, treeSelect: function (id) { return treeSelect(id); }, treeInfo: treeInfo,
     S: S, show: show, selectDish: selectDish, enterWatch: enterWatch, run: doRun, seek: seek, skip: skip, showResult: showResult, advance: advance,
     unlockWorld: function (w) { for (var v = 1; v < w; v++) orderOf(v).forEach(function (id) { S.cleared[id] = true; }); save('cleared2', S.cleared); renderList(); return { ok: !tabLocked(w), world: w }; },   // test setup: marks every dish before world w cleared, which opens its tab
