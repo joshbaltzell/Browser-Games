@@ -28,7 +28,7 @@ module.exports = async (a) => {
   await a.eval(`(function(){var g=__la.gl();g.userMoved=false;g.eventZoom(g.locate('colony',150));g.stepAnim(0.5);return 1})()`);
   const r = await ev(`(function(){var g=__la.gl(),cv=g.cv;cv.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,clientX:200,clientY:300,bubbles:true,cancelable:true}));return {act:g.eventActive(),um:g.userMoved,z:g.view.zoom}})()`);
   ok(!r.act && r.um === true, 'wheel cancels the event move and sets userMoved (zoom ' + (r.z && r.z.toFixed(2)) + ')');
-  const after = await ev(`(function(){var g=__la.gl(),z=g.view.zoom;g.stepAnim(5);return {z0:z,z1:g.view.zoom,ez:g.eventZoom({x:0.1,y:0.1})}})()`);
+  const after = await ev(`(function(){var g=__la.gl();g.stepAnim(1);var z=g.view.zoom;g.stepAnim(5);return {z0:z,z1:g.view.zoom,ez:g.eventZoom({x:0.1,y:0.1})}})()`);
   ok(after.z0 === after.z1 && after.ez === false, 'camera stays where the player put it; eventZoom refused after userMoved');
   // keepView
   const k = await ev(`(function(){var g=__la.gl();g.view.zoom=2.2;g.view.cx=0.2;g.view.cy=-0.1;g.setTick(77);var tk=g.tick;g.setRun(g.run,g.D,g.build,{keepView:true,slots:g.slots,machine:g.mach});var kept=[g.view.zoom,g.view.cx,g.view.cy,g.tick,g.userMoved];g.setRun(g.run,g.D,g.build,{slots:g.slots,machine:g.mach});return {kept:kept,reset:[g.view.zoom,g.tick,g.userMoved]}})()`);

@@ -1150,24 +1150,28 @@
   }
   function pos(v) { return (Math.max(0, Math.min(1, v)) * 100).toFixed(1) + '%'; }
   // s: the stat now. o: { ghost: stat to show as a ghost marker, diff: statDiff entry (for the arrow), fail: show the failed tag, ghostVerdict: bool }
+  function mpos(v) { return (Math.max(0.015, Math.min(0.985, v)) * 100).toFixed(1) + '%'; }   // markers stay fully visible at either end
   function setBar(row, s, o) {
     o = o || {};
     var z = row.querySelector('.sb-zone'), m = row.querySelector('.sb-mark'), g = row.querySelector('.sb-ghost'), v = row.querySelector('.sb-verdict'), ar = row.querySelector('.sb-arrow'), tg = row.querySelector('.sb-tag');
     var unc = s.state === 'unchecked';   // not checked on this dish: greyed, no safe zone, never red
     z.style.display = unc ? 'none' : '';
     z.style.left = pos(s.safe[0]); z.style.width = ((s.safe[1] - s.safe[0]) * 100).toFixed(1) + '%';
-    var ok = s.state === 'safe', edge = s.state === 'edge';
-    if (s.value == null) m.style.display = 'none'; else { m.style.display = ''; m.style.left = pos(s.value); }
-    m.className = 'sb-mark ' + (unc ? 'neu' : ok ? 'ok' : edge ? 'amb' : 'bad');
     var gh = o.ghost, showG = gh && gh.value != null && (s.value == null || Math.abs(gh.value - s.value) >= 0.004 || gh.state !== s.state);
     if (o.forecast) { showG = o.forecast.value != null && (s.value == null || Math.abs(o.forecast.value - s.value) >= 0.004); gh = o.forecast; }
-    g.style.display = showG ? '' : 'none';
+    // While a card or dial is previewed, the solid marker slides to where the change would put it and the outline stays where the cell is now.
+    var pv = !!(o.ghost && showG), sh = pv ? gh : s, ok = sh.state === 'safe', edge = sh.state === 'edge';
+    if (sh.value == null) m.style.display = 'none'; else { m.style.display = ''; m.style.left = mpos(sh.value); }
+    m.className = 'sb-mark ' + (unc ? 'neu' : ok ? 'ok' : edge ? 'amb' : 'bad');
+    row.classList.toggle('safe', !unc && ok); row.classList.toggle('pvrow', pv);
+    g.style.display = showG && (!pv || s.value != null) ? '' : 'none';
     // ghost colour = the tone of the change (the same tone as the card's words)
     var gtone = 'bad';
     if (showG && o.ghost) gtone = unc ? 'neu' : (o.diff && o.diff.better === true) ? 'ok' : (o.diff && o.diff.better === false) ? 'bad' : gh.state === 'safe' ? 'ok' : gh.state === 'edge' ? 'amb' : 'bad';
-    if (showG) { g.style.left = pos(gh.value); g.className = 'sb-ghost' + (o.forecast ? ' fc' : ' ' + gtone); }
+    if (showG) { g.style.left = mpos(pv ? s.value : gh.value); g.className = 'sb-ghost' + (o.forecast ? ' fc' : pv ? ' was' : ' ' + gtone); }
     var txt = s.verdict, cls = unc ? 'neu' : ok ? 'ok' : edge ? 'amb' : 'bad';
     if (o.ghost && showG) { txt = '\u2192 ' + gh.verdict; cls = gtone + ' pv'; }
+    if (!unc && ok) txt = '\u2713 ' + txt.replace(/^\u2192 /, '');   // safe reads at a glance: a tick, never an arrow
     if (v.textContent !== txt) { v.textContent = txt; v.title = txt; }
     v.className = 'sb-verdict ' + cls;
     var arrow = '', acl = '';

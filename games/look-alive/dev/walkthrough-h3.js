@@ -89,7 +89,7 @@ module.exports = async (a) => {
   check('d15CardsShowGame3', await ev(`(function(){var p=document.querySelectorAll('#optList .opt .g3');return p.length>0})()`));
   await a.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 3, y: 3, button: 'none' }); await a.sleep(500);   // the pointer off the card, so the bars show the cell and not a hover preview
   const bars15 = await ev(`__la.bars()`); sum.d15Bars = bars15.map(b => b.stat + ':' + b.verdict);
-  check('d15BarsSafe', bars15.length === 3 && bars15.every(b => b.verdict === 'Safe'));
+  check('d15BarsSafe', bars15.length === 3 && bars15.every(b => b.verdict.replace(/^\u2713 /, '') === 'Safe'));
   check('d15NoDuplicateBars', (await ev(`document.querySelectorAll('#statBars .sb').length`)) === 3 && new Set(bars15.map(b => b.stat)).size === 3);
   await shot('h3-d15-adapt.png', MOB);
   const r15 = await play(16);
@@ -148,7 +148,7 @@ module.exports = async (a) => {
   check('d16RuleBuilt', JSON.stringify(rf) === JSON.stringify({ kind: 'machine', sensor: 'food', cmp: 'gt', value: 0.015, action: 'stay', otherwise: 'seek' }));
   const blanks = await ev(`[].map.call(document.querySelectorAll('#ruleBox .blank'),function(e){return e.textContent})`); sum.d16Blanks = blanks;
   check('d16BlanksText', JSON.stringify(blanks) === JSON.stringify(['food here', 'is above', '0.015', 'stay and feed', 'swim toward food']));
-  check('d16BarsSafeWithRule', (await ev(`__la.bars()`)).every(b => b.verdict === 'Safe'));
+  check('d16BarsSafeWithRule', (await ev(`__la.bars()`)).every(b => b.verdict.replace(/^\u2713 /, '') === 'Safe'));
   await shot('h3-d16-adapt-rule.png', MOB);
   if (MOB) { await a.sleep(200); await shot('h3-d16-adapt-390.png', true); }
 

@@ -650,12 +650,17 @@ var LookAliveRender = (function () {
     var self = this, host = this.host; if (!host) return;
     var box = document.createElement('div'); box.className = 'dishui';
     box.innerHTML = '<div class="dscale" aria-hidden="true"><i></i><span></span></div>' +
-      '<label class="dq" title="Cells drawn: Phone 5,000, Laptop 20,000, High 50,000. Steps down by itself if frames are slow."><span class="dqk">Detail</span><select aria-label="Dish detail"><option value="phone">5k</option><option value="laptop">20k</option><option value="high">50k</option></select></label>' +
-      '<div class="dhint" aria-hidden="true">scroll to zoom, drag to move, double-click to reset</div><div class="dnote" role="status" hidden></div><div class="dthin" aria-hidden="true" hidden>Thinned view. Zoom in for every cell.</div>';
+      '<div class="dzoom"><button type="button" data-z="in" aria-label="Zoom in" title="Zoom in">+</button><span class="dzl" aria-live="off">1\u00d7</span><button type="button" data-z="out" aria-label="Zoom out" title="Zoom out">\u2212</button><button type="button" data-z="fit" aria-label="Show the whole dish" title="Show the whole dish">\u2922</button></div>' +
+      '<div class="dhint" aria-hidden="true">Scroll, pinch or press + to zoom. Drag to look around. Double-click to zoom in there.</div><div class="dnote" role="status" hidden></div><div class="dthin" aria-hidden="true" hidden>Thinned view. Zoom in for every cell.</div>';
     host.appendChild(box); this.ui = box;
-    this.uiScale = box.querySelector('.dscale'); this.uiSel = box.querySelector('select'); this.uiHint = box.querySelector('.dhint'); this.uiNote = box.querySelector('.dnote'); this.uiThin = box.querySelector('.dthin');
-    this.uiSel.value = this.tierName;
-    this.uiSel.addEventListener('change', function () { self.setQuality(self.uiSel.value); });
+    this.uiScale = box.querySelector('.dscale'); this.uiZl = box.querySelector('.dzl'); this.uiHint = box.querySelector('.dhint'); this.uiNote = box.querySelector('.dnote'); this.uiThin = null;   // the 'thinned view' note is gone with the Detail menu: the renderer picks its own detail
+    Array.prototype.forEach.call(box.querySelectorAll('.dzoom button'), function (b) {
+      b.addEventListener('click', function () {
+        if (!self.run) return; self.cancelAuto(); var k = b.getAttribute('data-z');
+        if (k === 'fit') self.zoomAt(0, 0, 1, 0.35, true); else self.zoomAt(0, 0, (self.zg ? self.zg.z1 : self.view.zoom) * (k === 'in' ? 1.8 : 1 / 1.8), 0.3);
+        self.touchedView();
+      });
+    });
     this.hintTimer = setTimeout(function () { if (self.uiHint) self.uiHint.style.opacity = '0'; }, 6000);
   };
   Dish.prototype.note = function (msg) { if (!this.uiNote) return; this.uiNote.textContent = msg || ''; this.uiNote.hidden = !msg; };
@@ -664,7 +669,6 @@ var LookAliveRender = (function () {
   Dish.prototype.setQuality = function (name, silent) {
     if (!TUNE.tiers[name]) name = 'laptop';
     this.tierName = name; this.C = TUNE.tiers[name];
-    if (this.uiSel) this.uiSel.value = name;
     this.eng.qScale = TUNE.tierScale[name];
     this.eng.setCaps(Math.ceil(this.C * 1.45) + 600, Math.min(9000, Math.ceil(this.C * 0.22) + 800));
     this.eng.W = 0; this.eng.resize();
@@ -798,7 +802,7 @@ var LookAliveRender = (function () {
   };
   Dish.prototype.setTick = function (t) { this.tick = t; };
 
-  Dish.prototype.resetView = function () { this.view.cx = 0; this.view.cy = 0; this.view.zoom = 1; this.zoomAnim = null; };
+  Dish.prototype.resetView = function () { this.view.cx = 0; this.view.cy = 0; this.view.zoom = 1; this.zoomAnim = null; this.zg = null; };
   // Visual species by identity hash: the same individual is always the same species, across scrub, zoom, tier and replay.
   // Radii are scaled so the mean drawn area equals the old mean (chains are longer), so the on-screen pink:violet balance holds.
   Dish.prototype.assignSpecies = function () {
@@ -854,7 +858,23 @@ var LookAliveRender = (function () {
       this.resetView(); this.anim = { kind: kind, t: 0, dur: TUNE.rackDur, f0: kind === 'watch' ? TUNE.rackStart : TUNE.rackStart * 0.9 };
     }
   };
+  // A short eased glide of zoom and centre, for the zoom buttons, the wheel and double-click. Reduced motion jumps straight there.
+  Dish.prototype.zoomAt = function (ox, oy, z1, dur, center) {   // ox, oy: CSS pixels from the dish centre that should stay put
+    var v = this.view, zb = this.zg ? this.zg.z1 : v.zoom, cb = this.zg ? this.zg.c1 : [v.cx, v.cy], bs = this.baseScale() / this.eng.px;
+    z1 = clamp(z1, 1, TUNE.zoomMax);
+    var wx = cb[0] + ox / (bs * zb), wy = cb[1] + oy / (bs * zb), c1 = center ? [0, 0] : [wx - ox / (bs * z1), wy - oy / (bs * z1)];
+    var lim = Math.max(0, 1 - 0.9 / z1), d = Math.sqrt(c1[0] * c1[0] + c1[1] * c1[1]); if (d > lim) { c1[0] *= lim / d; c1[1] *= lim / d; }
+    if (this.reduced || !dur) { v.zoom = z1; v.cx = c1[0]; v.cy = c1[1]; this.zg = null; this.zoomLabel(); return; }
+    this.zg = { t: 0, dur: dur, z0: v.zoom, c0: [v.cx, v.cy], z1: z1, c1: c1 };
+  };
+  Dish.prototype.zoomLabel = function () { if (!this.uiZl) return; var t = (this.view.zoom < 9.95 ? this.view.zoom.toFixed(1).replace(/\.0$/, '') : Math.round(this.view.zoom)) + '\u00d7'; if (this.uiZl.textContent !== t) this.uiZl.textContent = t; };
   Dish.prototype.stepAnim = function (dt) {
+    if (this.zg) {
+      var g = this.zg, q; g.t += dt; q = clamp(g.t / g.dur, 0, 1); q = 1 - Math.pow(1 - q, 3);
+      this.view.zoom = g.z0 * Math.pow(g.z1 / g.z0, q); this.view.cx = g.c0[0] + (g.c1[0] - g.c0[0]) * q; this.view.cy = g.c0[1] + (g.c1[1] - g.c0[1]) * q;
+      if (g.t >= g.dur) this.zg = null;
+    }
+    this.zoomLabel();
     var a = this.anim; if (!a) return;
     a.t += dt;
     if (a.kind === 'event') {   // glide in, hold, ease back to the starting view; focus and exposure are left alone
@@ -938,10 +958,10 @@ var LookAliveRender = (function () {
     cv.addEventListener('wheel', function (e) {
       e.preventDefault(); if (!self.run) return;
       self.cancelAuto();
-      var w0 = toWorld(e), z = clamp(self.view.zoom * Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0016)), 1, TUNE.zoomMax);
-      self.view.zoom = z; var w1 = toWorld(e); self.view.cx += w0[0] - w1[0]; self.view.cy += w0[1] - w1[1]; self.clampView(); self.touchedView();
+      var r = cv.getBoundingClientRect(), zb = self.zg ? self.zg.z1 : self.view.zoom;
+      self.zoomAt(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2, zb * Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0022)), 0.16); self.touchedView();
     }, { passive: false });
-    cv.addEventListener('pointerdown', function (e) { try { cv.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ } ptrs[e.pointerId] = [e.clientX, e.clientY]; last = [e.clientX, e.clientY]; pinch = 0; self.cancelAuto(); });
+    cv.addEventListener('pointerdown', function (e) { try { cv.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ } ptrs[e.pointerId] = [e.clientX, e.clientY]; last = [e.clientX, e.clientY]; pinch = 0; self.zg = null; self.cancelAuto(); cv.style.cursor = 'grabbing'; });
     cv.addEventListener('pointermove', function (e) {
       if (!ptrs[e.pointerId]) return;
       var ids = Object.keys(ptrs), r = cv.getBoundingClientRect();
@@ -955,9 +975,14 @@ var LookAliveRender = (function () {
       var sc = self.baseScale() * self.view.zoom / self.eng.px;
       self.view.cx -= (e.clientX - last[0]) / sc; self.view.cy -= (e.clientY - last[1]) / sc; last = [e.clientX, e.clientY]; self.clampView(); self.touchedView();
     });
-    function up(e) { delete ptrs[e.pointerId]; last = Object.keys(ptrs).length ? last : null; pinch = 0; }
+    function up(e) { delete ptrs[e.pointerId]; last = Object.keys(ptrs).length ? last : null; pinch = 0; cv.style.cursor = 'grab'; }
+    cv.style.cursor = 'grab';
     cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
-    cv.addEventListener('dblclick', function () { self.resetView(); self.touchedView(); });
+    cv.addEventListener('dblclick', function (e) {   // zoom in where you double-click; at the closest zoom, back out to the whole dish
+      if (!self.run) return; self.cancelAuto(); var r = cv.getBoundingClientRect();
+      if (self.view.zoom >= TUNE.zoomMax * 0.95) self.zoomAt(0, 0, 1, 0.35, true); else self.zoomAt(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2, self.view.zoom * 2.2, 0.3);
+      self.touchedView();
+    });
   };
   Dish.prototype.cancelAuto = function () { if (this.anim && this.anim.kind === 'jump') this.anim = null; else if (this.anim && this.anim.kind === 'event') { this.anim = null; this.userMoved = true; } };
   Dish.prototype.touchedView = function () { this.userMoved = true; if (this.anim && this.anim.kind === 'event') this.anim = null; if (this.uiHint) this.uiHint.style.opacity = '0'; };

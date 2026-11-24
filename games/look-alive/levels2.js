@@ -177,7 +177,7 @@ var LookAliveLevels2 = (function () {
     ,
     dish({ id: 19, title: 'Leaving the River', energy: 5, exam: true, regWeight: 2, peakSafe: 6, slots: SLOTS.concat(['motor']),
       stats: ['heat', 'growth', 'grazing', 'natural', 'night'], channels: CH_EXAM, temp: temp(66, 30, 0.2, true, null, { amp: 8, period: 100, span: 26, dMult: 3, spore: 1 }), nights: true,
-      problem: 'Hot water, a cool edge, the dark, and a river that warms and chills.', goal: 'Stay in the band through every night.',
+      problem: 'Hot water, a cool edge, the dark, and a river that warms and chills. Here the swings last long enough to wear down a sleeping cell, so waiting it out as a spore is not enough.', goal: 'Stay in the band through every night.',
       tips: examTips({
         cooked: ['Your cell stopped where the water left its range, hot or cold.', 'Look at what each heat card costs in energy and births. The water does not stay one temperature, and a cell that sits out the swing as a spore is worn away by it.'],
         grazed: ['The current carried you to the cool edge and the shadow ate you.', 'Something has to keep you out of water under 40 C, or keep you from being eaten. Count what each answer costs.'],
