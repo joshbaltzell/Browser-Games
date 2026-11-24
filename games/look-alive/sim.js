@@ -182,7 +182,8 @@ var LookAlive = (function () {
   // The number a player sees for a dish id (game.js sets it to the dish's place in play order; until then, and in Node, it is the id itself). Text only.
   var dishNoFn = null;
   function dn(id) { return dishNoFn ? dishNoFn(id) : id; }
-  function opensOn(slotId) { var ds = Lv().DISHES; for (var i = 0; i < ds.length; i++) if (ds[i].slots.indexOf(slotId) >= 0) return ds[i].id; return null; }
+  function playOrder() { return Lv().DISHES.slice().sort(function (a, b) { return dn(a.id) - dn(b.id); }); }   // dishes in play order (ids are not: dishes were inserted later)
+  function opensOn(slotId) { var ds = playOrder(); for (var i = 0; i < ds.length; i++) if (ds[i].slots.indexOf(slotId) >= 0) return ds[i].id; return null; }
   // Cards a dish offers for a slot: the dish's allowed list intersected with the slot, only if the slot is open.
   function offered(D, slotId) {
     if (!isOpen(D, slotId)) return [];
@@ -345,7 +346,7 @@ var LookAlive = (function () {
     Cards.parts.forEach(function (c) { add(c, 'part'); });
     Cards.bioReflexes.forEach(function (c) { add(c, 'reflex'); });
     list.push(cp(RULE_NODE));
-    list.forEach(function (n) { for (var i = 0; i < ds.length; i++) if (offersNode(ds[i], n)) { n.learnedOn = ds[i].id; break; } });
+    var po = playOrder(); list.forEach(function (n) { for (var i = 0; i < po.length; i++) if (offersNode(po[i], n)) { n.learnedOn = po[i].id; break; } });
     list.sort(function (a, b) { return (bi[a.branch] - bi[b.branch]) || (a.tier - b.tier) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); });
     return list;
   }
@@ -398,7 +399,7 @@ var LookAlive = (function () {
     function learned(n) {
       if (n.learnedOn == null) return false;
       if (cl[n.learnedOn]) return true;
-      return !!D && (D.id === n.learnedOn || (D.id > n.learnedOn && offersNode(D, n)));
+      return !!D && (D.id === n.learnedOn || (dn(D.id) > dn(n.learnedOn) && offersNode(D, n)));
     }
     nodes.forEach(function (n) {
       if (fit[n.id]) { out[n.id] = { state: 'fitted', reason: '' }; return; }
@@ -414,14 +415,14 @@ var LookAlive = (function () {
       } else if (ln) {
         var why;
         if (!D) why = 'Learned on dish ' + dn(n.learnedOn) + '.';
-        else if (!isOpen(D, n.slot)) { var op = opensOn(n.slot); why = op != null && op > D.id ? 'Opens on dish ' + dn(op) + '.' : 'The ' + slotName(n.slot) + ' slot is locked on this dish.'; }
+        else if (!isOpen(D, n.slot)) { var op = opensOn(n.slot); why = op != null && dn(op) > dn(D.id) ? 'Opens on dish ' + dn(op) + '.' : 'The ' + slotName(n.slot) + ' slot is locked on this dish.'; }
         else why = 'Not offered on this dish.';
         out[n.id] = { state: 'learned', reason: why };
       } else {
         var r;
         if (unmet.length) r = 'Learn ' + by[unmet[0]].name + ' first.';
         else if (n.learnedOn == null) r = 'No dish teaches this yet.';
-        else if (D && !isOpen(D, n.slot) && opensOn(n.slot) > D.id) r = 'Opens on dish ' + dn(opensOn(n.slot)) + '.';
+        else if (D && !isOpen(D, n.slot) && dn(opensOn(n.slot)) > dn(D.id)) r = 'Opens on dish ' + dn(opensOn(n.slot)) + '.';
         else r = 'Taught on dish ' + dn(n.learnedOn) + '.';
         out[n.id] = { state: 'unlearned', reason: r };
       }

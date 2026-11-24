@@ -49,7 +49,7 @@
   }
   function glJump(target) { var g = GL.r; if (g && g.supported && S.run) { g.setTick(S.t); if (target) g.rackFocus('jump', target); else g.rackFocus('jump'); } }
   // ---------------------------------------------------------------- event zoom (Run mode, lost run): the camera goes to a spot the sim records
-  var EZ_KIND = { acid: 'colony', overgrew: 'colony', bloom: 'colony', starved: 'food', bust: 'food', below: 'thinning', band: 'thinning', cooked: 'thinning', grazed: 'thinning', burned: 'thinning' };
+  var EZ_KIND = { acid: 'colony', overgrew: 'colony', bloom: 'colony', starved: 'food', bust: 'food', below: 'thinning', band: 'thinning', cooked: 'thinning', grazed: 'thinning', burned: 'thinning', eaten: 'food' };
   function ezKindFor(run) { var a = run && run.autopsy; return a && EZ_KIND[a.cause] || null; }
   // The located spot for the lost run's cause, or null (no spot, or the renderer has no locate yet). Falls back to the colony.
   function ezLocate(run) {
@@ -134,12 +134,12 @@
   var STAMPS = ['SUFFICIENTLY BACTERIAL', 'PASSES AS NATIVE', 'NOTHING TO SEE HERE', 'OF NO INTEREST TO THE GUARDS', 'UNREMARKABLE', 'CLEARED FOR COLONISATION'];
   var STAGE_NAMES = ['Calm', 'Curiosity', 'Inspection', 'Response'];
   var CAUSE_WORDS = { acid: 'Dissolved by the acid', 'exposed:growth': 'Cover blown: Growth (speed)', 'exposed:waste': 'Cover blown: Smell', 'exposed:casualties': 'Cover blown: Growth (share)', 'exposed:regularity': 'Cover blown: Naturalness',
-    'exposed:motion': 'Cover blown: Movement', overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band', cooked: 'Cooked by the heat', grazed: 'Eaten at the cool edge', burned: 'Burned by the bright core' };
+    'exposed:motion': 'Cover blown: Movement', overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band', cooked: 'Cooked by the heat', grazed: 'Eaten at the cool edge', burned: 'Burned by the bright core', eaten: 'Ate its own food away' };
   // Memo "from" line per loss cause (M5). Unknown causes fall back to the sample lab.
   var MEMO_FROM = { acid: 'Desk of Dissolved Samples', 'exposed:growth': 'Guard-watch desk', 'exposed:waste': 'Guard-watch desk', 'exposed:casualties': 'Guard-watch desk', 'exposed:regularity': 'Guard-watch desk', 'exposed:motion': 'Guard-watch desk',
     overgrew: 'Head-count desk', below: 'Head-count desk', starved: 'Head-count desk', band: 'Head-count desk', bust: 'Meal-schedule desk', bloom: 'Meal-schedule desk', cooked: 'Warm-water desk', grazed: 'Cool-edge desk', burned: 'Bright-place desk' };
   // The thick water (dishes 15 and 16): a scout that starves is the food-route desk's business, not the head count's.
-  var MEMO_FROM3 = { starved: 'Food-route desk', burned: 'Bright-place desk', 'exposed:motion': 'Guard-watch desk' };
+  var MEMO_FROM3 = { eaten: 'Food-route desk', starved: 'Food-route desk', burned: 'Bright-place desk', 'exposed:motion': 'Guard-watch desk' };
   // Story pictures (section D). A missing file logs a console error even with onerror, so each picture is switched on only once it exists.
   var STORY_ART = { cell: false, crowd: false, ripple: true };
 
@@ -278,7 +278,7 @@
   function endStop() { END.on = false; if (END.pic) END.pic.stop(); }
   function endNext() { if (S.endAt < ENDING.length - 1) { S.endAt++; renderEnding(); } else endDone(); }
   function endBack() { if (S.endAt > 0) { S.endAt--; renderEnding(); } }
-  function endDone() { save('endingSeen', true); show('list'); }
+  function endDone() { show('list'); }
   function endLeave() { show('list'); }
   window.addEventListener('resize', function () { if (S.screen === 'ending' && END.pic) END.pic.redraw(); });
 
@@ -326,11 +326,12 @@
   function isLocked(id) {
     if (S.unlocked) return false;
     var w = worldNo(id), o = orderOf(w), i = o.indexOf(id);
+    if (S.cleared[id] || o.slice(i + 1).some(function (j) { return S.cleared[j]; })) return false;   // a save made before a dish was inserted earlier in the order never re-locks what it already reached
     if (w >= 2 && i === 0) return !S.cleared[prevWorldLast(w)];
     return i > 0 && !S.cleared[o[i - 1]];
   }
   function prevWorldLast(w) { var o = orderOf(w - 1); return o[o.length - 1]; }   // the dish that opens world w: the last one of the world before it
-  function tabLocked(w) { return w >= 2 && (!worldLv(w) || (!S.unlocked && !S.cleared[prevWorldLast(w)])); }
+  function tabLocked(w) { return w >= 2 && (!worldLv(w) || isLocked(orderOf(w)[0])); }
   function setTab(w) {
     if (tabLocked(w)) return;
     S.worldTab = w; save('worldTab', w); renderList();
@@ -385,7 +386,7 @@
       b.addEventListener('click', function () { selectDish(id); }); tile.appendChild(b); wall.appendChild(tile);
     });
     if (revealedNow) save('revealed', S.revealed);
-    var we = $('watchEnding'); if (we) we.hidden = !S.cleared[17];
+    var we = $('watchEnding'); if (we) we.hidden = !S.cleared[ORDER3[ORDER3.length - 1]];
     renderScale('scaleList', tw);
   }
   function blankRule() { return { sensor: null, cmp: null, value: null, action: null, otherwise: null }; }
@@ -1602,7 +1603,7 @@
     if (d.aliveOnly) return '<div class="row"><b>Record</b><span>Colony at the end: ' + Math.round(run.H.rob[run.T] / run.H.rob[0] * 100) + '% of where it started.</span></div>';
     return '<div class="row"><b>Record</b><span>In the band ' + Math.round(v.bandFrac * 100) + '% of the time (needs ' + Math.round(d.band.need * 100) + '%). Final share ' + (v.finalShare * 100).toFixed(1) + '%. Highest guard alert: ' + STAGE_NAMES[v.maxStage] + '.' + spare + '</span></div>';
   }
-  var TAG_WORDS = { 'exposed:motion': 'NEVER STOPPED.', acid: 'DISSOLVED.', overgrew: 'TOOK OVER.', starved: 'STARVED OUT.', bust: 'STARVED OUT.', bloom: 'OUTGROWN.', below: 'TOO FEW.', band: 'OUT OF STEP.', cooked: 'COOKED.', grazed: 'EATEN.', burned: 'BURNED.' };
+  var TAG_WORDS = { 'exposed:motion': 'NEVER STOPPED.', acid: 'DISSOLVED.', overgrew: 'TOOK OVER.', starved: 'STARVED OUT.', bust: 'STARVED OUT.', bloom: 'OUTGROWN.', below: 'TOO FEW.', band: 'OUT OF STEP.', cooked: 'COOKED.', grazed: 'EATEN.', burned: 'BURNED.', eaten: 'ATE IT ALL.' };
   function slideTag(cause, d) { if (cause === 'bust' && d && d.temp) return 'LOST TO THE NIGHT.'; return TAG_WORDS[cause] || (/^exposed:/.test(cause) ? 'COVER BLOWN.' : 'FAILED.'); }
   function timelineSvg(T, from, to) {
     function x(t) { return 10 + 580 * Math.max(0, Math.min(T, t)) / T; }
@@ -1732,7 +1733,7 @@
     var srows = CO ? CO.rows : (W.complete || []).map(function (r) { return r[0] === 'Next' && Lv2 ? [r[0], 'The banded water: a new site, with one rule turned upside down. Open it from the dish list.'] : r; });
     var story = srows.map(function (r) { return '<div class="row"><b>' + esc(r[0]) + '</b><span>' + esc(r[1]) + '</span></div>'; }).join('');
     $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>' + (CO ? esc(CO.title) : 'SAMPLING COMPLETE') + '</h2>' + (cw === 1 && STORY_ART.ripple ? '<img class="completeimg" src="assets/story/complete-ripple.jpg" alt="A slow ripple crossing the surface of the warm mountain">' : '') + '<div class="covercap">' + 'The ' + (NUM_WORDS[ORD.length] || ORD.length) + ' dishes' + '</div><div class="clist">' + rows + '</div>' +
-      story + '<div class="pbtns">' + (cw === 3 && S.cleared[17] ? '<button type="button" class="big" data-act="ending">Continue</button>' : '') + '<button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
+      story + '<div class="pbtns">' + (cw === 3 && S.cleared[ORDER3[ORDER3.length - 1]] ? '<button type="button" class="big" data-act="ending">Continue</button>' : '') + '<button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
     $('overlay').hidden = false; S.overlayOpen = true;
   }
   $('overlay').addEventListener('click', function (e) {
@@ -1820,7 +1821,7 @@
       if (ovOpen) return;
       if (S.screen === 'intro') introNext(); else if (S.screen === 'world') worldContinue(); else if (S.screen === 'brief') enterWatch();
       else if (S.screen === 'adapt') doRun(); else if (S.screen === 'run') setPlaying(!S.playing);
-    } else if ((e.key === 'r' || e.key === 'R') && S.screen === 'run' && S.dish != null) {
+    } else if ((e.key === 'r' || e.key === 'R') && S.screen === 'run' && S.dish != null && !ovOpen) {
       if (S.mode === 'watch') enterWatch(); else doRun();
     } else if (S.screen === 'run' && S.run && !ovOpen && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault(); S.playing = false; setPlayLabel();
