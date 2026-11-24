@@ -1,7 +1,7 @@
 {
  "slug": "look-alive",
  "outDir": "games/look-alive/art-src/ending",
- "cap": 12,
+ "cap": 20,
  "style": "STYLE (applies to every image): a dark, elegant, slightly cute science-fiction storybook illustration, as a stylised video game cutscene. Mostly black or deep-navy background with soft glowing light and gentle bloom, and a subtle circular lens vignette at the edges. Limited palette: crystal violet (#8B5CF6) for native microbes, safranin pink (#FF5C8A) for the small alien scout craft and the player's disguised cells, iodine amber (#F5A524) for warm light and chemicals, malachite green (#2DD4A7) for guardian immune cells. Never gory or frightening. No text, no letters, no numbers, no watermark, no signature, no user interface.",
  "requests": [
   {
@@ -27,6 +27,87 @@
    "file": "opt-d-hydra.png",
    "size": "1536x864",
    "prompt": "Seen through a microscope lens in dark water: a tall, soft, translucent tube-shaped creature anchored at its base, with a crown of slow, waving, glowing tentacles at the top, its body visibly made of many small round glowing cells like beads in jelly. Violet and green glow, warm amber light drifting around it. The tiny pink scout pod hovers near its base, very small. It is soft, organic and alive, glowing gently from inside; nothing mechanical, no grid, no wireframe, no straight lines, no metal. NO face: no eyes, no mouth. No text."
+  },
+  {
+   "id": "EN-1",
+   "file": "end-1-cover.png",
+   "size": "1536x864",
+   "refs": [
+    "opt-d-hydra.png"
+   ],
+   "prompt": "The tiny glowing pink scout pod floating calmly in dark water, with three small glowing sample capsules orbiting it, one amber, one green-and-orange banded, one pale salt-white, each with a soft round stamp of light on it. Calm, quiet triumph. Plain glowing violet microbes (round blobs and rods) drift in the background. Match the attached image exactly in style, palette, glow and lens vignette. Soft, organic, alive; nothing mechanical, no metal, no grid. NO faces: no eyes, no mouths. No text."
+  },
+  {
+   "id": "EN-2",
+   "file": "end-2-balance.png",
+   "size": "1536x864",
+   "refs": [
+    "opt-d-hydra.png"
+   ],
+   "prompt": "A peaceful crowd of glowing violet rod-shaped and round microbes spread evenly around a soft glowing amber food clump, none crowding it, leaving space between them. A few pink cells sit among them, blending in. Calm, balanced, harmonious composition. Match the attached image exactly in style, palette, glow and lens vignette. Soft, organic, alive; nothing mechanical, no metal, no grid. NO faces: no eyes, no mouths. No text."
+  },
+  {
+   "id": "EN-3",
+   "file": "end-3-weather.png",
+   "size": "1536x864",
+   "refs": [
+    "opt-d-hydra.png"
+   ],
+   "prompt": "A dark microbial floor crowded with small glowing violet microbes. Above them, enormous and very blurred, far out of focus, the soft glowing tip of a single giant translucent violet tentacle made of beads of cells sweeps slowly across the top of the frame, like weather passing. The tiny pink scout pod looks up at it. Match the attached image exactly in style, palette, glow and lens vignette. Soft, organic, alive; nothing mechanical, no metal, no grid. NO faces: no eyes, no mouths. No text."
+  },
+  {
+   "id": "EH-1",
+   "file": "hq-1-cover.png",
+   "size": "1536x864",
+   "refs": [
+    "opt-d-hydra.png"
+   ],
+   "prompt": "The tiny glowing pink scout pod floating calmly in dark water, with three small glowing sample capsules orbiting it: one amber, one banded green and orange, one pale salt-white, each with a soft round stamp of light on it. Quiet triumph. Plain glowing violet microbes, round blobs and rods, drift far in the background. Match the attached image in style, palette and soft glow, but fill the whole frame edge to edge: NO circular lens border, no vignette ring. Keep the main subject in the upper two thirds; the bottom third is darker and calm, because words will sit over it. Soft, organic, alive; nothing mechanical, no metal, no grid. NO faces: no eyes, no mouths. No text."
+  },
+  {
+   "id": "EH-2",
+   "file": "hq-2-balance.png",
+   "size": "1536x864",
+   "refs": [
+    "opt-d-hydra.png"
+   ],
+   "prompt": "A calm crowd of glowing violet rod-shaped and round microbes spread evenly around a soft glowing amber food clump, none crowding it, space left between them. A few pink cells sit among them, blending in. Balanced, harmonious, peaceful. Match the attached image in style, palette and soft glow, but fill the whole frame edge to edge: NO circular lens border, no vignette ring. Keep the main subject in the upper two thirds; the bottom third is darker and calm, because words will sit over it. Soft, organic, alive; nothing mechanical, no metal, no grid. NO faces: no eyes, no mouths. No text."
+  },
+  {
+   "id": "EH-3",
+   "file": "hq-3-weather.png",
+   "size": "1536x864",
+   "refs": [
+    "opt-d-hydra.png"
+   ],
+   "prompt": "A dark microbial floor crowded with small glowing violet microbes and one tiny pink scout pod looking up. Above, enormous and very blurred, far out of focus, the soft glowing tip of one giant translucent violet tentacle made of beads of cells sweeps slowly across the frame, like weather passing. Match the attached image in style, palette and soft glow, but fill the whole frame edge to edge: NO circular lens border, no vignette ring. Keep the main subject in the upper two thirds; the bottom third is darker and calm, because words will sit over it. Soft, organic, alive; nothing mechanical, no metal, no grid. NO faces: no eyes, no mouths. No text."
+  },
+  {
+   "id": "EH-4",
+   "file": "hq-4-creature.png",
+   "size": "1536x864",
+   "refs": [
+    "opt-d-hydra.png"
+   ],
+   "prompt": "The same tall, soft, translucent tube-shaped creature as the attached image, anchored at its base on a glowing violet floor, with a crown of slow waving glowing tentacles at the top. Its whole body is clearly made of many small round glowing violet and green cells like beads in jelly. The tiny pink scout pod hovers near its base, very small, looking up. Show the whole creature, centred, top of the tentacles inside the frame. Match the attached image in style, palette and soft glow, but fill the whole frame edge to edge: NO circular lens border, no vignette ring. Keep the main subject in the upper two thirds; the bottom third is darker and calm, because words will sit over it. Soft, organic, alive; nothing mechanical, no metal, no grid. NO faces: no eyes, no mouths. No text."
+  },
+  {
+   "id": "EH-5",
+   "file": "hq-5-next.png",
+   "size": "1536x864",
+   "refs": [
+    "opt-d-hydra.png"
+   ],
+   "prompt": "A wide, quiet view across a glowing violet underwater meadow: several of these tall soft many-celled tentacled creatures of different sizes stand far apart in the distance, softly lit, one budding a small new creature from its side. In the foreground the tiny pink scout pod drifts toward them. A sense of a new, larger world to study. Match the attached image in style, palette and soft glow, but fill the whole frame edge to edge: NO circular lens border, no vignette ring. Keep the main subject in the upper two thirds; the bottom third is darker and calm, because words will sit over it. Soft, organic, alive; nothing mechanical, no metal, no grid. NO faces: no eyes, no mouths. No text."
+  },
+  {
+   "id": "EH-2b",
+   "file": "hq-2b-balance.png",
+   "size": "1536x864",
+   "refs": [
+    "hq-1-cover.png"
+   ],
+   "prompt": "Only small single microbes, all about the same size: a calm crowd of glowing violet rod-shaped and round microbes spread evenly around a soft glowing amber food clump in the centre, none crowding it, space left between them. A few pink cells sit among them, blending in. Balanced and peaceful. ABSOLUTELY NO large creature, NO tentacles, NO tall shapes, NO polyp. Match the attached image in style, palette and soft glow; fill the whole frame edge to edge, no lens border. Keep the subject in the upper two thirds; the bottom third darker and calm. No faces, no text."
   }
  ]
 }

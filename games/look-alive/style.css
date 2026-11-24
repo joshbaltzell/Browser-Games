@@ -887,7 +887,14 @@ html.tree-open { overflow: hidden; }   /* no page scrollbar behind the tree, so 
 }
 
 /* mystery dishes and the ending */
-.endcanvas { display: block; width: 100%; height: 100%; }
+/* The ending fills the whole window: the picture behind, the words over a dark fade at the bottom. */
+#screen-ending.on { position: fixed; inset: 0; z-index: 40; height: auto; min-height: 0; padding: 0; background: #05040c; }
+.endcanvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.endtext { position: absolute; left: 0; right: 0; bottom: 0; padding: 90px 24px 22px; background: linear-gradient(to bottom, rgba(5,4,12,0), rgba(5,4,12,.82) 45%, rgba(5,4,12,.94)); }
+.endinner { max-width: 760px; margin: 0 auto; }
+.endinner h1 { font-size: 30px; margin: 2px 0 6px; }
+.endinner .introp { min-height: 0; margin-bottom: 10px; }
+@media (max-width: 560px) { .endtext { padding: 60px 16px 16px; } .endinner h1 { font-size: 26px; } .endinner .introp { font-size: 15px; } }
 #screen-ending .introbar button[disabled] { visibility: hidden; }
 .dtile.mystery .dthumb { display: flex; align-items: center; justify-content: center; }
 .dtile.mystery .dthumb .qm { font-family: var(--mono); font-size: 64px; line-height: 1; color: var(--vio); opacity: .55; }
