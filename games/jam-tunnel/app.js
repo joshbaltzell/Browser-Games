@@ -37,6 +37,7 @@
   };
   const SHARP_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   // Play-along keys: the home row, low to high
+  const COARSE = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   const PAD_CODES = ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon'];
   const PAD_KEYS = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';'];
   // Prompt cards: an idea to make a song about, with a genre, pace and mood to start from
@@ -769,7 +770,7 @@
       const b = Math.round(n.b / grid) * grid;
       return { b, len: Math.min(LOOP - b, Math.max(grid, Math.round(n.len / grid) * grid)), p: n.p, v: n.v };
     }).filter(n => n.b < LOOP && !seen.has(n.b + '|' + n.p) && seen.add(n.b + '|' + n.p)).sort((a, c) => a.b - c.b);
-    if (!notes.length) { toast('Nothing recorded. Press a note key while it records.'); renderTray(); return; }
+    if (!notes.length) { toast(COARSE ? 'Nothing recorded. Tap the note pads while it records.' : 'Nothing recorded. Press a note key while it records.'); renderTray(); return; }
     const old = state.song.layers.lead;
     const styles = JT.GENRES[state.song.genre].roles.lead.styles;
     state.song.layers.lead = { styleId: old ? old.styleId : styles[0].id, name: 'Played by you', seed: old ? old.seed : 1, busy: 1, sound: old && old.sound, edited: true, notes };
@@ -781,7 +782,7 @@
   function recStatus(p) {
     const R = state.rec;
     if (!R) return '';
-    if (R.phase === 'armed') return `Starts in ${Math.max(1, Math.ceil(R.start - p))}\u2026 play the note keys when it starts`;
+    if (R.phase === 'armed') return `Starts in ${Math.max(1, Math.ceil(R.start - p))}\u2026 play the ${COARSE ? 'note pads' : 'note keys'} when it starts`;
     return `Recording: bar ${Math.max(1, Math.min(4, Math.floor((p - R.start) / 4) + 1))} of 4`;
   }
 
@@ -813,7 +814,7 @@
   function setWatch(on) {
     document.body.classList.toggle('watch', on);
     $('showBtn').hidden = !on;
-    if (on) toast('Tap anywhere or press H to bring the controls back');
+    if (on) toast(COARSE ? 'Tap anywhere to bring the controls back' : 'Tap anywhere or press H to bring the controls back');
   }
   // While a song plays and nobody touches anything, the panels fade back so the tunnel has the screen
   const IDLE_TRAYS = ['ready', 'add', 'song'];

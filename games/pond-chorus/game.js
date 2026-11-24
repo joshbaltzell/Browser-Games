@@ -130,8 +130,9 @@
   // so this listener (registered after Kit.fit's own) re-fits it to the free area.
   function layout(force) {
     var cw = window.innerWidth, ch = window.innerHeight;
-    var ps = Math.min(1, cw / PANEL_W, (ch * 0.5) / PANEL_H);
-    var panelPx = (screen === 'title' || screen === 'dawn') ? 0 : PANEL_H * ps;
+    var narrow = !!(window.matchMedia && window.matchMedia('(max-width: 600px)').matches);
+    var ps = narrow ? 1 : Math.min(1, cw / PANEL_W, (ch * 0.5) / PANEL_H);
+    var panelPx = (screen === 'title' || screen === 'dawn') ? 0 : (narrow ? el.panel.offsetHeight : PANEL_H * ps);
     var key = cw + 'x' + ch + ':' + ps + ':' + panelPx + ':' + (window.devicePixelRatio || 1);
     if (!force && key === lastLayout) return;
     lastLayout = key;
@@ -147,6 +148,12 @@
   }
   window.addEventListener('resize', function () { layout(true); });
   layout(true);
+  // phone portrait: the panel is laid out by CSS at its natural height, so re-fit the canvas when that height changes
+  if (window.ResizeObserver) new ResizeObserver(function () { layout(false); }).observe(el.panel);
+  if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+    var ctl = document.querySelector('#title .controls');
+    if (ctl) ctl.textContent = 'Tap a pad to switch a note.';
+  }
 
   // ----- audio drive
   function startDrive() {
@@ -370,13 +377,15 @@
   }
   function captionFree() { return performance.now() >= capHold; }
 
+  function rowH() { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--rowh')) || 44; }
+
   function buildRows() {
     var gridEl = el.grid;
     Array.prototype.slice.call(gridEl.children).forEach(function (c) { if (c !== el.playhead) gridEl.removeChild(c); });
     rows = [];
     for (var r = 0; r < 6; r++) {
       var row = document.createElement('div');
-      row.className = 'row'; row.dataset.r = r; row.style.top = (r * 44) + 'px';
+      row.className = 'row'; row.dataset.r = r; row.style.top = (r * rowH()) + 'px';
       if (r >= sim.placements.length) { row.classList.add('empty'); gridEl.appendChild(row); continue; }
       var tp = TYPES[sim.placements[r].type];
       row.style.setProperty('--c', tp.color);
@@ -449,7 +458,12 @@
   }
 
   function setPlayhead(step) {
-    var x = 30 + 64 + step * 66 - 6;
+    var p0 = rows.length ? rows[0].pads[step] : null, x;
+    if (p0) {
+      var pw = p0.offsetWidth;
+      x = p0.offsetParent.offsetLeft + p0.offsetLeft + pw / 2 - (pw + 12) / 2;
+      el.playhead.style.width = (pw + 12) + 'px';
+    } else x = 30 + 64 + step * 66 - 6;
     el.playhead.style.transform = 'translateX(' + x + 'px)';
     el.playhead.classList.add('live');
     for (var r = 0; r < rows.length; r++) for (var s = 0; s < 8; s++) rows[r].pads[s].classList.toggle('now', s === step);
@@ -753,7 +767,8 @@
     lastTier = P.groove(sim.placements).tier;
     el.btnPlay.textContent = 'Pause';
     el.playhead.classList.remove('live');
-    el.playhead.style.height = (sim.placements.length * 44 + 4) + 'px';
+    el.playhead.style.height = (sim.placements.length * rowH() + 4) + 'px';
+    el.grid.style.setProperty('--n', String(sim.placements.length));
     var cap = CAPTION[lv.id];
     setCaption(cap ? cap[0] : lv.lesson, 0, lv.id === 1);
     buildRows();

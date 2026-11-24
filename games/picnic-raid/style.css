@@ -128,6 +128,29 @@ button:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; bo
   .tab { min-width: 70px; font-size: 18px; padding: 0 8px; }
   .tab.small { min-width: 70px; }
   #tray { grid-template-columns: 1fr; grid-template-rows: auto auto 56px; }
+  #tray > * { min-width: 0; }
   #main { grid-column: 1; grid-row: 3; }
   #slots { overflow-x: auto; }
+}
+
+/* ---------- phone portrait ---------- */
+@media (max-width: 600px) {
+  #topbar { height: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #tabs { grid-column: 1 / -1; grid-row: 1; }
+  #tabs .tab { flex: 1 1 0; min-width: 0; }
+  #score { grid-row: 2; min-width: 0; }
+  #attempts { grid-row: 2; min-width: 0; }
+  #card { top: 176px; grid-template-columns: 1fr; gap: 6px; padding: 8px 12px; min-height: 0; }
+  #act { width: 100%; min-width: 0; }
+  #line { min-height: 0; }
+  #coach { min-height: 0; }
+  #tools > div { flex-wrap: wrap; row-gap: 4px; }
+  #act.hide { display: none; }
+  .tbtn .nm { font-size: 12px; }
+  .atk small { font-size: 12px; }
+  .slot .ln { font-size: 12px; width: 18px; height: 18px; line-height: 18px; }
+  .meter { margin-left: 0; text-align: left; }
+  .overlay { padding-top: 66px; }
+  .big { height: 72px; font-size: 38px; min-width: min(300px, 80vw); }
+  .big img { height: 52px; }
 }

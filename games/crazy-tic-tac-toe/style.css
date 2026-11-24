@@ -820,3 +820,23 @@ body::before {
     linear-gradient(to bottom, transparent, #000 3%, #000 97%, transparent);
   mask-composite: intersect;
 }
+
+/* --- PHONE FIT (portrait) --- */
+#game-screen > *, #hud-sidebar > * { min-width: 0; }
+#board-wrapper { max-width: 100%; }
+@media (max-width: 950px) {
+  .hud-panel { min-width: 0; flex: 1 1 250px; }
+}
+@media (pointer: coarse) {
+  .back-link { min-height: 44px; }
+  .toggle-btn, .custom-select, .hud-btn, .btn-launch { min-height: 44px; }
+  .slider-container input[type="range"] { height: 32px; margin: 6px 0; }
+  .mode-card { min-height: 44px; }
+}
+@media (max-width: 600px) {
+  .hud-panel { flex: 1 1 100%; }
+  .hud-actions { flex-wrap: wrap; }
+  .hud-actions .hud-btn { flex: 1 1 100px; padding: 12px 10px; }
+  .canvas-tooltip { max-width: calc(100% - 20px); flex-wrap: wrap; justify-content: center; gap: 6px 12px; font-size: 0.85rem; }
+  .win-actions .hud-btn { width: 100%; min-height: 44px; }
+}
