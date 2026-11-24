@@ -1,6 +1,6 @@
-// Look Alive: habitat 3, the thick water (dishes 15, 16 and 17 so far). Data only.
+// Look Alive: habitat 3, the thick water (dishes 15, 16, 17, 20 and 21). Data only.
 // Plain script: global LookAliveLevels3 in a browser, module.exports in Node. Load after levels2.js and sim3.js, and before sim.js.
-// Side effect (the only one): the dishes are pushed onto LookAliveLevels.DISHES, and carry / standard are wrapped so ids 15, 16 and 17 come from here.
+// Side effect (the only one): the dishes are pushed onto LookAliveLevels.DISHES, and carry / standard are wrapped so ids 15, 16, 17, 20 and 21 come from here.
 // Every dish here has `agents`: the settings of the individual-cell simulation (sim3.js). That field is also the marker sim.js looks for: a dish with `agents` is played by sim3.
 var LookAliveLevels3 = (function () {
   'use strict';
@@ -36,6 +36,17 @@ var LookAliveLevels3 = (function () {
   var TIP_REGULAR = ['Your cells divided in step, and the guards read that as a machine.', 'Look at the Sloppiness dial and the Division slot: here a cell that divides on a fixed beat stands out.'];
   var TIP_OTHER = ['Something else is out of balance.', 'Open the autopsy: it names the card or control behind the problem.'];
 
+  // Exam tips (dish 21): what happened and where the numbers are; never the answer. The exam shows no tip by default, these only back the "What changes this?" list.
+  var EXAM_TIPS3 = {
+    starved: ['Your colony starved.', 'This is an exam, so there is no answer here: find the bar that is out of its zone and open "What changes this?" under it.'],
+    below: ['Your colony stayed too small to hold the band.', 'This is an exam, so there is no answer here: open "What changes this?" under Growth.'],
+    eaten: ['Your colony ate the boulders it fed on, and the food went with them.', 'This is an exam, so there is no answer here: open "What changes this?" under Reach.'],
+    burned: ['Your scouts burned in the white middle of the bright place.', 'This is an exam, so there is no answer here: open "What changes this?" under Light.'],
+    overgrew: TIP_OVERGREW, band: TIP_BAND, 'exposed:growth': TIP_GROWTH, 'exposed:regularity': TIP_REGULAR,
+    'exposed:motion': ['The guards noticed how your colony moves.', 'This is an exam, so there is no answer here: open "What changes this?" under Movement.'],
+    other: ['One of the stat bars went out of its zone, and that lost the dish.', 'This is an exam, so there is no answer here: find the bar that is out of its zone and open "What changes this?" under it.']
+  };
+
   // ---------------------------------------------------------------- the two dishes
   function agents(seed, channels) {
     var a = Sim3.defaults(); a.seed = seed; a.band = { lo: BAND3.lo, hi: BAND3.hi, need: BAND3.need, warm: BAND3.warm };
@@ -55,15 +66,38 @@ var LookAliveLevels3 = (function () {
     a.light = { r: LIGHT17.r, core: LIGHT17.core, speed: LIGHT17.speed, useful: LIGHT17.useful, harm: LIGHT17.harm, lead: LIGHT17.lead };
     return a;
   }
+  // Dish 20: boulders that can be eaten to nothing. Three rich boulders (leak 2.4) that never die of age; a boulder that more than 13 scouts stand on at once loses 30% of its health a second per 13 scouts over (26 scouts: 30% a second), never mends, and a dead boulder stays dead.
+  //   The locals are a fixed crowd (they neither divide nor starve), so the food that is left goes to the scouts, and the share is the scouts' doing alone. The scouts land inside one clump (landAt) in a tight cluster, ten of them, with the movement tell off (dish 15 does the same).
+  //   The carried cell (dish 17's answer: swim, stop where fed, pace 4) divides as fast as it is fed, crowds the clump it landed on and eats it dead; the Pace dial right down to 0 takes little, stays under the clump's limit and keeps at least two of the three boulders alive.
+  var DEPLETE20 = { free: 13, gain: 0.3, regen: 0, floor: 0.05 };
+  function agents20(seed) {
+    var a = agents(seed, { motion: false });
+    a.start = 10; a.landAt = 'boulder'; a.startRadius = 25;
+    a.natives = { quad: 120, halo: 35, sali: 14, still: true };
+    a.boulders = { count: 3, leak: 2.4, sigma: 28, lifeMin: 100000, lifeMax: 100000, deplete: { free: DEPLETE20.free, gain: DEPLETE20.gain, regen: DEPLETE20.regen, floor: DEPLETE20.floor } };
+    return a;
+  }
+  // Dish 21 (the exam): everything so far at once. Three rich boulders that never die of age and can be eaten to nothing (4 scouts at once start to wear one down), the same bright patch as dish 17, the movement tell on,
+  //   locals a fixed crowd. Every stay-where-fed cell at Pace 2 loses (pump, sense, colour or no light): it sits in rich light and on a clump, grows past the band or eats the clump. What passes needs the crowd rule: pause births where it is crowded, with the pump or the pump and sensing.
+  var DEPLETE21 = { free: 4, gain: 0.5, regen: 0, floor: 0.05 };
+  function agents21(seed) {
+    var a = agents(seed);
+    a.start = 9; a.landAt = 'boulder'; a.startRadius = 25;
+    a.natives = { quad: 120, halo: 35, sali: 14, still: true };
+    a.boulders = { count: 3, leak: 1.2, sigma: 28, lifeMin: 100000, lifeMax: 100000, deplete: { free: DEPLETE21.free, gain: DEPLETE21.gain, regen: DEPLETE21.regen, floor: DEPLETE21.floor } };
+    a.light = { r: LIGHT17.r, core: LIGHT17.core, speed: LIGHT17.speed, useful: 0.04, harm: LIGHT17.harm, lead: LIGHT17.lead };   // the light is twice as rich as on dish 17, so a cell that stays where it is fed and lit grows past the band
+    return a;
+  }
   function dish(o) {
     var d = { id: o.id, title: o.title, energy: o.energy, slots: o.slots, opens: o.opens, reflexSlot: o.slots.indexOf('reflex') >= 0, dials: ['pace', 'slop'], stats: o.stats, checked: o.stats,
       ticks: 300, T: 300, acid: 0, suspicion: true, channels: o.channels, problem: o.problem, goal: GOAL3,
       show: { pace: true, slop: true, metabolism: true, reflex: { bio: [], rule: o.slots.indexOf('reflex') >= 0 }, channels: o.channels, shelves: { biology: o.shelf || SHELF_BIO3, machine: [] } },
       allowed: { metabolism: METAB3, parts: o.parts || PARTS3, bio: [], sensors: o.sensors || [], actions: o.actions || [] },
       band: { lo: BAND3.lo, hi: BAND3.hi, need: BAND3.need, warm: BAND3.warm }, event: NONE, forecastN: 64, forecastLoMult: 1, crashSafe: 0.024, world: 3,
-      agents: o.agents, tips: o.tips, tipFixes: o.tipFixes, fixes: o.fixes,
+      agents: o.agents, tips: o.tips, tipFixes: o.tipFixes || {}, fixes: o.fixes || [],
       nbTitle: o.nbTitle, notebook: o.notebook, fieldNote: o.fieldNote, reading: o.reading, colony: o.colony };
     if (o.rule) d.rule = o.rule;
+    if (o.exam) d.exam = true;
     return d;
   }
 
@@ -119,7 +153,36 @@ var LookAliveLevels3 = (function () {
       notebook: 'Halobacterium salinarum can live on food, and it can live on light. Its skin carries bacteriorhodopsin, a purple protein that uses light to push protons out of the cell. The push is a form of energy the cell can spend without eating, and in a salt pond, where food runs thin between the algae, a little of it can make the difference. The protein does not tell the cell where the light is. A second set, the sensory rhodopsins, does that: one sends the cell toward orange light, and another sends it away from blue and near-ultraviolet light, which damages cells. Cells took these apart step by step. Pigment first, then a sense of brightness, then a sense of colour.',
       fieldNote: ['Our cells went hungry between the boulders, and the locals did not. Over the water a bright place drifts, slowly, and the locals near it look better fed. In its white middle, everything we sent died.'],
       reading: 'The locals use the edge of the bright place and keep out of the white middle. We think their skin knows the difference.',
-      colony: 'We do not know what makes the bright place. It drifts, and it has crossed the boulders more than once. We have decided to treat it like weather.' })
+      colony: 'We do not know what makes the bright place. It drifts, and it has crossed the boulders more than once. We have decided to treat it like weather.' }),
+
+    dish({ id: 20, title: 'Eat the Clump, Lose the Clump', energy: 6, slots: SLOTS17, opens: [], stats: ['reach', 'growth', 'natural'], channels: ['growth', 'regularity'],
+      agents: agents20(1), rule: RULE3, sensors: SENSORS3, actions: ACTIONS3, parts: PARTS3.concat(LIGHT3), shelf: SHELF_BIO3.concat(LIGHT3),
+      problem: 'The sweetness is rich here, and only three boulders hold it. Your cells find the first one and sit on it.',
+      fixes: [
+        { id: 'slow', label: 'Turn Pace down to 0', changes: { set: { pace: 0 } } }
+      ],
+      tipFixes: { eaten: ['slow'], starved: ['slow'], overgrew: ['slow'], 'exposed:growth': ['slow'] },
+      tips: {
+        eaten: ['Your colony ate its boulders. They went out one by one, and the food went with them.', 'Look at the Pace dial. How fast a cell eats and divides decides how long a boulder lasts under it.'],
+        starved: ['Your colony starved.', 'Look at the boulders in the Watch: what happened to them while your cells sat on them? The Pace dial sets how much a cell takes.'],
+        below: ['Your colony faded out of the band.', 'Look at the boulders in the Watch: what happened to them while your cells sat on them? The Pace dial sets how much a cell takes.'],
+        overgrew: TIP_OVERGREW, band: TIP_BAND, 'exposed:growth': TIP_GROWTH, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
+      },
+      nbTitle: 'Eating the source',
+      notebook: 'A source that leaks food leaks it at a rate. A crowd that takes more than the rate pulls the source down, and a source pulled down far enough stops leaking at all, and the crowd goes hungry on the ruin of the thing that fed it. Dunaliella salina leaks glycerol while it is healthy, and a crowd that crowds one alga has more mouths than the alga can feed. Experiments with viruses that infect bacteria show the same trade: where the spread stays local, the ones that take less from their host do better than the ones that take all they can.',
+      fieldNote: ['Our cells found a boulder and stayed on it, and they did well, and then the boulder went grey and stopped leaking. We had decided that nothing here could end. We were wrong.'],
+      reading: 'The locals never sit on a boulder in a crowd. We think they know how long a boulder lasts.',
+      colony: 'We said the boulders were not alive in any way that matters. They can be eaten, and they stay eaten. We have taken that back.' }),
+
+    dish({ id: 21, title: 'Greetings from the Thick Water', energy: 6, exam: true, slots: SLOTS17, opens: [], stats: ['reach', 'growth', 'light', 'motion', 'natural'], channels: ['growth', 'regularity', 'motion'],
+      agents: agents21(1), rule: RULE3, sensors: SENSORS3, actions: ACTIONS3, parts: PARTS3.concat(LIGHT3), shelf: SHELF_BIO3.concat(LIGHT3),
+      problem: 'Sweetness in clumps, a bright place drifting over it, and boulders that can be eaten.',
+      tips: EXAM_TIPS3,
+      nbTitle: 'Taking little',
+      notebook: 'A salt pond holds every lesson at once. The food comes in clumps, so a cell has to find it, and stop where it is fed. Light can make up what the food does not give, if a cell keeps out of the white middle. And the clumps are alive in their way: Dunaliella salina leaks sweetness only while it is whole, so a crowd that eats it down eats its own supper. Halobacterium salinarum, Haloquadratum walsbyi and Salinibacter ruber are found together in salt ponds, in crowds that stay the size the water can feed.',
+      fieldNote: ['Clumps, a bright place, boulders that give out. Every crowd here takes a little and keeps the place that feeds it. We have started to do the same.'],
+      reading: 'The locals do not take all that the boulders give. We think a crowd that lasts is one that leaves something behind.',
+      colony: 'The locals keep their number, and the boulders keep theirs, and nobody tells either. We think something larger keeps the count.' })
   ];
 
   // ---------------------------------------------------------------- carried and standard cells
@@ -127,7 +190,9 @@ var LookAliveLevels3 = (function () {
   var CARRY3 = {
     15: mk(4, 3, 'respiration', []),                                // no motor: it starves in bare water
     16: mk(4, 3, 'respiration', ['flagellum', 'chemo']),            // dish 15's answer: it finds the food and never stops swimming
-    17: mk(4, 3, 'respiration', ['flagellum', 'chemo'], { kind: 'machine', sensor: 'food', cmp: 'gt', value: RULE_MARK, action: 'stay', otherwise: 'seek' })   // dish 16's answer: it finds the food and stops to feed, and there is too little food
+    17: mk(4, 3, 'respiration', ['flagellum', 'chemo'], { kind: 'machine', sensor: 'food', cmp: 'gt', value: RULE_MARK, action: 'stay', otherwise: 'seek' }),   // dish 16's answer: it finds the food and stops to feed, and there is too little food
+    20: mk(4, 3, 'respiration', ['flagellum', 'chemo', 'lightpump'], { kind: 'machine', sensor: 'food', cmp: 'gt', value: RULE_MARK, action: 'stay', otherwise: 'seek' }),   // dish 17's answer: it finds the food, stops to feed, divides as fast as it is fed, and eats the clump it sits on to nothing
+    21: mk(2, 3, 'respiration', ['flagellum', 'chemo', 'lightpump'], { kind: 'machine', sensor: 'food', cmp: 'gt', value: RULE_MARK, action: 'stay', otherwise: 'seek' })    // dish 20's answer (the same cell at Pace 2): on the exam it still sits on a clump, and the light does not tell it to leave
   };
   function copy(c) { return c ? JSON.parse(JSON.stringify(c)) : null; }
 
@@ -156,12 +221,24 @@ var LookAliveLevels3 = (function () {
     epithet: { flagellum: 'natans', pili: 'reptans', vesicles: 'vesiculosus', chemo: 'sagax', naps: 'dormiens', stayrule: 'quiescens' }
   };
 
+  // The completion card of the salt flat: dish 21's own text; the Next line points at the many-celled ending.
+  var D21 = DISHES3[DISHES3.length - 1];
+  var COMPLETE3 = {
+    title: 'SAMPLING COMPLETE \u00b7 The thick water \u00b7 five sites',
+    rows: [
+      ['Finding', D21.fieldNote[0]],
+      ['Conclusion', D21.reading],
+      ['Anomaly', D21.colony],
+      ['Next', 'Something larger than any crowd. We are going to look.']
+    ]
+  };
+
   // ---------------------------------------------------------------- registration
   DISHES3.forEach(function (d) { if (!Lv.dish(d.id)) Lv.DISHES.push(d); });
   var carry2 = Lv.carry, standard2 = Lv.standard;
   Lv.carry = function (id) { return CARRY3[id] ? copy(CARRY3[id]) : carry2(id); };
   Lv.standard = function (id) { return CARRY3[id] ? copy(CARRY3[id]) : standard2(id); };
 
-  return { WORLD: WORLD3, INTRO: INTRO3, ORDER: [15, 16], DISHES: DISHES3, COVER: COVER3, RULE: RULE3, BAND: BAND3, COMPLETE: null };   // COMPLETE: the completion card comes with the exam dish (18), which is not built yet
+  return { WORLD: WORLD3, INTRO: INTRO3, ORDER: [15, 16, 17, 20, 21], DISHES: DISHES3, COVER: COVER3, RULE: RULE3, BAND: BAND3, COMPLETE: COMPLETE3 };
 })();
 if (typeof module !== 'undefined') module.exports = LookAliveLevels3;

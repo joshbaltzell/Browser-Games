@@ -179,6 +179,9 @@ var LookAlive = (function () {
   function isOpen(D, slotId) { return (D.slots || []).indexOf(slotId) >= 0; }
   // 'open' | 'factory' (locked, factory part fitted) | 'locked'
   function slotState(D, slotId) { return isOpen(D, slotId) ? 'open' : (factoryOf(D, slotId) ? 'factory' : 'locked'); }
+  // The number a player sees for a dish id (game.js sets it to the dish's place in play order; until then, and in Node, it is the id itself). Text only.
+  var dishNoFn = null;
+  function dn(id) { return dishNoFn ? dishNoFn(id) : id; }
   function opensOn(slotId) { var ds = Lv().DISHES; for (var i = 0; i < ds.length; i++) if (ds[i].slots.indexOf(slotId) >= 0) return ds[i].id; return null; }
   // Cards a dish offers for a slot: the dish's allowed list intersected with the slot, only if the slot is open.
   function offered(D, slotId) {
@@ -272,7 +275,7 @@ var LookAlive = (function () {
     if (isOpen(D, slotId)) return null;
     if (slotId === 'motor') return 'The Motor slot is locked here.';
     var f = factoryOf(D, slotId), on = opensOn(slotId);
-    return f ? 'Factory fitted. Opens on dish ' + on + '.' : 'Opens on dish ' + on + '.';
+    return f ? 'Factory fitted. Opens on dish ' + dn(on) + '.' : 'Opens on dish ' + dn(on) + '.';
   }
   function fit(D, build, card, layer, loose) {
     var b = cp(normalize(build)), sl = toSlots(b), id, slotId, c;
@@ -410,16 +413,16 @@ var LookAlive = (function () {
         out[n.id] = { state: 'available', reason: miss.length ? 'Needs ' + treeNeed(miss[0]) + '.' : 'Ready to fit on this dish.' };
       } else if (ln) {
         var why;
-        if (!D) why = 'Learned on dish ' + n.learnedOn + '.';
-        else if (!isOpen(D, n.slot)) { var op = opensOn(n.slot); why = op != null && op > D.id ? 'Opens on dish ' + op + '.' : 'The ' + slotName(n.slot) + ' slot is locked on this dish.'; }
+        if (!D) why = 'Learned on dish ' + dn(n.learnedOn) + '.';
+        else if (!isOpen(D, n.slot)) { var op = opensOn(n.slot); why = op != null && op > D.id ? 'Opens on dish ' + dn(op) + '.' : 'The ' + slotName(n.slot) + ' slot is locked on this dish.'; }
         else why = 'Not offered on this dish.';
         out[n.id] = { state: 'learned', reason: why };
       } else {
         var r;
         if (unmet.length) r = 'Learn ' + by[unmet[0]].name + ' first.';
         else if (n.learnedOn == null) r = 'No dish teaches this yet.';
-        else if (D && !isOpen(D, n.slot) && opensOn(n.slot) > D.id) r = 'Opens on dish ' + opensOn(n.slot) + '.';
-        else r = 'Taught on dish ' + n.learnedOn + '.';
+        else if (D && !isOpen(D, n.slot) && opensOn(n.slot) > D.id) r = 'Opens on dish ' + dn(opensOn(n.slot)) + '.';
+        else r = 'Taught on dish ' + dn(n.learnedOn) + '.';
         out[n.id] = { state: 'unlearned', reason: r };
       }
     });
@@ -494,7 +497,7 @@ var LookAlive = (function () {
       case 'share': return s.shareNow;
       case 'susp_growth': return s.lvl[0];
       case 'susp_waste': return s.lvl[1];
-      case 'temp': return s.temp ? s.temp[i] : 0;
+      case 'temp': return s.temp ? s.temp[i] + (s.tOff || 0) : 0;
       case 'ttev': { var nx = evNext(s.D, s.tick); return nx < 0 ? (evList(s.D).length ? 0 : 999) : nx - s.tick; }
     }
     return 0;
@@ -539,6 +542,9 @@ var LookAlive = (function () {
     if (TT) s.darkLag = (s.darkLag || 0) + Pe.foodAlpha * (evl - (s.darkLag || 0));
     var o2m = TT && TT.o2Night && (bp.metabolism === 'respiration' || bp.metabolism === 'fuelcell') ? 1 - TT.o2Night * evl : 1;   // nights are anoxic: oxygen users stall
     // A fast-dividing cell burns its stores sooner: on night dishes the dark kills faster above the dish's reference Pace (real: slow-growing bacteria survive sudden starvation longer).
+    // A swinging dish (D.temp.swing, dishes 18 and 19): the whole water warms and cools by up to swing.amp C over swing.period ticks, and a cell also stops below (its heat tolerance - swing.span) C.
+    var SW = TT && TT.swing ? TT.swing : null, tOff = SW ? SW.amp * Math.sin(2 * Math.PI * t / SW.period) : 0, coldLo = SW ? tol - SW.span : 0;
+    if (TT) s.tOff = tOff;
     var hurry = TT && TT.nightHurry ? 1 + TT.nightHurry * Math.max(0, bp.paceMult - (TT.hurryFrom || 1)) : 1;
     var acidD = settling ? 0 : bp.acidRate, ab = D.abundance, crowdR = Pr.crowd * (ab && !settling ? ab.crowd : 1), acidLoss = 0, abFood = ab && !settling ? ab.food || 0 : 0, abCross = ab && !settling ? ab.cross || 1 : 1;
 
@@ -548,8 +554,10 @@ var LookAlive = (function () {
       var m = rbRate * mulR * radioM * (runK > 0 ? 1 + runK * (rv / s.N0) : 1), dm = 1, kmul = 1, bmul = 1, mf = moveFoodBase, ma = 0;
       var tmul = 1, heatD = 0, grazeD = 0;
       if (TP) {
-        var tc = TP[i], hx = (tc - tol) / hW;
+        var tc = SW ? TP[i] + tOff : TP[i], hx = (tc - tol) / hW;
         if (hx > 0) { tmul = hx >= 1 ? 0 : 1 - hx; heatD = hDie * clamp(hx - 0.5, 0, 1.5); }
+        if (SW) { var cx = (coldLo - tc) / hW; if (cx > 0) { tmul *= cx >= 1 ? 0 : 1 - cx; heatD += hDie * clamp(cx - 0.5, 0, 1.5); } }
+        if (SW && heatD > 0) heatD *= (SW.dMult || 1) * (1 + (SW.hurry || 0) * Math.max(0, bp.paceMult - (SW.from || 0.93)));   // a fast divider has the thinnest protection, so a swing kills it sooner (the same rule as the dark on night dishes)
         if (bp.coolBelow && tc < bp.coolBelow) tmul *= bp.coolMult;
         if (gMax > 0 && tc < gTop) { grazeD = gMax * clamp((gTop - tc) / gRamp, 0, 1); coolSum += rv; }
         m *= tmul * o2m;
@@ -612,7 +620,7 @@ var LookAlive = (function () {
       var nN = nv + bn - deathN; if (nN < 0) nN = 0;
       var nR = rv + br - deathR - killCell - napIn + napOut - spIn + spOut; if (nR < 0) nR = 0;
       if (napP) { var nZ = zv + napIn - napOut - zv * (baseDeath * napP.death + acidD + heatD + grazeD); Z[i] = nZ < 0 ? 0 : nZ; sumZ += Z[i]; }
-      if (spore) { SP[i] = sv + spIn - spOut - sv * grazeD; sumSP += SP[i]; }   // grazers swallow spores too (habitat 2); heat does not hurt them
+      if (spore) { SP[i] = sv + spIn - spOut - sv * grazeD - (SW && SW.spore ? sv * heatD * SW.spore : 0); sumSP += SP[i]; }   // SW.spore (dish 19): the swing wears spores down too   // grazers swallow spores too (habitat 2); heat does not hurt them
       var nF = fv - upN - upR + P.regrow * (cap[i] * (1 - bustD * bustMap[i]) - fv); if (nF < 0) nF = 0;
       var eR = upR * wAmt;
       WA[i] = WA[i] * (1 - P.wasteDecay) + upN * mixN + eR * mixR;
@@ -906,10 +914,11 @@ var LookAlive = (function () {
       return res;
     }
     // Habitat 2: a colony the heat killed is cooked, not starved.
-    if (D.temp && H.heat && !v.alive && heatLossOf(H) >= ST.heatSafe) {
+    if (D.temp && H.heat && !v.alive && heatLossOf(H, D) >= ST.heatSafe) {
       var tk = T; for (t = 1; t <= T; t++) if (H.rob[t] <= run.P.extinct) { tk = t; break; }
       res.cause = 'cooked'; res.from = 1; res.to = tk; res.dominance = 1; res.card = null;
-      res.text = 'Cooked by tick ' + tk + ': your cell tolerates about ' + Math.round(bp.tol) + ' C, and the water here reaches ' + D.temp.hot + ' C.';
+      if (D.temp.swing) res.text = 'Stopped by tick ' + tk + ': your cell works between about ' + Math.round(bp.tol - D.temp.swing.span) + ' and ' + Math.round(bp.tol) + ' C, and the water swings further than that.';
+      else res.text = 'Cooked by tick ' + tk + ': your cell tolerates about ' + Math.round(bp.tol) + ' C, and the water here reaches ' + D.temp.hot + ' C.';
       return res;
     }
     var te = v.exposedAt, E = D.event, below = 0, above = 0, tf = -1;
@@ -1121,6 +1130,7 @@ var LookAlive = (function () {
     var out = { runaway: false, energy: { used: 0, max: D.energy }, pace: [], slop: [], cards: cards, totals: [], chips: [], channels: ch, acid: null };
     function add(src, label, chips) { chips.forEach(function (c) { out.chips.push({ source: src, text: c }); }); cards.push({ id: src, label: label, chips: chips }); }
     out.pace = [Math.abs(bp.paceMult - 1) < 0.005 ? 'Births at the native rate' : 'Births ' + sgn(bp.paceMult - 1) + ' vs natives'];
+    if (D.temp && D.temp.swing && D.temp.swing.hurry && bp.paceMult > (D.temp.swing.from || 0.93) + 0.005) out.pace.push('Fast cells fail sooner when the water swings');
     if (D.temp && D.temp.nightHurry && bp.paceMult > (D.temp.hurryFrom || 1) + 0.005) out.pace.push('Fast cells starve sooner in the dark');
     if (D.acidHurry && bp.paceMult > (D.acidHurryFrom || 1) + 0.005 && bp.ids.indexOf('acidproof') < 0 && D.acid > 0 && bp.acidBlock > 0) out.pace.push('In this acid a fast cell lets more in. This is a rule of our dish, not a known fact');
     // Runaway is read off a short dry run of the model itself (16 by 16), so the warning cannot disagree with what the dish then does.
@@ -1196,7 +1206,7 @@ var LookAlive = (function () {
     heatScale: 0.25, heatSafe: 0.028, grazeScale: 0.06, grazeSafe: 0.015   // habitat 2: heat bar = 1 - loss/0.25 (loss: mean per tick over ticks 1..20), grazing bar = 1 - loss/0.06 (ticks 30..T)
   };
   function csafe(D) { return D.crashSafe || ST.crashSafe; }
-  function heatLossOf(H) { var l = 0, t; for (t = 1; t <= 20; t++) l += H.heat[t] || 0; return l / 20; }
+  function heatLossOf(H, D) { var l = 0, t, w = D && D.temp && D.temp.swing ? D.temp.swing.period : 20; for (t = 1; t <= w; t++) l += H.heat[t] || 0; return l / w; }   // swinging dishes read one whole swing, so the cold half counts too
   function grazeLossEarly(H, T, floor) { var l = 0, c = 0, t; for (t = 1; t <= T; t++) if ((H.share[t] || 0) < floor) { l += H.graze[t] || 0; c++; } return c ? l / c : 0; }
   function grazeLossOf(H, T) { var l = 0, c = 0, t; for (t = 30; t <= T; t++) { l += H.graze[t] || 0; c++; } return c ? l / c : 0; }
   var fcCache = {}, fcCount = 0;
@@ -1237,7 +1247,7 @@ var LookAlive = (function () {
     for (t = 1; t <= T; t++) { if (H.susp.growth[t] > gpeak) gpeak = H.susp.growth[t]; if ((H.acid[t] || 0) > lossMax) lossMax = H.acid[t]; if (H.susp.waste[t] > mx.waste) mx.waste = H.susp.waste[t]; if (H.susp.regularity[t] > mx.regularity) mx.regularity = H.susp.regularity[t]; }
     if (ev) for (t = ev; t <= T; t++) if (H.share[t] < mn) mn = H.share[t];
     var hx = {};
-    if (H.heat) { var hm = 0; for (t = 1; t <= T; t++) if (H.heat[t] > hm) hm = H.heat[t]; hx = { heatLoss: heatLossOf(H), heatLossMax: hm, grazeLoss: grazeLossOf(H, T) }; }
+    if (H.heat) { var hm = 0; for (t = 1; t <= T; t++) if (H.heat[t] > hm) hm = H.heat[t]; hx = { heatLoss: heatLossOf(H, D), heatLossMax: hm, grazeLoss: grazeLossOf(H, T) }; }
     return { heatLoss: hx.heatLoss || 0, heatLossMax: hx.heatLossMax || 0, grazeLoss: hx.grazeLoss || 0, acidLoss: loss / 10, acidLossMax: lossMax, p70: Math.max(qtile(all, ST.highQ), post.length ? qtile(post, 0.65) : 0), l70: qtile(low, ST.highQ), p30: qtile(low, 0.3), alive: run.v.alive, waste: mx.waste, reg: mx.regularity,
       crashMin: mn, pl30: post.length ? qtile(post, 0.3) : 1, win: run.v.win, bandFrac: run.v.bandFrac, below: below, above: above, cnt: T - band.warm + 1, gpeak: gpeak, maxStage: run.v.maxStage, hasEvent: !!ev };
   }
@@ -1289,7 +1299,7 @@ var LookAlive = (function () {
       if (v < z[0]) { state = 'low'; verdict = 'Too perfect: you look like a machine'; }
     } else if (id === 'heat') {
       v = clamp(1 - f.heatLoss / ST.heatScale, 0, 1);
-      if (v < z[0]) { state = 'low'; verdict = 'Too hot: you will cook'; }
+      if (v < z[0]) { state = 'low'; verdict = D.temp && D.temp.swing ? 'The swing will stop you' : 'Too hot: you will cook'; }
     } else if (id === 'grazing') {
       v = clamp(1 - f.grazeLoss / ST.grazeScale, 0, 1);
       if (v < z[0]) { state = 'low'; verdict = 'The grazers will eat you'; }
@@ -1453,7 +1463,7 @@ var LookAlive = (function () {
         v = clamp(1 - H.susp.regularity[tt] / ST.peakLine, 0, 1); if (v < z[0]) { state = 'low'; verdict = 'Too perfect: you look like a machine'; }
       } else if (id === 'heat') {
         var hh = 0, hc = 0; for (i = Math.max(1, tt - 2); i <= tt; i++) { hh += H.heat ? H.heat[i] || 0 : 0; hc++; }
-        v = clamp(1 - hh / hc / ST.heatScale, 0, 1); if (v < z[0]) { state = 'low'; verdict = 'Too hot: you will cook'; }
+        v = clamp(1 - hh / hc / ST.heatScale, 0, 1); if (v < z[0]) { state = 'low'; verdict = D.temp && D.temp.swing ? 'The swing will stop you' : 'Too hot: you will cook'; }
       } else if (id === 'grazing') {
         var gg = 0, gc = 0; for (i = Math.max(1, tt - 2); i <= tt; i++) { gg += H.graze ? H.graze[i] || 0 : 0; gc++; }
         v = clamp(1 - gg / gc / ST.grazeScale, 0, 1); if (v < z[0]) { state = 'low'; verdict = 'The grazers will eat you'; }
@@ -1502,7 +1512,7 @@ var LookAlive = (function () {
     return out;
   }
 
-  return { grade: grade, energyOf: buildEnergy, dissolved: dissolved, stats: stats, liveStats: liveStats, runStats: runStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, treeNodes: treeNodes, treeBranches: treeBranches, lineageStage: lineageStage, treeState: treeState, treeMissing: treeMissing, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
+  return { setDishNumber: function (fn) { dishNoFn = fn; }, grade: grade, energyOf: buildEnergy, dissolved: dissolved, stats: stats, liveStats: liveStats, runStats: runStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, treeNodes: treeNodes, treeBranches: treeBranches, lineageStage: lineageStage, treeState: treeState, treeMissing: treeMissing, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
     channelsOn: channelsOn, causeStat: causeStat, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { ST: ST, newState: newState, step: step, HK: HK } };
 })();
 if (typeof module !== 'undefined') module.exports = LookAlive;

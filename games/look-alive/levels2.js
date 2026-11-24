@@ -1,6 +1,6 @@
-// Look Alive: habitat 2, the banded water (dishes 11 to 14). Data only.
+// Look Alive: habitat 2, the banded water (dishes 11, 12, 13, 18, 14 and 19; the player sees them as numbers 11 to 16). Data only.
 // Plain script: global LookAliveLevels2 in a browser, module.exports in Node. Load after levels.js and before sim.js.
-// Side effect (the only one): the four dishes are pushed onto LookAliveLevels.DISHES, and carry / standard are wrapped so ids 11 to 14 come from here.
+// Side effect (the only one): the six dishes are pushed onto LookAliveLevels.DISHES, and carry / standard are wrapped so ids 11 to 14, 18 and 19 come from here.
 var LookAliveLevels2 = (function () {
   'use strict';
   var Lv = typeof LookAliveLevels !== 'undefined' ? LookAliveLevels : require('./levels.js');
@@ -21,9 +21,10 @@ var LookAliveLevels2 = (function () {
     }
     return ev;
   }
-  function temp(hot, cool, graze, withNights, flow) {   // flow: optional per-dish current, else M.flow
+  function temp(hot, cool, graze, withNights, flow, swing) {   // flow: optional per-dish current, else M.flow
     var o = { hot: hot, cool: cool, graze: graze || 0, base: M.base, width: M.width, heatDeath: M.heatDeath, grazeTop: M.grazeTop, grazeRamp: M.grazeRamp,
       flow: flow != null ? flow : M.flow, gripDiffuse: M.gripDiffuse, rDiffuse: M.rDiffuse, bands: M.bands };
+    if (swing) o.swing = swing;   // dishes 18 and 19: the whole water warms and cools; see sim.js
     if (withNights) { o.o2Night = M.o2Night; o.nightHurry = M.nightHurry; o.hurryFrom = M.hurryFrom; }
     return o;
   }
@@ -80,6 +81,7 @@ var LookAliveLevels2 = (function () {
     return d;
   }
 
+  var SWING = { amp: 17.5, period: 100, span: 30, dMult: 3, hurry: 60 };   // amp: C either way; span: how far below its heat tolerance a cell still works; dMult and hurry: how hard the swing kills, and the extra a fast divider pays
   var CH_PLAIN = ['casualties', 'regularity'];
   var CH_EXAM = ['growth', 'casualties', 'regularity'];
 
@@ -154,6 +156,40 @@ var LookAliveLevels2 = (function () {
       fieldNote: ['Hot, cold, dark, the slow shadow: every crowd here has its place, and none of them chose it.'],
       reading: 'We think a city is not the largest kind of thing. The crowds stand in bands by heat, and something larger keeps them there.',
       colony: 'The shadow cannot follow into the heat. Nothing we know arranges a crowd by heat on purpose; we think something larger does.' })
+    ,
+    dish({ id: 18, title: 'Cold Snap', energy: 5, slots: SLOTS.concat(['motor']), stats: ['heat', 'growth', 'natural'], channels: CH_PLAIN, temp: temp(64, 30, 0, false, 0.04, SWING),
+      problem: 'The whole river warms and cools. A cell that works in one kind of water stops in the other.', goal: GOAL2,
+      fixes: [
+        { id: 'spore', label: 'Swap Night fermentation for Sporulate (Reflex)', changes: { reflex: { kind: 'bio', id: 'sporulate' } } }
+      ],
+      tipFixes: { below: ['spore'] },
+      tips: {
+        below: ['The water swung hot, then cold, and your cell stopped each time it left its range.', 'Making your cell tougher does not widen the range. Look at the Reflex slot for something that waits out a bad spell instead of fighting it.'],
+        cooked: ['The swing was more than your cell could stand.', 'Making your cell tougher does not widen the range. Look at the Reflex slot for something that waits out a bad spell instead of fighting it.'],
+        starved: ['Your colony died out before the run ended.', 'The water left your cell\'s range and the cell was not ready for it. Look at the Reflex slot: the dark taught you one answer, and this is a different kind of bad time.'],
+        overgrew: TIP_OVERGREW, 'exposed:regularity': TIP_REGULAR, other: TIP_OTHER
+      },
+      nbTitle: 'When the water will not hold still',
+      notebook: 'A hot spring is never perfectly steady. Wind, rain and the time of day shift the temperature of the water, and the edges move the most. A cell grows over only a range of temperatures, often 30 to 40 degrees wide: warm it past the top and it cooks, cool it past the bottom and its membrane stiffens and its proteins slow to a stop. A cell cannot widen that range much. What it can do is stop and wait. Bacillus subtilis seals itself into a spore when conditions turn bad, and the spore survives boiling water and freezing alike until the water comes back.',
+      fieldNote: ['The water here does not hold still. It heats, then it chills, and every crowd goes quiet for a while and then comes back.'],
+      reading: 'The crowds that live here are not tougher than ours. We think they simply know how to wait.',
+      colony: 'Some of our cells keep still through a bad spell and some do not. The ones that keep still are the ones we still have.' })
+    ,
+    dish({ id: 19, title: 'Leaving the River', energy: 5, exam: true, regWeight: 2, peakSafe: 6, slots: SLOTS.concat(['motor']),
+      stats: ['heat', 'growth', 'grazing', 'natural', 'night'], channels: CH_EXAM, temp: temp(66, 30, 0.2, true, null, { amp: 8, period: 100, span: 26, dMult: 3, spore: 1 }), nights: true,
+      problem: 'Hot water, a cool edge, the dark, and a river that warms and chills.', goal: 'Stay in the band through every night.',
+      tips: examTips({
+        cooked: ['Your cell stopped where the water left its range, hot or cold.', 'Look at what each heat card costs in energy and births. The water does not stay one temperature, and a cell that sits out the swing as a spore is worn away by it.'],
+        grazed: ['The current carried you to the cool edge and the shadow ate you.', 'Something has to keep you out of water under 40 C, or keep you from being eaten. Count what each answer costs.'],
+        bust: ['The dark took your share below the band.', 'The Reflex slot decides this, and the water also swings between hot and cold on a slower clock. A strict inspector watches any rule that fires everywhere at once.'],
+        below: ['Your colony was too slow to last here.', 'Check what each card takes from Growth, then look at Pace and your Power card.'],
+        'exposed:regularity': ['Your cells moved or divided too neatly, and this inspector reads that as a machine.', 'Look at Sloppiness, your Division card, and any Machine rule.']
+      }),
+      nbTitle: 'Where a spring runs out',
+      notebook: 'Hot spring water leaves the vent at 70 to 90 C and cools as it runs downhill, until it spreads into a marsh or sinks into dry ground. Each stretch has its own crowd: the thin pink streamers near the vent, then dense mats of Mastigocladus laminosus up to about 60 C, and farther down more and more kinds of cell, with grazers at the cool end. At any one spot the temperature also changes with the hour and the weather. A cell that wants to leave has to live through all of it: heat, cool, dark and swing.',
+      fieldNote: ['The river runs out here. The crowds that go on past the heat are the ones that learned to wait.'],
+      reading: 'We think a city is a place that stays. The crowds here keep moving through the heat, the cool, the dark and the cold, and some of them go on past the end of the river.',
+      colony: 'The river ends in dry ground. Some crowds go on, and we think that is where the salt is.' })
   ];
 
   // ---------------------------------------------------------------- carried and standard cells (HABITAT-2 section 6.1)
@@ -162,7 +198,9 @@ var LookAliveLevels2 = (function () {
     11: mk(3, 6, 'fermentation', ['acidproof'], { kind: 'bio', id: 'sporulate' }),            // the walkthrough's dish-10 winner
     12: mk(3, 6, 'fermentation', ['chaperones'], { kind: 'bio', id: 'sporulate' }),           // dish 11: swap Acid-proof insides for chaperones
     13: mk(3, 6, 'fermentation', ['chaperones', 'pili'], { kind: 'bio', id: 'sporulate' }),   // dish 12: add Twitching pili
-    14: mk(3, 6, 'fermentation', ['polyamines', 'pili'], { kind: 'bio', id: 'nightferm' })    // a dish-13 winner that fits energy 3
+    14: mk(3, 6, 'fermentation', ['polyamines', 'pili'], { kind: 'bio', id: 'nightferm' }),   // a dish-13 winner that fits energy 3
+    18: mk(3, 6, 'fermentation', ['chaperones', 'pili'], { kind: 'bio', id: 'nightferm' }),   // the simplest winner of dish 13 (its first fix)
+    19: mk(3, 6, 'fermentation', ['chaperones', 'pili'], { kind: 'bio', id: 'sporulate' })   // the dish-18 winner (it sporulates through the swing; this exam wears spores away)
   };
   var STANDARD2 = { 14: mk(3, 0, 'fermentation', ['polyamines', 'pili'], null) };   // fails two ways: Naturalness (stage 3) and dies at night
   function copy(c) { return c ? JSON.parse(JSON.stringify(c)) : null; }
@@ -186,14 +224,14 @@ var LookAliveLevels2 = (function () {
     ['The trail', 'A hot river.', 'We followed the warm mountain\'s trail to a river that steams. The crowds here stand in bands, hot to cold, like a map someone drew.'],
     ['The shadow', 'Something at the edge.', 'Something at the cool end is wearing the crowds away. It is very slow. We think it is weather.']
   ];
-  // The completion card. HABITAT-2 7.6 gives the title and the Next line; the three other rows are the exam dish's own field note, reading and colony line.
-  var D14 = DISHES2[3];
+  // The completion card, shown after the last hot river dish (19). HABITAT-2 7.6 gives the title and the Next line; the three other rows are that last exam dish's own field note, reading and colony line.
+  var DLAST = DISHES2[DISHES2.length - 1];
   var COMPLETE2 = {
-    title: 'SAMPLING COMPLETE · The banded water · four sites',
+    title: 'SAMPLING COMPLETE · The banded water · six sites',
     rows: [
-      ['Finding', D14.fieldNote[0]],
-      ['Conclusion', D14.reading],
-      ['Anomaly', D14.colony],
+      ['Finding', DLAST.fieldNote[0]],
+      ['Conclusion', DLAST.reading],
+      ['Anomaly', DLAST.colony],
       ['Next', 'A place where the water itself is the problem: a salt flat.']
     ]
   };
@@ -211,6 +249,6 @@ var LookAliveLevels2 = (function () {
   Lv.carry = function (id) { return CARRY2[id] ? copy(CARRY2[id]) : carry1(id); };
   Lv.standard = function (id) { var c = STANDARD2[id] || CARRY2[id]; return c ? copy(c) : standard1(id); };
 
-  return { M: M, WORLD: WORLD2, INTRO: INTRO2, ORDER: [11, 12, 13, 14], DISHES: DISHES2, COMPLETE: COMPLETE2, COVER: COVER2 };
+  return { M: M, WORLD: WORLD2, INTRO: INTRO2, ORDER: [11, 12, 13, 18, 14, 19], DISHES: DISHES2, COMPLETE: COMPLETE2, COVER: COVER2 };
 })();
 if (typeof module !== 'undefined') module.exports = LookAliveLevels2;

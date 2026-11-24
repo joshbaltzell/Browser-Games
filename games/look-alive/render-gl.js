@@ -1174,7 +1174,9 @@ var LookAliveRender = (function () {
         if (age < 0) continue;
         if (Bq.death != null) { if (t >= Bq.death + FD) continue; if (t >= Bq.death) alpha = 1 - (t - Bq.death) / FD; }
         if (age < GR) { gs = smooth(0, 1, age / GR); alpha = Math.min(alpha, 0.25 + 0.75 * gs); }
-        var bx = Bq.x * um, by = Bq.y * um, br = Bq.sigma * TUNE.agBoulder * um * (0.3 + 0.7 * gs);
+        var hp = Bq.hp ? Bq.hp[Math.max(0, Math.min(Bq.hp.length - 1, Math.floor(t)))] : 1;   // a boulder being eaten shrinks and fades (dishes with deplete)
+        if (hp < 1) alpha *= 0.35 + 0.65 * hp;
+        var bx = Bq.x * um, by = Bq.y * um, br = Bq.sigma * TUNE.agBoulder * um * (0.3 + 0.7 * gs) * (hp < 1 ? 0.45 + 0.55 * hp : 1);
         if (!noCull && (bx + br < X0 || bx - br > X1 || by + br < Y0 || by - br > Y1)) { nB++; continue; }
         o = n * 16; inst[o] = bx; inst[o + 1] = by; inst[o + 2] = br; inst[o + 3] = 0; inst[o + 4] = 4; inst[o + 5] = clamp(0.5 + (hash32(i, 11, 4) / 4294967296 - 0.5) * 0.08, 0, 1); inst[o + 6] = hash32(i, 12, 5) / 4294967296;
         inst[o + 7] = 0; inst[o + 8] = 0; inst[o + 9] = 0; inst[o + 10] = 0; inst[o + 11] = 0; inst[o + 12] = 1 - alpha; inst[o + 13] = 0; inst[o + 14] = 0; inst[o + 15] = 0; ids[n] = -1 - i; n++; nB++;

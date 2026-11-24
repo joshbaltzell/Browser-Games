@@ -1,4 +1,4 @@
-// Smoke test for dishes 15, 16 and 17 (habitat 3) through the game's normal simulation API (sim.js hands them to sim3.js).
+// Smoke test for dishes 15, 16, 17, 20 and 21 (habitat 3) through the game's normal simulation API (sim.js hands them to sim3.js).
 // Run from the repo root:  node games/look-alive/dev/smoke-h3.js        (about 30 s)
 // Every line is PASS or FAIL with the numbers behind it. The last line is SMOKE-H3 PASS or SMOKE-H3 FAIL.
 'use strict';
@@ -14,16 +14,17 @@ function withSeed(D, seed) { var d = Object.assign({}, D); d.agents = JSON.parse
 function runOf(D, b, opts) { var run = Sim.play(P, D, b, opts || { n: 64, snapEvery: 10 }); run.v = Sim.verdict(run); run.autopsy = run.v.win ? null : Sim.autopsy(run); return run; }
 function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; var t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
 var STAY = { kind: 'machine', sensor: 'food', cmp: 'gt', value: 0.015, action: 'stay', otherwise: 'seek' };
-var DISH = { 15: Lv.dish(15), 16: Lv.dish(16), 17: Lv.dish(17) };
-var NAME = { 15: 'dish 15 (Where the Food Is)', 16: 'dish 16 (Stop When Fed)', 17: 'dish 17 (A Little Light)' };
-var FIX = { 15: Lv.applyFix(Lv.carry(15), DISH[15].fixes[0]), 16: Lv.applyFix(Lv.carry(16), DISH[16].fixes[0]), 17: Lv.applyFix(Lv.carry(17), DISH[17].fixes[0]) };
+var DISH = { 15: Lv.dish(15), 16: Lv.dish(16), 17: Lv.dish(17), 20: Lv.dish(20), 21: Lv.dish(21) };
+var NAME = { 15: 'dish 15 (Where the Food Is)', 16: 'dish 16 (Stop When Fed)', 17: 'dish 17 (A Little Light)', 20: 'dish 20 (Eat the Clump, Lose the Clump)', 21: 'dish 21 (Greetings from the Thick Water)' };
+var FIX = { 15: Lv.applyFix(Lv.carry(15), DISH[15].fixes[0]), 16: Lv.applyFix(Lv.carry(16), DISH[16].fixes[0]), 17: Lv.applyFix(Lv.carry(17), DISH[17].fixes[0]), 20: Lv.applyFix(Lv.carry(20), DISH[20].fixes[0]),
+  21: { pace: 5, slop: 3, metabolism: 'respiration', parts: ['flagellum', 'chemo', 'lightpump'], reflex: { kind: 'machine', sensor: 'crowd', cmp: 'gt', value: 2, action: 'pause', otherwise: 'seek' } } };   // dish 21 is an exam with no fix: this is one of its answers (pause births where it is crowded)
 var T = 300;
 
 // ---------------------------------------------------------------- S1: every field of a run
 var H_KEYS = ['tick', 'share', 'nativeShare', 'nat', 'rob', 'food', 'total', 'stage', 'kill', 'fires', 'lead', 'births', 'rate', 'nrate', 'qsig', 'radioMult', 'rawG', 'rawW', 'rawC', 'rawR', 'regT', 'regM', 'regF', 'regD', 'regR', 'sloppy', 'acid', 'dorm'];
 var SUSP_KEYS = ['growth', 'waste', 'casualties', 'regularity', 'motion'];
 var SNAP_ARR = ['robot', 'native', 'food', 'waste', 'quorum'], ST_ARR = ['Z', 'SP', 'N', 'F', 'WA', 'WB', 'Q'];
-[15, 16, 17].forEach(function (id) {
+[15, 16, 17, 20, 21].forEach(function (id) {
   var D = DISH[id], miss = [], run = Sim.play(P, D, Lv.carry(id), { n: 16, snapEvery: 3 });   // n and snapEvery must be ignored
   ['P', 'dish', 'build', 'bp', 'channels', 'n', 'T', 'H', 'snaps', 'v', 'frames', 'foods', 'boulders', 'deaths', 'agents'].forEach(function (k) { if (run[k] == null) miss.push(k); });
   if (run.n !== 64) miss.push('n=' + run.n + ' (want 64)');
@@ -50,7 +51,7 @@ var SNAP_ARR = ['robot', 'native', 'food', 'waste', 'quorum'], ST_ARR = ['Z', 'S
   if (!Array.isArray(run.boulders) || !run.boulders.length) miss.push('boulders');
   if (!Array.isArray(run.deaths)) miss.push('deaths');
   ['win', 'alive', 'bandFrac', 'maxStage', 'peakS', 'finalShare', 'exposedAt'].forEach(function (k) { if (run.v[k] == null) miss.push('v.' + k); });
-  if (id === 17) {
+  if (id === 17 || id === 21) {
     var Lt = run.light;
     if (!Lt || !(Lt.r > 0) || !(Lt.core > 0 && Lt.core < Lt.r) || !(Lt.x instanceof Float32Array) || !(Lt.y instanceof Float32Array) || Lt.x.length !== T + 1 || Lt.y.length !== T + 1) miss.push('run.light shape');
     if (!(run.H.light instanceof Float32Array) || run.H.light.length !== T + 1 || !(run.H.glare instanceof Float32Array) || run.H.glare.length !== T + 1) miss.push('H.light / H.glare');
@@ -70,8 +71,8 @@ var SNAP_ARR = ['robot', 'native', 'food', 'waste', 'quorum'], ST_ARR = ['Z', 'S
 });
 
 // ---------------------------------------------------------------- S2: the carried cell loses, the fix wins, and not by luck of the seed
-[15, 16, 17].forEach(function (id) {
-  var D = DISH[id], want = id === 16 ? ['exposed:motion'] : ['starved', 'below'];
+[15, 16, 17, 20, 21].forEach(function (id) {
+  var D = DISH[id], want = id === 16 || id === 21 ? ['exposed:motion'] : id === 20 ? ['eaten', 'overgrew', 'exposed:growth'] : ['starved', 'below'];
   var c = runOf(D, Lv.carry(id)), f = runOf(D, FIX[id]);
   line(!c.v.win && want.indexOf(c.autopsy.cause) >= 0 && f.v.win, 'S2 ' + NAME[id] + ' carried cell loses by ' + want.join(' or ') + ', the intended fix wins',
     'carried: ' + (c.v.win ? 'WON' : 'lost by ' + c.autopsy.cause + ' at tick ' + c.autopsy.to) + '; fix: ' + (f.v.win ? 'won (band ' + Math.round(f.v.bandFrac * 100) + '%, peak stage ' + f.v.maxStage + ')' : 'LOST by ' + f.autopsy.cause));
@@ -95,7 +96,7 @@ function legalBuilds(D, count, seed) {
     if (m) parts.push(m);
     if (R() < 0.5) parts.push('chemo');
     if (R() < 0.3) parts.push('naps');
-    if (D.id === 17 && R() < 0.6) parts.push(['lightpump', 'lightsense', 'lightcolor'][Math.floor(R() * 3)]);
+    if ((D.id === 17 || D.id === 21) && R() < 0.6) parts.push(['lightpump', 'lightsense', 'lightcolor'][Math.floor(R() * 3)]);
     var rule = null;
     if (D.id >= 16 && R() < 0.6) {
       var kind = Math.floor(R() * 3);
@@ -108,7 +109,7 @@ function legalBuilds(D, count, seed) {
   }
   return out;
 }
-[15, 16, 17].forEach(function (id) {
+[15, 16, 17, 20, 21].forEach(function (id) {
   var D = DISH[id], builds = legalBuilds(D, 12, 100 + id), bad = [], wins = 0, losses = 0, allSafeWins = 0;
   builds.forEach(function (b, i) {
     var st = Sim.stats(D, b), run = runOf(D, b), rs = Sim.runStats(run);
@@ -129,7 +130,7 @@ function legalBuilds(D, count, seed) {
 });
 
 // ---------------------------------------------------------------- S4: nothing throws
-[15, 16, 17].forEach(function (id) {
+[15, 16, 17, 20, 21].forEach(function (id) {
   var D = DISH[id], errs = [], notes = [];
   function tryIt(name, fn) { try { return fn(); } catch (e) { errs.push(name + ': ' + (e && e.message)); return undefined; } }
   var carried = Lv.carry(id), fix = FIX[id];
@@ -148,7 +149,7 @@ function legalBuilds(D, count, seed) {
   tryIt('dissolved', function () { if (Sim.dissolved(D, carried) !== false) errs.push('dissolved is not false'); });
   tryIt('diffWords', function () { Sim.diffWords(D, carried, fix); });
   tryIt('energyOf', function () { notes.push('energy fix ' + Sim.energyOf(Sim.normalize(fix)) + ' of ' + D.energy); });
-  tryIt('slot-shaped build', function () { var sb = Sim.toSlots(fix), r = Sim.play(P, D, { pace: 4, slop: 3, slots: sb }, { record: false }); if (r.v.win !== won.v.win) errs.push('a slot-shaped build plays differently'); });
+  tryIt('slot-shaped build', function () { var sb = Sim.toSlots(fix), r = Sim.play(P, D, { pace: fix.pace, slop: fix.slop, slots: sb }, { record: false }); if (r.v.win !== won.v.win) errs.push('a slot-shaped build plays differently'); });
   line(errs.length === 0, 'S4 ' + NAME[id] + ' validate, conform, offered, cardEffects, statDiff, statFixers, liveStats (ticks 0, 100, 300), autopsy, predict, grade do not throw', errs.length ? errs.join('; ') : notes.join('; '));
 });
 (function () {   // dish 16 legality: a reflex with a sensor or an action the dish does not list is rejected; a swim action with no motor is allowed
@@ -175,7 +176,7 @@ function legalBuilds(D, count, seed) {
 })();
 
 // ---------------------------------------------------------------- S6: Pace and Sloppiness alone never win
-[15, 16, 17].forEach(function (id) {
+[15, 16, 17, 20, 21].forEach(function (id) {
   var D = DISH[id], wins = [], n = 0, base = Lv.carry(id);
   for (var pace = 0; pace <= 8; pace++) for (var slop = 0; slop <= 8; slop++) {
     var b = { pace: pace, slop: slop, metabolism: base.metabolism, parts: base.parts.slice(), reflex: base.reflex };
@@ -183,14 +184,19 @@ function legalBuilds(D, count, seed) {
     n++;
     if (Sim.play(P, D, b, { record: false }).v.win) wins.push('pace ' + pace + ' slop ' + slop);
   }
+  if (id === 20) {   // the Pace dial IS the answer here (take little): slow settings win, and the carried setting (Pace 4, Slop 3) does not
+    var slow = wins.filter(function (w) { return +w.split(' ')[1] <= 2; }), atCarried = wins.indexOf('pace 4 slop 3') >= 0;
+    line(slow.length > 0 && !atCarried, 'S6 ' + NAME[id] + ' Pace is the answer: slow settings win, the carried setting (Pace 4, Slop 3) loses', n + ' settings tried on seed 1, ' + wins.length + ' win (' + slow.length + ' at Pace 2 or less); carried setting ' + (atCarried ? 'WINS' : 'loses'));
+    return;
+  }
   line(wins.length === 0, 'S6 ' + NAME[id] + ' no Pace and Sloppiness setting on the carried cell wins', n + ' settings tried (Pace 0 to 8 by Sloppiness 0 to 8), ' + wins.length + ' win' + (wins.length ? ': ' + wins.join(', ') : ''));
 });
 
 // ---------------------------------------------------------------- S7: how honest the bars are on their own
 // A stat bar always shows the measured value. On a loss the blamed bar is marked as the trouble; S7 counts how often that bar's VALUE still sits inside its own safe zone
 // (several tells each under their line can add up past the guards' line). This is the rate at which a bar's position alone would not have warned the player. Limit 5%.
-[15, 16, 17].forEach(function (id) {
-  var D = DISH[id], builds = legalBuilds(D, 80, 500 + id), losses = 0, inside = 0, ex = [];
+[15, 16, 17, 20, 21].forEach(function (id) {
+  var D = DISH[id], builds = legalBuilds(D, id === 20 || id === 21 ? 200 : 80, 500 + id), losses = 0, inside = 0, ex = [];   // dishes 20 and 21 lose on fewer builds, so they get a bigger sample for the same rate
   builds.forEach(function (b) {
     var run = Sim.play(P, D, JSON.parse(JSON.stringify(b)), { record: false });
     if (run.v.win) return;

@@ -1,11 +1,11 @@
-// Look Alive habitat 3 walkthrough (dishes 15 and 16, "the thick water"), through the CDP driver, with real clicks wherever a player would click:
+// Look Alive habitat 3 walkthrough (dishes 15, 16, 17, 20 and 21, "the thick water"), through the CDP driver, with real clicks wherever a player would click:
 //   node games/look-alive/dev/cdp-drive.js games/look-alive/dev/walkthrough-h3.js        (also: VW=390 VH=844 MOB=1)
 // Env: SHOTS=<folder> writes screenshots there (1280x720 clips, or the phone size); without it no screenshots are taken.
 // Flow: third tab locked until dish 14 is cleared, opens through a real click, mini-intro (3 slides), world facts, dish 15 briefing (report lines), Watch (starves),
 // Adapt with real clicks (Flagellum, Chemoreceptor array), bars read Safe, Run wins, deaths line, dish 16 (carried cell loses by Movement, memo desk, tip),
 // the rule built by real clicks in the editor (WHEN food here is above 0.015 DO stay and feed OTHERWISE swim toward food), Run wins,
 // dish 17 (the bright place): light report line, the carried cell loses, the pump is fittable and Light sensing is blocked with its reason and link, the pump fitted by real clicks wins,
-// the win card says the next step evolved, the used map is saved, Light sensing is then fittable and Colour sensing still blocked, winning with Light sensing opens Colour sensing, completion card after 17,
+// the win card says the next step evolved, the used map is saved, Light sensing is then fittable and Colour sensing still blocked, winning with Light sensing opens Colour sensing, dish 17 now shows Next dish; dish 20 (the carried cell eats its boulders and loses, Pace 2 wins) and dish 21 (the exam: the carried cell loses, the rule "crowd above 2: pause" wins, then Continue opens the ending),
 // reload keeps the rule and the cleared marks, hold-to-compare swaps runs, the Run page does not scroll, the fallback 2D view draws.
 // Prints one JSON row per step group and a SUMMARY line ("failed" lists every check that did not hold). The driver adds "0 errors" or the errors.
 module.exports = async (a) => {
@@ -20,6 +20,7 @@ module.exports = async (a) => {
     return await ev(`(function(){var i=__la.info();return {win:i.verdict&&i.verdict.win,cause:i.autopsy&&i.autopsy.cause,from:i.autopsy&&i.autopsy.from}})()`);
   };
   const memoRows = () => ev(`(function(){var o={};Array.prototype.forEach.call(document.querySelectorAll('#overlay .memo .row'),function(r){var b=r.querySelector('b');if(b)o[b.textContent]=r.querySelector('span')?r.querySelector('span').textContent:''});return o})()`);
+  const evoGo = async () => { if (await ev(`!!document.getElementById('evoCard')`)) { await W.click('#evoGo'); await a.sleep(500); } };
   const closeOv = async () => { await a.eval(`document.getElementById('overlay').hidden=true;__la.S.overlayOpen=false;1`); await a.sleep(150); };
   const noScroll = () => ev(`(function(){var d=document.documentElement;return {h:d.scrollHeight,vh:innerHeight,w:d.scrollWidth,vw:innerWidth}})()`);
   const slotClick = async (k) => { const r = await W.click(`#tagLayer .tag[data-slot="${k}"]`); await a.sleep(200); return r; };
@@ -31,14 +32,14 @@ module.exports = async (a) => {
 
   // ---------------------------------------------------------------- 1. the third tab is locked until the second world's last dish is cleared
   await W.fresh({ seenWorld: true, unlocked: false });
-  await a.eval(`for(var i=1;i<=13;i++)__la.S.cleared[i]=true;__la.show('list');1`); await a.sleep(300);
+  await a.eval(`var o1=__la.worldOrder(1),o2=__la.worldOrder(2);o1.concat(o2.slice(0,-1)).forEach(function(i){__la.S.cleared[i]=true});__la.show('list');1`); await a.sleep(300);
   const t0 = await ev(`(function(){var b=document.querySelector('.wtab[data-world="3"]');return b?{disabled:b.disabled,text:b.textContent}:null})()`);
-  check('tab3Present', !!t0); check('tab3LockedBefore', t0 && t0.disabled === true && /clear dish 14/i.test(t0.text));
+  check('tab3Present', !!t0); check('tab3LockedBefore', t0 && t0.disabled === true && /clear dish \d+ first/i.test(t0.text));
   check('tab2OpenAfterTen', await ev(`!document.querySelector('.wtab[data-world="2"]').disabled`));
   check('hookWorldLocked', (await ev(`__la.world(3)`)).ok === false);
-  await a.eval(`__la.S.cleared[14]=true;__la.show('list');1`); await a.sleep(300);
+  await a.eval(`var o2=__la.worldOrder(2);__la.S.cleared[o2[o2.length-1]]=true;__la.show('list');1`); await a.sleep(300);
   check('tab3OpenAfterFourteen', await ev(`!document.querySelector('.wtab[data-world="3"]').disabled`));
-  check('hookWorldOrder', JSON.stringify(await ev(`__la.worldOrder(3)`)) === '[15,16,17]');
+  check('hookWorldOrder', JSON.stringify(await ev(`__la.worldOrder(3)`)) === '[15,16,17,20,21]');
 
   // ---------------------------------------------------------------- 2. real click on the tab: three-slide mini-intro, world facts, the list
   check('tabClick', await W.click('.wtab[data-world="3"]')); await a.sleep(500);
@@ -53,7 +54,7 @@ module.exports = async (a) => {
   check('worldFacts', (await ev(`document.querySelectorAll('#worldFacts .fact').length`)) === 6);
   await W.click('#worldGo'); await a.sleep(400);
   const lst = await ev(`({screen:__la.info().screen,tab:document.querySelector('.wtab.on')&&document.querySelector('.wtab.on').getAttribute('data-world'),tiles:document.querySelectorAll('#dishList button[data-dish]').length,t15:!document.querySelector('#dishList button[data-dish="15"]').disabled,t16:!document.querySelector('#dishList button[data-dish="16"]').disabled,w:document.documentElement.scrollWidth,cw:document.documentElement.clientWidth})`);
-  check('listTab3', lst.screen === 'list' && lst.tab === '3' && lst.tiles === 3 && lst.t15 === true && lst.t16 === false && lst.w <= lst.cw + 1);
+  check('listTab3', lst.screen === 'list' && lst.tab === '3' && lst.tiles === 5 && lst.t15 === true && lst.t16 === false && lst.w <= lst.cw + 1);
   await shot('h3-list-tab3.png', MOB);
   check('introSavedKeys', (await ev(`localStorage.getItem('bg.look-alive.introC')+'|'+localStorage.getItem('bg.look-alive.worldC')+'|'+localStorage.getItem('bg.look-alive.worldTab')`)) === 'true|true|3');
 
@@ -258,7 +259,7 @@ module.exports = async (a) => {
   check('d17EvoPanelBeforeWinCard', !!evo1 && evo1.title === 'OUR CELL HAS CHANGED' && evo1.winCard === false && evo1.evLine === false);
   check('d17EvoPortraits', !!evo1 && evo1.a === true && evo1.aSpot === false && evo1.b === true && evo1.boxes.length === 2 && evo1.boxes[0].join() === evo1.boxes[1].join());
   check('d17EvoNames', !!evo1 && /Used\s*Light-driven pump/.test(evo1.cap[0]) && /Gained\s*Light sensing/.test(evo1.cap[1]) && evo1.name === 'Light sensing' && evo1.step === 'Step 2 of 3 on the Light path' && /everything the pump does/i.test(evo1.add));
-  check('d17EvoCause', !!evo1 && evo1.cause === 'It lived through dish 17 with Light-driven pump fitted. That is how a path grows.');
+  check('d17EvoCause', !!evo1 && /^It lived through dish \d+ with Light-driven pump fitted\. That is how a path grows\.$/.test(evo1.cause));
   check('d17EvoContinueFocused', !!evo1 && evo1.focus === 'evoGo' && evo1.btns === 1);
   check('d17EvoNotYetEvolved', !(await ev(`__la.evolved()`)).lightsense);
   if (big) { check('d17EvoNoScroll', !!evo1 && evo1.ovScroll <= 0 && (await noScroll()).h <= 721); check('d17EvoFitsView', await ev(`(function(){var c=document.getElementById('evoCard').getBoundingClientRect();return c.top>=0&&c.bottom<=innerHeight})()`)); }
@@ -275,7 +276,7 @@ module.exports = async (a) => {
   check('d17DeathsLineWin', /^Scouts lost: \d+ starved, \d+ burned, \d+ to the guards$/.test(await ev(`(document.getElementById('deathLine')||{}).textContent||''`)));
   if (big) check('d17WinCardFits', await ev(`(function(){var a=document.querySelector('#overlay .winwrap .memo').getBoundingClientRect(),b=document.querySelector('#overlay .winwrap .notebook').getBoundingClientRect();return a.top>=100&&a.bottom<=innerHeight&&b.top>=100&&b.bottom<=innerHeight})()`));
   await shot('h3-d17-win.png', MOB);
-  check('d17WinHasNext', !(await ev(`!!document.querySelector('#overlay button[data-act="next"]')`)));
+  check('d17WinHasNext', await ev(`!!document.querySelector('#overlay button[data-act="next"]')`));   // dish 17 is no longer the last dish
   await closeOv();
   // reopen dish 17: step 2 is ready, step 3 is still locked, and no tile moved
   await a.eval(`__la.selectDish(17);__la.show('adapt');1`); await a.sleep(500);
@@ -303,7 +304,7 @@ module.exports = async (a) => {
   sum.d17RectStates = seenRects.map(r => r[0]); sum.d17Rects = seenRects;
   const r17c = await play(16); sum.d17SenseRun = r17c;
   check('d17SenseWins', r17c.win === true);
-  check('d17EvoPanelForStep3', await ev(`!!document.getElementById('evoCard')&&document.getElementById('evoName').textContent==='Colour sensing'&&document.querySelector('#evoCard .evoname span').textContent==='Step 3 of 3 on the Light path'&&/It lived through dish 17 with Light sensing fitted\\./.test(document.getElementById('evoCause').textContent)`));
+  check('d17EvoPanelForStep3', await ev(`!!document.getElementById('evoCard')&&document.getElementById('evoName').textContent==='Colour sensing'&&document.querySelector('#evoCard .evoname span').textContent==='Step 3 of 3 on the Light path'&&/It lived through dish \\d+ with Light sensing fitted\\./.test(document.getElementById('evoCause').textContent)`));
   // Escape is sent as a page key event: a real CDP Escape makes headless Chrome report the page hidden, which stops requestAnimationFrame for the rest of the run
   await a.eval(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));1`); await a.sleep(500);   // Escape continues
   check('d17EscapeContinues', await ev(`!document.getElementById('evoCard')&&!!document.querySelector('#overlay .winwrap')`));
@@ -320,8 +321,71 @@ module.exports = async (a) => {
   check('d17NoEvoPanelSecondTime', (await ev(`!document.getElementById('evoCard')&&!!document.querySelector('#overlay .winwrap')`)));
   sum.d17SecondDebug = await ev(`({line:(document.getElementById('evolvedLine')||{}).textContent,en:__la.S.evolvedNew,shown:__la.S.evoShown,ev:__la.evolved(),used:__la.used(),build:__la.S.build.parts})`);
   check('d17NoEvolvedLineSecondTime', (await ev(`!document.getElementById('evolvedLine')`)));
-  // dish 17 is the last dish of the game: its win card leads straight into the ending
-  check('d17EndingButton', await ev(`!!document.querySelector('#overlay #toEnding')`));
+  // dish 17 is no longer the last dish: its win card shows Next dish (to dish 20), not the ending
+  check('d17NextDishButton', await ev(`!!document.querySelector('#overlay button[data-act="next"]')`) && !(await ev(`!!document.querySelector('#overlay #toEnding')`)));
+
+  // ---------------------------------------------------------------- 4c. dish 20, eat the clump and lose the clump
+  await W.click('#overlay button[data-act="next"]'); await a.sleep(500);
+  check('d20Brief', (await ev(`__la.info().screen`)) === 'brief' && (await ev(`__la.S.dish`)) === 20);
+  await a.sleep(3200);
+  const rep20 = await ev(`document.getElementById('briefReport').innerText`); sum.report20 = rep20.replace(/\s+/g, ' ').slice(0, 700);
+  check('d20Report', /green boulders/.test(rep20));
+  await shot('h3-d20-brief.png', MOB);
+  await W.click('#briefGo'); await a.sleep(200); await W.click('#speeds button[data-sp="16"]');
+  await W.waitFor(`__la.S.watchDone===true`, 60000);
+  const wa20 = await ev(`(function(){var i=__la.info();return {win:i.verdict.win,cause:i.autopsy&&i.autopsy.cause,text:i.autopsy&&i.autopsy.text,gone:(__la.S.run.boulders||[]).filter(function(b){return b.eaten}).length}})()`); sum.d20Watch = wa20;
+  check('d20CarriedLoses', wa20.win === false && ['eaten', 'overgrew', 'exposed:growth'].indexOf(wa20.cause) >= 0);
+  check('d20BouldersEaten', wa20.gone > 0 || wa20.cause !== 'eaten');
+  await a.eval(`var sc=document.getElementById('scrub');sc.value=120;sc.dispatchEvent(new Event('input',{bubbles:true}));1`); await a.sleep(900);
+  await shot('d20-watch-mid.png', MOB);
+  await a.eval(`var sc=document.getElementById('scrub');sc.value=${wa20.gone ? 250 : 200};sc.dispatchEvent(new Event('input',{bubbles:true}));1`); await a.sleep(900);
+  await shot('d20-watch-late.png', MOB);
+  await W.click('#verdictBtn'); await a.sleep(400);
+  check('d20AdaptScreen', (await ev(`__la.info().screen`)) === 'adapt');
+  const r20a = await play(16); sum.d20CarriedRun = r20a;
+  check('d20RunLoses', r20a.win === false);
+  const memo20 = await memoRows(); sum.d20Memo = memo20;
+  await shot('d20-loss.png', MOB);
+  await closeOv();
+  await a.eval(`__la.show('adapt');1`); await a.sleep(300);
+  const pc20 = await W.click('#paceBox [data-dial="pace0"]'); await a.sleep(300); sum.d20PaceDbg = { clicked: pc20, pace: await ev(`__la.S.build.pace`), screen: await ev(`__la.info().screen`), overlay: await ev(`__la.S.overlayOpen`) };
+  check('d20PaceDialClick', pc20 && sum.d20PaceDbg.pace === 0);
+  const r20b = await play(16); sum.d20FixRun = r20b;
+  check('d20PaceWins', r20b.win === true);
+  await evoGo();
+  check('d20WinHasNext', await ev(`!!document.querySelector('#overlay button[data-act="next"]')`) && !(await ev(`!!document.querySelector('#overlay #toEnding')`)));
+  await shot('d20-win.png', MOB);
+
+  // ---------------------------------------------------------------- 4d. dish 21, the exam: no tips, several cells can pass; its win leads into the ending
+  // the player's own dish 20 win carries into the exam; no stay-where-fed cell at Pace 2 or 0 passes it, so the walk starts from the designed carry (Pace 2, pump, stay where fed)
+  await a.eval(`__la.S.wins[20]={pace:2,slop:3,metabolism:'respiration',parts:['flagellum','chemo','lightpump'],reflex:{kind:'machine',sensor:'food',cmp:'gt',value:0.015,action:'stay',otherwise:'seek'}};1`);
+  await W.click('#overlay button[data-act="next"]'); await a.sleep(500);
+  check('d21Brief', (await ev(`__la.info().screen`)) === 'brief' && (await ev(`__la.S.dish`)) === 21);
+  await W.click('#briefGo'); await a.sleep(200); await W.click('#speeds button[data-sp="16"]');
+  await W.waitFor(`__la.S.watchDone===true`, 60000);
+  const wa21 = await ev(`(function(){var i=__la.info();return {win:i.verdict.win,cause:i.autopsy&&i.autopsy.cause}})()`); sum.d21Watch = wa21;
+  check('d21CarriedLoses', wa21.win === false);
+  await W.click('#verdictBtn'); await a.sleep(400);
+  check('d21AdaptScreen', (await ev(`__la.info().screen`)) === 'adapt');
+  check('d21IsExam', await ev(`!!__la.dish().exam`));
+  check('d21NoTipButtonText', (await ev(`document.getElementById('tipBtn').textContent`)) === 'What changes this?');
+  // the answer: the rule line "WHEN crowd here is above 2 DO pause dividing OTHERWISE swim toward food", Pace 5, the pump kept
+  check('d21PaceFive', await W.click('#paceBox [data-dial="pace5"]') && (await ev(`__la.S.build.pace`)) === 5); await a.sleep(200);
+  check('d21PickReflex', await slotClick('reflex')); await a.sleep(200);
+  check('d21RuleSensor', await pick('sensor', 'crowd'));
+  check('d21RuleCmp', await pick('cmp', 'gt'));
+  check('d21RuleValue', await pick('value', '2'));
+  check('d21RuleAction', await pick('action', 'pause'));
+  check('d21RuleOtherwise', await pick('otherwise', 'seek'));
+  sum.d21Rule = await ev(`JSON.stringify(__la.S.build.reflex)`);
+  check('d21RuleBuilt', JSON.parse(sum.d21Rule || 'null') && JSON.parse(sum.d21Rule).sensor === 'crowd' && JSON.parse(sum.d21Rule).action === 'pause');
+  const r21a = await play(16); sum.d21Run = r21a;
+  check('d21AnswerWins', r21a.win === true);
+  await evoGo();
+  sum.d21Memo = await memoRows();
+  await shot('d21-result.png', MOB);
+  const g21 = await ev(`(function(){var e=document.querySelector('#overlay .grade, #overlay .gradeLine');return e?e.textContent:''})()`); sum.d21Grade = g21;
+  check('d21WinHasEndingButton', await ev(`!!document.querySelector('#overlay #toEnding')`) && !(await ev(`!!document.querySelector('#overlay button[data-act="next"]')`)));
   sum.endingBtn = await W.click('#overlay #toEnding'); await a.sleep(600);
   check('endingOpens', (await ev(`__la.info().screen`)) === 'ending' && (await ev(`__la.endingAt()`)) === 0);
   await shot('h3-ending.png', MOB);
@@ -336,7 +400,7 @@ module.exports = async (a) => {
   check('reloadKeepsCleared', kept.c15 && kept.c16 && kept.c17 && kept.tab === 3 && kept.intro === true && kept.world === true);
   check('reloadKeepsRule', JSON.stringify(kept.rule) === JSON.stringify({ kind: 'machine', sensor: 'food', cmp: 'gt', value: 0.015, action: 'stay', otherwise: 'seek' }));
   await a.eval(`__la.show('list');1`); await a.sleep(300);
-  check('reloadTilesCleared', (await ev(`document.querySelectorAll('#dishList .dtile.cleared').length`)) === 3);
+  check('reloadTilesCleared', (await ev(`document.querySelectorAll('#dishList .dtile.cleared').length`)) === 5);
   await W.click('#dishList button[data-dish="16"]'); await a.sleep(400);
   check('reloadD16Brief', (await ev(`__la.info().screen`)) === 'brief');
   await a.eval(`__la.show('adapt');1`); await a.sleep(300);

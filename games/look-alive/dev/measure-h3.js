@@ -1,6 +1,6 @@
 // Measurements for sim3.js (habitat 3 individual-cell simulation).
 // Run: node games/look-alive/dev/measure-h3.js        (about a minute)
-// Every line is PASS or FAIL with the numbers behind it. Seeds 1..10 unless noted. Dish: LookAliveSim3.defaults(); M9 to M13 use dish 17 (A Little Light) from levels3.js.
+// Every line is PASS or FAIL with the numbers behind it. Seeds 1..10 unless noted. Dish: LookAliveSim3.defaults(); M9 to M17 use dish 17 (A Little Light) from levels3.js; M18 to M21 use dishes 20 and 21 (depleting boulders).
 'use strict';
 var path = require('path');
 var L = require(path.join(__dirname, '..', 'sim3.js'));
@@ -284,6 +284,67 @@ function lightRow(o) { return 'wins ' + o.wins + '/' + o.ib.length + ', in band 
   var ok = R[0].wins <= 10 && R[1].wins >= 20 && R[2].wins >= R[1].wins && mean(R[2].lit) >= 1.3 * mean(R[1].lit) && mean(R[3].glare) <= 0.5 * mean(R[2].glare);
   results.push(line(ok, 'M17 dish 17 on seeds 11 to 40 (loose limits: carried at most 10/30, step 1 at least 20/30, step 2 no worse than step 1, 1.3x light, step 3 half the glare)',
     'carried: ' + lightRow(R[0]) + ' | step 1: ' + lightRow(R[1]) + ' | step 2: ' + lightRow(R[2]) + ' | step 3: ' + lightRow(R[3])));
+})();
+
+// ================================================================ dishes 20 and 21 (depleting boulders), M18 to M21
+var D20 = Lv.dish(20), D21 = Lv.dish(21);
+function rule21(sensor, cmp, v, action, other) { return { kind: 'machine', sensor: sensor, cmp: cmp, value: v, action: action, otherwise: other }; }
+function row2(D, b, mut) {   // wins out of 10 seeds, loss causes, boulders eaten to nothing per run, recorded-run time
+  var o = { wins: 0, causes: {}, eaten: [], ms: [], bandFrac: [] };
+  SEEDS.forEach(function (s) {
+    var t0 = process.hrtime.bigint(), r = L.play(D, b, { seed: s, record: true }), ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    o.ms.push(ms); o.eaten.push(r.depleted); o.bandFrac.push(r.v.bandFrac);
+    if (r.v.win) o.wins++;
+    var c = r.autopsy ? r.autopsy.cause : 'win'; o.causes[c] = (o.causes[c] || 0) + 1;
+  });
+  return o;
+}
+function show2(o) { return o.wins + '/10 (' + JSON.stringify(o.causes) + '; boulders eaten per run ' + f2(mean(o.eaten)) + ', in band ' + f2(mean(o.bandFrac)) + ')'; }
+var M20 = {};
+// M18 dish 20: the carried cell (dish 17's answer) eats its boulders to nothing and loses; a slower Pace keeps them
+(function () {
+  var C20 = Lv.carry(20), F20 = Lv.applyFix(C20, D20.fixes[0]);
+  var c = row2(D20, C20), f = row2(D20, F20); M20.c = c; M20.f = f;
+  var r1 = L.play(D20, C20, { seed: 1, record: false });
+  var natives = [], dead = [];
+  SEEDS.forEach(function (s) { var d = JSON.parse(JSON.stringify(D20)); d.agents.start = 0; var r = L.play(d, build([]), { seed: s, record: false }); natives.push(r.H.natives[300] / r.H.natives[0]); dead.push(r.depleted); });
+  results.push(line(10 - c.wins >= 9 && f.wins >= 9, 'M18 dish 20: carried cell loses, Pace 0 wins',
+    'carried loses on ' + (10 - c.wins) + '/10 ' + show2(c) + '; with Pace 0 wins ' + show2(f) + '; seed 1 carried: ' + (r1.autopsy ? r1.autopsy.cause + ' (' + r1.autopsy.text + ')' : 'won') + '; locals alone keep ' + f2(mean(natives)) + ' of their number and eat ' + mean(dead) + ' boulders'));
+})();
+// M19 dish 20: the dead stay dead (no boulder is born after tick 0 on this dish), the haze drains (hp falls before death), and the run says so
+(function () {
+  var r = L.play(D20, Lv.carry(20), { seed: 1 }), bl = r.boulders, born = 0, ok = true, notes = [];
+  bl.forEach(function (b) { if (b.birth > 0) born++; if (!b.hp || b.hp.length !== 301) ok = false; });
+  var dead = bl.filter(function (b) { return b.eaten; }), drained = dead.every(function (b) { var t0 = Math.max(0, b.death), mid = 0, t; for (t = 1; t <= 300; t++) if (b.hp[t] > 0 && b.hp[t] < 1) mid++; return mid >= 3 && b.hp[300] === 0; });
+  var sum0 = 0, sum1 = 0, i; for (i = 0; i < r.foods[0].length; i++) { sum0 += r.foods[0][i]; sum1 += r.foods[Math.floor(r.foods.length / 2)][i]; }
+  var keep = 0, keepC = 0, eatC = 0;
+  SEEDS.forEach(function (sd) { var rf = L.play(D20, Lv.applyFix(Lv.carry(20), D20.fixes[0]), { seed: sd, record: false }), rc = L.play(D20, Lv.carry(20), { seed: sd, record: false }); if (rf.boulders.length - rf.depleted >= 2) keep++; keepC += 3 - rc.depleted; eatC += rc.depleted; });
+  results.push(line(ok && born === 0 && dead.length > 0 && drained && r.depleted === dead.length && keep >= 8, 'M19 dish 20: eaten boulders stay dead and drain over several ticks; the Pace 0 answer leaves at least 2 of 3 alive on 8 of 10 seeds',
+    'Pace 0 answer leaves 2 or 3 boulders alive on ' + keep + '/10 seeds; the carried cell eats ' + f2(eatC / 10) + ' of 3 per run (' + f2(keepC / 10) + ' left alive); '+
+    bl.length + ' boulders, ' + dead.length + ' eaten to nothing (run.depleted ' + r.depleted + '), ' + born + ' born after tick 0, every dead one drained through health values between 0 and 1: ' + drained + '; food haze total tick 0 ' + sum0 + ', mid-run ' + sum1));
+})();
+// M20 dish 21 (exam): every realistic carry loses on 9 of 10 seeds (the designed carry, and the stay-where-fed cell at Pace 2 and Pace 0 with the pump, Light sensing, Colour sensing or no light);
+//     at least two different answers that use the crowd rule win 9 of 10
+(function () {
+  var C21 = Lv.carry(21), stay = C21.reflex, pz = rule21('crowd', 'gt', 2, 'pause', 'seek');
+  function B(pace, parts, rl) { return { pace: pace, slop: 3, metabolism: 'respiration', parts: ['flagellum', 'chemo'].concat(parts), reflex: rl === undefined ? stay : rl }; }
+  var carries = { 'designed carry (Pace 2, pump, stay)': C21 }, bad = [], cparts = [];
+  [2, 0].forEach(function (p) { carries['pump, stay, Pace ' + p] = B(p, ['lightpump']); carries['Light sensing, stay, Pace ' + p] = B(p, ['lightpump', 'lightsense']); carries['Colour sensing, stay, Pace ' + p] = B(p, ['lightcolor']); carries['no light, stay, Pace ' + p] = B(p, []); });
+  Object.keys(carries).forEach(function (k) { var o = row2(D21, carries[k]); M20['carry ' + k] = o; cparts.push(k + ' ' + o.wins + '/10'); if (10 - o.wins < 9) bad.push(k); });
+  var ans = {
+    'pause where crowded (crowd > 2), Pace 5, pump': B(5, ['lightpump'], pz),
+    'pause where crowded (crowd > 2), Pace 4, pump + Light sensing': B(4, ['lightpump', 'lightsense'], pz),
+    'pause where crowded (crowd > 2), Pace 5, pump + Light sensing': B(5, ['lightpump', 'lightsense'], pz)
+  }, solid = [], parts = [];
+  Object.keys(ans).forEach(function (k) { var o = row2(D21, ans[k]); M20[k] = o; parts.push(k + ': ' + show2(o)); if (o.wins >= 9) solid.push(k); });
+  results.push(line(bad.length === 0 && solid.length >= 2, 'M20 dish 21 (exam): every realistic carry loses 9 of 10, at least two crowd-rule answers win 9 of 10',
+    'carries (wins out of 10): ' + cparts.join(', ') + (bad.length ? ' | TOO MANY WINS: ' + bad.join('; ') : '') + ' | answers: ' + parts.join(' | ') + ' | ' + solid.length + ' answers at 9 or more'));
+})();
+// M21 run time of the new dishes (recorded 300-tick runs; same limit as M13)
+(function () {
+  var all = M20.c.ms.concat(M20.f.ms), k; for (k in M20) if (M20[k].ms) all = all.concat(M20[k].ms);
+  var m = mean(all), worst = Math.max.apply(null, all);
+  results.push(line(m < 150, 'M21 dishes 20 and 21: speed', 'mean recorded run ' + m.toFixed(0) + ' ms over ' + all.length + ' runs (worst ' + worst.toFixed(0) + ' ms, target mean under 150)'));
 })();
 
 var fails = results.filter(function (x) { return !x; }).length;

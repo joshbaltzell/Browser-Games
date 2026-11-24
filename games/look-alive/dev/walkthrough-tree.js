@@ -197,7 +197,7 @@ module.exports = async (a) => {
   check('legendHasEvolved', await ev(`!!document.querySelector('#treeLegend .lg.st-evo svg')`));
   await a.eval(`__la.treeSelect('lightsense');1`); await a.sleep(120);
   t = await info();
-  check('stage2UnearnedReason', t.detail.indexOf('Clear a dish with Light-driven pump fitted to evolve this. Offered on dish 17.') >= 0 && /Not yet learned/.test(t.detail));
+  check('stage2UnearnedReason', /Clear a dish with Light-driven pump fitted to evolve this\. Offered on dish(es)? 19\b/.test(t.detail) && /Not yet learned/.test(t.detail));
   check('stage2NoFitButton', await ev(`document.getElementById('treeAct').hidden===true`));
   check('noEvolvedMarkYet', await ev(`document.querySelectorAll('.tv-tile.evolved').length`) === 0);
   if (!MOB) await shot('light-tree.png');
@@ -207,7 +207,7 @@ module.exports = async (a) => {
   check('stage2FitButton', await ev(`(function(){var b=document.getElementById('treeAct');return !b.hidden&&b.textContent==='Fit this'})()`));
   check('stage2EvolvedMark', await ev(`(function(){var t=document.querySelector('.tv-tile[data-id="lightsense"]');var g=t.querySelector('.tv-evo');return t.classList.contains('evolved')&&!g.hidden&&g.querySelector('svg path')!==null})()`));
   await a.eval(`__la.treeSelect('lightcolor');1`); await a.sleep(100);
-  check('stage3StillReason', (await ev(`document.getElementById('treeDetail').textContent.replace(/\\s+/g,' ')`)).indexOf('Clear a dish with Light sensing fitted to evolve this. Offered on dish 17.') >= 0);
+  check('stage3StillReason', (await ev(`document.getElementById('treeDetail').textContent.replace(/\\s+/g,' ')`)).match(/Clear a dish with Light sensing fitted to evolve this\. Offered on dish(es)? 19\b/) !== null);
   await a.eval(`__la.tree(false);__la.setUsed({});1`);
   if (MOB) { await a.eval(`__la.tree(true);1`); await a.sleep(200); await a.eval(`__la.treeSelect('lightsense');1`); await a.sleep(150); await shot('light-tree-390.png'); await a.eval(`__la.tree(false);1`); }
 

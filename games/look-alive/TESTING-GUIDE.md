@@ -83,6 +83,16 @@ Every cell here is simulated one by one. Squares sit still, rods swim, yours are
 - Win dish 17, press "Sampling complete", then **Continue**. **Expect:** five slides, ending with a slowly turning ball of many cells. "Watch the ending" on the dish list plays it again.
 - **Tell me:** does the ending land? Is the creature right, and is the wording right?
 
+## 8. The new dishes (core, 15 minutes)
+
+Dishes are now numbered in play order: the banded water is 11 to 16 and the thick water is 17 to 21.
+
+- **14, Cold Snap.** The water swings hot and cold. Expect: your carried cell fades in the cold spells; Sporulate in the Reflex slot wins.
+- **16, Leaving the River** (exam). Expect: your cell from the exam before loses. One way through: Heat-stable photosystem, a heat card, Twitching pili, and Night fermentation or SOS. Known: a few rarer cells may pass it unchanged.
+- **20, Eat the Clump, Lose the Clump.** Expect: your colony eats the green boulders until they shrink and vanish, then starves or overgrows. Pace 0 wins and leaves most boulders alive.
+- **21, Greetings from the Thick Water** (exam, the last dish). Expect: your cell loses. A rule like WHEN crowd here is above 2, DO pause dividing, plus a higher Pace, wins. Then Continue opens the ending.
+- **Tell me:** is Pace 0 a satisfying answer on 20, or does it feel like "do nothing"? Are the two exams fair?
+
 ## What is placeholder or unfinished, so you do not report it
 
 - Card pictures for Gas vesicles, Chemoreceptor array and the three Light steps are copies of other cards.

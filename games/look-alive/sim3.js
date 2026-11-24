@@ -10,6 +10,12 @@
 // foods: the food grid every 5 ticks (index t/5) as Uint8Array(N*N), row-major, value = min(255, round(food * FOOD_SCALE)); FOOD_SCALE = P3.foodScale (1500, so a byte is 0.00067 food units and 255 is 0.17).
 // Light (dish.agents.light = { r, core, speed, useful, harm, lead }; only dish 17 so far): one bright patch drifts across the dish on a seeded straight path. Inside `core` the light is glare (it kills any scout at `harm` a second at full glare);
 // between `core` and `r` it is useful (a scout with a Light stage gains up to `useful` energy a second). The build's Light stage (lightpump 1, lightsense 2, lightcolor 3) includes the stages before it.
+// Depleting boulders (dish.agents.boulders.deplete = { free, gain, regen, floor }; dishes 20 and 21 only): the food the SCOUTS eat from a boulder's core squares each tick (the locals' eating does not count), as a fraction of its leak, is its "grazing". Grazing above `free` wears the boulder's health down by `gain` times the excess;
+// below `free` it mends by `regen`. A boulder leaks in proportion to its health, so the food haze fades as it is eaten. At health `floor` or under it dies, and a dead boulder stays dead for the run: nothing blooms in its place.
+// run.boulders[i].hp = Float32Array(T + 1) of the boulder's health per tick (1 before it is grazed, 0 once dead), .eaten = true on the ones eaten to death; run.depleted = how many died that way; the autopsy may be 'eaten' (boulders eaten to nothing, then the colony under the floor or gone).
+// dish.agents.natives.still = true: the locals neither divide nor starve (a fixed crowd), so the dish's food goes to the scouts that find it and the share is the scouts' doing alone.
+// dish.agents.startRadius overrides the landing cluster's radius (micrometres).
+// dish.agents.landAt = 'boulder': the scouts land around one of the live boulders (chosen by the seed) and not in the barest ground.
 // run.light = { r, core, x, y } (patch centre per tick, micrometres) or null; H.light and H.glare are the fractions of scouts in useful light and in glare each tick; deaths may have cause 'glare'; the autopsy may be 'burned'.
 (function (root) {
   'use strict';
@@ -126,6 +132,7 @@
     for (key in P3) P[key] = P3[key];
     if (opts.tune) for (key in opts.tune) P[key] = opts.tune[key];
     var A = dish.agents || defaults();
+    if (A.startRadius != null) P.startRadius = A.startRadius;   // dish 20 and 21: a tighter landing cluster
     var T = opts.T || dish.T || 300;
     var seed = opts.seed != null ? opts.seed | 0 : (A.seed != null ? A.seed | 0 : 1);
     var record = opts.record !== false;
@@ -134,7 +141,7 @@
     band = { lo: band.lo == null ? 0.04 : band.lo, hi: band.hi == null ? 0.12 : band.hi, need: band.need == null ? 0.7 : band.need, warm: band.warm == null ? 30 : band.warm };
     var nat = A.natives || { quad: 0, halo: 0, sali: 0 };
     var bo = A.boulders || { count: 0, leak: 0, sigma: 25, lifeMin: 100, lifeMax: 200 };
-    var uniform = !!A.uniform;
+    var natStill = !!nat.still, uniform = !!A.uniform, dep = bo.deplete || null;
     var chn = A.channels || {}, chOn = [chn.growth !== false, chn.regularity !== false, chn.motion !== false];
 
     var N = P.N, R = P.R, W = 2 * R / N, inv = 1 / W, SUB = P.SUB, dt = 1 / SUB, NN = N * N;
@@ -152,6 +159,7 @@
       var cx0 = (i + 0.5) * W - R, cy0 = (j + 0.5) * W - R;
       if (cx0 * cx0 + cy0 * cy0 <= R * R) { mask[j * N + i] = 1; nMask++; }
     }
+    var eatenC = dep ? new Float64Array(NN) : null, nDepleted = 0;
     var food = new Float64Array(NN), tmp = new Float64Array(NN), demand = new Float64Array(NN), cnt = new Int32Array(NN);
 
     // specs by kind: 0 scout, 1 quad, 2 halo, 3 sali
@@ -244,8 +252,13 @@
       }
       for (var q = 0; q < wt.length; q++) wt[q] /= tot;
       var life = bo.lifeMin + (bo.lifeMax - bo.lifeMin) * env();
-      var rec = { x: bx, y: by, sigma: sg, birth: tick, death: null };
-      live.push({ idx: idx, wt: wt, dieAt: tick + life, rec: rec });
+      var rec = { x: bx, y: by, sigma: sg, birth: tick, death: null }, core = null;
+      if (dep) {
+        var wmax = 0; for (q = 0; q < wt.length; q++) if (wt[q] > wmax) wmax = wt[q];
+        core = []; for (q = 0; q < wt.length; q++) if (wt[q] >= 0.25 * wmax) core.push(idx[q]);
+        rec.hp = new Float32Array(T + 1); rec.hp.fill(1);
+      }
+      live.push({ idx: idx, wt: wt, dieAt: tick + life, rec: rec, core: core, hp: 1 });
       boulders.push(rec);
     }
     var tickNow = -P.preroll;
@@ -423,10 +436,11 @@
         var up = sp2.up + (swim[i] ? sp2.swimUp : 0);
         if (a2 === 3) up *= 0.5;
         e[i] += dem[i] * sh * sp2.yld - up * dt;
+        if (dep && kind[i] === 0) eatenC[kk] += dt;   // only the scouts wear a depleting boulder down (the locals have kept these boulders for ever): eatenC holds scout-seconds per square
         if (lightStage && kind[i] === 0 && lu[i] > 0) e[i] += lightE * lu[i] * dt;   // pigment: a little energy in useful light (natives carry their own and are left out)
         if (LA && kind[i] === 0 && lg[i] > 0 && rng() < glareHarm * lg[i] * dt) { e[i] = -2; dead++; }   // the white middle burns any scout, pigmented or not
-        else if (e[i] <= 0) { e[i] = -1; dead++; }
-        else if (e[i] >= thr[i] && a2 !== 2 && a2 !== 3) divs.push(i);
+        else if (e[i] <= 0) { if (natStill && kind[i] > 0) e[i] = 0.02; else { e[i] = -1; dead++; } }
+        else if (e[i] >= thr[i] && a2 !== 2 && a2 !== 3 && !(natStill && kind[i] > 0)) divs.push(i);
       }
       for (kk = 0; kk < NN; kk++) { var dmk = demand[kk]; if (dmk > 0) { var f0 = food[kk]; food[kk] = dmk > f0 ? 0 : f0 - dmk; } }
       for (var q = 0; q < divs.length; q++) {
@@ -473,10 +487,25 @@
       else {
         for (var q = live.length - 1; q >= 0; q--) {
           var L = live[q];
+          if (dep) {
+            var bite = 0, cc;
+            for (cc = 0; cc < L.core.length; cc++) bite += eatenC[L.core[cc]];
+            var gz = bite;
+            if (gz > dep.free) L.hp -= dep.gain * (gz - dep.free) / dep.free; else L.hp += dep.regen * (1 - L.hp);
+            if (L.hp > 1) L.hp = 1;
+            var tt = tickNow + 1;
+            if (L.hp <= (dep.floor || 0)) {
+              L.hp = 0; L.rec.death = tickNow; L.rec.eaten = true; nDepleted++;
+              for (var z = tt < 0 ? 0 : tt; z <= T; z++) L.rec.hp[z] = 0;
+              live.splice(q, 1); continue;
+            }
+            if (tt >= 0 && tt <= T) L.rec.hp[tt] = L.hp;
+          }
           if (tickNow >= L.dieAt) { L.rec.death = tickNow; live.splice(q, 1); bloom(tickNow); continue; }
-          var idx = L.idx, wt = L.wt, amt = bo.leak;
+          var idx = L.idx, wt = L.wt, amt = dep ? bo.leak * L.hp : bo.leak;
           for (ii = 0; ii < idx.length; ii++) food[idx[ii]] += amt * wt[ii];
         }
+        if (dep) eatenC.fill(0);
       }
     }
 
@@ -575,6 +604,7 @@
         if (sum < best) { best = sum; sx = cx; sy = cy; }
       }
     })();
+    if (A.landAt === 'boulder' && live.length) { var lb = live[Math.floor(rng() * live.length)].rec; sx = lb.x * 0.9; sy = lb.y * 0.9; }   // dish 20 and 21: the scouts land in the clump itself (the dish's own field; no other dish sets it)
     if (LA) { lPath = lightPath(seed, T, R, LA, sx, sy); lightPos(0); }
     var nStart = A.start == null ? 16 : A.start;
     for (i = 0; i < nStart; i++) {
@@ -594,7 +624,7 @@
     // boulder clocks: the pre-roll ran from tick -preroll, so absolute ticks line up with tickNow = 0 here
     for (i = 0; i < T; i++) doTick(true);
 
-    var run = { dish: dish, build: b, T: T, seed: seed, H: H, frames: frames, foods: foods, boulders: boulders, deaths: deaths, v: null, autopsy: null, P: P, contrib: contrib, peakCh: peakCh, dCause: dCause, band: band, uniform: uniform, light: LA ? { r: LA.r, core: LA.core, x: lPath.x, y: lPath.y } : null };
+    var run = { dish: dish, build: b, T: T, seed: seed, H: H, frames: frames, foods: foods, boulders: boulders, deaths: deaths, v: null, autopsy: null, P: P, contrib: contrib, peakCh: peakCh, dCause: dCause, band: band, uniform: uniform, natStill: natStill, depleted: nDepleted, light: LA ? { r: LA.r, core: LA.core, x: lPath.x, y: lPath.y } : null };
     run.v = verdict(run, exposedAt, firstStage1);
     run.autopsy = run.v.win ? null : autopsy(run, exposedAt, firstStage1);
     return run;
@@ -614,12 +644,14 @@
     var H = run.H, T = run.T, band = run.band, t, i;
     if (exposedAt >= 0) {
       var c = run.contrib, ch = c[2] >= c[1] && c[2] >= c[0] ? 2 : c[0] >= c[1] ? 0 : 1, name = ['growth', 'regularity', 'motion'][ch], text;
+      if (run.natStill && ch !== 0 && c[0] > 0 && run.peakCh[ch] < STAT3.chanSafe) { ch = 0; name = 'growth'; }   // fixed locals: when the top tell's own bar still reads safe (its peak is under the safe line) and growth added to it, blame growth, the bar that is out of its zone
       var mS = 0, mN = 0, nn = 0;
       for (t = Math.max(1, exposedAt - 20); t <= exposedAt; t++) { mS += H.moveS[t]; mN += H.moveN[t]; nn++; }
       mS /= nn; mN /= nn;
       if (ch === 2) text = 'The guards noticed how the colony moved: about ' + pct(mS) + ' of your cells were moving, against ' + pct(mN) + ' of the natives, and they responded at tick ' + exposedAt + '.';
       else if (ch === 0) text = 'The colony grew too fast: its share reached ' + pct(H.share[exposedAt]) + ' of all cells (the line is ' + pct(band.hi) + ') and the guards responded at tick ' + exposedAt + '.';
       else text = 'The colony divided too much like clockwork, and the guards responded at tick ' + exposedAt + '.';
+      if (run.depleted > 0) text += ' It also ate ' + run.depleted + ' of ' + ((run.dish && run.dish.agents && run.dish.agents.boulders && run.dish.agents.boulders.count) || run.boulders.length) + ' boulders to nothing.';
       return { cause: 'exposed:' + name, from: firstStage1 >= 0 ? firstStage1 : exposedAt, to: exposedAt, text: text };
     }
     var extinctAt = -1, above = 0, below = 0, firstOut = -1, lastOut = -1;
@@ -637,6 +669,12 @@
       for (t = T; t >= band.warm; t--) if (H.share[t] >= band.lo) { fromB = t; break; }
       var toB = extinctAt >= 0 ? extinctAt : T;
       return { cause: 'burned', from: fromB, to: toB, text: 'Your scouts burned in the white middle of the bright place: ' + dc.glare + ' were lost to the glare, ' + dc.starved + ' starved, and the share ' + (extinctAt >= 0 ? 'fell to nothing by tick ' + extinctAt : 'sank to ' + pct(H.share[T]) + ' (the floor is ' + pct(band.lo) + ')') + '.' };
+    }
+    if (run.depleted > 0 && (extinctAt >= 0 || finalBelow || below > above)) {
+      // boulders the scouts fed on were eaten to nothing (dishes with depleting boulders), and the colony fell under the floor or died out
+      var fromE = band.warm, toE = extinctAt >= 0 ? extinctAt : T, nB = (run.dish && run.dish.agents && run.dish.agents.boulders && run.dish.agents.boulders.count) || run.boulders.length;
+      for (t = T; t >= band.warm; t--) if (H.share[t] >= band.lo) { fromE = t; break; }
+      return { cause: 'eaten', from: fromE, to: toE, text: 'Your colony ate the boulders it fed on: ' + run.depleted + ' of ' + nB + ' were eaten to nothing, and the food around them ran out. The share ' + (extinctAt >= 0 ? 'fell to nothing by tick ' + extinctAt : 'sank to ' + pct(H.share[T]) + ' (the floor is ' + pct(band.lo) + ')') + '.' };
     }
     var fromOut = firstOut < 0 ? band.warm : firstOut;
     if (extinctAt >= 0 || (finalBelow && mostStarved)) {
@@ -762,7 +800,7 @@
       if (H.susp.motion[t] > peakMot) { peakMot = H.susp.motion[t]; dirPeak = dirNow || 1; }
     }
     shares.sort(function (a, b) { return a - b; });
-    return { n: n, inBand: inb, bandFrac: n ? inb / n : 0, above: above, below: below, rf: n ? floorNoGuards / n : 0, median: shares.length ? shares[Math.floor(shares.length / 2)] : 0,
+    return { n: n, inBand: inb, bandFrac: n ? inb / n : 0, above: above, below: below, rf: n ? floorNoGuards / n : 0, median: shares.length ? shares[Math.floor(shares.length / 2)] : 0, p70: shares.length ? shares[Math.min(shares.length - 1, Math.floor(shares.length * 0.7))] : 0, p30: shares.length ? shares[Math.floor(shares.length * 0.3)] : 0,
       peakReg: peakReg, peakMot: peakMot, dirPeak: dirPeak || 1, curReg: curReg, curMot: curMot, curGro: curGro, dirNow: dirNow || 1, alive: H.scouts[upTo] > 0 && H.natives[upTo] > 0, share: H.share[upTo] };
   }
   function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
@@ -786,6 +824,7 @@
       if (wiped || v < z[0]) { state = 'low'; verdict = 'Too far from food: your scouts will starve'; if (wiped) v = 0; }
     } else if (id === 'growth') {
       var sh = final ? a.median : a.share;
+      if (final && run.natStill) sh = a.above > a.below ? a.p70 : a.below > a.above ? a.p30 : a.median;   // locals that never divide make the share drift one way, so the median hides a run that spent over 30% of its time out of the band: read the share it kept 70% of the time (the same p70 / p30 the field model's forecast uses)
       if (final) {
         // The marker always shows the measured median share. The state comes from the rule (alive, and in the band for `need` of the run), so a marker can sit inside the zone on a colony that still failed the rule.
         if (!a.alive) { state = 'low'; }
@@ -815,7 +854,7 @@
     }
     return { id: id, value: r3(clamp01(v)), safe: z, state: state, verdict: verdict };
   }
-  var CAUSE_STAT3 = { burned: 'light', starved: 'reach', below: 'growth', overgrew: 'growth', band: 'growth', 'exposed:growth': 'growth', 'exposed:regularity': 'natural', 'exposed:motion': 'motion' };
+  var CAUSE_STAT3 = { eaten: 'reach', burned: 'light', starved: 'reach', below: 'growth', overgrew: 'growth', band: 'growth', 'exposed:growth': 'growth', 'exposed:regularity': 'natural', 'exposed:motion': 'motion' };
   // Same numbers as sim.js forecastOf, for a finished agent run: the figures the stat bars read, plus the four stats of this dish.
   function forecastOf(run, D, S) {
     var a = analyse(run, run.T), v = run.v, cause = (run.autopsy3 || run.autopsy) ? (run.autopsy3 || run.autopsy).cause : null, forcedId = v.win ? null : CAUSE_STAT3[cause] || 'growth';
@@ -835,6 +874,7 @@
       case 'starved': verb = 'was too low'; tail = 'Your scouts could not reach the food and starved by tick ' + a.to + '.'; break;
       case 'below': verb = 'was too slow'; tail = 'You faded out of the band by tick ' + a.from + '.'; break;
       case 'overgrew': verb = 'was too fast'; tail = 'You took over the dish by tick ' + a.from + '.'; high = true; break;
+      case 'eaten': verb = 'was too low'; tail = 'The food was gone by tick ' + a.to + '.'; break;
       case 'burned': verb = 'was too harsh'; tail = 'Your scouts burned in the white middle of the bright place, and the colony was gone from the band by tick ' + a.to + '.'; high = true; break;
       case 'band': verb = 'did not hold'; tail = 'You spent too little of the run inside the band.'; break;
       case 'exposed:growth': verb = 'was too fast'; tail = 'You took over the dish and the guards noticed by tick ' + a.to + '.'; high = true; break;

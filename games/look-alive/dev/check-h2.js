@@ -1,4 +1,4 @@
-// Run: node games/look-alive/dev/check-h2.js         (habitat 2, dishes 11 to 14: checks H0 to H10)
+// Run: node games/look-alive/dev/check-h2.js         (habitat 2, dishes 11 to 14, 18 and 19: checks H0 to H11)
 //      node games/look-alive/dev/check-h2.js quick   (smaller samples, for tuning)
 // One PASS or FAIL line per property, with numbers. Does not change game code.
 const path = require('path'), cp = require('child_process');
@@ -8,7 +8,7 @@ global.LookAliveLevels = require(path.join(G, 'levels.js'));
 require(path.join(G, 'levels2.js'));
 const Sim = require(path.join(G, 'sim.js')), Lv = global.LookAliveLevels, Cards = global.LookAliveCards;
 const B = require('./bots.js');
-const P = Lv.PLANET, QUICK = process.argv[2] === 'quick', IDS = [11, 12, 13, 14];
+const P = Lv.PLANET, QUICK = process.argv[2] === 'quick', IDS = [11, 12, 13, 18, 14, 19];
 const N3 = QUICK ? 80 : 400, N6 = QUICK ? 60 : 300, WIN_CAP = QUICK ? 10 : 40;
 const t0 = Date.now(), f = (x, d) => x.toFixed(d == null ? 2 : d), pc = x => f(x * 100, 1) + '%';
 let fails = 0, nLines = 0;
@@ -33,8 +33,8 @@ console.log('Look Alive habitat 2 checks: dishes ' + IDS.join(', ') + (QUICK ? '
 }
 
 // ---- H1. the carried cell loses with its cause
-const H1CAUSE = { 11: ['cooked'], 12: ['grazed'], 13: ['bust'], 14: null };
-const seenCauses = { 11: new Set(), 12: new Set(), 13: new Set(), 14: new Set() };
+const H1CAUSE = { 11: ['cooked'], 12: ['grazed'], 13: ['bust'], 18: ['below', 'cooked', 'starved'], 14: null, 19: null };
+const seenCauses = { 11: new Set(), 12: new Set(), 13: new Set(), 14: new Set(), 18: new Set(), 19: new Set() };
 {
   const lines = []; let ok = true;
   IDS.forEach(id => {
@@ -71,7 +71,7 @@ const h2Winners = [];   // { id, build }
 }
 
 // ---- H3. breadth: seeded random legal builds at 32 (generator copied from the prototype sample.js)
-const winners = { 11: [], 12: [], 13: [], 14: [] }, rate = {}, tried3 = {};
+const winners = { 11: [], 12: [], 13: [], 14: [], 18: [], 19: [] }, rate = {}, tried3 = {};
 {
   const mk = (pace, slop, metabolism, parts, reflex) => ({ pace, slop, metabolism, parts, reflex: reflex || null });
   const bio = id => ({ kind: 'bio', id }), rule = (sensor, cmp, value, action) => ({ kind: 'machine', sensor, cmp, value, action });
@@ -99,24 +99,36 @@ const winners = { 11: [], 12: [], 13: [], 14: [] }, rate = {}, tried3 = {};
     }
     rate[id] = w / tried; tried3[id] = tried;
     const pats = new Set(winners[id].map(pattern));
-    let good = w >= 3 && pats.size >= 2; if (id === 14) good = good && rate[id] < 0.03;
+    let good = w >= 3 && pats.size >= 2; if (id === 19) good = rate[id] < 0.03; else if (id === 14) good = good && rate[id] < 0.03;   // 19 is narrow (its way through is a particular family of cells): H3b counts that family
     ok = ok && good;
-    lines.push(id + ': ' + w + ' of ' + tried + ' win (' + pc(w / tried) + '), ' + pats.size + ' slot patterns' + (good ? '' : ' [FAIL' + (w < 3 ? ' <3 winners' : '') + (pats.size < 2 ? ' <2 patterns' : '') + (id === 14 && rate[id] >= 0.03 ? ' rate >= 3%' : '') + ']'));
+    lines.push(id + ': ' + w + ' of ' + tried + ' win (' + pc(w / tried) + '), ' + pats.size + ' slot patterns' + (good ? '' : ' [FAIL' + (w < 3 ? ' <3 winners' : '') + (pats.size < 2 ? ' <2 patterns' : '') + ((id === 14 || id === 19) && rate[id] >= 0.03 ? ' rate >= 3%' : '') + ']'));
   });
-  result(ok, 'H3 BREADTH (>=3 winners and >=2 slot patterns per dish, dish 14 under 3%)', lines.join('; '));
+  result(ok, 'H3 BREADTH (>=3 winners and >=2 slot patterns per dish, exams 14 and 19 under 3%)', lines.join('; '));
   lap('H3');
+}
+
+// ---- H3b. dish 19 has several winners of its own: the family its intended way through names (a heat-stable Power card, a heat card, Twitching pili, a dark reflex), Pace 3 or 4, Sloppiness 4 or 6
+{
+  const mk = (pace, slop, metabolism, parts, reflex) => ({ pace, slop, metabolism, parts, reflex: reflex || null });
+  const D = Lv.dish(19), fam = [];
+  ['chaperones', 'polyamines', 'tetraether'].forEach(h => ['nightferm', 'sos'].forEach(r => [3, 4].forEach(p => [4, 6].forEach(sl => fam.push(mk(p, sl, 'heatps', [h, 'pili'], { kind: 'bio', id: r }))))));
+  const ok = fam.filter(b => Sim.validate(D, b).ok), win = ok.filter(b => Sim.verdict(play(19, b, 32)).win && Sim.verdict(play(19, b, 64)).win);
+  win.forEach(b => winners[19].push(b));
+  const pats = new Set(win.map(b => b.parts[0] + '|' + b.reflex.id));
+  result(win.length >= 3 && pats.size >= 2, 'H3b DISH 19 HAS WINNERS OF ITS OWN', win.length + ' of ' + ok.length + ' cells of the intended family win at 32 and 64 (' + pats.size + ' distinct heat card and reflex pairs): ' + win.slice(0, 4).map(label).join(' | '));
+  lap('H3b');
 }
 
 // ---- H4. no build wins all four
 {
   const cand = []; IDS.forEach(id => winners[id].forEach(b => cand.push(b))); h2Winners.forEach(w => cand.push(w.build));
-  let legal4 = 0, best = 0, all4 = 0; const w4 = []; const hist = [0, 0, 0, 0, 0], seen = new Set();
+  let legal4 = 0, best = 0, all4 = 0; const w4 = []; const hist = [0, 0, 0, 0, 0, 0, 0], seen = new Set();
   cand.forEach(b => {
     const k = JSON.stringify(b); if (seen.has(k)) return; seen.add(k);
     if (!IDS.every(id => Sim.validate(Lv.dish(id), b).ok)) return; legal4++;
-    const c = IDS.filter(id => Sim.verdict(play(id, b, 32)).win).length; hist[c]++; if (c > best) best = c; if (c === 4) { all4++; w4.push(label(b)); }
+    const c = IDS.filter(id => Sim.verdict(play(id, b, 32)).win).length; hist[c]++; if (c > best) best = c; if (c === IDS.length) { all4++; w4.push(label(b)); }
   });
-  result(all4 === 0, 'H4 NO BUILD WINS ALL FOUR', cand.length + ' H2/H3 winners, ' + seen.size + ' distinct, ' + legal4 + ' legal on all four (dish 14 energy 3 limits this); wins out of 4 among them: ' + hist.map((n, i) => i + ':' + n).join(' ') + '; best ' + best + (w4.length ? '; WIN ALL FOUR: ' + w4.join(' | ') : '') + (legal4 === 0 ? ' (VACUOUS: none legal on all four)' : ''));
+  result(all4 === 0, 'H4 NO BUILD WINS ALL SIX', cand.length + ' H2/H3 winners, ' + seen.size + ' distinct, ' + legal4 + ' legal on all six (the energy 3 exams limit this); wins out of 6 among them: ' + hist.map((n, i) => i + ':' + n).join(' ') + '; best ' + best + (w4.length ? '; WIN ALL FOUR: ' + w4.join(' | ') : '') + (legal4 === 0 ? ' (VACUOUS: none legal on all six)' : ''));
   lap('H4');
 }
 
@@ -193,7 +205,7 @@ const winners = { 11: [], 12: [], 13: [], 14: [] }, rate = {}, tried3 = {};
 // ---- H9. dial smoothness (dishes 11 to 13, winners, one step moves the final share under 5 points)
 {
   const lines = []; let ok = true;
-  [11, 12, 13].forEach(id => {
+  [11, 12, 13, 18].forEach(id => {
     const ws = h2Winners.filter(w => w.id === id).map(w => w.build).concat(winners[id].slice(0, WIN_CAP));
     let steps = 0, bad = 0, badW = 0, worst = 0, at = '';
     ws.forEach(b => {
@@ -208,31 +220,31 @@ const winners = { 11: [], 12: [], 13: [], 14: [] }, rate = {}, tried3 = {};
   lap('H9');
 }
 
-// ---- H10. tips: every cause seen has a tip of its own (11 to 13); dish 14 tips name no winning card
+// ---- H10. tips: every cause seen has a tip of its own (11 to 13 and 18); exam tips (14 and 19) name no winning card
 {
   const lines = []; let ok = true;
-  [11, 12, 13].forEach(id => {
+  [11, 12, 13, 18].forEach(id => {
     const D = Lv.dish(id), cs = [...seenCauses[id]].filter(Boolean), bad = cs.filter(c => !Object.prototype.hasOwnProperty.call(D.tips, c) || Lv.tip(D, c) === D.tips.other);
     ok = ok && bad.length === 0; lines.push(id + ': causes ' + (cs.join(',') || 'none') + (bad.length ? ' MISSING OWN TIP: ' + bad.join(',') : ' all have a tip'));
   });
-  {
-    const D = Lv.dish(14), cs = [...seenCauses[14]].filter(Boolean);
-    const ids = new Set(); winners[14].forEach(b => { b.parts.forEach(p => ids.add(p)); if (b.reflex && b.reflex.kind === 'bio') ids.add(b.reflex.id); });
-    h2Winners.filter(w => w.id === 14).forEach(w => { w.build.parts.forEach(p => ids.add(p)); });
+  [14, 19].forEach(XID => {
+    const D = Lv.dish(XID), cs = [...seenCauses[XID]].filter(Boolean);
+    const ids = new Set(); winners[XID].forEach(b => { b.parts.forEach(p => ids.add(p)); if (b.reflex && b.reflex.kind === 'bio') ids.add(b.reflex.id); });
+    h2Winners.filter(w => w.id === XID).forEach(w => { w.build.parts.forEach(p => ids.add(p)); });
     const nm = id => { try { const c = Cards.part(id); return (c && (c.name || c.label)) || id; } catch (e) { return id; } };
     const all = cs.map(c => Lv.tip(D, c).join(' ')).concat(Object.keys(D.tips).map(k => D.tips[k].join(' '))).join(' ').toLowerCase();
     const named = [...ids].filter(id => all.indexOf(String(nm(id)).toLowerCase()) >= 0 || all.indexOf(id.toLowerCase()) >= 0);
     const onlyOther = cs.filter(c => c !== 'other' && !Object.prototype.hasOwnProperty.call(D.tips, c));
     ok = ok && named.length === 0 && ids.size > 0;
-    lines.push('14: causes ' + (cs.join(',') || 'none') + '; winner cards checked ' + ids.size + ' (' + [...ids].join(',') + '); named in any tip: ' + (named.join(',') || 'none') + (ids.size === 0 ? ' (VACUOUS: no dish 14 winners found)' : '') + (onlyOther.length ? '; causes on the generic tip: ' + onlyOther.join(',') : ''));
-  }
+    lines.push(XID + ': causes ' + (cs.join(',') || 'none') + '; winner cards checked ' + ids.size + ' (' + [...ids].join(',') + '); named in any tip: ' + (named.join(',') || 'none') + (ids.size === 0 ? ' (VACUOUS: no dish 14 winners found)' : '') + (onlyOther.length ? '; causes on the generic tip: ' + onlyOther.join(',') : ''));
+  });
   result(ok, 'H10 TIPS', lines.join('; '));
   lap('H10');
 }
 
 // ---------------------------------------------------------------- H11 the dials alone never win
 // The carried cell with only Pace and Sloppiness changed (all 81 settings, no card touched) must lose every habitat-2 dish at the forecast grid and at 64x64:
-// a dish that falls to "turn the Pace up" teaches nothing about its slot. (Found by the owner in play: Pace alone won dishes 12, 13 and 14.)
+// a dish that falls to "turn the Pace up" teaches nothing about its slot. (Found by the owner in play: Pace alone won dishes 12, 13 and 14; dishes 18 and 19 are held to it too.)
 {
   const lines = []; let ok = true;
   IDS.forEach(id => {
@@ -243,6 +255,19 @@ const winners = { 11: [], 12: [], 13: [], 14: [] }, rate = {}, tried3 = {};
   });
   result(ok, 'H11 THE DIALS ALONE NEVER WIN (carried cell, every Pace and Sloppiness)', lines.join('; '));
   lap('H11');
+}
+
+// ---------------------------------------------------------------- H12 the exam 19 is not won by the player's own dish 14 winner
+// A player arrives at dish 19 with the cell that won dish 14. Every dish 14 winner found above (random breadth plus fixes), the dish 19 carried cell, and the cell the browser walkthrough
+// finds for dish 14 must LOSE dish 19 at the forecast grid and at 64x64, while dish 19 still has winners of its own (H3 counted them).
+{
+  const set = []; winners[14].forEach(b => set.push(['rand', b])); h2Winners.filter(w => w.id === 14).forEach(w => set.push(['fix', w.build]));
+  set.push(['carry19', Lv.carry(19)]);
+  set.push(['walkthrough14', B.build(3, 6, 'fermentation', ['chaperones', 'filament'], { kind: 'bio', id: 'sporulate' })]);
+  let won = 0; const bad = [];
+  set.forEach(([src, b]) => { const legal = Sim.validate(Lv.dish(19), b).ok; [32, 64].forEach(n => { if (legal && Sim.verdict(play(19, b, n)).win) { won++; bad.push(src + ' ' + label(b) + ' @' + n); } }); });
+  result(won === 0 && winners[19].length >= 3, 'H12 DISH 14 WINNERS LOSE DISH 19', set.length + ' cells (' + winners[14].length + ' random dish 14 winners, ' + h2Winners.filter(w => w.id === 14).length + ' fixes, the dish 19 carried cell, the walkthrough cell) at 32 and 64: ' + won + ' wins' + (bad.length ? ' [' + bad.slice(0, 4).join(' | ') + ']' : '') + '; dish 19 has ' + winners[19].length + ' known winners (random breadth found ' + Math.round((rate[19] || 0) * tried3[19]) + ' of ' + tried3[19] + ', the rest are the family of H3b)');
+  lap('H12');
 }
 
 console.log('\n' + (nLines - fails) + ' of ' + nLines + ' lines pass' + ' (' + ((Date.now() - t0) / 1000).toFixed(0) + ' s)');
