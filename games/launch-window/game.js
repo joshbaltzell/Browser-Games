@@ -1,5 +1,6 @@
 (function () {
   'use strict';
+  var COARSE = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);   // phones: name the on-screen buttons, not keys
   var Sim = LaunchSim, TICKS = Sim.TICKS, UNIT = Sim.UNIT, STEP = 1000 / 60;
   var PXU = 15; // sim units per world pixel (64 px tile = 960 units)
 
@@ -688,7 +689,7 @@
     if (S.touch && play_) drawTouch(ctx);
     if (S.phase === 'ready' && !S.paused && S.mode === 'play') {
       pill(ctx, 440, 548, 400, 36);
-      txt(ctx, S.touch ? 'Touch a control to start the clock' : 'Press a move key to start the clock', 640, 566, '500 16px ' + F_UI, COLORS.cream, 'center', 'middle');
+      txt(ctx, (S.touch || COARSE) ? 'Touch a control to start the clock' : 'Press a move key to start the clock', 640, 566, '500 16px ' + F_UI, COLORS.cream, 'center', 'middle');
     }
     if (S.paused) {
       pill(ctx, 380, 62, 520, 36);
@@ -758,7 +759,7 @@
     txt(ctx, 'Launch Window', 52, 134, 'italic 700 74px ' + F_UI, COLORS.cream);
     ctx.fillStyle = COLORS.yellow; ctx.fillRect(52, 148, 520, 5);
     txt(ctx, '30 seconds to launch. Your earlier attempts will help.', 52, 182, '500 21px ' + F_UI, COLORS.cream);
-    txt(ctx, 'Move with arrows or A/D, hold Space to work. Hold Q to rewind, P to pause.', 52, 210, '500 16px ' + F_UI, 'rgba(243,234,216,0.8)');
+    txt(ctx, (S.touch || COARSE) ? 'Bottom buttons: arrows move, hold ACTION to work, REW rewinds.' : 'Move with arrows or A/D, hold Space to work. Hold Q to rewind, P to pause.', 52, 210, '500 16px ' + F_UI, 'rgba(243,234,216,0.8)');
     pill(ctx, 1060, 30, 196, 80, 'rgba(32,28,52,0.78)', 12);
     drawNum(ctx, 'T−30', 1084, 90, 52, COLORS.cream);
     S.buttons = [];
