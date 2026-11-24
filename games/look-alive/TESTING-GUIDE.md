@@ -76,6 +76,13 @@ Every cell here is simulated one by one. Squares sit still, rods swim, yours are
 - Hold "Hold: previous run", then press Result or leave the dish while holding. **Expect:** the dish never stays stuck on the old run.
 - On dish 16, put the Empty choice back in the Reflex slot. **Expect:** it reads "take it off" and removes the rule.
 
+## 7. Mystery dishes and the ending (core, 5 minutes)
+
+- Clear saved progress. **Expect:** only dish 1 is shown; every later dish is a "?" tile, and the two world tabs show "?".
+- Clear dish 1, go back to the list. **Expect:** dish 2 flips over once to show its name and picture.
+- Win dish 17, press "Sampling complete", then **Continue**. **Expect:** five slides, ending with a slowly turning ball of many cells. "Watch the ending" on the dish list plays it again.
+- **Tell me:** does the ending land? Is the creature right, and is the wording right?
+
 ## What is placeholder or unfinished, so you do not report it
 
 - Card pictures for Gas vesicles, Chemoreceptor array and the three Light steps are copies of other cards.
