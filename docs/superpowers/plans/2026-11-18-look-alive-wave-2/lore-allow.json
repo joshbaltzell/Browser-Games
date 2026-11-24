@@ -11,6 +11,7 @@
   "Picrophilus"
  ],
  "alsoAllowed": {
+  "Volvox": "the ending (games/look-alive/game.js): the many-celled creature is Volvox-like; named in the art description only if shown",
   "Picrophilus torridus": "the species named on notebook page 1",
   "Helicobacter": "genus of a native; cover-name genus in game.js coverName",
   "Proteus": "genus of a native",

@@ -151,7 +151,7 @@
 
   var S = {
     screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null, otherwise: null },
-    cleared: load('cleared2', {}), used: load('used3', {}), evolved: load('evolved3', {}), evo: null, evoShown: false, pathSel: null, pathMore: null, pathFocus: null, evolvedNew: [], grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, introWorld: 1, afterIntro: 'list', worldView: 1, worldTab: (function () { var v = load('worldTab', 1); return v === 2 || v === 3 ? v : 1; })(), seenIntroB: load('introB', false), seenWorldB: load('worldB', false), seenIntroC: load('introC', false), seenWorldC: load('worldC', false), unlocked: load('unlocked2', false),
+    cleared: load('cleared2', {}), used: load('used3', {}), evolved: load('evolved3', {}), evo: null, evoShown: false, pathSel: null, pathMore: null, pathFocus: null, evolvedNew: [], grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, introWorld: 1, afterIntro: 'list', worldView: 1, worldTab: (function () { var v = load('worldTab', 1); return v === 2 || v === 3 ? v : 1; })(), seenIntroB: load('introB', false), seenWorldB: load('worldB', false), seenIntroC: load('introC', false), seenWorldC: load('worldC', false), unlocked: load('unlocked2', false), revealed: load('revealed', null), endAt: 0,
     slot: null, layer: 0, preview: null, pointed: false,
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
@@ -229,12 +229,13 @@
   // ---------------------------------------------------------------- screens
   function show(name) {
     compareSet(false);
-    if (name !== 'list' && name !== 'world' && name !== 'intro' && S.dish == null) name = 'list';
+    if (name !== 'list' && name !== 'world' && name !== 'intro' && name !== 'ending' && S.dish == null) name = 'list';
     if (name === 'run' && !S.run) name = 'adapt';
     S.screen = name; hidePop();
-    ['intro', 'list', 'world', 'brief', 'adapt', 'run'].forEach(function (s) { $('screen-' + s).classList.toggle('on', s === name); });
+    if (name !== 'ending' && END.on) endStop();
+    ['intro', 'ending', 'list', 'world', 'brief', 'adapt', 'run'].forEach(function (s) { $('screen-' + s).classList.toggle('on', s === name); });
     var d = dishObj();
-    $('dishTitle').textContent = d && name !== 'list' && name !== 'world' && name !== 'intro' ? 'Dish ' + d.id + ': ' + d.title : '';
+    $('dishTitle').textContent = d && name !== 'list' && name !== 'world' && name !== 'intro' && name !== 'ending' ? 'Dish ' + d.id + ': ' + d.title : '';
     if (name === 'intro') renderIntro();
     if (name === 'list') renderList();
     if (name === 'world') renderWorld();
@@ -243,6 +244,35 @@
     if (name === 'run') enterRun();
     refresh();
   }
+
+  // ---------------------------------------------------------------- the ending: five slides over a drawn picture (ending.js)
+  var ENDING = [
+    ['Cover held', 'Three times.', 'We passed in the warm crowd, in the hot river and in the thick water. Every lab stamp came back the same: cover held.'],
+    ['Balance', 'Why they let us stay.', 'None of the locals takes more than its place gives back. Too many, too fast, and the place dies with them. We learned to live the same way. That is why they let us stay.'],
+    ['The weather', 'It was never weather.', 'The mountain that twitched. The slow thing that wore the layers away. The bright place that drifts. We logged them all as weather. We were wrong.'],
+    ['Pull back', 'They are made of cells like us.', 'We turned our eyes up, past the crowd, past the dish. The big still things are not mountains. They are thousands of cells like us, holding together and agreeing. One life, made of many.'],
+    ['Our next study', 'Many cells. One life.', 'We do not know how so many agree. We intend to find out.']
+  ];
+  var END = { on: false, pic: null };
+  function renderEnding() {
+    var n = S.endAt, b = ENDING[n];
+    $('endKicker').textContent = b[0] + ' · ' + (n + 1) + ' of ' + ENDING.length; $('endTitle').textContent = b[1]; $('endText').textContent = b[2];
+    var dots = ''; for (var i = 0; i < ENDING.length; i++) dots += '<i' + (i === n ? ' class="on"' : '') + '></i>';
+    $('endDots').innerHTML = dots;
+    $('endBack').disabled = n === 0; $('endLeave').hidden = n === ENDING.length - 1; $('endGo').textContent = n === ENDING.length - 1 ? 'Back to the dish list' : 'Next';
+    if (END.pic) END.pic.setSlide(n);
+  }
+  function openEnding() {
+    S.endAt = 0; show('ending'); renderEnding();
+    if (!END.pic && window.LookAliveEnding) END.pic = window.LookAliveEnding.create($('endCanvas'), reduced);
+    if (END.pic) { END.on = true; END.pic.setSlide(0); END.pic.start(); }
+  }
+  function endStop() { END.on = false; if (END.pic) END.pic.stop(); }
+  function endNext() { if (S.endAt < ENDING.length - 1) { S.endAt++; renderEnding(); } else endDone(); }
+  function endBack() { if (S.endAt > 0) { S.endAt--; renderEnding(); } }
+  function endDone() { save('endingSeen', true); show('list'); }
+  function endLeave() { show('list'); }
+  window.addEventListener('resize', function () { if (S.screen === 'ending' && END.pic) END.pic.redraw(); });
 
   // ---------------------------------------------------------------- intro: five picture beats (the aliens never name a cow or a stomach; they only see what they see)
   var INTRO = [
@@ -312,7 +342,7 @@
     if (!Lv2) { box.style.display = 'none'; return; }
     box.style.display = ''; box.innerHTML = '';
     (Lv3 ? [1, 2, 3] : [1, 2]).forEach(function (w) {
-      var lk = tabLocked(w), b = el('button', 'wtab' + (S.worldTab === w ? ' on' : '') + (lk ? ' locked' : ''), '<span class="wt">' + (w === 1 ? 'The warm crowd' : esc(worldObj(w).name)) + '</span>' + (lk ? '<span class="wl">Locked: clear dish ' + prevWorldLast(w) + ' first</span>' : ''));
+      var lk = tabLocked(w), b = el('button', 'wtab' + (S.worldTab === w ? ' on' : '') + (lk ? ' locked' : ''), '<span class="wt">' + (lk ? '?' : w === 1 ? 'The warm crowd' : esc(worldObj(w).name)) + '</span>' + (lk ? '<span class="wl">Locked: clear dish ' + prevWorldLast(w) + ' first</span>' : ''));
       b.type = 'button'; b.setAttribute('data-world', w); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', S.worldTab === w ? 'true' : 'false'); b.disabled = lk;
       b.addEventListener('click', function () { setTab(w); }); box.appendChild(b);
     });
@@ -321,6 +351,10 @@
     var box = $('dishList'); box.innerHTML = ''; var wall = null, tw = S.worldTab;
     if (tw >= 2 && tabLocked(tw)) tw = S.worldTab = 1;
     renderTabs();
+    if (!S.revealed) {   // first load with this feature: every dish already open counts as seen, so nothing flips for old saves
+      S.revealed = {}; [1, 2, 3].forEach(function (w) { if (worldLv(w) || w === 1) orderOf(w).forEach(function (id) { if (!isLocked(id)) S.revealed[id] = true; }); }); save('revealed', S.revealed);
+    }
+    var revealedNow = false;
     orderOf(tw).forEach(function (id) {
       var d = Lv.dish(id), locked = isLocked(id), cleared = !!S.cleared[id], gr = S.grades[id];
       if (id === 11) { box.appendChild(el('div', 'grouph', esc(Lv2.WORLD.name) + ' <span class="dim">dishes 11 to 14: heat, the cool edge, the night, then an exam</span>')); wall = el('div', 'wall'); box.appendChild(wall); }
@@ -330,14 +364,20 @@
         wall = el('div', 'wall'); box.appendChild(wall);
       }
       var st = locked ? 'Locked' : cleared ? (d.exam && gr ? gr : 'Cleared') : 'Open';
-      var tile = el('div', 'dtile' + (locked ? ' locked' : cleared ? ' cleared' : ' open'));
-      tile.innerHTML = '<div class="dthumb">' + (locked || (tw === 2 && !THUMBS2[id]) || (tw === 3 && !THUMBS3[id]) ? '' : '<img alt="" src="assets/thumbs/dish-' + id + '.jpg">') + (cleared ? '<span class="dstamp' + (gr ? ' g-' + gr.toLowerCase() : '') + '">' + esc(st) + '</span>' : '') + '</div>' +
+      var fresh = !locked && !S.unlocked && !cleared && id !== 1 && !S.revealed[id];
+      if (!locked && !S.revealed[id]) { S.revealed[id] = true; revealedNow = true; }
+      var tile = el('div', 'dtile' + (locked ? ' locked mystery' : cleared ? ' cleared' : ' open') + (fresh ? ' reveal' : ''));
+      if (locked) {
+        tile.innerHTML = '<div class="dthumb"><span class="qm" aria-hidden="true">?</span></div><div class="dmeta"><span class="num">' + id + '</span><span class="t">?</span></div><div class="g"></div><div class="c"></div>';
+      } else tile.innerHTML = '<div class="dthumb">' + ((tw === 2 && !THUMBS2[id]) || (tw === 3 && !THUMBS3[id]) ? '' : '<img alt="" src="assets/thumbs/dish-' + id + '.jpg">') + (cleared ? '<span class="dstamp' + (gr ? ' g-' + gr.toLowerCase() : '') + '">' + esc(st) + '</span>' : '') + '</div>' +
         '<div class="dmeta"><span class="num">' + id + '</span><span class="t">' + esc(d.title) + '</span></div><div class="g">' + esc(d.problem) + '</div>' +
         '<div class="c">You start with: ' + esc(buildWords(carriedFor(id))) + '</div>';
       var im = tile.querySelector('img'); if (im) im.addEventListener('error', function () { im.remove(); });
       var b = el('button', 'big', locked ? 'Locked' : cleared ? 'Again' : 'Start'); b.disabled = locked; b.setAttribute('data-dish', id);
       b.addEventListener('click', function () { selectDish(id); }); tile.appendChild(b); wall.appendChild(tile);
     });
+    if (revealedNow) save('revealed', S.revealed);
+    var we = $('watchEnding'); if (we) we.hidden = !S.cleared[17];
     renderScale('scaleList', tw);
   }
   function blankRule() { return { sensor: null, cmp: null, value: null, action: null, otherwise: null }; }
@@ -1671,7 +1711,7 @@
       ['Place', WW.facts[1]],
       ['What we learned', 'A cell that cannot reach the sweetness starves, and a cell that swims past it for ever is noticed. Stopping where it is sweet is part of looking alive. And there is a bright place that drifts: a little of its light feeds a cell, and its middle burns.'],
       ['Our samples', WW.badge],
-      ['Next', 'There is more of the thick water. We will open it when our lab has grown the next dishes.']
+      ['Next', 'The locals here live like the ones before: none takes more than its place gives back. Neither do we now.']
     ] };
   }
   function completeCard() {
@@ -1683,7 +1723,7 @@
     var srows = CO ? CO.rows : (W.complete || []).map(function (r) { return r[0] === 'Next' && Lv2 ? [r[0], 'The banded water: a new site, with one rule turned upside down. Open it from the dish list.'] : r; });
     var story = srows.map(function (r) { return '<div class="row"><b>' + esc(r[0]) + '</b><span>' + esc(r[1]) + '</span></div>'; }).join('');
     $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>' + (CO ? esc(CO.title) : 'SAMPLING COMPLETE') + '</h2>' + (cw === 1 && STORY_ART.ripple ? '<img class="completeimg" src="assets/story/complete-ripple.jpg" alt="A slow ripple crossing the surface of the warm mountain">' : '') + '<div class="covercap">' + (cw === 3 ? 'The three dishes' : cw === 2 ? 'The four dishes' : 'The ten dishes') + '</div><div class="clist">' + rows + '</div>' +
-      story + '<div class="pbtns"><button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
+      story + '<div class="pbtns">' + (cw === 3 && S.cleared[17] ? '<button type="button" class="big" data-act="ending">Continue</button>' : '') + '<button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
     $('overlay').hidden = false; S.overlayOpen = true;
   }
   $('overlay').addEventListener('click', function (e) {
@@ -1698,6 +1738,7 @@
     else if (a === 'jump') { closeOverlay(); S.playing = false; S.t = S.run.autopsy.from; setPlayLabel(); glJump(S.mode === 'run' && !S.run.v.win ? ezLocate(S.run) : null); }
     else if (a === 'next') { closeOverlay(); selectDish(orderOf(worldNo(S.dish))[orderOf(worldNo(S.dish)).indexOf(S.dish) + 1]); }
     else if (a === 'list') { closeOverlay(); show('list'); }
+    else if (a === 'ending') { closeOverlay(); openEnding(); }
     else if (a === 'complete') completeCard();
   });
 
@@ -1722,10 +1763,12 @@
   $('introGo').addEventListener('click', introNext);
   $('introBack').addEventListener('click', function () { if (S.introAt > 0) { S.introAt--; renderIntro(); } });
   $('introSkip').addEventListener('click', introDone);
+  $('endGo').addEventListener('click', endNext); $('endBack').addEventListener('click', endBack); $('endLeave').addEventListener('click', endLeave);
+  $('watchEnding').addEventListener('click', openEnding);
   $('replayIntro').addEventListener('click', function () { S.introAt = 0; S.introWorld = 1; show('intro'); });
   $('unlockAll').addEventListener('click', function () { S.unlocked = true; save('unlocked2', true); renderList(); });
   $('resetProgress').addEventListener('click', function () {
-    S.cleared = {}; S.wins = {}; S.grades = {}; S.used = {}; S.evolved = {}; S.evo = null; S.evoShown = false; S.evolvedNew = []; save('used3', {}); save('evolved3', {}); save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro2', false); S.seenIntroB = false; S.seenWorldB = false; S.seenIntroC = false; S.seenWorldC = false; S.worldTab = 1; save('introB', false); save('worldB', false); save('introC', false); save('worldC', false); save('worldTab', 1);
+    S.cleared = {}; S.wins = {}; S.grades = {}; S.used = {}; S.evolved = {}; S.evo = null; S.evoShown = false; S.evolvedNew = []; save('used3', {}); save('evolved3', {}); save('grades2', {}); S.unlocked = false; S.revealed = {}; save('revealed', {}); S.seenWorld = false; S.seenIntro = false; save('intro2', false); S.seenIntroB = false; S.seenWorldB = false; S.seenIntroC = false; S.seenWorldC = false; S.worldTab = 1; save('introB', false); save('worldB', false); save('introC', false); save('worldC', false); save('worldTab', 1);
     save('cleared2', {}); save('wins2', {}); save('unlocked2', false); save('world2', false); renderList();
   });
   $('undo').addEventListener('click', function () { if (!S.undo.length) return; S.build = S.undo.pop(); S.preview = null; syncRuleFromBuild(); renderAdapt(false); });
@@ -1753,6 +1796,13 @@
   document.addEventListener('keydown', function (e) {
     var tg = e.target && e.target.tagName; if (tg === 'TEXTAREA' || (tg === 'INPUT' && e.target.type !== 'range')) return;
     if (T.open) return;   // the skill tree handles its own keys
+    if (S.screen === 'ending') {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'ArrowRight' || (e.key === 'Enter' && tg !== 'BUTTON')) { e.preventDefault(); endNext(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); endBack(); }
+      else if (e.key === 'Escape') { e.preventDefault(); endLeave(); }
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     var ovOpen = S.overlayOpen;
     if (e.key === ' ' || e.code === 'Space') {
@@ -1978,6 +2028,7 @@
     liveBars: function () { return Array.prototype.map.call(document.querySelectorAll('#liveBars .sb'), function (r) { return { stat: r.getAttribute('data-stat'), verdict: r.querySelector('.sb-verdict').textContent, mark: r.querySelector('.sb-mark').style.left, tag: r.querySelector('.sb-tag').textContent }; }); },
     eventZoomState: function () { var z = S.ez, g = GL.r; return { fired: z.fired, kind: z.kind, target: z.target, active: !!(g && typeof g.eventActive === 'function' && g.eventActive()) }; },
     compare: function (on) { return compareSet(on); }, compareState: function () { var C = S.cmp; return { available: !!C.available && !$('cmpBtn').disabled, held: C.held, kept: C.kept, diffText: C.diff }; },
+    ending: function () { openEnding(); return S.endAt; }, endingAt: function () { return S.endAt; }, endingProgress: function () { return END.pic ? END.pic.progress() : null; }, revealed: function () { return S.revealed; },
     completeCard: completeCard, whyList: whyList, startStandard: startStandard, marks: function () { return S.marks; }, grades: function () { return S.grades; },
     fixLine: function () { return $('fixLine').textContent; }, previewText: function () { return $('pvT').textContent; }, fail: function () { return S.fail; },
     cards: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt'), function (o) { var c = o.querySelector('.chg'); return { id: o.getAttribute('data-id'), text: c.textContent, tones: Array.prototype.map.call(c.querySelectorAll('.ef[class*="t-"]'), function (x) { return x.className.replace(/.*t-/, '') + ':' + x.textContent.trim(); }) }; }); },

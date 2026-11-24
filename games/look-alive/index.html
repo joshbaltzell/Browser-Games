@@ -34,6 +34,21 @@
 
 <main id="app">
 
+  <section class="screen" id="screen-ending">
+    <div class="briefwrap introwrap">
+      <div class="introimg"><canvas id="endCanvas" class="endcanvas" role="img" aria-label="A large, hollow, slowly rolling ball built from hundreds of tiny round bodies, with a few smaller balls inside it. One living thing made of many cells."></canvas></div>
+      <div class="kicker" id="endKicker"></div>
+      <h1 id="endTitle"></h1>
+      <p class="introp" id="endText"></p>
+      <div class="introbar">
+        <button type="button" class="ghost" id="endBack">Back</button>
+        <span class="introdots" id="endDots"></span>
+        <button type="button" class="ghost" id="endLeave">Dish list</button>
+        <button type="button" class="big" id="endGo">Next</button>
+      </div>
+    </div>
+  </section>
+
   <section class="screen" id="screen-intro">
     <div class="briefwrap introwrap">
       <div class="introimg"><img id="introImg" src="assets/intro/intro-1.jpg" alt="" onerror="this.style.visibility='hidden'"></div>
@@ -56,7 +71,7 @@
       <div class="scalestrip" id="scaleList"></div>
       <div class="wtabs" id="worldTabs" role="tablist"></div>
       <div id="dishList"></div>
-      <div class="listfoot"><button type="button" class="ghost" id="replayIntro">Replay intro</button><button type="button" class="ghost" id="unlockAll">Unlock all dishes</button><button type="button" class="ghost" id="resetProgress">Clear saved progress</button></div>
+      <div class="listfoot"><button type="button" class="ghost" id="replayIntro">Replay intro</button><button type="button" class="ghost" id="watchEnding" hidden>Watch the ending</button><button type="button" class="ghost" id="unlockAll">Unlock all dishes</button><button type="button" class="ghost" id="resetProgress">Clear saved progress</button></div>
     </div>
   </section>
 
@@ -201,6 +216,7 @@
 <script src="draw.js"></script>
 <script src="draw3.js"></script>
 <script src="render-gl.js"></script>
+<script src="ending.js"></script>
 <script src="game.js"></script>
 </body>
 </html>
