@@ -1,0 +1,32 @@
+{
+ "slug": "look-alive",
+ "outDir": "games/look-alive/art-src/ending",
+ "cap": 12,
+ "style": "STYLE (applies to every image): a dark, elegant, slightly cute science-fiction storybook illustration, as a stylised video game cutscene. Mostly black or deep-navy background with soft glowing light and gentle bloom, and a subtle circular lens vignette at the edges. Limited palette: crystal violet (#8B5CF6) for native microbes, safranin pink (#FF5C8A) for the small alien scout craft and the player's disguised cells, iodine amber (#F5A524) for warm light and chemicals, malachite green (#2DD4A7) for guardian immune cells. Never gory or frightening. No text, no letters, no numbers, no watermark, no signature, no user interface.",
+ "requests": [
+  {
+   "id": "EN-A",
+   "file": "opt-a-volvox.png",
+   "size": "1536x864",
+   "prompt": "Seen through a microscope lens in deep dark water: a large translucent sphere made of hundreds of small soft glowing green-and-violet cells set into a jelly-like skin, slowly rolling, with three smaller glowing daughter spheres floating inside it. Tiny pink scout pod, very small in the foreground, looking up at it in awe. The sphere is enormous compared to the pod. It is soft, organic and alive, glowing gently from inside; nothing mechanical, no grid, no wireframe, no straight lines, no metal. NO face: no eyes, no mouth. No text."
+  },
+  {
+   "id": "EN-B",
+   "file": "opt-b-placozoan.png",
+   "size": "1536x864",
+   "prompt": "Seen from the height of a single microbe on a dark sea floor: a vast flat, soft, irregular disc of living tissue, like a glowing pancake with a gently rippling edge, made of thousands of small round cells packed together, its edge slowly flowing as it creeps. Warm amber and violet glow from within. The tiny pink scout pod hovers near the rippling edge, very small. It is soft, organic and alive, glowing gently from inside; nothing mechanical, no grid, no wireframe, no straight lines, no metal. NO face: no eyes, no mouth. No text."
+  },
+  {
+   "id": "EN-C",
+   "file": "opt-c-slime.png",
+   "size": "1536x864",
+   "prompt": "Seen from the height of a single microbe: thousands of tiny glowing violet single cells streaming together along curving paths from all directions, joining into one soft glowing slug-shaped body that rises into a slender stalk topped with a round glowing ball. A single life made from many cells that agreed. Tiny pink scout pod watching from the foreground. It is soft, organic and alive, glowing gently from inside; nothing mechanical, no grid, no wireframe, no straight lines, no metal. NO face: no eyes, no mouth. No text."
+  },
+  {
+   "id": "EN-D",
+   "file": "opt-d-hydra.png",
+   "size": "1536x864",
+   "prompt": "Seen through a microscope lens in dark water: a tall, soft, translucent tube-shaped creature anchored at its base, with a crown of slow, waving, glowing tentacles at the top, its body visibly made of many small round glowing cells like beads in jelly. Violet and green glow, warm amber light drifting around it. The tiny pink scout pod hovers near its base, very small. It is soft, organic and alive, glowing gently from inside; nothing mechanical, no grid, no wireframe, no straight lines, no metal. NO face: no eyes, no mouth. No text."
+  }
+ ]
+}

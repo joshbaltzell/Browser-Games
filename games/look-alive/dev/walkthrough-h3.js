@@ -320,11 +320,12 @@ module.exports = async (a) => {
   check('d17NoEvoPanelSecondTime', (await ev(`!document.getElementById('evoCard')&&!!document.querySelector('#overlay .winwrap')`)));
   sum.d17SecondDebug = await ev(`({line:(document.getElementById('evolvedLine')||{}).textContent,en:__la.S.evolvedNew,shown:__la.S.evoShown,ev:__la.evolved(),used:__la.used(),build:__la.S.build.parts})`);
   check('d17NoEvolvedLineSecondTime', (await ev(`!document.getElementById('evolvedLine')`)));
-  check('d17CompleteButton', await ev(`!!document.querySelector('#overlay button[data-act="complete"]')`));
-  sum.completeBtn = await W.click('#overlay button[data-act="complete"]'); await a.sleep(400);
-  const card = await ev(`(function(){var c=document.getElementById('completeCard');return c?c.textContent.replace(/\\s+/g,' '):null})()`);
-  sum.complete = card && card.slice(0, 300); check('completionCard', !!card && /THICK WATER/.test(card) && /Where the Food Is/.test(card) && /Stop When Fed/.test(card) && /bright place/i.test(card) && /The three dishes/.test(card) && !/The two dishes/.test(card));
-  await shot('h3-complete.png', MOB);
+  // dish 17 is the last dish of the game: its win card leads straight into the ending
+  check('d17EndingButton', await ev(`!!document.querySelector('#overlay #toEnding')`));
+  sum.endingBtn = await W.click('#overlay #toEnding'); await a.sleep(600);
+  check('endingOpens', (await ev(`__la.info().screen`)) === 'ending' && (await ev(`__la.endingAt()`)) === 0);
+  await shot('h3-ending.png', MOB);
+  await a.eval(`__la.show('list');1`); await a.sleep(300);
 
   // ---------------------------------------------------------------- 5. reload keeps the rule and the cleared marks; compare swaps runs
   await a.eval(`location.reload();1`); await a.sleep(1800);
