@@ -46,24 +46,6 @@ const GAMES = [
       </svg>`,
   },
   {
-    title: "Tetra Storm",
-    description:
-      "Stack falling neon tetrominoes, clear lines, and chase the four-line Tetra. The blocks fall faster every level — how long can you keep the storm at bay?",
-    path: "games/tetra-storm/index.html",
-    play: "desktop",
-    tags: ["Puzzle", "Blocks", "Arcade"],
-    accent: "#b388ff",
-    art: `
-      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect x="39" y="18" width="14" height="14" rx="2" fill="#b388ff" />
-        <rect x="53" y="18" width="14" height="14" rx="2" fill="#b388ff" />
-        <rect x="67" y="18" width="14" height="14" rx="2" fill="#b388ff" />
-        <rect x="53" y="32" width="14" height="14" rx="2" fill="#b388ff" />
-        <rect x="39" y="48" width="14" height="14" rx="2" fill="#7a5cff" />
-        <rect x="53" y="48" width="14" height="14" rx="2" fill="#7a5cff" />
-      </svg>`,
-  },
-  {
     title: "Neon Gauntlet",
     description:
       "A room-by-room neon dungeon crawler. Clear rooms, fight six enemy archetypes, and build your skill tree one level at a time.",

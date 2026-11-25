@@ -31,7 +31,6 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 | --- | --- |
 | **[Neon Swarm](games/neon-swarm/)** | A survival auto-shooter. Move to dodge, auto-fire at the swarm, collect XP, and stack upgrades on every level-up. How long can you last? |
 | **[Void Breaker](games/void-breaker/)** | A Newtonian take on Asteroids — drift, thrust, and blast procedurally generated rocks and UFOs with combo multipliers and particle explosions. |
-| **[Tetra Storm](games/tetra-storm/)** | A neon falling-block puzzle. Move, rotate, and slam tetrominoes to clear lines — the storm falls faster every level. |
 | **[Neon Gauntlet](games/neon-gauntlet/)** | A room-by-room neon dungeon crawler. Clear rooms, fight six enemy archetypes, and build your skill tree one level at a time. |
 | **[Switchback](games/switchback/)** | A one-button runner. A droplet rolls forever forward; flip gravity to arc between floor and ceiling and bank off the bulges to keep your speed. |
 | **[Tank Yard Fable](games/tank-yard-fable/)** | A 3D toon-shaded tank survival game: drive a slow, sturdy tank, aim the turret, and outlast an endless stream of enemy tanks. |
