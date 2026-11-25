@@ -173,6 +173,25 @@ const GAMES = [
       </svg>`,
   },
   {
+    title: "Beat Drop",
+    description:
+      "Build a machine that plays music. Balls drop on the beat, and every bar, drum and spring they hit plays a note in key.",
+    path: "games/drop-machine/index.html",
+    play: "phone",
+    tags: ["Music", "Creative"],
+    accent: "#ffb547",
+    art: `
+      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="30" y="6" width="60" height="70" rx="3" fill="none" stroke="#3b4a6b" stroke-width="1.5" />
+        <path d="M54 12 L60 18 L66 12 Z" fill="#8fa3c8" />
+        <line x1="38" y1="30" x2="62" y2="24" stroke="#ffb547" stroke-width="2.5" stroke-linecap="round" />
+        <line x1="58" y1="44" x2="82" y2="38" stroke="#6fe3ff" stroke-width="2.5" stroke-linecap="round" />
+        <line x1="40" y1="60" x2="58" y2="66" stroke="#6dff9e" stroke-width="2.5" stroke-linecap="round" />
+        <path d="M60 18 Q55 22 52 27 Q62 20 70 40 Q66 50 50 62" fill="none" stroke="#ffffff" stroke-width="1" stroke-dasharray="2 3" opacity="0.6" />
+        <circle cx="70" cy="40" r="2.6" fill="#fff" />
+      </svg>`,
+  },
+  {
     title: "Jam Tunnel",
     description:
       "Fly through your song in a glowing tunnel. Pick a genre, then add drums, bass, lead and chords from parts that music theory says fit together.",
