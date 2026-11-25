@@ -5,14 +5,14 @@
   var SAVE_KEY = 'drop-machine-v1';
   var COLORS = { wood: '#ffb347', metal: '#5ee6ff', glass: '#d6bcff', drum: '#ff5f85', pad: '#5fe58a' };
   var PHOSPHOR = '#6dff9c';
-  var MAX_BALLS = 32;
+  var MAX_BALLS = 32, MAX_PIT_BALLS = 8, MAX_DROPPERS = 3;
   var MAX_PITS = 4;
 
   var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   var $ = function (id) { return document.getElementById(id); };
 
   var S = {
-    machine: null, active: 0, sel: null, place: null, dockTab: 'add',
+    machine: null, active: 0, dropSel: 0, sel: null, place: null, dockTab: 'add',
     playing: false, clock: null, stepQueue: [], balls: [], rings: [], flash: {},
     scroll: {}, cache: {}, undo: [], redo: [], cells: [], drag: null, drawerDrag: null,
     lastRebuild: 0, rebuildTimer: null, saveTimer: null
@@ -28,6 +28,9 @@
   function partOf(pit, id) { for (var i = 0; i < pit.parts.length; i++) if (pit.parts[i].id === id) return pit.parts[i]; return null; }
   function selPart() { return S.sel == null ? null : partOf(activePit(), S.sel); }
   function partColor(p) { return p.type === 'bar' ? COLORS[p.material] : COLORS[p.type]; }
+  function clampAngle(p, a) { return p.type === 'bar' ? normAngle(a) : clamp(a, -DM.angleRange(p), DM.angleRange(p)); }
+  function lifeLabel(b) { return b === 1 ? '1 beat' : b === 2 ? '2 beats' : (b / 4) + (b === 4 ? ' bar' : ' bars'); }
+  function degText(a) { var r = Math.round(a); return (r < 0 ? '\u2212' : '') + Math.abs(r) + '\u00B0'; }
   function normAngle(a) { while (a > 90) a -= 180; while (a <= -90) a += 180; return a; }
 
   // ---------- machine, saving, undo ----------
@@ -44,10 +47,16 @@
     m.pits.forEach(function (p, i) {
       p.id = p.id || i + 1;
       p.floors = clamp(p.floors | 0, 0, DM.MAX_FLOORS);
-      p.dropperX = clamp(+p.dropperX || 180, 20, 340);
-      if (!p.steps || p.steps.length !== 16) p.steps = DM.newPit(1).steps;
+      DM.migratePit(p);
+      p.droppers = p.droppers.slice(0, MAX_DROPPERS);
+      p.droppers.forEach(function (d) {
+        d.x = clamp(+d.x || 180, 20, 340);
+        if (!d.steps || d.steps.length !== 16) d.steps = DM.newPit(1).droppers[0].steps;
+        d.steps = d.steps.map(Boolean);
+      });
       p.parts = p.parts || [];
       p.vol = p.vol == null ? 0.8 : p.vol;
+      if (DM.LIFE_CHOICES.indexOf(p.life) < 0) p.life = 4;
       p.transpose = clamp(p.transpose | 0, -7, 7);
       p.offset = clamp(p.offset | 0, 0, 15);
       p.offsetBars = clamp(p.offsetBars | 0, 0, 3);
@@ -87,13 +96,26 @@
   }
 
   // ---------- path cache ----------
+  function dotColor(part) {
+    if (part.type === 'drum') return part.size === 'big' ? '#ff5f85' : part.size === 'medium' ? '#ff9f5f' : '#ffd75f';
+    return partColor(part);
+  }
   function rebuild() {
     var m = S.machine, sd = stepDur();
     S.cache = {};
     m.pits.forEach(function (pit) {
-      var res = DM.simulatePit(pit, m);
-      var snapT = res.hits.map(function (h) { return DM.snapTime(h.t, m.tight, sd); });
-      S.cache[pit.id] = { res: res, snapT: snapT, events: DM.loopEvents(pit, m, res) };
+      var all = DM.simulateAll(pit, m);
+      var drops = all.map(function (res) {
+        var snapT = res.hits.map(function (h) { return DM.snapTime(h.t, m.tight, sd); });
+        var tally = {}, best = null, bn = 0;
+        res.hits.forEach(function (h) {
+          var part = partOf(pit, h.partId); if (!part) return;
+          var col = dotColor(part); tally[col] = (tally[col] || 0) + 1;
+          if (tally[col] > bn) { bn = tally[col]; best = col; }
+        });
+        return { res: res, snapT: snapT, lead: DM.leadTime(res, m, sd), color: best || '#7f8ba6' };
+      });
+      S.cache[pit.id] = { drops: drops, events: DM.loopEvents(pit, m, all) };
     });
     S.lastRebuild = performance.now();
   }
@@ -129,15 +151,21 @@
     if (S.stepQueue.length > 40) S.stepQueue.shift();
     var m = S.machine;
     m.pits.forEach(function (pit) {
-      if (!DM.stepLit(pit, step)) return;
-      var c = S.cache[pit.id]; if (!c) return;
-      S.balls.push({ pitId: pit.id, c: c, t0: time, next: 0 });
-      if (S.balls.length > MAX_BALLS) S.balls.shift();
-      if (!audible(pit)) return;
-      var gain = pit.vol * m.master;
-      c.res.hits.forEach(function (h, i) {
-        var part = partOf(pit, h.partId);
-        if (part) DMAudio.playPart(part, DM.partMidi(part, pit, m), time + c.snapT[i], h.speed, gain);
+      var cache = S.cache[pit.id]; if (!cache) return;
+      pit.droppers.forEach(function (dr, di) {
+        if (!DM.stepLit(pit, step, di)) return;
+        var c = cache.drops[di]; if (!c) return;
+        var t0 = time - c.lead;          // released early so the first sound lands on this step
+        S.balls.push({ pitId: pit.id, c: c, t0: t0, next: 0 });
+        if (S.balls.length > MAX_BALLS) S.balls.shift();
+        var mine = S.balls.filter(function (b) { return b.pitId === pit.id && b.killAt == null; });
+        while (mine.length > MAX_PIT_BALLS) mine.shift().killAt = time;     // oldest fades out first
+        if (!audible(pit)) return;
+        var gain = pit.vol * m.master;
+        c.res.hits.forEach(function (h, i) {
+          var part = partOf(pit, h.partId);
+          if (part) DMAudio.playPart(part, DM.partMidi(part, pit, m), t0 + c.snapT[i], h.speed, gain);
+        });
       });
     });
   }
@@ -241,6 +269,8 @@
     $('play').textContent = S.playing ? 'Stop' : 'Play';
     $('undo').disabled = !S.undo.length; $('redo').disabled = !S.redo.length;
     $('floor').disabled = (activePit().floors || 0) >= DM.MAX_FLOORS;
+    $('floorDown').disabled = !(activePit().floors > 0);
+    scaleMood();
     $('dup').disabled = m.pits.length >= MAX_PITS;
     $('bpm').value = m.bpm; $('bpmOut').textContent = m.bpm;
     $('key').value = m.key; $('scale').value = m.scale;
@@ -270,21 +300,25 @@
         var bounce = '<select data-f="bounce" aria-label="Bounce">' + option('real', 'Realistic', p.bounce) + option('musical', 'Musical', p.bounce) + option('forever', 'Forever', p.bounce) + option('sticky', 'Sticky', p.bounce) + '</select>';
         if (p.type === 'bar') {
           h += '<select data-f="material" aria-label="Material">' + option('wood', 'Wood', p.material) + option('metal', 'Metal', p.material) + option('glass', 'Glass', p.material) + '</select>' + bounce;
-          h += '<button class="btn small" data-act="rot-" type="button" aria-label="Rotate left">&#8634;</button><button class="btn small" data-act="rot+" type="button" aria-label="Rotate right">&#8635;</button>';
         } else if (p.type === 'drum') {
           h += '<select data-f="size" aria-label="Size">' + option('big', 'Big (kick)', p.size) + option('medium', 'Medium (snare)', p.size) + option('small', 'Small (hat)', p.size) + '</select>' + bounce;
         } else {
-          h += '<select data-f="angle" aria-label="Tilt">' + option(0, 'Flat', p.angle) + option(-30, 'Tilt left', p.angle) + option(30, 'Tilt right', p.angle) + '</select>';
           h += '<select data-f="mode" aria-label="Mode">' + option('locked', 'Beat-locked', p.mode) + option('forever', 'Forever', p.mode) + '</select>';
           if (p.mode !== 'forever') h += '<select data-f="div" aria-label="Division">' + option(4, '1/4', p.div) + option(8, '1/8', p.div) + option(16, '1/16', p.div) + '</select>';
         }
+        var rg = DM.angleRange(p);
+        h += '<span class="chip"><button class="btn small" data-act="ang-" type="button" aria-label="Angle down">&minus;</button><input class="num" type="number" data-f="angle" min="-' + rg + '" max="' + rg + '" step="5" value="' + Math.round(p.angle || 0) + '" aria-label="Angle in degrees">&deg;<button class="btn small" data-act="ang+" type="button" aria-label="Angle up">+</button></span>';
         h += '<button class="btn small" data-act="dupPart" type="button">Duplicate</button><button class="btn small" data-act="delPart" type="button">Delete</button>';
       }
     } else {
-      var pit = activePit();
+      var pit = activePit(), dsel = clamp(S.dropSel, 0, pit.droppers.length - 1);
+      function q(id) { return '<button class="q" data-help="' + id + '" type="button" aria-label="Help">?</button>'; }
       h += '<span class="lbl">Pit ' + (S.active + 1) + '</span>';
       h += '<label class="ctl">Volume <input type="range" data-s="vol" min="0" max="1" step="0.05" value="' + pit.vol + '"></label>';
-      h += stepper('Shift', 'tr', pit.transpose, 'steps') + stepper('Start', 'off', pit.offset, '/16') + stepper('Delay', 'bars', pit.offsetBars, 'bars');
+      h += '<span class="ctl"><label class="ctl">Ball life <select data-p="life" aria-label="Ball life">' + DM.LIFE_CHOICES.map(function (b) { return option(b, lifeLabel(b), DM.lifeBeats(pit)); }).join('') + '</select></label>' + q('life') + '</span>';
+      h += '<span class="chip">Droppers <button class="btn small" data-act="dropDown" type="button" aria-label="Fewer droppers"' + (pit.droppers.length < 2 ? ' disabled' : '') + '>&minus;</button><span class="val">' + pit.droppers.length + '</span><button class="btn small" data-act="dropUp" type="button" aria-label="More droppers"' + (pit.droppers.length >= MAX_DROPPERS ? ' disabled' : '') + '>+</button></span>';
+      h += '<button class="btn small" data-act="rhythm" type="button">Rhythm' + (pit.droppers.length > 1 ? ' (row ' + (dsel + 1) + ')' : '') + '</button>';
+      h += stepper('Shift', 'tr', pit.transpose, 'steps') + q('shift') + stepper('Start', 'off', pit.offset, '/16') + q('start') + stepper('Delay', 'bars', pit.offsetBars, 'bars') + q('delay');
     }
     $('dock').innerHTML = h + '</div>';
   }
@@ -297,10 +331,167 @@
     return 'Pad';
   }
 
+  // ---------- help cards, pickers, floors, droppers ----------
+  var HELP = {
+    tempo: ['Tempo', '<p>How fast the music goes, in beats per minute.</p><p>110 is a relaxed walk. 140 is dance music.</p>'],
+    steps: ['The step row', '<p>One bar of music split into 16 steps. The 4 brighter cells are the beats you would clap on.</p><p>A lit step makes a ball whose first sound lands right on that step. A pit can have up to 3 droppers, one row each.</p>'],
+    key: ['Key', '<p>The home note the song keeps coming back to. Changing it moves every note up or down together, like singing higher or lower.</p>', 'hear'],
+    scale: ['Scale', null, 'hear'],
+    tight: ['Free and Tight', '<p>How strictly hits snap to the beat grid.</p><p>Tight is machine-perfect. Free is loose and human: hits land where the ball lands.</p>'],
+    life: ['Ball life', '<p>How long each ball lives before it fades away. One bar is four beats.</p><p>Short lives stop bouncing balls from piling up into a wall of sound.</p>'],
+    shift: ['Shift', '<p>Moves every note in this pit up or down the scale. Plus 2 steps is about a third higher, which sounds good stacked on the original.</p>'],
+    start: ['Start', '<p>Delays this pit by a number of sixteenth steps (the little cells in the step row).</p>'],
+    delay: ['Delay', '<p>Delays this pit by whole bars. Copy a pit and delay the copy by one bar and you get a round, like a song sung in turns.</p>']
+  };
+  function hide(id) { $(id).hidden = true; }
+  function openInfo(title, body, buttons) {
+    $('infoTitle').textContent = title; $('infoBody').innerHTML = body;
+    var box = $('infoBtns'); box.innerHTML = '';
+    buttons.forEach(function (b) {
+      var el = document.createElement('button'); el.type = 'button'; el.className = 'btn' + (b.primary ? ' primary' : ''); el.textContent = b.label;
+      el.onclick = function () { if (!b.keep) hide('info'); if (b.fn) b.fn(); };
+      box.appendChild(el);
+    });
+    $('info').hidden = false;
+  }
+  function showHelp(id) {
+    var h = HELP[id]; if (!h) return;
+    var body = h[1];
+    if (id === 'scale') {
+      body = '<p>Which notes are allowed. Every bar plays only notes from the scale, so it always sounds like music.</p>' + Object.keys(DM.SCALES).map(function (k) {
+        var sc = DM.SCALES[k]; return '<p><b>' + sc.name + '</b>: ' + sc.mood + ' (' + sc.iv.length + ' notes)</p>';
+      }).join('');
+    }
+    var btns = [{ label: 'Close', primary: !h[2] }];
+    if (h[2] === 'hear') btns.unshift({ label: 'Hear it', primary: true, keep: true, fn: hearScale });
+    openInfo(h[0], body, btns);
+  }
+  function scaleMood() {
+    var sc = DM.SCALES[S.machine.scale];
+    $('scaleMood').textContent = sc.mood.split(',')[0] + ' · ' + sc.iv.length + ' notes';
+  }
+  // Play the current scale up and down in the current key with the wood sound.
+  function hearScale() {
+    Kit.audio.unlock(); if (!Kit.audio.ctx) return;
+    var m = S.machine, iv = DM.SCALES[m.scale].iv, root = DM.BAR_BASE + 12 + m.key, seq = [];
+    iv.forEach(function (v) { seq.push(root + v); });
+    seq.push(root + 12);
+    seq = seq.concat(seq.slice(0, -1).reverse());
+    var t = audioNow() + 0.05, wood = { type: 'bar', material: 'wood' };
+    seq.forEach(function (mi, i) { DMAudio.playPart(wood, mi, t + i * 0.24, 900, 0.8 * m.master); });
+  }
+  var toastTimer = null;
+  function toast(msg) {
+    var el = $('toast'); el.textContent = msg; el.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { el.hidden = true; }, 2600);
+  }
+
+  // A list picker. items: [{id, name, desc, dots, tempo, group}]. With confirmLabel, a tap selects (and previews) first.
+  function openPicker(title, items, opts) {
+    var chosen = null, list = $('pickList'), btns = $('pickBtns');
+    $('pickTitle').textContent = title; list.innerHTML = ''; btns.innerHTML = '';
+    var group = null;
+    items.forEach(function (it) {
+      if (it.group !== group) { group = it.group; if (group) { var h = document.createElement('h3'); h.textContent = group; list.appendChild(h); } }
+      var el = document.createElement('button'); el.type = 'button'; el.className = 'item';
+      el.innerHTML = (it.dots ? '<span class="dots">' + it.dots + '</span>' : '') + '<b>' + it.name + '</b>' + (it.tempo ? '<span class="tempo">' + it.tempo + ' BPM</span>' : '') + (it.desc ? '<small>' + it.desc + '</small>' : '');
+      el.onclick = function () {
+        if (!opts.confirmLabel) { hide('pick'); opts.onPick(it); return; }
+        chosen = it; Array.prototype.forEach.call(list.querySelectorAll('.item'), function (n) { n.classList.remove('on'); }); el.classList.add('on');
+        if (opts.onPreview) opts.onPreview(it);
+        ok.disabled = false;
+      };
+      list.appendChild(el);
+    });
+    var cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'btn'; cancel.textContent = 'Cancel'; cancel.onclick = function () { hide('pick'); };
+    btns.appendChild(cancel);
+    var ok = document.createElement('button'); ok.type = 'button'; ok.className = 'btn primary';
+    if (opts.confirmLabel) {
+      ok.textContent = opts.confirmLabel; ok.disabled = true;
+      ok.onclick = function () { if (chosen) { hide('pick'); opts.onPick(chosen); } };
+      btns.appendChild(ok);
+    }
+    $('pick').hidden = false;
+  }
+
+  function previewPit(pit) {
+    Kit.audio.unlock(); if (!Kit.audio.ctx) return;
+    var m = S.machine, sd = stepDur(), t0 = audioNow() + 0.06, all = DM.simulateAll(pit, m);
+    pit.droppers.forEach(function (dr, di) {
+      var res = all[di], lead = DM.leadTime(res, m, sd);
+      for (var k = 0; k < 16; k++) {
+        if (!dr.steps[k]) continue;
+        res.hits.forEach(function (h) {
+          var part = partOf(pit, h.partId); if (!part) return;
+          DMAudio.playPart(part, DM.partMidi(part, pit, m), t0 + k * sd + DM.snapTime(h.t, m.tight, sd) - lead, h.speed, 0.8 * m.master);
+        });
+      }
+    });
+  }
+  function openPitPicker() {
+    if (S.machine.pits.length >= MAX_PITS) return;
+    openPicker('Add a pit', DM.PRESETS, {
+      confirmLabel: 'Add pit',
+      onPreview: function (it) { var pit = DM.buildPreset(S.machine, it.id); if (it.id !== 'empty') previewPit(pit); },
+      onPick: function (it) {
+        addPresetPit(it.id);
+        var cur = S.machine.bpm;
+        if (it.tempo && Math.abs(it.tempo - cur) > 15) {
+          openInfo('Use tempo ' + it.tempo + '?', '<p>' + it.name + ' sounds best around ' + it.tempo + ' BPM. You are at ' + cur + '.</p>', [
+            { label: 'Keep ' + cur, fn: null },
+            { label: 'Use ' + it.tempo, primary: true, fn: function () { S.machine.bpm = it.tempo; if (S.clock) S.clock.setBpm(it.tempo); afterChange(false); } }]);
+        }
+      }
+    });
+  }
+  function addPresetPit(id) {
+    edit(function () { S.machine.pits.push(DM.buildPreset(S.machine, id)); });
+    S.active = S.machine.pits.length - 1; S.sel = null; S.dropSel = 0; afterChange(true);
+  }
+
+  var RHYTHMS = [
+    { id: 'beat', name: 'Every beat', steps: [0, 4, 8, 12] },
+    { id: 'off', name: 'Offbeats', steps: [2, 6, 10, 14] },
+    { id: 'eighths', name: 'Eighths', steps: [0, 2, 4, 6, 8, 10, 12, 14] },
+    { id: 'back', name: 'Backbeat', steps: [4, 12] },
+    { id: 'tres', name: '3-3-2 (tresillo)', steps: [0, 3, 6, 8, 11, 14] },
+    { id: 'sparse', name: 'Sparse', steps: [0, 10] }
+  ];
+  function dotsOf(steps) { var o = ''; for (var i = 0; i < 16; i++) o += (steps.indexOf(i) >= 0 ? '●' : '·') + (i % 4 === 3 && i < 15 ? ' ' : ''); return o; }
+  function openRhythms() {
+    var pit = activePit(), di = clamp(S.dropSel, 0, pit.droppers.length - 1);
+    openPicker('Rhythm for dropper ' + (di + 1), RHYTHMS.map(function (r) { return { id: r.id, name: r.name, dots: dotsOf(r.steps), steps: r.steps }; }), {
+      onPick: function (it) { edit(function () { pit.droppers[di].steps = DM.stepsOf(it.steps); }); }
+    });
+  }
+  function addDropper() {
+    var pit = activePit(); if (pit.droppers.length >= MAX_DROPPERS) return;
+    edit(function () { pit.droppers.push({ x: [180, 70, 290][pit.droppers.length] || 180, steps: DM.stepsOf([]) }); });
+    S.dropSel = pit.droppers.length - 1; renderDock();
+  }
+  function removeDropper() {
+    var pit = activePit(); if (pit.droppers.length < 2) return;
+    edit(function () { pit.droppers.pop(); });
+    S.dropSel = clamp(S.dropSel, 0, pit.droppers.length - 1); renderDock();
+  }
+  function removeFloor() {
+    var pit = activePit(); if (!(pit.floors > 0)) return;
+    var newH = DM.pitHeight(pit) - DM.FLOOR_H, low = pit.parts.filter(function (p) { return p.y > newH - 24; });
+    if (low.length) {
+      toast('Move these parts up first');
+      var c = S.cells.filter(function (q) { return q.pit === pit; })[0];
+      if (c) S.scroll[pit.id] = clamp(Math.min.apply(null, low.map(function (p) { return p.y; })) - 120, 0, c.maxScroll);
+      [0, 280, 560].forEach(function (d) { setTimeout(function () { low.forEach(function (p) { S.flash[p.id] = audioNow(); }); }, d); });
+      return;
+    }
+    edit(function () { pit.floors--; });
+  }
+
   function bindUI() {
     $('play').onclick = togglePlay;
     $('undo').onclick = undo; $('redo').onclick = redo;
-    $('floor').onclick = addFloor; $('dup').onclick = openDup; $('new').onclick = newMachine;
+    $('floor').onclick = addFloor; $('floorDown').onclick = removeFloor;
+    document.addEventListener('click', function (e) { var q = e.target.closest('[data-help]'); if (q) showHelp(q.dataset.help); }); $('dup').onclick = openDup; $('new').onclick = newMachine;
     $('soundToggle').onclick = function () {
       var o = $('sound').classList.toggle('open'); this.setAttribute('aria-expanded', o);
     };
@@ -316,7 +507,7 @@
 
     $('tabs').addEventListener('click', function (e) {
       var b = e.target.closest('[data-pit]'); if (!b) return;
-      if (b.dataset.pit === 'new') { addPit(); return; }
+      if (b.dataset.pit === 'new') { openPitPicker(); return; }
       selectPit(+b.dataset.pit);
     });
 
@@ -327,9 +518,12 @@
       if (t.dataset.add) { if (S.drawerDrag && S.drawerDrag.moved) return; S.place = S.place === t.dataset.add ? null : t.dataset.add; Kit.audio.unlock(); renderDock(); return; }
       var p = selPart(), pit = activePit();
       if (t.dataset.act === 'dupPart') duplicatePart();
+      else if (t.dataset.act === 'rhythm') openRhythms();
+      else if (t.dataset.act === 'dropUp') addDropper();
+      else if (t.dataset.act === 'dropDown') removeDropper();
       else if (t.dataset.act === 'delPart') deletePart();
-      else if (t.dataset.act === 'rot-' && p) { edit(function () { p.angle = normAngle(p.angle - 15); }); }
-      else if (t.dataset.act === 'rot+' && p) { edit(function () { p.angle = normAngle(p.angle + 15); }); }
+      else if (t.dataset.act === 'ang-' && p) { edit(function () { p.angle = clampAngle(p, Math.round(((p.angle || 0) - 5) * 2) / 2); }); }
+      else if (t.dataset.act === 'ang+' && p) { edit(function () { p.angle = clampAngle(p, Math.round(((p.angle || 0) + 5) * 2) / 2); }); }
       else if (t.dataset.step) {
         var k = t.dataset.step.slice(0, -1), d = t.dataset.step.slice(-1) === '+' ? 1 : -1;
         edit(function () {
@@ -340,10 +534,12 @@
       }
     });
     dock.addEventListener('change', function (e) {
+      if (e.target.dataset.p === 'life') { var pt = activePit(); edit(function () { pt.life = +e.target.value; }); return; }
       var f = e.target.dataset.f, p = selPart(); if (!f || !p) return;
       var v = e.target.value; if (f === 'angle' || f === 'div') v = +v;
+      if (f === 'angle') v = clampAngle(p, isFinite(v) ? v : 0);
       edit(function () { p[f] = v; });
-      preview(p);
+      if (f !== 'angle') preview(p);
     });
     var volBefore = null;
     dock.addEventListener('input', function (e) {
@@ -377,12 +573,15 @@
   }
 
   // ---------- layout ----------
+  var ROW_LABEL = 14;
   function layout() {
     var W = cv.clientWidth, H = cv.clientHeight, m = S.machine;
     var phone = W < 700, idx = phone ? [S.active] : m.pits.map(function (p, i) { return i; });
-    var n = idx.length, gap = 24, pad = 8, hdrH = 26, rowH = phone ? 34 : 28, stripH = phone ? 58 : 62;
-    var minRow = 16 * (phone ? 19 : 15);                       // the 16 step cells stay easy to see and tap
-    var vpH = Math.max(80, H - pad * 2 - hdrH - rowH - stripH - 16);
+    var n = idx.length, gap = 24, pad = 8, hdrH = 26, rowH = phone ? 30 : 24, stripH = phone ? 58 : 62;
+    var maxDrop = 1; idx.forEach(function (i) { maxDrop = Math.max(maxDrop, m.pits[i].droppers.length); });
+    var rowsH = maxDrop * rowH + 4;
+    var minRow = 16 * (phone ? 19 : 15) + ROW_LABEL;           // the 16 step cells stay easy to see and tap
+    var vpH = Math.max(80, H - pad * 2 - hdrH - rowsH - stripH - 16);
     var availW = (W - pad * 2 - (n - 1) * gap) / n - 16;        // pit width per cell
     // Scale so the whole pit fits the height; only very tall pits (after +Floor) fall back to scrolling.
     var tallest = 0; idx.forEach(function (i) { tallest = Math.max(tallest, DM.pitHeight(m.pits[i])); });
@@ -391,11 +590,11 @@
     var x0 = Math.max(pad, (W - total) / 2), cells = [];
     idx.forEach(function (i, k) {
       var pit = m.pits[i], fx = x0 + k * (fw + gap), px = fx + (fw - pw) / 2, top = pad;
-      var c = { i: i, pit: pit, s: s, px: px, pw: pw };
-      c.frame = { x: fx, y: top, w: fw, h: hdrH + rowH + vpH + stripH + 16 };
+      var c = { i: i, pit: pit, s: s, px: px, pw: pw, rowH: rowH };
+      c.frame = { x: fx, y: top, w: fw, h: hdrH + rowsH + vpH + stripH + 16 };
       c.hdr = { x: fx, y: top, w: fw, h: hdrH };
-      c.row = { x: fx + 8, y: top + hdrH, w: fw - 16, h: rowH };
-      c.vp = { x: px, y: top + hdrH + rowH + 4, w: pw, h: vpH };
+      c.row = { x: fx + 8, y: top + hdrH, w: fw - 16, h: pit.droppers.length * rowH };
+      c.vp = { x: px, y: top + hdrH + rowsH + 4, w: pw, h: vpH };
       c.strip = { x: fx + 8, y: c.vp.y + vpH + 4, w: fw - 16, h: stripH };
       var maxScroll = Math.max(0, DM.pitHeight(pit) - vpH / s);
       c.scroll = clamp(S.scroll[pit.id] || 0, 0, maxScroll); S.scroll[pit.id] = c.scroll; c.maxScroll = maxScroll;
@@ -417,9 +616,14 @@
         if (px > right - 26) return { cell: c, zone: 'remove' };
         if (px > right - 52) return { cell: c, zone: 'solo' };
         if (px > right - 78) return { cell: c, zone: 'mute' };
+        if (px > right - 104) return { cell: c, zone: 'help' };
         return { cell: c, zone: 'hdr' };
       }
-      if (inRect(c.row, px, py)) return { cell: c, zone: 'step', idx: clamp(Math.floor((px - c.row.x) / (c.row.w / 16)), 0, 15) };
+      if (inRect(c.row, px, py)) {
+        var di = clamp(Math.floor((py - c.row.y) / c.rowH), 0, c.pit.droppers.length - 1);
+        if (px < c.row.x + ROW_LABEL) return { cell: c, zone: 'rowlabel', di: di };
+        return { cell: c, zone: 'step', di: di, idx: clamp(Math.floor((px - c.row.x - ROW_LABEL) / ((c.row.w - ROW_LABEL) / 16)), 0, 15) };
+      }
       if (inRect(c.strip, px, py)) return { cell: c, zone: 'strip' };
       if (inRect(c.vp, px, py)) { var w = toWorld(c, px, py); return { cell: c, zone: 'pit', wx: w.x, wy: w.y }; }
       return { cell: c, zone: 'hdr' };
@@ -428,6 +632,10 @@
   }
 
   // ---------- input ----------
+  function rotHandle(c, p) {
+    var cap = DM.capsule(p), stem = (p.type === 'drum' ? 42 : 38) / c.s;
+    return { x: p.x + cap.ux * stem, y: p.y + cap.uy * stem };
+  }
   function barHandles(p) { var c = DM.capsule(p); return [{ x: c.ax, y: c.ay, which: 'a' }, { x: c.bx, y: c.by, which: 'b' }]; }
   function partAt(c, wx, wy) {
     var tol = 8 / c.s, best = null, bestD = 1e9, parts = c.pit.parts;
@@ -448,12 +656,18 @@
     if (z.zone === 'remove') { removePit(c.i); return; }
     if (z.zone === 'mute') { pit.mute = !pit.mute; save(); return; }
     if (z.zone === 'solo') { pit.solo = !pit.solo; save(); return; }
-    if (z.zone === 'step') { edit(function () { pit.steps[z.idx] = !pit.steps[z.idx]; }); return; }
+    if (z.zone === 'help') { showHelp('steps'); return; }
+    if (z.zone === 'rowlabel') { S.dropSel = z.di; renderDock(); return; }
+    if (z.zone === 'step') { S.dropSel = z.di; edit(function () { pit.droppers[z.di].steps[z.idx] = !pit.droppers[z.di].steps[z.idx]; }); return; }
     if (z.zone === 'strip') { stripTap(c, px, py); return; }
     if (z.zone !== 'pit') return;
     var before = snapshot(), drag = { c: c, before: before, px: px, py: py, moved: false };
     if (S.place) { placePart(S.place, z.wx, z.wy); return; }
     var sp = selPart();
+    if (sp) {
+      var rh = rotHandle(c, sp);
+      if (Math.hypot(rh.x - z.wx, rh.y - z.wy) * c.s < 16) { drag.kind = 'rotate'; drag.part = sp; S.drag = drag; return; }
+    }
     if (sp && sp.type === 'bar') {
       var hs = barHandles(sp);
       for (var i = 0; i < 2; i++) {
@@ -470,7 +684,11 @@
       drag.kind = 'part'; drag.part = part; drag.ox = part.x; drag.oy = part.y; drag.sx = z.wx; drag.sy = z.wy;
       S.drag = drag; return;
     }
-    if (Math.abs(z.wx - pit.dropperX) < 24 && z.wy < 34) { drag.kind = 'dropper'; S.drag = drag; return; }
+    if (z.wy < 34) {
+      var nd = -1, nb = 24;
+      pit.droppers.forEach(function (dr, di) { var dd = Math.abs(z.wx - dr.x); if (dd < nb) { nb = dd; nd = di; } });
+      if (nd >= 0) { drag.kind = 'dropper'; drag.di = nd; S.dropSel = nd; S.drag = drag; return; }
+    }
     if (S.sel != null) { S.sel = null; renderDock(); }
     drag.kind = 'pan'; S.drag = drag;
   });
@@ -484,11 +702,22 @@
     if (d.kind === 'pan') {
       S.scroll[pit.id] = clamp((S.scroll[pit.id] || 0) - (py - d.py) / c.s, 0, c.maxScroll); d.py = py;
     } else if (d.kind === 'dropper') {
-      pit.dropperX = clamp(snap(w.x, 10), 20, 340); rebuildSoon();
+      pit.droppers[d.di].x = clamp(snap(w.x, 10), 20, 340); rebuildSoon();
     } else if (d.kind === 'part') {
       d.part.x = clamp(snap(d.ox + w.x - d.sx, 10), 10, 350);
       d.part.y = clamp(snap(d.oy + w.y - d.sy, 10), 30, h - 10);
       rebuildSoon();
+    } else if (d.kind === 'rotate') {
+      var rp = d.part;
+      var raw = Math.atan2(w.y - rp.y, w.x - rp.x) * 180 / Math.PI + 90;
+      raw = ((raw + 180) % 360 + 360) % 360 - 180;
+      raw = clampAngle(rp, raw);
+      if (!e.shiftKey) {                                  // soft magnet: snap near multiples of 15, a little stronger at 0
+        var mg = Math.round(raw / 15) * 15;
+        if (Math.abs(raw - mg) < (mg === 0 ? 6 : 4)) raw = mg;
+      }
+      rp.angle = Math.round(raw * 2) / 2;
+      rebuildSoon(); renderDockSoon();
     } else if (d.kind === 'handle') {
       var p = d.part, cp = DM.capsule(p);
       var ox = d.which === 'a' ? cp.bx : cp.ax, oy = d.which === 'a' ? cp.by : cp.ay;
@@ -537,7 +766,7 @@
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel != null) { e.preventDefault(); deletePart(); }
-    else if (e.key === 'Escape') { S.place = null; $('modal').hidden = true; renderDock(); }
+    else if (e.key === 'Escape') { S.place = null; $('modal').hidden = true; $('info').hidden = true; $('pick').hidden = true; renderDock(); }
   });
 
   // ---------- drawing ----------
@@ -577,6 +806,8 @@
     // header: label, LEDs
     ctx.font = '700 11px ui-monospace, Menlo, Consolas, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     ctx.fillStyle = '#ffb347'; ctx.fillText('PIT ' + (c.i + 1), c.hdr.x + 16, c.hdr.y + 14);
+    ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#7f8ba6'; ctx.fillText('life ' + lifeLabel(DM.lifeBeats(pit)), c.hdr.x + 62, c.hdr.y + 14);
+    ctx.font = '700 11px ui-monospace, Menlo, Consolas, monospace';
     var right = c.hdr.x + c.hdr.w;
     function led(x, label, on, col) {
       ctx.fillStyle = on ? col : '#2a3148'; if (on) glow(col, 8);
@@ -584,6 +815,8 @@
       ctx.fillStyle = '#7f8ba6'; ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.fillText(label, x + 8, c.hdr.y + 14);
     }
     led(right - 72, 'M', pit.mute, '#ff5f85'); led(right - 46, 'S', pit.solo, '#5ee6ff');
+    ctx.strokeStyle = '#5b6a90'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(right - 92, c.hdr.y + 14, 7, 0, 7); ctx.stroke();
+    ctx.fillStyle = '#9fb0d8'; ctx.textAlign = 'center'; ctx.fillText('?', right - 92, c.hdr.y + 14.5);
     ctx.fillStyle = '#7f8ba6'; ctx.textAlign = 'center'; ctx.fillText(m.pits.length > 1 ? '✕' : '', right - 14, c.hdr.y + 14);
     drawStepRow(c);
     drawPit(c, now);
@@ -591,16 +824,22 @@
   }
 
   function drawStepRow(c) {
-    var pit = c.pit, r = c.row, w = r.w / 16, pos = playPos(), d = DM.startDelaySteps(pit);
+    var pit = c.pit, r = c.row, cache = S.cache[pit.id], pos = playPos(), d = DM.startDelaySteps(pit);
     var cur = pos >= 0 && pos >= d ? Math.floor(pos - d) % 16 : -1;
-    for (var i = 0; i < 16; i++) {
-      var x = r.x + i * w + 1.5, on = pit.steps[i], beat = i % 4 === 0;
-      ctx.fillStyle = on ? '#ffb347' : '#0e1423';
-      if (on) glow('#ffb347', 6);
-      rrect(x, r.y + 3, w - 3, r.h - 6, 3); ctx.fill(); noGlow();
-      if (!on) { ctx.strokeStyle = beat ? '#7385b5' : '#3b4668'; ctx.lineWidth = 1.2; ctx.stroke(); }
-      if (i === cur) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; rrect(x - 1, r.y + 2, w - 1, r.h - 4, 3); ctx.stroke(); }
-    }
+    var w = (r.w - ROW_LABEL) / 16, rh = c.rowH;
+    pit.droppers.forEach(function (dr, di) {
+      var y = r.y + di * rh, col = cache && cache.drops[di] ? cache.drops[di].color : '#7f8ba6';
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(r.x + 6, y + rh / 2, 3.6, 0, 7); ctx.fill();
+      if (di === S.dropSel && c.i === S.active && pit.droppers.length > 1) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(r.x + 6, y + rh / 2, 6, 0, 7); ctx.stroke(); }
+      for (var i = 0; i < 16; i++) {
+        var x = r.x + ROW_LABEL + i * w + 1.5, on = dr.steps[i], beat = i % 4 === 0;
+        ctx.fillStyle = on ? '#ffb347' : '#0e1423';
+        if (on) glow('#ffb347', 6);
+        rrect(x, y + 2.5, w - 3, rh - 5, 3); ctx.fill(); noGlow();
+        if (!on) { ctx.strokeStyle = beat ? '#7385b5' : '#3b4668'; ctx.lineWidth = 1.2; ctx.stroke(); }
+        if (i === cur) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; rrect(x - 1, y + 1.5, w - 1, rh - 3, 3); ctx.stroke(); }
+      }
+    });
   }
 
   function drawPit(c, now) {
@@ -620,24 +859,28 @@
       var fy = DM.BASE_H + DM.FLOOR_H * (f - 1);
       ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.setLineDash([3 / s, 9 / s]); ctx.beginPath(); ctx.moveTo(0, fy); ctx.lineTo(DM.PIT_W, fy); ctx.stroke(); ctx.setLineDash([]);
     }
-    // preview of the cached path
-    if (cache) {
-      var P = cache.res.path;
+    // preview of the cached paths
+    if (cache) cache.drops.forEach(function (dc) {
+      var P = dc.res.path;
       ctx.strokeStyle = 'rgba(200,220,255,.30)'; ctx.lineWidth = 1.6 / s; ctx.setLineDash([2 / s, 6 / s]); ctx.beginPath();
       for (var i = 0; i < P.x.length; i += 2) { if (i === 0) ctx.moveTo(P.x[i], P.y[i]); else ctx.lineTo(P.x[i], P.y[i]); }
       ctx.stroke(); ctx.setLineDash([]);
-      cache.res.hits.forEach(function (hit) {
+      dc.res.hits.forEach(function (hit) {
         var part = partOf(pit, hit.partId); if (!part) return;
         ctx.fillStyle = partColor(part); ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.arc(hit.x, hit.y, 3.2 / Math.min(s, 1) * 0.8, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
       });
-    }
-    // dropper
-    var dx = pit.dropperX, dg = ctx.createLinearGradient(0, 0, 0, 16);
-    dg.addColorStop(0, '#6b7ba3'); dg.addColorStop(1, '#3a4766');
-    ctx.fillStyle = dg; ctx.strokeStyle = '#a9b8dc'; ctx.lineWidth = 1.5 / s;
-    ctx.beginPath(); ctx.moveTo(dx - 16, 0); ctx.lineTo(dx + 16, 0); ctx.lineTo(dx + 7, 14); ctx.lineTo(dx - 7, 14); ctx.closePath(); ctx.fill(); ctx.stroke();
+    });
+    // droppers
+    pit.droppers.forEach(function (dr, di) {
+      var dx = dr.x, dg = ctx.createLinearGradient(0, 0, 0, 16), col = cache && cache.drops[di] ? cache.drops[di].color : '#7f8ba6';
+      dg.addColorStop(0, '#6b7ba3'); dg.addColorStop(1, '#3a4766');
+      ctx.fillStyle = dg; ctx.strokeStyle = '#a9b8dc'; ctx.lineWidth = 1.5 / s;
+      ctx.beginPath(); ctx.moveTo(dx - 16, 0); ctx.lineTo(dx + 16, 0); ctx.lineTo(dx + 7, 14); ctx.lineTo(dx - 7, 14); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(dx, 5, 3 / Math.min(s, 1) * 0.8, 0, 7); ctx.fill();
+    });
     // parts
     pit.parts.forEach(function (p) { drawPart(c, p, now); });
+    drawPrediction(c, cache);
     // balls and rings
     drawBalls(c, now);
     ctx.restore();
@@ -675,12 +918,47 @@
     if (sel) {
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2 / s; ctx.setLineDash([4 / s, 4 / s]);
       ctx.beginPath(); ctx.arc(p.x, p.y, DM.partLen(p) / 2 + 12, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+      var rh = rotHandle(c, p), rr = 8 / s;
+      ctx.strokeStyle = '#ffb347'; ctx.lineWidth = 1.5 / s; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(rh.x, rh.y); ctx.stroke();
+      ctx.fillStyle = '#0d111a'; ctx.beginPath(); ctx.arc(rh.x, rh.y, rr, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#ffb347'; ctx.lineWidth = 1.5 / s; ctx.beginPath(); ctx.arc(rh.x, rh.y, rr * 0.5, -0.5, 4); ctx.stroke();
+      var txt = degText(p.angle || 0), fpx = 11 / s;
+      ctx.font = '700 ' + fpx + 'px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      var tw = ctx.measureText(txt).width, px0 = rh.x + rr + 4 / s, py0 = rh.y;
+      if (px0 + tw + 8 / s > DM.PIT_W) px0 = rh.x - rr - 4 / s - tw - 8 / s;
+      ctx.fillStyle = 'rgba(10,14,23,.92)'; rrect(px0, py0 - 9 / s, tw + 8 / s, 18 / s, 9 / s); ctx.fill();
+      ctx.strokeStyle = '#ffb347'; ctx.lineWidth = 1 / s; ctx.stroke();
+      ctx.fillStyle = '#ffd9a0'; ctx.fillText(txt, px0 + 4 / s, py0 + 0.5 / s);
       if (p.type === 'bar') barHandles(p).forEach(function (h) {
         var r = Math.max(7, 10 / s);
         ctx.fillStyle = '#0d111a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 / s;
         ctx.beginPath(); ctx.arc(h.x, h.y, r, 0, 7); ctx.fill(); ctx.stroke();
       });
     }
+  }
+
+  // Bright arrow showing where the ball leaves the selected part (the next 0.25 s of the cached path).
+  function drawPrediction(c, cache) {
+    var p = c.i === S.active && S.sel != null ? partOf(c.pit, S.sel) : null;
+    if (!p || !cache) return;
+    var hit = null, hs, dres = null;
+    for (var di = 0; di < cache.drops.length && !hit; di++) {
+      hs = cache.drops[di].res.hits;
+      for (var i = 0; i < hs.length; i++) if (hs[i].partId === p.id) { hit = hs[i]; dres = cache.drops[di].res; break; }
+    }
+    if (!hit) return;
+    var P = dres.path, i0 = Math.ceil(hit.t / P.dt), i1 = Math.min(P.x.length - 1, i0 + Math.ceil(0.25 / P.dt));
+    if (i1 <= i0) return;
+    var s = c.s;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.6 / s; ctx.lineCap = 'round'; glow('#ffffff', 8);
+    ctx.beginPath(); ctx.moveTo(hit.x, hit.y);
+    for (var k = i0; k <= i1; k++) ctx.lineTo(P.x[k], P.y[k]);
+    ctx.stroke();
+    var ex = P.x[i1], ey = P.y[i1], bx = P.x[Math.max(i0, i1 - 3)], by = P.y[Math.max(i0, i1 - 3)];
+    var ang = Math.atan2(ey - by, ex - bx), hl = 9 / s;
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(ex + Math.cos(ang) * hl * 0.6, ey + Math.sin(ang) * hl * 0.6);
+    ctx.lineTo(ex + Math.cos(ang + 2.5) * hl, ey + Math.sin(ang + 2.5) * hl); ctx.lineTo(ex + Math.cos(ang - 2.5) * hl, ey + Math.sin(ang - 2.5) * hl);
+    ctx.closePath(); ctx.fill(); noGlow(); ctx.lineCap = 'butt';
   }
 
   function drawBalls(c, now) {
@@ -698,8 +976,14 @@
         }
         b.next++;
       }
-      if (raw > res.dur + 0.05) { b.dead = true; return; }
-      var fade = res.end === 'limit' ? clamp((res.dur - raw) / 0.4, 0, 1) : 1;
+      var expires = res.end === 'limit' || res.end === 'rest';
+      if (raw >= res.dur) {
+        b.dead = true;
+        if (expires) { var P = res.path, n = P.x.length - 1; S.rings.push({ pitId: pit.id, x: P.x[n], y: P.y[n], t0: now, col: '#cfe3ff' }); }
+        return;
+      }
+      var fade = expires ? 0.2 + 0.8 * clamp((res.dur - raw) / (0.25 * res.dur), 0, 1) : 1;   // dims over the last quarter of its life
+      if (b.killAt != null) { fade *= 1 - clamp((now - b.killAt) / 0.3, 0, 1); if (fade <= 0) { b.dead = true; return; } }
       // trail
       for (var k = 5; k >= 1; k--) {
         DM.pathAt(res, rawTime(b.c, Math.max(0, age - k * 0.012)), out);
@@ -785,7 +1069,7 @@
       edit(function () { S.machine.pits.push(DM.duplicatePit(S.machine, activePit(), o || {})); });
       S.active = S.machine.pits.length - 1;
     },
-    addFloor: addFloor, selectPit: selectPit, layout: function () { return S.cells.map(function (c) { return { i: c.i, s: c.s, vp: c.vp, frame: c.frame }; }); },
+    addFloor: addFloor, removeFloor: removeFloor, addPresetPit: addPresetPit, showHelp: showHelp, openPitPicker: openPitPicker, openRhythms: openRhythms, addDropper: addDropper, hearScale: hearScale, selectPit: selectPit, layout: function () { return S.cells.map(function (c) { return { i: c.i, s: c.s, vp: c.vp, frame: c.frame }; }); },
     balls: function () { return S.balls.length; },
     // Headless browsers keep the AudioContext suspended, so this drives the same onStep with a fake clock.
     fakeClock: function (on) {

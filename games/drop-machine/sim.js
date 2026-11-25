@@ -10,14 +10,16 @@ var DM = (function () {
   var SOFT_SPEED = 90;          // below this impact speed a ball rolls without a sound
   var COOLDOWN = 0.04;          // seconds before the same part can sound again
   var WALL_E = 0.8;
+  var REST_SPEED = 60, REST_TIME = 0.25;   // a ball this slow for this long is at rest
+  var LIFE_CHOICES = [1, 2, 4, 8, 16];     // ball life in beats (4 = one bar)
   var RESTIT = { real: 0.55, musical: 0.8, forever: 1 };
 
   var SCALES = {
-    minorPent: { name: 'Minor pentatonic', iv: [0, 3, 5, 7, 10] },
-    majorPent: { name: 'Major pentatonic', iv: [0, 2, 4, 7, 9] },
-    minor: { name: 'Minor', iv: [0, 2, 3, 5, 7, 8, 10] },
-    major: { name: 'Major', iv: [0, 2, 4, 5, 7, 9, 11] },
-    dorian: { name: 'Dorian', iv: [0, 2, 3, 5, 7, 9, 10] }
+    minorPent: { name: 'Minor pentatonic', iv: [0, 3, 5, 7, 10], mood: 'moody, hard to make sound wrong' },
+    majorPent: { name: 'Major pentatonic', iv: [0, 2, 4, 7, 9], mood: 'bright and folky' },
+    minor: { name: 'Minor', iv: [0, 2, 3, 5, 7, 8, 10], mood: 'sad or serious' },
+    major: { name: 'Major', iv: [0, 2, 4, 5, 7, 9, 11], mood: 'happy, like most pop' },
+    dorian: { name: 'Dorian', iv: [0, 2, 3, 5, 7, 9, 10], mood: 'cool, a bit jazzy' }
   };
   var KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
   var NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -65,7 +67,9 @@ var DM = (function () {
     if (p.type === 'drum') return DRUM_LEN[p.size] || DRUM_LEN.medium;
     return PAD_LEN;
   }
-  function partAngle(p) { return p.type === 'drum' ? 0 : (p.angle || 0); }
+  function partAngle(p) { return p.angle || 0; }
+  function angleRange(p) { return p.type === 'bar' ? 90 : p.type === 'drum' ? 45 : 30; }
+  function lifeBeats(pit) { return pit.life || 4; }
   // A part is a capsule: a segment with a radius.
   function capsule(p) {
     var a = partAngle(p) * Math.PI / 180, h = partLen(p) / 2;
@@ -85,12 +89,14 @@ var DM = (function () {
 
   // ---- the path of one ball ----------------------------------------
   // Returns {path:{n, dt, x[], y[]}, hits:[{t, partId, speed, x, y}], end, dur}.
-  function simulatePit(pit, machine) {
-    var beat = 60 / machine.bpm, limit = 16 * beat;
+  function simulatePit(pit, machine, di) {
+    migratePit(pit);
+    var drop = pit.droppers[di || 0];
+    var beat = 60 / machine.bpm, limit = lifeBeats(pit) * beat, restT = 0;
     var height = pitHeight(pit);
     var caps = pit.parts.map(capsule);
     var last = pit.parts.map(function () { return -1; });
-    var x = pit.dropperX, y = DROP_Y, vx = 0, vy = 0, t = 0;
+    var x = drop.x, y = DROP_Y, vx = 0, vy = 0, t = 0;
     var px = [x], py = [y], hits = [], end = 'limit';
     var total = Math.round(limit / STEP);
     for (var i = 1; i <= total; i++) {
@@ -98,6 +104,7 @@ var DM = (function () {
       if (x < BALL_R) { x = BALL_R; if (vx < 0) vx = -vx * WALL_E; }
       if (x > PIT_W - BALL_R) { x = PIT_W - BALL_R; if (vx > 0) vx = -vx * WALL_E; }
       var stuck = false;
+      if (vx * vx + vy * vy < REST_SPEED * REST_SPEED) restT += STEP; else restT = 0;
       for (var j = 0; j < caps.length; j++) {
         var c = caps[j], p = pit.parts[j], q = closestOnSeg(c, x, y);
         var dx = x - q.x, dy = y - q.y, d = Math.hypot(dx, dy), rr = BALL_R + c.r;
@@ -133,6 +140,7 @@ var DM = (function () {
       }
       if (i % 4 === 0 || stuck) { px.push(x); py.push(y); }
       if (stuck) { end = 'sticky'; break; }
+      if (restT >= REST_TIME) { end = 'rest'; px.push(x); py.push(y); break; }
       if (y > height + 40) { end = 'out'; px.push(x); py.push(y); break; }
     }
     return { path: { dt: STEP * 4, x: px, y: py }, hits: hits, end: end, dur: t };
@@ -154,15 +162,31 @@ var DM = (function () {
   }
   function startDelaySteps(pit) { return (pit.offsetBars || 0) * 16 + (pit.offset || 0); }
   // Is the dropper lit on this global 1/16 step?
-  function stepLit(pit, step) {
+  function stepLit(pit, step, di) {
     var d = startDelaySteps(pit);
     if (step < d) return false;
-    return !!pit.steps[(step - d) % 16];
+    return !!pit.droppers[di || 0].steps[(step - d) % 16];
+  }
+  // Older saves had one dropper as pit.dropperX and pit.steps.
+  function migratePit(pit) {
+    if (pit.droppers) return pit;
+    pit.droppers = [{ x: pit.dropperX == null ? 180 : pit.dropperX, steps: pit.steps || EMPTY_STEPS().slice() }];
+    delete pit.dropperX; delete pit.steps;
+    return pit;
+  }
+  function EMPTY_STEPS() { return [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0].map(Boolean); }
+  function simulateAll(pit, machine) {
+    migratePit(pit);
+    return pit.droppers.map(function (d, i) { return simulatePit(pit, machine, i); });
+  }
+  // A ball is released early so its first sound lands exactly on the lit step. Seconds.
+  function leadTime(res, machine, sd) {
+    return res.hits.length ? snapTime(res.hits[0].t, machine.tight, sd) : 0;
   }
 
   // ---- machines -----------------------------------------------------
   function newPit(id) {
-    return { id: id, floors: 0, dropperX: 180, steps: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0].map(Boolean),
+    return { id: id, floors: 0, life: 4, droppers: [{ x: 180, steps: EMPTY_STEPS() }],
       parts: [], vol: 0.8, mute: false, solo: false, transpose: 0, offset: 0, offsetBars: 0 };
   }
   function newMachine() {
@@ -171,7 +195,7 @@ var DM = (function () {
   function addPart(machine, pit, spec) {
     var p = { id: machine.nextId++, type: spec.type, x: spec.x, y: spec.y, bounce: spec.bounce || 'musical' };
     if (spec.type === 'bar') { p.len = spec.len || 100; p.angle = spec.angle || 0; p.material = spec.material || 'wood'; }
-    if (spec.type === 'drum') p.size = spec.size || 'medium';
+    if (spec.type === 'drum') { p.size = spec.size || 'medium'; p.angle = spec.angle || 0; }
     if (spec.type === 'pad') { p.angle = spec.angle || 0; p.mode = spec.mode || 'locked'; p.div = spec.div || 8; }
     for (var k in spec) if (!(k in p)) p[k] = spec[k];
     pit.parts.push(p);
@@ -189,7 +213,8 @@ var DM = (function () {
       p.id = machine.nextId++;
       if (opts.mirror) { p.x = PIT_W - p.x; if (p.angle) p.angle = -p.angle; }
     });
-    if (opts.mirror) n.dropperX = PIT_W - n.dropperX;
+    migratePit(n);
+    if (opts.mirror) n.droppers.forEach(function (d) { d.x = PIT_W - d.x; });
     n.transpose = Math.max(-7, Math.min(7, (pit.transpose || 0) + (opts.transpose || 0)));
     n.offsetBars = Math.max(0, Math.min(3, opts.offsetBars || 0));
     return n;
@@ -197,54 +222,103 @@ var DM = (function () {
 
   // Steady-state loop of a pit: every hit placed on the 16 step grid (fractional steps), already snapped.
   // Used by the score strip and the checks. Hits that overflow the loop wrap round.
-  function loopEvents(pit, machine, res) {
+  function loopEvents(pit, machine, results) {
+    migratePit(pit);
     var stepDur = 60 / machine.bpm / 4, d = startDelaySteps(pit), out = [];
-    for (var k = 0; k < 16; k++) {
-      if (!pit.steps[k]) continue;
-      res.hits.forEach(function (h) {
-        var part = null;
-        for (var i = 0; i < pit.parts.length; i++) if (pit.parts[i].id === h.partId) part = pit.parts[i];
-        if (!part) return;
-        var tt = snapTime(h.t, machine.tight, stepDur);
-        var pos = ((k + d + tt / stepDur) % 16 + 16) % 16;
-        var kind = part.type === 'bar' ? 'note' : part.type === 'pad' ? 'tick' : DRUM_KIND[part.size];
-        out.push({ pos: pos, partId: part.id, kind: kind, midi: partMidi(part, pit, machine), speed: h.speed, rawStep: k, t: h.t });
-      });
-    }
+    pit.droppers.forEach(function (dr, di) {
+      var res = results[di], lead = leadTime(res, machine, stepDur);
+      for (var k = 0; k < 16; k++) {
+        if (!dr.steps[k]) continue;
+        res.hits.forEach(function (h) {
+          var part = null;
+          for (var i = 0; i < pit.parts.length; i++) if (pit.parts[i].id === h.partId) part = pit.parts[i];
+          if (!part) return;
+          var tt = snapTime(h.t, machine.tight, stepDur) - lead;
+          var pos = ((k + d + tt / stepDur) % 16 + 16) % 16;
+          var kind = part.type === 'bar' ? 'note' : part.type === 'pad' ? 'tick' : DRUM_KIND[part.size];
+          out.push({ pos: pos, partId: part.id, kind: kind, midi: partMidi(part, pit, machine), speed: h.speed, rawStep: k, dropper: di, t: h.t });
+        });
+      }
+    });
     return out;
+  }
+
+  // ---- ready-made pits --------------------------------------------------
+  function evens() { return [0, 2, 4, 6, 8, 10, 12, 14]; }
+  function every() { var o = []; for (var i = 0; i < 16; i++) o.push(i); return o; }
+  function without(list, drop) { return list.filter(function (v) { return drop.indexOf(v) < 0; }); }
+  function stepsOf(list) { var a = []; for (var i = 0; i < 16; i++) a.push(list.indexOf(i) >= 0); return a; }
+  var DRUM_BEATS = [
+    { id: 'house', name: 'Four on the floor', tempo: 120, desc: 'The steady dance beat: kick on every beat.', kick: [0, 4, 8, 12], snare: [4, 12], hat: [2, 6, 10, 14] },
+    { id: 'rock', name: 'Rock', tempo: 110, desc: 'Kick, snare on 2 and 4, hats on every eighth.', kick: [0, 8, 10], snare: [4, 12], hat: evens() },
+    { id: 'boombap', name: 'Boom bap', tempo: 90, desc: 'Slow 90s hip hop with a lazy kick.', kick: [0, 7, 10], snare: [4, 12], hat: evens() },
+    { id: 'trap', name: 'Trap', tempo: 140, desc: 'Half-time feel: one snare, busy hats.', kick: [0, 6, 11], snare: [8], hat: without(every(), [3, 7, 11, 15]) },
+    { id: 'reggaeton', name: 'Reggaeton', tempo: 95, desc: 'The dembow groove: kick on every beat, snare in a skip pattern.', kick: [0, 4, 8, 12], snare: [3, 6, 11, 14], hat: [] },
+    { id: 'funk', name: 'Funk', tempo: 100, desc: 'Syncopated kick, extra snares, constant sixteenth hats.', kick: [0, 3, 10], snare: [4, 7, 12, 15], hat: every() },
+    { id: 'breakbeat', name: 'Breakbeat', tempo: 130, desc: 'A skittering break, a simple take on the classic.', kick: [0, 10], snare: [4, 12, 14], hat: evens() }
+  ];
+  // Three lanes: each dropper sits straight above its own sticky skin, so every ball makes exactly one hit.
+  function makeDrumKit(machine, id, beat) {
+    var pit = newPit(id);
+    pit.droppers = [
+      { x: 70, steps: stepsOf(beat.kick) }, { x: 180, steps: stepsOf(beat.snare) }, { x: 290, steps: stepsOf(beat.hat) }];
+    addPart(machine, pit, { type: 'drum', size: 'big', x: 70, y: 260, bounce: 'sticky' });
+    addPart(machine, pit, { type: 'drum', size: 'medium', x: 180, y: 260, bounce: 'sticky' });
+    addPart(machine, pit, { type: 'drum', size: 'small', x: 290, y: 260, bounce: 'sticky' });
+    return pit;
+  }
+  var PRESETS = [
+    { id: 'empty', group: 'Basics', name: 'Empty', desc: 'A blank pit. Place your own parts.' },
+    { id: 'stairs', group: 'Melody and bass', name: 'Melody stairs', desc: 'Four bars in a zig-zag staircase, ending on a beat-locked pad.' },
+    { id: 'arp', group: 'Melody and bass', name: 'Arpeggio', desc: 'Four bars that walk up the notes one after another.' },
+    { id: 'bass', group: 'Melody and bass', name: 'Bass bounce', desc: 'A beat-locked pad kicks the ball onto two low bars.' }
+  ].concat(DRUM_BEATS.map(function (b) { return { id: b.id, group: 'Drum beats', name: b.name, desc: b.desc, tempo: b.tempo }; }));
+
+  function buildPreset(machine, id) {
+    var pit, nid = machine.pits.reduce(function (m, q) { return Math.max(m, q.id); }, 0) + 1;
+    for (var i = 0; i < DRUM_BEATS.length; i++) if (DRUM_BEATS[i].id === id) return makeDrumKit(machine, nid, DRUM_BEATS[i]);
+    pit = newPit(nid);
+    if (id === 'stairs') {
+      pit.droppers[0] = { x: 60, steps: stepsOf([0, 6, 10]) };
+      addPart(machine, pit, { type: 'bar', x: 70, y: 110, len: 110, angle: 15 });
+      addPart(machine, pit, { type: 'bar', x: 200, y: 200, len: 90, angle: -15 });
+      addPart(machine, pit, { type: 'bar', x: 130, y: 300, len: 70, angle: 15 });
+      addPart(machine, pit, { type: 'bar', x: 280, y: 310, len: 50, angle: -15 });
+      addPart(machine, pit, { type: 'pad', x: 325, y: 520, angle: -30, mode: 'locked', div: 8 });
+    } else if (id === 'arp') {
+      pit.droppers[0] = { x: 230, steps: stepsOf([0, 8]) };
+      addPart(machine, pit, { type: 'bar', x: 240, y: 140, len: 150, angle: 15 });
+      addPart(machine, pit, { type: 'bar', x: 310, y: 230, len: 120, angle: -15 });
+      addPart(machine, pit, { type: 'bar', x: 30, y: 350, len: 100, angle: 15 });
+      addPart(machine, pit, { type: 'bar', x: 250, y: 510, len: 80, angle: -15 });
+    } else if (id === 'bass') {
+      pit.droppers[0] = { x: 90, steps: stepsOf([0, 8]) };
+      addPart(machine, pit, { type: 'pad', x: 80, y: 100, angle: -30, mode: 'locked', div: 8 });
+      addPart(machine, pit, { type: 'bar', x: 50, y: 220, len: 210, angle: 20 });
+      addPart(machine, pit, { type: 'bar', x: 300, y: 350, len: 190, angle: -20 });
+    }
+    return pit;
   }
 
   // The starter machine, designed by listening to its hit list (dev/check.js prints it).
   function starterMachine() {
     var m = newMachine();
-    var a = m.pits[0];
-    a.dropperX = 60;
-    a.steps = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0].map(Boolean);
-    // a zig-zag staircase of four wood bars, then a tilted beat-locked pad that kicks the ball on an eighth note
-    addPart(m, a, { type: 'bar', x: 70, y: 110, len: 110, angle: 15 });
-    addPart(m, a, { type: 'bar', x: 200, y: 200, len: 90, angle: -15 });
-    addPart(m, a, { type: 'bar', x: 130, y: 300, len: 70, angle: 15 });
-    addPart(m, a, { type: 'bar', x: 280, y: 310, len: 50, angle: -15 });
-    addPart(m, a, { type: 'pad', x: 325, y: 520, angle: -30, mode: 'locked', div: 8 });
-    // drums: the ball makes kick, snare, hat. Dropping on steps 6 and 14 gives kick 0, snare 3, hat 6, kick 8, snare 11, hat 14.
-    var b = newPit(2);
-    b.dropperX = 260;
-    b.steps = [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0].map(Boolean);
-    addPart(m, b, { type: 'drum', size: 'big', x: 310, y: 150 });
-    addPart(m, b, { type: 'drum', size: 'medium', x: 170, y: 240 });
-    addPart(m, b, { type: 'drum', size: 'small', x: 140, y: 330, bounce: 'sticky' });
+    m.pits = [];
+    var a = buildPreset(m, 'stairs'); a.id = 1;
+    m.pits.push(a);
+    var b = buildPreset(m, 'rock'); b.id = 2;      // a drum kit pit, so the first load shows the idea
     m.pits.push(b);
     return m;
   }
 
   var api = {
-    PIT_W: PIT_W, BASE_H: BASE_H, FLOOR_H: FLOOR_H, MAX_FLOORS: MAX_FLOORS, G: G, STEP: STEP, BALL_R: BALL_R,
+    PIT_W: PIT_W, BAR_BASE: BAR_BASE, BASE_H: BASE_H, FLOOR_H: FLOOR_H, MAX_FLOORS: MAX_FLOORS, G: G, STEP: STEP, BALL_R: BALL_R,
     BAR_MIN: BAR_MIN, BAR_MAX: BAR_MAX, SCALES: SCALES, KEYS: KEYS, DRUM_KIND: DRUM_KIND, CAP_R: CAP_R,
-    noteName: noteName, pitHeight: pitHeight, barDegreeCount: barDegreeCount, barDegree: barDegree,
+    noteName: noteName, angleRange: angleRange, lifeBeats: lifeBeats, LIFE_CHOICES: LIFE_CHOICES, pitHeight: pitHeight, barDegreeCount: barDegreeCount, barDegree: barDegree,
     barLenForDegree: barLenForDegree, snapBarLen: snapBarLen, degreeMidi: degreeMidi, partMidi: partMidi,
     inScale: inScale, partLen: partLen, partAngle: partAngle, capsule: capsule, distToPart: distToPart,
     closestOnSeg: closestOnSeg, simulatePit: simulatePit, pathAt: pathAt, snapTime: snapTime,
-    startDelaySteps: startDelaySteps, stepLit: stepLit, newPit: newPit, newMachine: newMachine, addPart: addPart,
+    startDelaySteps: startDelaySteps, stepLit: stepLit, migratePit: migratePit, simulateAll: simulateAll, leadTime: leadTime, PRESETS: PRESETS, DRUM_BEATS: DRUM_BEATS, buildPreset: buildPreset, stepsOf: stepsOf, newPit: newPit, newMachine: newMachine, addPart: addPart,
     clone: clone, duplicatePit: duplicatePit, loopEvents: loopEvents, starterMachine: starterMachine
   };
   return api;

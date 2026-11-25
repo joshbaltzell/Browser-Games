@@ -3,7 +3,7 @@ const DM = require('../sim.js');
 const m = DM.starterMachine();
 const rows = [];
 m.pits.forEach((p, i) => {
-  const r = DM.simulatePit(p, m);
+  const r = DM.simulateAll(p, m);
   DM.loopEvents(p, m, r).forEach(e => {
     const part = p.parts.find(q => q.id === e.partId);
     rows.push({ pos: e.pos, pit: i + 1, what: e.midi != null ? DM.noteName(e.midi) : (part.type === 'drum' ? DM.DRUM_KIND[part.size] : 'pad tick'), v: Math.round(e.speed) });

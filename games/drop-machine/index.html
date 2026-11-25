@@ -17,14 +17,15 @@
     <button id="undo" class="btn" type="button" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo"><span class="long">Undo</span><span class="short">&#8630;</span></button>
     <button id="redo" class="btn" type="button" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo"><span class="long">Redo</span><span class="short">&#8631;</span></button>
     <button id="floor" class="btn" type="button">+ Floor</button>
+    <button id="floorDown" class="btn" type="button">&minus; Floor</button>
     <button id="dup" class="btn" type="button">Copy pit</button>
     <button id="soundToggle" class="btn only-phone" type="button" aria-expanded="false">Sound</button>
   </div>
   <div class="row" id="sound">
-    <label class="ctl">Tempo <input id="bpm" type="range" min="70" max="160" step="1"><output id="bpmOut"></output></label>
-    <label class="ctl">Key <select id="key"></select></label>
-    <label class="ctl">Scale <select id="scale"></select></label>
-    <label class="ctl">Free <input id="tight" type="range" min="0" max="1" step="0.05"> Tight</label>
+    <span class="ctl"><label class="ctl">Tempo <input id="bpm" type="range" min="70" max="160" step="1"><output id="bpmOut"></output></label><button class="q" data-help="tempo" type="button" aria-label="What is tempo?">?</button></span>
+    <span class="ctl"><label class="ctl">Key <select id="key"></select></label><button class="q" data-help="key" type="button" aria-label="What is a key?">?</button></span>
+    <span class="ctl stack"><span class="ctl"><label class="ctl">Scale <select id="scale"></select></label><button class="q" data-help="scale" type="button" aria-label="What is a scale?">?</button></span><small id="scaleMood"></small></span>
+    <span class="ctl"><label class="ctl">Free <input id="tight" type="range" min="0" max="1" step="0.05"> Tight</label><button class="q" data-help="tight" type="button" aria-label="What is Free and Tight?">?</button></span>
     <label class="ctl">Volume <input id="master" type="range" min="0" max="1" step="0.05"></label>
     <button id="new" class="btn small" type="button">New machine</button>
   </div>
@@ -47,6 +48,21 @@
     <div class="row end"><button id="dCancel" class="btn" type="button">Cancel</button><button id="dOk" class="btn primary" type="button">Copy pit</button></div>
   </div>
 </div>
+<div id="info" class="modal" hidden>
+  <div class="card">
+    <h2 id="infoTitle"></h2>
+    <div id="infoBody" class="body"></div>
+    <div class="row end" id="infoBtns"></div>
+  </div>
+</div>
+<div id="pick" class="modal" hidden>
+  <div class="card wide">
+    <h2 id="pickTitle"></h2>
+    <div id="pickList" class="list"></div>
+    <div class="row end" id="pickBtns"></div>
+  </div>
+</div>
+<div id="toast" hidden></div>
 <script src="../kit/kit.js"></script>
 <script src="sim.js"></script>
 <script src="audio.js"></script>
