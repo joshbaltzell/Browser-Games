@@ -118,11 +118,11 @@ var DM = (function () {
         var speed = -vn;
         if (speed <= 0) { vy += G * tau; continue; }
         var sticky = p.type !== 'pad' && p.bounce === 'sticky';
-        var locked = p.type === 'pad' && p.mode !== 'forever' && (nx * c.ux + ny * c.uy) > 0.5;
+        var locked = ((p.type === 'pad' && p.mode !== 'forever') || (p.type === 'drum' && p.bounce === 'locked')) && (nx * c.ux + ny * c.uy) > 0.5;
         // Put the ball on the surface at the true moment of contact, then let it fly for the rest of the step.
-        x = q.x + nx * rr; y = q.y + ny * rr;
+        x -= vx * tau; y -= vy * tau + 0.5 * G * tau * tau;
         if (locked) {
-          var T = beat * (p.div === 4 ? 1 : p.div === 16 ? 0.25 : 0.5);   // time to rise and fall back
+          var T = beat * 4 / (p.div || 8);                                   // time to rise and fall back
           var upSpeed = G * T / 2, s = upSpeed / (-c.uy);                 // vertical part of the push
           vx = c.ux * s; vy = c.uy * s;
         } else {
@@ -195,7 +195,7 @@ var DM = (function () {
   function addPart(machine, pit, spec) {
     var p = { id: machine.nextId++, type: spec.type, x: spec.x, y: spec.y, bounce: spec.bounce || 'musical' };
     if (spec.type === 'bar') { p.len = spec.len || 100; p.angle = spec.angle || 0; p.material = spec.material || 'wood'; }
-    if (spec.type === 'drum') { p.size = spec.size || 'medium'; p.angle = spec.angle || 0; }
+    if (spec.type === 'drum') { p.size = spec.size || 'medium'; p.angle = spec.angle || 0; p.div = spec.div || 8; }
     if (spec.type === 'pad') { p.angle = spec.angle || 0; p.mode = spec.mode || 'locked'; p.div = spec.div || 8; }
     for (var k in spec) if (!(k in p)) p[k] = spec[k];
     pit.parts.push(p);
@@ -248,25 +248,121 @@ var DM = (function () {
   function every() { var o = []; for (var i = 0; i < 16; i++) o.push(i); return o; }
   function without(list, drop) { return list.filter(function (v) { return drop.indexOf(v) < 0; }); }
   function stepsOf(list) { var a = []; for (var i = 0; i < 16; i++) a.push(list.indexOf(i) >= 0); return a; }
+  // Each lane: lit = steps that drop a ball; loop = one flat beat-locked skin repeating every N steps;
+  // gaps = a chain of beat-locked skins that ricochet, N steps apart, ending on a sticky skin; neither = one sticky skin.
   var DRUM_BEATS = [
-    { id: 'house', name: 'Four on the floor', tempo: 120, desc: 'The steady dance beat: kick on every beat.', kick: [0, 4, 8, 12], snare: [4, 12], hat: [2, 6, 10, 14] },
-    { id: 'rock', name: 'Rock', tempo: 110, desc: 'Kick, snare on 2 and 4, hats on every eighth.', kick: [0, 8, 10], snare: [4, 12], hat: evens() },
-    { id: 'boombap', name: 'Boom bap', tempo: 90, desc: 'Slow 90s hip hop with a lazy kick.', kick: [0, 7, 10], snare: [4, 12], hat: evens() },
-    { id: 'trap', name: 'Trap', tempo: 140, desc: 'Half-time feel: one snare, busy hats.', kick: [0, 6, 11], snare: [8], hat: without(every(), [3, 7, 11, 15]) },
-    { id: 'reggaeton', name: 'Reggaeton', tempo: 95, desc: 'The dembow groove: kick on every beat, snare in a skip pattern.', kick: [0, 4, 8, 12], snare: [3, 6, 11, 14], hat: [] },
-    { id: 'funk', name: 'Funk', tempo: 100, desc: 'Syncopated kick, extra snares, constant sixteenth hats.', kick: [0, 3, 10], snare: [4, 7, 12, 15], hat: every() },
-    { id: 'breakbeat', name: 'Breakbeat', tempo: 130, desc: 'A skittering break, a simple take on the classic.', kick: [0, 10], snare: [4, 12, 14], hat: evens() }
+    { id: 'house', name: 'Four on the floor', tempo: 120, desc: 'The steady dance beat: kick on every beat, bouncing on its own.', kick: [0, 4, 8, 12], snare: [4, 12], hat: [2, 6, 10, 14],
+      lanes: { kick: { lit: [0], loop: 4 }, snare: { lit: [4], loop: 8 }, hat: { lit: [2], loop: 4 } } },
+    { id: 'rock', name: 'Rock', tempo: 110, desc: 'Kick, snare on 2 and 4, hats bouncing on every eighth.', kick: [0, 8, 10], snare: [4, 12], hat: [0, 2, 4, 6, 8, 10, 12, 14],
+      lanes: { kick: { lit: [0], gaps: [8, 2] }, snare: { lit: [4], loop: 8 }, hat: { lit: [0], loop: 2 } } },
+    { id: 'boombap', name: 'Boom bap', tempo: 90, desc: 'Slow 90s hip hop. The kick ricochets between three skins.', kick: [0, 7, 10], snare: [4, 12], hat: [0, 2, 4, 6, 8, 10, 12, 14],
+      lanes: { kick: { lit: [0], gaps: [7, 3] }, snare: { lit: [4], loop: 8 }, hat: { lit: [0], loop: 2 } } },
+    { id: 'trap', name: 'Trap', tempo: 140, desc: 'Half-time feel: one snare, hats that skitter in pairs.', kick: [0, 6, 11], snare: [8], hat: [0, 1, 4, 5, 8, 9, 12, 13],
+      lanes: { kick: { lit: [0], gaps: [6, 5] }, snare: { lit: [8] }, hat: { lit: [0, 4, 8, 12], gaps: [1] } } },
+    { id: 'reggaeton', name: 'Reggaeton', tempo: 95, desc: 'The dembow groove: steady kick, snare in a skip pattern.', kick: [0, 4, 8, 12], snare: [3, 6, 11, 14], hat: [],
+      lanes: { kick: { lit: [0], loop: 4 }, snare: { lit: [3, 11], gaps: [3] }, hat: { lit: [] } } },
+    { id: 'funk', name: 'Funk', tempo: 100, desc: 'Syncopated kick, ricocheting snares, constant sixteenth hats.', kick: [0, 3, 10], snare: [4, 7, 12, 15], hat: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+      lanes: { kick: { lit: [0], gaps: [3, 7] }, snare: { lit: [4, 12], gaps: [3] }, hat: { lit: [0], loop: 1 } } },
+    { id: 'breakbeat', name: 'Breakbeat', tempo: 130, desc: 'A skittering break, a simple take on the classic.', kick: [0, 10], snare: [4, 12, 14], hat: [0, 2, 4, 6, 8, 10, 12, 14],
+      lanes: { kick: { lit: [0, 10] }, snare: { lit: [4], gaps: [8, 2] }, hat: { lit: [0], loop: 2 } } }
   ];
-  // Three lanes: each dropper sits straight above its own sticky skin, so every ball makes exactly one hit.
+  var KIND_LEN = { kick: 96, snare: 68, hat: 44 };
+  var KIND_SIZE = { kick: 'big', snare: 'medium', hat: 'small' };
+  var DRUM_RR = BALL_R + CAP_R.drum;
+  var DELTAS = [0, 14, 22, 32, 46], EXTRAS = [0, 10, 22, 36, 55, -6, -12, -16];
+
+  // Lay out one lane with its first skin's contact point at x = x0. Returns {parts:[...], width, offsetX} or null.
+  // Each hop is a beat-locked skin: it throws the ball so the next skin is reached exactly `gap` steps later.
+  function layoutLane(kind, lane, x0, sd, beat) {
+    var len = KIND_LEN[kind], size = KIND_SIZE[kind], rr = DRUM_RR;
+    if (lane.loop) {
+      var g = lane.loop, T = g * sd, rise = G * T * T / 8;
+      var yc = Math.max(50, rise - 20);
+      yc = Math.min(yc, 16 + 0.9 * 0.5 * G * T * T, 620);
+      return { dropperX: x0, parts: [{ size: size, x: x0, y: yc + rr, angle: 0, bounce: 'locked', div: 4 * beat / T }], x0: x0, width: len, checkOffsets: null };
+    }
+    if (!lane.gaps || !lane.gaps.length) return { dropperX: x0, parts: [{ size: size, x: x0, y: 200, angle: 0, bounce: 'sticky' }], x0: x0, width: len };
+    var best = null;
+    for (var ei = 0; ei < EXTRAS.length && !best; ei++) for (var di = 0; di < DELTAS.length && !best; di++) for (var same = 0; same < 2 && !best; same++) {
+      var dx = len / 2 + 15 + EXTRAS[ei], dl = DELTAS[di], hops = [], ok = true, need = 0, acc = 0, dir = 1;
+      for (var i = 0; i < lane.gaps.length; i++) {
+        var t = lane.gaps[i] * sd, Tl = t - 2 * dl / (G * t);
+        if (Tl < 0.03) { ok = false; break; }
+        var vup = G * Tl / 2, ang = Math.atan(dir * dx / (vup * t)) * 180 / Math.PI;
+        if (Math.abs(ang) > 45) { ok = false; break; }
+        hops.push({ T: Tl, ang: ang, dx: dir * dx });
+        need = Math.max(need, vup * vup / (2 * G) - 60 - acc); acc += dl; if (!same) dir = -dir;
+      }
+      if (!ok) continue;
+      var y0 = Math.min(Math.max(60, need), 600 - acc);
+      var cx = x0, cy = y0, parts = [], minX = x0, maxX = x0;
+      hops.forEach(function (h) {
+        var a = h.ang * Math.PI / 180;
+        parts.push({ size: size, x: cx - Math.sin(a) * rr, y: cy + Math.cos(a) * rr, angle: h.ang, bounce: 'locked', div: 4 * beat / h.T });
+        cx += h.dx; cy += dl; minX = Math.min(minX, cx); maxX = Math.max(maxX, cx);
+      });
+      parts.push({ size: size, x: cx, y: cy + rr, angle: 0, bounce: 'sticky' });
+      var cand = { dropperX: x0, parts: parts, x0: x0, width: maxX - minX + len, minX: minX - len / 2 };
+      if (typeof process !== 'undefined' && process.env.LANEDBG) console.log('cand', EXTRAS[ei], dl, same, hops.map(function (h) { return h.ang.toFixed(1); }).join(','), verifyLane(lane, cand, sd, beat));
+      if (verifyLane(lane, cand, sd, beat)) best = cand;
+    }
+    return best;
+  }
+  // Simulate one ball alone and check the hit list matches the lane exactly (within 1 ms).
+  function verifyLane(lane, cand, sd, beat) {
+    var m = { bpm: 60 / (beat), tight: 0, nextId: 1 }, pit = newPit(1), want = laneOffsets(lane);
+    pit.droppers = [{ x: cand.dropperX, steps: stepsOf([0]) }];
+    cand.parts.forEach(function (sp) { addPart(m, pit, { type: 'drum', size: sp.size, x: sp.x, y: sp.y, angle: sp.angle, bounce: sp.bounce, div: sp.div }); });
+    var r = simulatePit(pit, m, 0);
+    if (typeof process !== 'undefined' && process.env.LANEDBG) console.log('   hits', r.hits.map(function (h) { return h.partId + ':' + ((h.t - r.hits[0].t) / sd).toFixed(3); }).join(' '), 'want', want.join(','), r.end);
+    if (r.hits.length !== want.length) return false;
+    for (var i = 0; i < want.length; i++) if (Math.abs((r.hits[i].t - r.hits[0].t) - want[i] * sd) > 0.001) return false;
+    return true;
+  }
+  function laneOffsets(lane) {      // expected hit offsets (steps) of one ball
+    if (lane.loop) { var o = []; for (var j = 0; j * lane.loop < 16; j++) o.push(j * lane.loop); return o; }
+    var off = [0], c = 0; (lane.gaps || []).forEach(function (g) { c += g; off.push(c); }); return off;
+  }
+  // Three lanes (kick, snare, hat), each with its own dropper. Solved for the machine's current tempo.
   function makeDrumKit(machine, id, beat) {
-    var pit = newPit(id);
-    pit.droppers = [
-      { x: 70, steps: stepsOf(beat.kick) }, { x: 180, steps: stepsOf(beat.snare) }, { x: 290, steps: stepsOf(beat.hat) }];
-    addPart(machine, pit, { type: 'drum', size: 'big', x: 70, y: 260, bounce: 'sticky' });
-    addPart(machine, pit, { type: 'drum', size: 'medium', x: 180, y: 260, bounce: 'sticky' });
-    addPart(machine, pit, { type: 'drum', size: 'small', x: 290, y: 260, bounce: 'sticky' });
+    var pit = newPit(id), sd = 60 / machine.bpm / 4, bt = 60 / machine.bpm, kinds = ['kick', 'snare', 'hat'];
+    var lanes = kinds.map(function (k) {
+      var l = layoutLane(k, beat.lanes[k], 100, sd, bt);
+      if (!l) {      // could not solve at this tempo: fall back to one sticky skin per hit
+        beat.lanes[k] = { lit: beat[k].slice() };
+        l = layoutLane(k, beat.lanes[k], 100, sd, bt);
+      }
+      return l;
+    });
+    var total = 0; lanes.forEach(function (l) { total += l.width; });
+    var gap = Math.max(4, (PIT_W - total) / 4), left = gap;
+    pit.droppers = [];
+    lanes.forEach(function (l, i) {
+      var minX = l.minX != null ? l.minX : l.x0 - KIND_LEN[kinds[i]] / 2, shift = left - minX;
+      l.parts.forEach(function (sp) { sp.x += shift; addPart(machine, pit, { type: 'drum', size: sp.size, x: sp.x, y: sp.y, angle: sp.angle, bounce: sp.bounce, div: sp.div }); });
+      pit.droppers.push({ x: l.dropperX + shift, steps: stepsOf(beat.lanes[kinds[i]].lit) });
+      left += l.width + gap;
+    });
+    pit.template = beat.id;
+    pit.sig = templateSig(pit);
     return pit;
   }
+  function templateSig(pit) {
+    return JSON.stringify([pit.droppers, pit.parts.map(function (p) { return [p.type, p.size, p.x, p.y, p.angle, p.bounce, p.div]; })]);
+  }
+  // After a tempo change, re-solve template pits that the player has not edited.
+  function retuneTemplates(machine) {
+    var changed = false;
+    machine.pits.forEach(function (pit, i) {
+      if (!pit.template || pit.sig !== templateSig(pit)) return;
+      var beat = DRUM_BEATS.filter(function (b) { return b.id === pit.template; })[0]; if (!beat) return;
+      var fresh = makeDrumKit(machine, pit.id, beat);
+      ['vol', 'mute', 'solo', 'transpose', 'offset', 'offsetBars', 'life', 'floors'].forEach(function (k) { fresh[k] = pit[k]; });
+      machine.pits[i] = fresh; changed = true;
+    });
+    return changed;
+  }
+
   var PRESETS = [
     { id: 'empty', group: 'Basics', name: 'Empty', desc: 'A blank pit. Place your own parts.' },
     { id: 'stairs', group: 'Melody and bass', name: 'Melody stairs', desc: 'Four bars in a zig-zag staircase, ending on a beat-locked pad.' },
@@ -318,7 +414,7 @@ var DM = (function () {
     barLenForDegree: barLenForDegree, snapBarLen: snapBarLen, degreeMidi: degreeMidi, partMidi: partMidi,
     inScale: inScale, partLen: partLen, partAngle: partAngle, capsule: capsule, distToPart: distToPart,
     closestOnSeg: closestOnSeg, simulatePit: simulatePit, pathAt: pathAt, snapTime: snapTime,
-    startDelaySteps: startDelaySteps, stepLit: stepLit, migratePit: migratePit, simulateAll: simulateAll, leadTime: leadTime, PRESETS: PRESETS, DRUM_BEATS: DRUM_BEATS, buildPreset: buildPreset, stepsOf: stepsOf, newPit: newPit, newMachine: newMachine, addPart: addPart,
+    startDelaySteps: startDelaySteps, stepLit: stepLit, migratePit: migratePit, simulateAll: simulateAll, leadTime: leadTime, PRESETS: PRESETS, _layoutLane: layoutLane, retuneTemplates: retuneTemplates, laneOffsets: laneOffsets, templateSig: templateSig, DRUM_BEATS: DRUM_BEATS, buildPreset: buildPreset, stepsOf: stepsOf, newPit: newPit, newMachine: newMachine, addPart: addPart,
     clone: clone, duplicatePit: duplicatePit, loopEvents: loopEvents, starterMachine: starterMachine
   };
   return api;

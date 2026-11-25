@@ -113,7 +113,8 @@
           var col = dotColor(part); tally[col] = (tally[col] || 0) + 1;
           if (tally[col] > bn) { bn = tally[col]; best = col; }
         });
-        return { res: res, snapT: snapT, lead: DM.leadTime(res, m, sd), color: best || '#7f8ba6' };
+        var drummer = res.hits.length > 0 && res.hits.every(function (h) { var q = partOf(pit, h.partId); return q && q.type === 'drum'; });
+        return { res: res, snapT: snapT, lead: DM.leadTime(res, m, sd), color: best || '#7f8ba6', drummer: drummer };
       });
       S.cache[pit.id] = { drops: drops, events: DM.loopEvents(pit, m, all) };
     });
@@ -297,14 +298,14 @@
       if (!p) h += '<span class="hint">Tap a part in the pit to edit it.</span>';
       else {
         h += '<span class="lbl">' + partTitle(p) + '</span>';
-        var bounce = '<select data-f="bounce" aria-label="Bounce">' + option('real', 'Realistic', p.bounce) + option('musical', 'Musical', p.bounce) + option('forever', 'Forever', p.bounce) + option('sticky', 'Sticky', p.bounce) + '</select>';
+        var bounce = '<select data-f="bounce" aria-label="Bounce">' + option('real', 'Realistic', p.bounce) + option('musical', 'Musical', p.bounce) + option('forever', 'Forever', p.bounce) + option('sticky', 'Sticky', p.bounce) + (p.type === 'drum' ? option('locked', 'Beat-locked', p.bounce) : '') + '</select>';
         if (p.type === 'bar') {
           h += '<select data-f="material" aria-label="Material">' + option('wood', 'Wood', p.material) + option('metal', 'Metal', p.material) + option('glass', 'Glass', p.material) + '</select>' + bounce;
         } else if (p.type === 'drum') {
-          h += '<select data-f="size" aria-label="Size">' + option('big', 'Big (kick)', p.size) + option('medium', 'Medium (snare)', p.size) + option('small', 'Small (hat)', p.size) + '</select>' + bounce;
+          h += '<select data-f="size" aria-label="Size">' + option('big', 'Big (kick)', p.size) + option('medium', 'Medium (snare)', p.size) + option('small', 'Small (hat)', p.size) + '</select>' + bounce + (p.bounce === 'locked' ? divSelect(p) : '');
         } else {
           h += '<select data-f="mode" aria-label="Mode">' + option('locked', 'Beat-locked', p.mode) + option('forever', 'Forever', p.mode) + '</select>';
-          if (p.mode !== 'forever') h += '<select data-f="div" aria-label="Division">' + option(4, '1/4', p.div) + option(8, '1/8', p.div) + option(16, '1/16', p.div) + '</select>';
+          if (p.mode !== 'forever') h += divSelect(p);
         }
         var rg = DM.angleRange(p);
         h += '<span class="chip"><button class="btn small" data-act="ang-" type="button" aria-label="Angle down">&minus;</button><input class="num" type="number" data-f="angle" min="-' + rg + '" max="' + rg + '" step="5" value="' + Math.round(p.angle || 0) + '" aria-label="Angle in degrees">&deg;<button class="btn small" data-act="ang+" type="button" aria-label="Angle up">+</button></span>';
@@ -321,6 +322,15 @@
       h += stepper('Shift', 'tr', pit.transpose, 'steps') + q('shift') + stepper('Start', 'off', pit.offset, '/16') + q('start') + stepper('Delay', 'bars', pit.offsetBars, 'bars') + q('delay');
     }
     $('dock').innerHTML = h + '</div>';
+  }
+  // Beat-lock divisions. A value that is not in the list (a template's exact ricochet gap) shows as "N steps".
+  var DIVS = [[2, '1/2'], [4, '1/4'], [8, '1/8'], [16, '1/16']];
+  function divSelect(p) {
+    var cur = p.div || 8, found = DIVS.some(function (d) { return Math.abs(d[0] - cur) < 1e-6; });
+    var h = '<select data-f="div" aria-label="Division">';
+    DIVS.forEach(function (d) { h += '<option value="' + d[0] + '"' + (Math.abs(d[0] - cur) < 1e-6 ? ' selected' : '') + '>' + d[1] + '</option>'; });
+    if (!found) h += '<option value="' + cur + '" selected>' + (Math.round(1600 / cur) / 100) + ' steps</option>';
+    return h + '</select>';
   }
   function stepper(label, k, v, unit) {
     return '<span class="chip">' + label + ' <button class="btn small" data-step="' + k + '-" type="button" aria-label="' + label + ' down">&minus;</button><span class="val">' + (k === 'tr' && v > 0 ? '+' : '') + v + '</span><button class="btn small" data-step="' + k + '+" type="button" aria-label="' + label + ' up">+</button></span>';
@@ -440,7 +450,7 @@
         if (it.tempo && Math.abs(it.tempo - cur) > 15) {
           openInfo('Use tempo ' + it.tempo + '?', '<p>' + it.name + ' sounds best around ' + it.tempo + ' BPM. You are at ' + cur + '.</p>', [
             { label: 'Keep ' + cur, fn: null },
-            { label: 'Use ' + it.tempo, primary: true, fn: function () { S.machine.bpm = it.tempo; if (S.clock) S.clock.setBpm(it.tempo); afterChange(false); } }]);
+            { label: 'Use ' + it.tempo, primary: true, fn: function () { S.machine.bpm = it.tempo; if (S.clock) S.clock.setBpm(it.tempo); DM.retuneTemplates(S.machine); afterChange(true); } }]);
         }
       }
     });
@@ -498,6 +508,7 @@
     };
     $('key').innerHTML = DM.KEYS.map(function (k, i) { return option(i, k, 0); }).join('');
     $('scale').innerHTML = Object.keys(DM.SCALES).map(function (k) { return option(k, DM.SCALES[k].name, ''); }).join('');
+    $('bpm').onchange = function () { if (DM.retuneTemplates(S.machine)) afterChange(true); };
     $('bpm').oninput = function () { S.machine.bpm = +this.value; $('bpmOut').textContent = this.value; if (S.clock) S.clock.setBpm(S.machine.bpm); rebuild(); save(); };
     $('key').onchange = function () { S.machine.key = +this.value; afterChange(true); };
     $('scale').onchange = function () { S.machine.scale = this.value; afterChange(true); };
@@ -970,6 +981,7 @@
     ctx.closePath(); ctx.fill(); noGlow(); ctx.lineCap = 'butt';
   }
 
+  var trailTmp = { x: 0, y: 0 };
   function drawBalls(c, now) {
     var pit = c.pit, s = c.s, out = { x: 0, y: 0 };
     S.balls.forEach(function (b) {
@@ -1000,8 +1012,15 @@
         ctx.beginPath(); ctx.arc(out.x, out.y, DM.BALL_R * (1 - k * 0.1), 0, 7); ctx.fill();
       }
       DM.pathAt(res, raw, out);
-      glow('#ffffff', 12); ctx.fillStyle = 'rgba(255,255,255,' + fade + ')';
-      ctx.beginPath(); ctx.arc(out.x, out.y, DM.BALL_R, 0, 7); ctx.fill(); noGlow();
+      var sx = 1, sy = 1, col = '255,255,255';
+      if (b.c.drummer) {                         // little drummers: lane colour, squash on landing, stretch in the air
+        var near = 1e9; for (var hi = 0; hi < b.c.snapT.length; hi++) near = Math.min(near, Math.abs(age - b.c.snapT[hi]));
+        if (near < 0.06) { var q = 1 - near / 0.06; sx = 1 + 0.45 * q; sy = 1 - 0.4 * q; }
+        else { DM.pathAt(res, raw + 0.01, trailTmp); var vy = (trailTmp.y - out.y) / 0.01; sy = 1 + Math.min(0.25, Math.abs(vy) / 4000); sx = 1 / sy; }
+        var hx = b.c.color.replace('#', ''); col = parseInt(hx.slice(0, 2), 16) + ',' + parseInt(hx.slice(2, 4), 16) + ',' + parseInt(hx.slice(4, 6), 16);
+      }
+      glow('rgb(' + col + ')', 12); ctx.fillStyle = 'rgba(' + col + ',' + fade + ')';
+      ctx.beginPath(); ctx.ellipse(out.x, out.y + DM.BALL_R * (1 - sy), DM.BALL_R * sx, DM.BALL_R * sy, 0, 0, 7); ctx.fill(); noGlow();
     });
     S.rings.forEach(function (r) {
       if (r.pitId !== pit.id) return;
@@ -1068,7 +1087,7 @@
 
   // Small hook for tests and tinkering.
   window.DM_debug = {
-    state: S,
+    state: S, rebuild: function () { rebuild(); renderTabs(); renderDock(); },
     machine: function () { return S.machine; },
     cache: function () { return S.cache; },
     play: play, stop: stop,

@@ -138,28 +138,29 @@ test('6. duplicate with mirror and transpose moves parts and pitches as expected
   assert.strictEqual(plain.transpose, 0);
 });
 
-test('7. a 3-dropper drum kit reproduces its pattern exactly (all 7 templates, any tempo)', () => {
+test('7. drum templates: bouncing balls reproduce the exact pattern (90/110/140 BPM), 1.8x more hits than lit steps', () => {
   DM.DRUM_BEATS.forEach(beat => [90, 110, 140].forEach(bpm => {
-    const m = DM.newMachine(); m.bpm = bpm; m.tight = 1;
+    const m = DM.newMachine(); m.bpm = bpm; m.tight = 0;
     const pit = DM.buildPreset(m, beat.id); m.pits = [pit];
     assert.strictEqual(pit.droppers.length, 3);
-    const sd = beat.tempo ? 60 / bpm / 4 : 0, got = { kick: [], snare: [], hat: [] };
-    const all = DM.simulateAll(pit, m);
-    all.forEach((res, di) => {
-      assert.strictEqual(res.hits.length, 1, beat.id + ' lane ' + di + ' should make one hit per ball');
-      assert.strictEqual(res.end, 'sticky');
-      const lead = DM.leadTime(res, m, sd);
+    const sd = 60 / bpm / 4, got = { kick: [], snare: [], hat: [] };
+    let lit = 0, hits = 0;
+    DM.simulateAll(pit, m).forEach((res, di) => {
+      const h0 = res.hits.length ? res.hits[0].t : 0;
       for (let k = 0; k < 16; k++) {
         if (!DM.stepLit(pit, k, di)) continue;
-        const at = (k * sd + DM.snapTime(res.hits[0].t, m.tight, sd) - lead) / sd;
-        assert.ok(Math.abs(at - k) < 1e-6);
-        const part = pit.parts.find(q => q.id === res.hits[0].partId);
-        got[DM.DRUM_KIND[part.size]].push(k);
+        lit++;
+        res.hits.forEach(h => {
+          hits++;
+          const off = (h.t - h0) / sd, snapped = Math.round(off);
+          assert.ok(Math.abs(off - snapped) * sd < 0.002, beat.id + '@' + bpm + ' hit off the grid by ' + ((off - snapped) * sd * 1000).toFixed(2) + ' ms');
+          const part = pit.parts.find(q => q.id === h.partId);
+          got[DM.DRUM_KIND[part.size]].push((k + snapped) % 16);
+        });
       }
     });
-    assert.deepStrictEqual(got.kick, [].concat(beat.kick));
-    assert.deepStrictEqual(got.snare, [].concat(beat.snare));
-    assert.deepStrictEqual(got.hat, [].concat(beat.hat));
+    ['kick', 'snare', 'hat'].forEach(kind => assert.deepStrictEqual(got[kind].sort((a, b) => a - b), beat[kind], beat.id + '@' + bpm + ' ' + kind));
+    assert.ok(hits >= 1.8 * lit, beat.id + '@' + bpm + ': ' + hits + ' hits from ' + lit + ' lit steps');
   }));
   // old saves with one dropper still load
   const old = { id: 1, floors: 0, dropperX: 120, steps: DM.stepsOf([0, 4]), parts: [] };
