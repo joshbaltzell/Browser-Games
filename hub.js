@@ -46,40 +46,6 @@ const GAMES = [
       </svg>`,
   },
   {
-    title: "Tetra Storm",
-    description:
-      "Stack falling neon tetrominoes, clear lines, and chase the four-line Tetra. The blocks fall faster every level — how long can you keep the storm at bay?",
-    path: "games/tetra-storm/index.html",
-    play: "desktop",
-    tags: ["Puzzle", "Blocks", "Arcade"],
-    accent: "#b388ff",
-    art: `
-      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect x="39" y="18" width="14" height="14" rx="2" fill="#b388ff" />
-        <rect x="53" y="18" width="14" height="14" rx="2" fill="#b388ff" />
-        <rect x="67" y="18" width="14" height="14" rx="2" fill="#b388ff" />
-        <rect x="53" y="32" width="14" height="14" rx="2" fill="#b388ff" />
-        <rect x="39" y="48" width="14" height="14" rx="2" fill="#7a5cff" />
-        <rect x="53" y="48" width="14" height="14" rx="2" fill="#7a5cff" />
-      </svg>`,
-  },
-  {
-    title: "Sky Climber",
-    description:
-      "Bounce ever upward across drifting platforms, springs and crumbling ledges. Steer carefully, never fall, and climb as high as the sky allows.",
-    path: "games/sky-climber/index.html",
-    play: "phone",
-    tags: ["Platformer", "Arcade", "Skill"],
-    accent: "#ff9f1c",
-    art: `
-      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect x="22" y="58" width="28" height="7" rx="3.5" fill="#ff9f1c" />
-        <rect x="62" y="44" width="28" height="7" rx="3.5" fill="#ff9f1c" />
-        <rect x="34" y="28" width="28" height="7" rx="3.5" fill="#ff9f1c" />
-        <circle cx="78" cy="34" r="6" fill="#ffd27a" />
-      </svg>`,
-  },
-  {
     title: "Neon Gauntlet",
     description:
       "A room-by-room neon dungeon crawler. Clear rooms, fight six enemy archetypes, and build your skill tree one level at a time.",
@@ -142,17 +108,6 @@ const GAMES = [
         <circle cx="36" cy="60" r="5" fill="#ff2bd6" /><circle cx="48" cy="60" r="5" fill="#ff2bd6" /><circle cx="60" cy="60" r="5" fill="#fff6a8" />
         <circle cx="72" cy="60" r="5" fill="#ff2bd6" /><circle cx="84" cy="60" r="5" fill="#fff6a8" />
       </svg>`,
-  },
-  {
-    title: "Echo Cartographer",
-    description:
-      "Navigate a pitch-black cave by sound alone. Space fires a real ping that reveals walls — right-click fires a decoy ping that throws the predator off your trail. Every echo you need to see is also a dinner bell.",
-    path: "games/echo-cartographer/index.html",
-    play: "desktop",
-    tags: ["stealth", "puzzle", "atmospheric"],
-    accent: "#8fffd0",
-    art: `
-      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg"><rect width="120" height="80" fill="#000"/><circle cx="42" cy="44" r="14" fill="none" stroke="#8fffd0" stroke-width="0.6" opacity="0.25"/><circle cx="42" cy="44" r="22" fill="none" stroke="#8fffd0" stroke-width="0.6" opacity="0.15"/><path d="M20 24 H64" stroke="#cfe8ff" stroke-width="1.4" opacity="0.5"/><path d="M64 24 V52" stroke="#ffffff" stroke-width="1.6" opacity="0.9"/><path d="M30 60 H58" stroke="#cfe8ff" stroke-width="1.4" opacity="0.35"/><path d="M76 18 V46" stroke="#cfe8ff" stroke-width="1.4" opacity="0.3"/><circle cx="42" cy="44" r="2.6" fill="#8fffd0"/><circle cx="42" cy="44" r="6" fill="#8fffd0" opacity="0.18"/><circle cx="92" cy="34" r="3" fill="#ff4d5e" opacity="0.7"/><circle cx="92" cy="34" r="7" fill="#ff4d5e" opacity="0.18"/><circle cx="100" cy="60" r="2" fill="#ffd27a"/><circle cx="100" cy="60" r="6" fill="none" stroke="#ffd27a" stroke-width="0.6" opacity="0.5"/></svg>`,
   },
   {
     title: "Knit One",
