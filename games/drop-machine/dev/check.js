@@ -170,6 +170,57 @@ test('7. drum templates: bouncing balls reproduce the exact pattern (90/110/140 
   assert.ok(old.droppers[0].steps[4] && !old.droppers[0].steps[1]);
 });
 
+test('8. Korobeiniki: melody and bass hit lists match the transcription exactly', () => {
+  const m = DM.buildSong(), sd = 60 / m.bpm / 4;
+  assert.strictEqual(m.key, 9); assert.strictEqual(m.scale, 'minor'); assert.strictEqual(m.bpm, 144);
+  assert.ok(m.pits.length >= 3 && m.pits.length <= 4);
+  const SEMI = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  const midiOf = name => 12 * (+name.slice(1) + 1) + SEMI[name[0]];
+  // what the melody pit actually plays, over 8 bars (128 steps), at the default Tight setting
+  function played(pit) {
+    const dr = pit.droppers[0], res = DM.simulateAll(pit, m)[0], out = [];
+    assert.strictEqual(dr.bars, 8); assert.strictEqual(dr.steps.length, 128);
+    for (let k = 0; k < 128; k++) {
+      if (!DM.stepLit(pit, k, 0)) continue;
+      const rr = res.byX[DM.stepX(pit, k, 0)] || res;
+      assert.strictEqual(rr.hits.length, 1, 'step ' + k + ' should make exactly one note');
+      const lead = DM.leadTime(rr, m, sd), at = k * sd + DM.snapTime(rr.hits[0].t, m.tight, sd) - lead;
+      const part = pit.parts.find(q => q.id === rr.hits[0].partId);
+      out.push({ step: k, t: at, midi: DM.partMidi(part, pit, m) });
+    }
+    return out;
+  }
+  const mel = played(m.pits[0]);
+  assert.strictEqual(mel.length, DM.SONG.melody.length);
+  mel.forEach((e, i) => {
+    const want = DM.SONG.melody[i];
+    assert.strictEqual(e.step, want[0], 'note ' + i + ' step');
+    assert.ok(Math.abs(e.t - want[0] * sd) < 0.002, 'note ' + i + ' time');
+    assert.strictEqual(e.midi, midiOf(want[1]), 'note ' + i + ' pitch ' + want[1]);
+  });
+  const bass = played(m.pits[1]), rootMidi = { A: 45, C: 48, D: 50, E: 52 };
+  assert.strictEqual(bass.length, 64);
+  bass.forEach((e, i) => {
+    const bar = Math.floor(e.step / 16);
+    assert.strictEqual(e.step, i * 2, 'bass pulse is every eighth note');
+    assert.strictEqual(e.midi, rootMidi[DM.SONG.bassRoots[bar]], 'bass root of bar ' + (bar + 1));
+  });
+  // the harmony pit is the melody a third below (two scale steps) and starts muted
+  const har = m.pits[3];
+  assert.ok(har.mute); assert.strictEqual(har.transpose, -2);
+  const hp = played(har);
+  hp.forEach((e, i) => assert.ok(e.midi < mel[i].midi && mel[i].midi - e.midi <= 4));
+  // the drum pit is the bouncing rock beat
+  const dr = m.pits[2], got = { kick: [], snare: [], hat: [] };
+  DM.loopEvents(dr, m, DM.simulateAll(dr, m)).forEach(e => got[e.kind].push(Math.round(e.pos) % 16));
+  assert.ok(got.kick.length >= 3 && got.snare.length >= 2 && got.hat.length >= 8);
+  // old one-bar saves still load as one bar, and a slide dropper without xs works
+  const old = { id: 1, floors: 0, dropperX: 100, steps: DM.stepsOf([0]), parts: [] };
+  DM.migratePit(old); DM.fixDropper(old.droppers[0]);
+  assert.strictEqual(old.droppers[0].bars, 1);
+  assert.strictEqual(DM.stepX(old, 0, 0), 100);
+});
+
 console.log('\nStarter machine, one bar (position in sixteenths):');
 require('child_process');
 console.log(require('child_process').execFileSync(process.execPath, [__dirname + '/hits.js']).toString());

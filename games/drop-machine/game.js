@@ -12,7 +12,7 @@
   var $ = function (id) { return document.getElementById(id); };
 
   var S = {
-    machine: null, active: 0, dropSel: 0, sel: null, place: null, dockTab: 'add',
+    machine: null, active: 0, dropSel: 0, page: {}, pageLock: {}, slideMode: false, stepSel: null, sel: null, place: null, dockTab: 'add',
     playing: false, clock: null, stepQueue: [], balls: [], rings: [], flash: {},
     scroll: {}, cache: {}, undo: [], redo: [], cells: [], drag: null, drawerDrag: null,
     lastRebuild: 0, rebuildTimer: null, saveTimer: null
@@ -51,8 +51,9 @@
       p.droppers = p.droppers.slice(0, MAX_DROPPERS);
       p.droppers.forEach(function (d) {
         d.x = clamp(+d.x || 180, 20, 340);
-        if (!d.steps || d.steps.length !== 16) d.steps = DM.newPit(1).droppers[0].steps;
-        d.steps = d.steps.map(Boolean);
+        DM.fixDropper(d);
+        if (!d.xs) d.xs = [];
+        d.xs = d.steps.map(function (on, i) { return on && d.xs[i] != null ? clamp(+d.xs[i], 20, 340) : null; });
       });
       p.parts = p.parts || [];
       p.vol = p.vol == null ? 0.8 : p.vol;
@@ -80,14 +81,19 @@
     S.undo.push(before); if (S.undo.length > 50) S.undo.shift();
     S.redo = []; syncToolbar();
   }
+  // A whole-machine snapshot (used when a famous tune replaces everything) also keeps key, scale and tempo.
+  function wholeSnap() { var m = S.machine; return JSON.stringify({ w: 1, pits: m.pits, key: m.key, scale: m.scale, bpm: m.bpm, tight: m.tight, master: m.master }); }
+  function snapFor(entry) { return entry.charAt(0) === '{' ? wholeSnap() : snapshot(); }
   function restore(json) {
-    S.machine.pits = JSON.parse(json);
+    var o = JSON.parse(json);
+    if (o && o.w) { var m = S.machine; m.key = o.key; m.scale = o.scale; m.bpm = o.bpm; m.tight = o.tight; m.master = o.master; if (S.clock) S.clock.setBpm(m.bpm); o = o.pits; }
+    S.machine.pits = o;
     S.active = clamp(S.active, 0, S.machine.pits.length - 1);
     if (S.sel != null && !selPart()) S.sel = null;
     afterChange(true);
   }
-  function undo() { if (!S.undo.length) return; S.redo.push(snapshot()); restore(S.undo.pop()); }
-  function redo() { if (!S.redo.length) return; S.undo.push(snapshot()); restore(S.redo.pop()); }
+  function undo() { if (!S.undo.length) return; var e = S.undo.pop(); S.redo.push(snapFor(e)); restore(e); }
+  function redo() { if (!S.redo.length) return; var e = S.redo.pop(); S.undo.push(snapFor(e)); restore(e); }
   // Run an edit as one undo step.
   function edit(fn) { var before = snapshot(); fn(); afterChange(true); pushUndo(before); }
   function afterChange(rerender) {
@@ -100,21 +106,26 @@
     if (part.type === 'drum') return part.size === 'big' ? '#ff5f85' : part.size === 'medium' ? '#ff9f5f' : '#ffd75f';
     return partColor(part);
   }
+  function makeDrop(pit, res, m, sd) {
+    var snapT = res.hits.map(function (h) { return DM.snapTime(h.t, m.tight, sd); });
+    var tally = {}, best = null, bn = 0;
+    res.hits.forEach(function (h) {
+      var part = partOf(pit, h.partId); if (!part) return;
+      var col = dotColor(part); tally[col] = (tally[col] || 0) + 1;
+      if (tally[col] > bn) { bn = tally[col]; best = col; }
+    });
+    var drummer = res.hits.length > 0 && res.hits.every(function (h) { var q = partOf(pit, h.partId); return q && q.type === 'drum'; });
+    return { res: res, snapT: snapT, lead: DM.leadTime(res, m, sd), color: best || '#7f8ba6', drummer: drummer };
+  }
   function rebuild() {
     var m = S.machine, sd = stepDur();
     S.cache = {};
     m.pits.forEach(function (pit) {
       var all = DM.simulateAll(pit, m);
       var drops = all.map(function (res) {
-        var snapT = res.hits.map(function (h) { return DM.snapTime(h.t, m.tight, sd); });
-        var tally = {}, best = null, bn = 0;
-        res.hits.forEach(function (h) {
-          var part = partOf(pit, h.partId); if (!part) return;
-          var col = dotColor(part); tally[col] = (tally[col] || 0) + 1;
-          if (tally[col] > bn) { bn = tally[col]; best = col; }
-        });
-        var drummer = res.hits.length > 0 && res.hits.every(function (h) { var q = partOf(pit, h.partId); return q && q.type === 'drum'; });
-        return { res: res, snapT: snapT, lead: DM.leadTime(res, m, sd), color: best || '#7f8ba6', drummer: drummer };
+        var base = makeDrop(pit, res, m, sd);
+        if (res.byX) { base.byX = {}; Object.keys(res.byX).forEach(function (x) { base.byX[x] = res.byX[x] === res ? base : makeDrop(pit, res.byX[x], m, sd); }); }
+        return base;
       });
       S.cache[pit.id] = { drops: drops, events: DM.loopEvents(pit, m, all) };
     });
@@ -156,6 +167,7 @@
       pit.droppers.forEach(function (dr, di) {
         if (!DM.stepLit(pit, step, di)) return;
         var c = cache.drops[di]; if (!c) return;
+        if (c.byX) c = c.byX[DM.stepX(pit, step, di)] || c;
         var t0 = time - c.lead;          // released early so the first sound lands on this step
         S.balls.push({ pitId: pit.id, c: c, t0: t0, next: 0 });
         if (S.balls.length > MAX_BALLS) S.balls.shift();
@@ -280,7 +292,7 @@
   function renderTabs() {
     var h = '';
     S.machine.pits.forEach(function (p, i) { h += '<button class="tab' + (i === S.active ? ' on' : '') + '" data-pit="' + i + '" type="button">Pit ' + (i + 1) + '</button>'; });
-    if (S.machine.pits.length < MAX_PITS) h += '<button class="tab" data-pit="new" type="button" aria-label="Add pit">+</button>';
+    h += '<button class="tab" data-pit="new" type="button" aria-label="Add a pit or a famous tune">+</button>';
     $('tabs').innerHTML = h;
   }
   function renderDock() {
@@ -318,6 +330,14 @@
       h += '<label class="ctl">Volume <input type="range" data-s="vol" min="0" max="1" step="0.05" value="' + pit.vol + '"></label>';
       h += '<span class="ctl"><label class="ctl">Ball life <select data-p="life" aria-label="Ball life">' + DM.LIFE_CHOICES.map(function (b) { return option(b, lifeLabel(b), DM.lifeBeats(pit)); }).join('') + '</select></label>' + q('life') + '</span>';
       h += '<span class="chip">Droppers <button class="btn small" data-act="dropDown" type="button" aria-label="Fewer droppers"' + (pit.droppers.length < 2 ? ' disabled' : '') + '>&minus;</button><span class="val">' + pit.droppers.length + '</span><button class="btn small" data-act="dropUp" type="button" aria-label="More droppers"' + (pit.droppers.length >= MAX_DROPPERS ? ' disabled' : '') + '>+</button></span>';
+      var dsd = pit.droppers[dsel];
+      h += '<span class="chip">Bars <button class="btn small" data-step="plen-" type="button" aria-label="Shorter pattern">&minus;</button><span class="val">' + dsd.bars + '</span><button class="btn small" data-step="plen+" type="button" aria-label="Longer pattern">+</button></span>';
+      h += '<button class="btn small' + (S.slideMode ? ' on' : '') + '" data-act="slide" type="button">Slide</button>';
+      if (S.slideMode) {
+        var ss = S.stepSel, hasSel = ss && ss.pitId === pit.id && ss.di === dsel;
+        h += hasSel ? '<span class="chip">Step ' + (ss.idx + 1) + ' drops at <button class="btn small" data-step="sx-" type="button">&minus;</button><span class="val">' + (dsd.xs[ss.idx] != null ? dsd.xs[ss.idx] : dsd.x) + '</span><button class="btn small" data-step="sx+" type="button">+</button><button class="btn small" data-act="sxreset" type="button">Reset</button></span>'
+          : '<span class="hint">Tap a lit step, then drag its dropper to say where it drops.</span>';
+      }
       h += '<button class="btn small" data-act="rhythm" type="button">Rhythm' + (pit.droppers.length > 1 ? ' (row ' + (dsel + 1) + ')' : '') + '</button>';
       h += stepper('Shift', 'tr', pit.transpose, 'steps') + q('shift') + stepper('Start', 'off', pit.offset, '/16') + q('start') + stepper('Delay', 'bars', pit.offsetBars, 'bars') + q('delay');
     }
@@ -344,7 +364,7 @@
   // ---------- help cards, pickers, floors, droppers ----------
   var HELP = {
     tempo: ['Tempo', '<p>How fast the music goes, in beats per minute.</p><p>110 is a relaxed walk. 140 is dance music.</p>'],
-    steps: ['The step row', '<p>One bar of music split into 16 steps. The 4 brighter cells are the beats you would clap on.</p><p>A lit step makes a ball whose first sound lands right on that step. A pit can have up to 3 droppers, one row each.</p>'],
+    steps: ['The step row', '<p>One bar of music split into 16 steps. The 4 brighter cells are the beats you would clap on.</p><p>A lit step makes a ball whose first sound lands right on that step. A pit can have up to 3 droppers, one row each.</p><p>In the Pit panel, Bars makes a pattern up to 8 bars long (tap the little dots to see another bar), and Slide lets each step drop from its own spot.</p>'],
     key: ['Key', '<p>The home note the song keeps coming back to. Changing it moves every note up or down together, like singing higher or lower.</p>', 'hear'],
     scale: ['Scale', null, 'hear'],
     tight: ['Free and Tight', '<p>How strictly hits snap to the beat grid.</p><p>Tight is machine-perfect. Free is loose and human: hits land where the ball lands.</p>'],
@@ -410,7 +430,7 @@
         if (!opts.confirmLabel) { hide('pick'); opts.onPick(it); return; }
         chosen = it; Array.prototype.forEach.call(list.querySelectorAll('.item'), function (n) { n.classList.remove('on'); }); el.classList.add('on');
         if (opts.onPreview) opts.onPreview(it);
-        ok.disabled = false;
+        ok.disabled = false; if (opts.confirmLabel) ok.textContent = it.whole ? 'Load tune' : opts.confirmLabel;
       };
       list.appendChild(el);
     });
@@ -425,13 +445,15 @@
     $('pick').hidden = false;
   }
 
-  function previewPit(pit) {
+  function previewPit(pit, m, maxSteps) {
     Kit.audio.unlock(); if (!Kit.audio.ctx) return;
-    var m = S.machine, sd = stepDur(), t0 = audioNow() + 0.06, all = DM.simulateAll(pit, m);
+    m = m || S.machine; maxSteps = maxSteps || 16;
+    var sd = 60 / m.bpm / 4, t0 = audioNow() + 0.06, all = DM.simulateAll(pit, m);
     pit.droppers.forEach(function (dr, di) {
-      var res = all[di], lead = DM.leadTime(res, m, sd);
-      for (var k = 0; k < 16; k++) {
+      for (var k = 0; k < Math.min(maxSteps, dr.steps.length); k++) {
         if (!dr.steps[k]) continue;
+        var res = all[di]; if (dr.xs && dr.xs[k] != null && res.byX) res = res.byX[dr.xs[k]] || res;
+        var lead = DM.leadTime(res, m, sd);
         res.hits.forEach(function (h) {
           var part = partOf(pit, h.partId); if (!part) return;
           DMAudio.playPart(part, DM.partMidi(part, pit, m), t0 + k * sd + DM.snapTime(h.t, m.tight, sd) - lead, h.speed, 0.8 * m.master);
@@ -439,12 +461,28 @@
       }
     });
   }
+  function replaceMachine(nm) {
+    var before = wholeSnap(), m = S.machine;
+    m.key = nm.key; m.scale = nm.scale; m.bpm = nm.bpm; m.tight = nm.tight; m.master = nm.master; m.nextId = nm.nextId; m.pits = nm.pits;
+    S.active = 0; S.sel = null; S.dropSel = 0; S.scroll = {}; S.page = {}; S.pageLock = {}; S.stepSel = null; S.place = null;
+    if (S.clock) S.clock.setBpm(m.bpm);
+    afterChange(true);
+    S.undo.push(before); if (S.undo.length > 50) S.undo.shift(); S.redo = []; syncToolbar();
+  }
   function openPitPicker() {
-    if (S.machine.pits.length >= MAX_PITS) return;
-    openPicker('Add a pit', DM.PRESETS, {
+    var full = S.machine.pits.length >= MAX_PITS;
+    openPicker(full ? 'Famous tunes (four pits is the most)' : 'Add a pit', DM.PRESETS.filter(function (it) { return !full || it.whole; }), {
       confirmLabel: 'Add pit',
-      onPreview: function (it) { var pit = DM.buildPreset(S.machine, it.id); if (it.id !== 'empty') previewPit(pit); },
+      onPreview: function (it) {
+        if (it.whole) { var sm = DM.buildSong(); previewPit(sm.pits[0], sm, 32); previewPit(sm.pits[1], sm, 32); return; }
+        var pit = DM.buildPreset(S.machine, it.id); if (it.id !== 'empty') previewPit(pit);
+      },
       onPick: function (it) {
+        if (it.whole) {
+          openInfo('Replace your machine?', '<p>' + it.name + ' replaces everything you have now with its own melody, bass and drums, and sets the key to A minor and the tempo to ' + it.tempo + '. You can undo it.</p>', [
+            { label: 'Cancel', fn: null }, { label: 'Replace', primary: true, fn: function () { replaceMachine(DM.buildSong()); } }]);
+          return;
+        }
         addPresetPit(it.id);
         var cur = S.machine.bpm;
         if (it.tempo && Math.abs(it.tempo - cur) > 15) {
@@ -472,12 +510,18 @@
   function openRhythms() {
     var pit = activePit(), di = clamp(S.dropSel, 0, pit.droppers.length - 1);
     openPicker('Rhythm for dropper ' + (di + 1), RHYTHMS.map(function (r) { return { id: r.id, name: r.name, dots: dotsOf(r.steps), steps: r.steps }; }), {
-      onPick: function (it) { edit(function () { pit.droppers[di].steps = DM.stepsOf(it.steps); }); }
+      onPick: function (it) {
+        edit(function () {
+          var dq = pit.droppers[di], one = DM.stepsOf(it.steps), a = [];
+          for (var i = 0; i < 16 * dq.bars; i++) a.push(one[i % 16]);
+          dq.steps = a; dq.xs = a.map(function () { return null; });
+        });
+      }
     });
   }
   function addDropper() {
     var pit = activePit(); if (pit.droppers.length >= MAX_DROPPERS) return;
-    edit(function () { pit.droppers.push({ x: [180, 70, 290][pit.droppers.length] || 180, steps: DM.stepsOf([]) }); });
+    edit(function () { pit.droppers.push({ x: [180, 70, 290][pit.droppers.length] || 180, bars: 1, steps: DM.stepsOf([]), xs: [] }); });
     S.dropSel = pit.droppers.length - 1; renderDock();
   }
   function removeDropper() {
@@ -531,6 +575,8 @@
       var p = selPart(), pit = activePit();
       if (t.dataset.act === 'dupPart') duplicatePart();
       else if (t.dataset.act === 'rhythm') openRhythms();
+      else if (t.dataset.act === 'slide') { S.slideMode = !S.slideMode; renderDock(); }
+      else if (t.dataset.act === 'sxreset') { var ss0 = S.stepSel; if (ss0) edit(function () { pit.droppers[ss0.di].xs[ss0.idx] = null; }); }
       else if (t.dataset.act === 'dropUp') addDropper();
       else if (t.dataset.act === 'dropDown') removeDropper();
       else if (t.dataset.act === 'delPart') deletePart();
@@ -539,6 +585,16 @@
       else if (t.dataset.step) {
         var k = t.dataset.step.slice(0, -1), d = t.dataset.step.slice(-1) === '+' ? 1 : -1;
         edit(function () {
+          if (k === 'plen') {
+            var dq = pit.droppers[clamp(S.dropSel, 0, pit.droppers.length - 1)], opts = [1, 2, 4, 8], ni = clamp(opts.indexOf(dq.bars) + d, 0, 3);
+            dq.bars = opts[ni]; var xs0 = dq.xs || []; DM.fixDropper(dq);
+            dq.xs = dq.steps.map(function (on, i) { return on && xs0[i] != null ? xs0[i] : null; });
+            return;
+          }
+          if (k === 'sx') {
+            var sq = S.stepSel, dr1 = pit.droppers[sq.di];
+            dr1.xs[sq.idx] = clamp((dr1.xs[sq.idx] != null ? dr1.xs[sq.idx] : dr1.x) + 10 * d, 20, 340); return;
+          }
           if (k === 'tr') pit.transpose = clamp(pit.transpose + d, -7, 7);
           else if (k === 'off') pit.offset = clamp(pit.offset + d, 0, 15);
           else pit.offsetBars = clamp(pit.offsetBars + d, 0, 3);
@@ -591,7 +647,8 @@
     var phone = W < 700, idx = phone ? [S.active] : m.pits.map(function (p, i) { return i; });
     var n = idx.length, gap = 24, pad = 8, hdrH = 26, rowH = phone ? 30 : 24, stripH = phone ? 58 : 62;
     var maxDrop = 1; idx.forEach(function (i) { maxDrop = Math.max(maxDrop, m.pits[i].droppers.length); });
-    var rowsH = maxDrop * rowH + 4;
+    var maxBars = 1; idx.forEach(function (i) { m.pits[i].droppers.forEach(function (d) { maxBars = Math.max(maxBars, d.bars || 1); }); });
+    var pageH = maxBars > 1 ? 14 : 0, rowsH = maxDrop * rowH + 4 + pageH;
     var minRow = 16 * (phone ? 19 : 15) + ROW_LABEL;           // the 16 step cells stay easy to see and tap
     var vpH = Math.max(80, H - pad * 2 - hdrH - rowsH - stripH - 16);
     var availW = (W - pad * 2 - (n - 1) * gap) / n - 16;        // pit width per cell
@@ -606,6 +663,8 @@
       c.frame = { x: fx, y: top, w: fw, h: hdrH + rowsH + vpH + stripH + 16 };
       c.hdr = { x: fx, y: top, w: fw, h: hdrH };
       c.row = { x: fx + 8, y: top + hdrH, w: fw - 16, h: pit.droppers.length * rowH };
+      c.pages = pageH ? { x: fx + 8, y: top + hdrH + maxDrop * rowH + 2, w: fw - 16, h: pageH } : null;
+      c.page = curPage(pit);
       c.vp = { x: px, y: top + hdrH + rowsH + 4, w: pw, h: vpH };
       c.strip = { x: fx + 8, y: c.vp.y + vpH + 4, w: fw - 16, h: stripH };
       var maxScroll = Math.max(0, DM.pitHeight(pit) - vpH / s);
@@ -613,6 +672,18 @@
       cells.push(c);
     });
     S.cells = cells;
+  }
+  function pitBars(pit) { var n = 1; pit.droppers.forEach(function (d) { n = Math.max(n, d.bars || 1); }); return n; }
+  // Which bar of a long pattern the step rows show: the playing bar while playing, else the tapped one.
+  function playBar(pit) {
+    var pos = playPos(); if (pos < 0) return -1;
+    var L = 16 * pitBars(pit), p = ((pos - DM.startDelaySteps(pit)) % L + L) % L;
+    return Math.floor(p / 16);
+  }
+  function curPage(pit) {
+    var nb = pitBars(pit), pb = playBar(pit);
+    if (pb >= 0 && !S.pageLock[pit.id]) return pb % nb;
+    return (S.page[pit.id] || 0) % nb;
   }
   function inRect(r, x, y) { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
   function toWorld(c, px, py) { return { x: (px - c.px) / c.s, y: (py - c.vp.y) / c.s + c.scroll }; }
@@ -634,7 +705,12 @@
       if (inRect(c.row, px, py)) {
         var di = clamp(Math.floor((py - c.row.y) / c.rowH), 0, c.pit.droppers.length - 1);
         if (px < c.row.x + ROW_LABEL) return { cell: c, zone: 'rowlabel', di: di };
-        return { cell: c, zone: 'step', di: di, idx: clamp(Math.floor((px - c.row.x - ROW_LABEL) / ((c.row.w - ROW_LABEL) / 16)), 0, 15) };
+        var col = clamp(Math.floor((px - c.row.x - ROW_LABEL) / ((c.row.w - ROW_LABEL) / 16)), 0, 15), dd = c.pit.droppers[di];
+        return { cell: c, zone: 'step', di: di, idx: (c.page % dd.bars) * 16 + col };
+      }
+      if (c.pages && inRect(c.pages, px, py)) {
+        var nb = pitBars(c.pit);
+        return { cell: c, zone: 'page', idx: clamp(Math.floor((px - (c.pages.x + c.pages.w / 2 - nb * 8)) / 16), 0, nb - 1) };
       }
       if (inRect(c.strip, px, py)) return { cell: c, zone: 'strip' };
       if (inRect(c.vp, px, py)) { var w = toWorld(c, px, py); return { cell: c, zone: 'pit', wx: w.x, wy: w.y }; }
@@ -670,7 +746,18 @@
     if (z.zone === 'solo') { pit.solo = !pit.solo; save(); return; }
     if (z.zone === 'help') { showHelp('pit'); return; }
     if (z.zone === 'rowlabel') { S.dropSel = z.di; renderDock(); return; }
-    if (z.zone === 'step') { S.dropSel = z.di; edit(function () { pit.droppers[z.di].steps[z.idx] = !pit.droppers[z.di].steps[z.idx]; }); return; }
+    if (z.zone === 'page') { S.page[pit.id] = z.idx; S.pageLock[pit.id] = true; return; }
+    if (z.zone === 'step') {
+      var dr0 = pit.droppers[z.di]; S.dropSel = z.di;
+      if (S.slideMode && dr0.steps[z.idx]) { S.stepSel = { pitId: pit.id, di: z.di, idx: z.idx }; renderDock(); return; }
+      edit(function () {
+        dr0.steps[z.idx] = !dr0.steps[z.idx];
+        if (!dr0.xs) dr0.xs = [];
+        if (!dr0.steps[z.idx]) dr0.xs[z.idx] = null;
+      });
+      if (S.slideMode && dr0.steps[z.idx]) { S.stepSel = { pitId: pit.id, di: z.di, idx: z.idx }; renderDock(); }
+      return;
+    }
     if (z.zone === 'strip') { stripTap(c, px, py); return; }
     if (z.zone !== 'pit') return;
     var before = snapshot(), drag = { c: c, before: before, px: px, py: py, moved: false };
@@ -714,7 +801,10 @@
     if (d.kind === 'pan') {
       S.scroll[pit.id] = clamp((S.scroll[pit.id] || 0) - (py - d.py) / c.s, 0, c.maxScroll); d.py = py;
     } else if (d.kind === 'dropper') {
-      pit.droppers[d.di].x = clamp(snap(w.x, 10), 20, 340); rebuildSoon();
+      var ss = S.stepSel, dd2 = pit.droppers[d.di];
+      if (S.slideMode && ss && ss.pitId === pit.id && ss.di === d.di) { if (!dd2.xs) dd2.xs = []; dd2.xs[ss.idx] = clamp(snap(w.x, 10), 20, 340); }
+      else dd2.x = clamp(snap(w.x, 10), 20, 340);
+      rebuildSoon();
     } else if (d.kind === 'part') {
       d.part.x = clamp(snap(d.ox + w.x - d.sx, 10), 10, 350);
       d.part.y = clamp(snap(d.oy + w.y - d.sy, 10), 30, h - 10);
@@ -845,23 +935,49 @@
 
   function drawStepRow(c) {
     var pit = c.pit, r = c.row, cache = S.cache[pit.id], pos = playPos(), d = DM.startDelaySteps(pit);
-    var cur = pos >= 0 && pos >= d ? Math.floor(pos - d) % 16 : -1;
     var w = (r.w - ROW_LABEL) / 16, rh = c.rowH;
     pit.droppers.forEach(function (dr, di) {
       var y = r.y + di * rh, col = cache && cache.drops[di] ? cache.drops[di].color : '#7f8ba6';
+      var L = dr.steps.length, base = (c.page % dr.bars) * 16, curIdx = pos >= 0 && pos >= d ? Math.floor(pos - d) % L : -1;
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(r.x + 6, y + rh / 2, 3.6, 0, 7); ctx.fill();
       if (di === S.dropSel && c.i === S.active && pit.droppers.length > 1) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(r.x + 6, y + rh / 2, 6, 0, 7); ctx.stroke(); }
       for (var i = 0; i < 16; i++) {
-        var x = r.x + ROW_LABEL + i * w + 1.5, on = dr.steps[i], beat = i % 4 === 0;
+        var gi = base + i, x = r.x + ROW_LABEL + i * w + 1.5, on = dr.steps[gi], beat = i % 4 === 0;
         ctx.fillStyle = on ? '#ffb347' : '#0e1423';
         if (on) glow('#ffb347', 6);
         rrect(x, y + 2.5, w - 3, rh - 5, 3); ctx.fill(); noGlow();
         if (!on) { ctx.strokeStyle = beat ? '#7385b5' : '#3b4668'; ctx.lineWidth = 1.2; ctx.stroke(); }
-        if (i === cur) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; rrect(x - 1, y + 1.5, w - 1, rh - 3, 3); ctx.stroke(); }
+        if (on && dr.xs && dr.xs[gi] != null) { ctx.fillStyle = '#5a3a00'; ctx.fillRect(x + 2, y + rh - 7, w - 7, 2); }
+        if (gi === curIdx) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; rrect(x - 1, y + 1.5, w - 1, rh - 3, 3); ctx.stroke(); }
+        var ss = S.stepSel;
+        if (S.slideMode && ss && ss.pitId === pit.id && ss.di === di && ss.idx === gi) { ctx.strokeStyle = '#5ee6ff'; ctx.lineWidth = 2; rrect(x - 1.5, y + 1, w, rh - 2, 3); ctx.stroke(); }
       }
     });
+    if (c.pages) {                                // little page dots: one per bar of the pattern
+      var nb = pitBars(pit), pb = playBar(pit), x0 = c.pages.x + c.pages.w / 2 - nb * 8;
+      for (var j = 0; j < nb; j++) {
+        var cx = x0 + j * 16 + 8, cy = c.pages.y + c.pages.h / 2;
+        ctx.fillStyle = j === c.page ? '#ffb347' : '#2a3550'; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 7); ctx.fill();
+        if (j === pb) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.arc(cx, cy, 6, 0, 7); ctx.stroke(); }
+      }
+    }
   }
 
+  // Where a slide dropper is drawn: gliding to the next lit step's x just before it releases.
+  function dropperXNow(pit, di) {
+    var dr = pit.droppers[di], L = dr.steps.length;
+    var ss = S.stepSel;
+    if (S.slideMode && ss && ss.pitId === pit.id && ss.di === di && dr.xs && dr.xs[ss.idx] != null) return dr.xs[ss.idx];
+    if (!S.playing || !dr.xs || !dr.xs.some(function (v) { return v != null; })) return dr.x;
+    var pos = playPos(); if (pos < 0) return dr.x;
+    var p = ((pos - DM.startDelaySteps(pit)) % L + L) % L, f = Math.floor(p), prev = -1, next = -1, j, i;
+    function xAt(k) { return dr.xs[k] != null ? dr.xs[k] : dr.x; }
+    for (j = 0; j < L; j++) { i = (f - j + L) % L; if (dr.steps[i]) { prev = i; break; } }
+    for (j = 1; j <= L; j++) { i = (f + j) % L; if (dr.steps[i]) { next = i; break; } }
+    if (prev < 0 || next < 0) return dr.x;
+    var dist = ((next - p) % L + L) % L, gl = clamp(1 - dist / 2, 0, 1);
+    return xAt(prev) + (xAt(next) - xAt(prev)) * gl;
+  }
   function drawPit(c, now) {
     var pit = c.pit, s = c.s, vp = c.vp, h = DM.pitHeight(pit), cache = S.cache[pit.id];
     ctx.save();
@@ -892,7 +1008,7 @@
     });
     // droppers
     pit.droppers.forEach(function (dr, di) {
-      var dx = dr.x, dg = ctx.createLinearGradient(0, 0, 0, 16), col = cache && cache.drops[di] ? cache.drops[di].color : '#7f8ba6';
+      var dx = dropperXNow(pit, di), dg = ctx.createLinearGradient(0, 0, 0, 16), col = cache && cache.drops[di] ? cache.drops[di].color : '#7f8ba6';
       dg.addColorStop(0, '#6b7ba3'); dg.addColorStop(1, '#3a4766');
       ctx.fillStyle = dg; ctx.strokeStyle = '#a9b8dc'; ctx.lineWidth = 1.5 / s;
       ctx.beginPath(); ctx.moveTo(dx - 16, 0); ctx.lineTo(dx + 16, 0); ctx.lineTo(dx + 7, 14); ctx.lineTo(dx - 7, 14); ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -934,7 +1050,10 @@
     ctx.fillStyle = 'rgba(230,238,255,.85)';
     if (p.type === 'bar') ctx.fillText(DM.noteName(DM.partMidi(p, c.pit, S.machine)), p.x + cap.ux * 14 / Math.min(s, 1), p.y + cap.uy * 14 / Math.min(s, 1));
     else if (p.type === 'pad') ctx.fillText(p.mode === 'forever' ? '∞' : '1/' + p.div, p.x + cap.ux * 16 / Math.min(s, 1), p.y + cap.uy * 16 / Math.min(s, 1));
-    else ctx.fillText(DM.DRUM_KIND[p.size], p.x, p.y - 16 / Math.min(s, 1));
+    else {
+      var first = true; for (var pi = 0; pi < c.pit.parts.length && c.pit.parts[pi] !== p; pi++) if (c.pit.parts[pi].type === 'drum' && c.pit.parts[pi].size === p.size) first = false;
+      if (first) ctx.fillText(DM.DRUM_KIND[p.size], p.x, p.y - 16 / Math.min(s, 1));      // one label per kind
+    }
     if (sel) {
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2 / s; ctx.setLineDash([4 / s, 4 / s]);
       ctx.beginPath(); ctx.arc(p.x, p.y, DM.partLen(p) / 2 + 12, 0, 7); ctx.stroke(); ctx.setLineDash([]);
@@ -1049,7 +1168,8 @@
       if (hi - lo < 12) { var mid = (hi + lo) / 2; lo = mid - 6; hi = mid + 6; }
       var bw = Math.max(3, w / 16 * 0.7);
       cache.events.forEach(function (e) {
-        var x = r.x + e.pos / 16 * w, y, near = cur >= 0 && Math.abs(e.pos - cur) < 0.7;
+        if (e.len > 16 && Math.floor(e.pos / 16) !== c.page % (e.len / 16)) return;
+        var ex = e.pos % 16, x = r.x + ex / 16 * w, y, near = cur >= 0 && Math.abs(ex - cur) < 0.7 && playBar(c.pit) % (e.len / 16) === Math.floor(e.pos / 16);
         if (e.midi != null) y = r.y + 4 + (1 - (e.midi - lo) / (hi - lo)) * (noteH - 4);
         else y = r.y + r.h - drumH + (e.kind === 'kick' ? 11 : e.kind === 'snare' ? 7 : e.kind === 'hat' ? 3 : 14);
         var flash = S.flash[e.partId] != null && audioNow() - S.flash[e.partId] < 0.2;
@@ -1087,7 +1207,7 @@
 
   // Small hook for tests and tinkering.
   window.DM_debug = {
-    state: S, rebuild: function () { rebuild(); renderTabs(); renderDock(); },
+    state: S, replaceMachine: replaceMachine, song: function () { replaceMachine(DM.buildSong()); }, rebuild: function () { rebuild(); renderTabs(); renderDock(); },
     machine: function () { return S.machine; },
     cache: function () { return S.cache; },
     play: play, stop: stop,

@@ -89,14 +89,14 @@ var DM = (function () {
 
   // ---- the path of one ball ----------------------------------------
   // Returns {path:{n, dt, x[], y[]}, hits:[{t, partId, speed, x, y}], end, dur}.
-  function simulatePit(pit, machine, di) {
+  function simulatePit(pit, machine, di, xOver) {
     migratePit(pit);
     var drop = pit.droppers[di || 0];
     var beat = 60 / machine.bpm, limit = lifeBeats(pit) * beat, restT = 0;
     var height = pitHeight(pit);
     var caps = pit.parts.map(capsule);
     var last = pit.parts.map(function () { return -1; });
-    var x = drop.x, y = DROP_Y, vx = 0, vy = 0, t = 0;
+    var x = xOver != null ? xOver : drop.x, y = DROP_Y, vx = 0, vy = 0, t = 0;
     var px = [x], py = [y], hits = [], end = 'limit';
     var total = Math.round(limit / STEP);
     for (var i = 1; i <= total; i++) {
@@ -165,7 +165,13 @@ var DM = (function () {
   function stepLit(pit, step, di) {
     var d = startDelaySteps(pit);
     if (step < d) return false;
-    return !!pit.droppers[di || 0].steps[(step - d) % 16];
+    var dr = pit.droppers[di || 0];
+    return !!dr.steps[(step - d) % dr.steps.length];
+  }
+  // Where the dropper is when it releases on this global step (each lit step can have its own x).
+  function stepX(pit, step, di) {
+    var dr = pit.droppers[di || 0], i = (step - startDelaySteps(pit)) % dr.steps.length;
+    return dr.xs && dr.xs[i] != null ? dr.xs[i] : dr.x;
   }
   // Older saves had one dropper as pit.dropperX and pit.steps.
   function migratePit(pit) {
@@ -174,10 +180,31 @@ var DM = (function () {
     delete pit.dropperX; delete pit.steps;
     return pit;
   }
+  // Make sure a dropper has bars (1, 2, 4 or 8) and a step list of 16 per bar.
+  function fixDropper(d) {
+    if ([1, 2, 4, 8].indexOf(d.bars) < 0) d.bars = Math.max(1, Math.round((d.steps ? d.steps.length : 16) / 16)) || 1;
+    if ([1, 2, 4, 8].indexOf(d.bars) < 0) d.bars = 1;
+    var a = [], i; for (i = 0; i < 16 * d.bars; i++) a.push(!!(d.steps && d.steps[i]));
+    d.steps = a;
+    return d;
+  }
   function EMPTY_STEPS() { return [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0].map(Boolean); }
   function simulateAll(pit, machine) {
     migratePit(pit);
-    return pit.droppers.map(function (d, i) { return simulatePit(pit, machine, i); });
+    return pit.droppers.map(function (d, i) {
+      var res = simulatePit(pit, machine, i), xs = dropXs(pit, i);
+      if (xs.length > 1) {      // a slide dropper: one cached path per distinct x
+        res.byX = {};
+        xs.forEach(function (x) { res.byX[x] = x === d.x ? res : simulatePit(pit, machine, i, x); });
+      }
+      return res;
+    });
+  }
+  // All distinct drop positions of a dropper: its own x and every per-step x on a lit step.
+  function dropXs(pit, di) {
+    var dr = pit.droppers[di], out = [dr.x];
+    if (dr.xs) dr.steps.forEach(function (on, i) { if (on && dr.xs[i] != null && out.indexOf(dr.xs[i]) < 0) out.push(dr.xs[i]); });
+    return out;
   }
   // A ball is released early so its first sound lands exactly on the lit step. Seconds.
   function leadTime(res, machine, sd) {
@@ -226,17 +253,20 @@ var DM = (function () {
     migratePit(pit);
     var stepDur = 60 / machine.bpm / 4, d = startDelaySteps(pit), out = [];
     pit.droppers.forEach(function (dr, di) {
-      var res = results[di], lead = leadTime(res, machine, stepDur);
-      for (var k = 0; k < 16; k++) {
+      var L = dr.steps.length;
+      for (var k = 0; k < L; k++) {
         if (!dr.steps[k]) continue;
-        res.hits.forEach(function (h) {
+        var rk = results[di];
+        if (dr.xs && dr.xs[k] != null && results[di].byX && results[di].byX[dr.xs[k]]) rk = results[di].byX[dr.xs[k]];
+        var lead = leadTime(rk, machine, stepDur);
+        rk.hits.forEach(function (h) {
           var part = null;
           for (var i = 0; i < pit.parts.length; i++) if (pit.parts[i].id === h.partId) part = pit.parts[i];
           if (!part) return;
           var tt = snapTime(h.t, machine.tight, stepDur) - lead;
-          var pos = ((k + d + tt / stepDur) % 16 + 16) % 16;
+          var pos = ((k + d + tt / stepDur) % L + L) % L;
           var kind = part.type === 'bar' ? 'note' : part.type === 'pad' ? 'tick' : DRUM_KIND[part.size];
-          out.push({ pos: pos, partId: part.id, kind: kind, midi: partMidi(part, pit, machine), speed: h.speed, rawStep: k, dropper: di, t: h.t });
+          out.push({ pos: pos, partId: part.id, kind: kind, midi: partMidi(part, pit, machine), speed: h.speed, rawStep: k, dropper: di, t: h.t, len: L });
         });
       }
     });
@@ -363,12 +393,77 @@ var DM = (function () {
     return changed;
   }
 
+  // ---- Korobeiniki (the Tetris theme, a 19th century Russian folk song, public domain) ----------
+  // Melody as [step, note name]; one beat is 4 steps, 8 bars of 4/4 = 128 steps.
+  var SONG_MELODY = [
+    [0, 'E5'], [4, 'B4'], [6, 'C5'], [8, 'D5'], [12, 'C5'], [14, 'B4'],
+    [16, 'A4'], [20, 'A4'], [22, 'C5'], [24, 'E5'], [28, 'D5'], [30, 'C5'],
+    [32, 'B4'], [38, 'C5'], [40, 'D5'], [44, 'E5'],
+    [48, 'C5'], [52, 'A4'], [56, 'A4'],
+    [66, 'D5'], [70, 'F5'], [72, 'A5'], [76, 'G5'], [78, 'F5'],
+    [80, 'E5'], [86, 'C5'], [88, 'E5'], [92, 'D5'], [94, 'C5'],
+    [96, 'B4'], [100, 'B4'], [102, 'C5'], [104, 'D5'], [108, 'E5'],
+    [112, 'C5'], [116, 'A4'], [120, 'A4']
+  ];
+  var SONG_BASS_ROOTS = ['E', 'A', 'E', 'A', 'D', 'C', 'E', 'A'];     // one root per bar, eighth notes
+  var NOTE_DEG = { A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6 };        // steps above A in A natural minor
+  // Bar degree for a note name (A3 is degree 0 in key A).
+  function noteDeg(name) { var L = name[0], o = +name.slice(1); return ((L === 'A' || L === 'B') ? o - 3 : o - 4) * 7 + NOTE_DEG[L]; }
+  // A xylophone: bars from top to bottom, each with its own clear column to drop into. Returns [{part, dropX}].
+  function xylophone(machine, pit, degs, delta, y0, dy, material, tilt) {
+    var out = [], prevR = 0;
+    degs.forEach(function (d, k) {
+      var len = barLenForDegree(d, machine.scale);
+      var R = k === 0 ? 10 + len : prevR + delta, L = R - len;
+      var part = addPart(machine, pit, { type: 'bar', x: L + len / 2, y: y0 + dy * k, len: len, angle: tilt, material: material, bounce: 'sticky' });
+      out.push({ part: part, dropX: Math.round(k === 0 ? R - 20 : prevR + 15) });
+      prevR = R;
+    });
+    return out;
+  }
+  // A slide dropper: bars is how many bars of pattern, hits is [[step, key]], xOf maps key to an x.
+  function slideDropper(pit, bars, hits, xOf) {
+    var steps = [], xs = [];
+    for (var i = 0; i < 16 * bars; i++) { steps.push(false); xs.push(null); }
+    hits.forEach(function (h) { steps[h[0]] = true; xs[h[0]] = xOf(h[1]); });
+    pit.droppers[0] = { x: xOf(hits[0][1]), bars: bars, steps: steps, xs: xs };
+  }
+  function buildSong() {
+    var m = newMachine();
+    m.key = 9; m.scale = 'minor'; m.bpm = 144; m.tight = 0.7; m.pits = [];
+    var notes = []; SONG_MELODY.forEach(function (e) { if (notes.indexOf(e[1]) < 0) notes.push(e[1]); });
+    notes.sort(function (a, b) { return noteDeg(a) - noteDeg(b); });
+    // melody: A4 to A5 on eight bars, one slide dropper with an 8-bar pattern
+    var mel = newPit(1); mel.vol = 0.85;
+    var xy = xylophone(m, mel, notes.map(noteDeg), 25, 110, 52, 'wood', -8), mx = {};
+    notes.forEach(function (n, i) { mx[n] = xy[i].dropX; });
+    slideDropper(mel, 8, SONG_MELODY, function (n) { return mx[n]; });
+    m.pits.push(mel);
+    // bass: root of each bar as eighth notes, an octave and a bit lower (shift -7 steps)
+    var bass = newPit(2); bass.vol = 0.8; bass.transpose = -7;
+    var roots = ['A', 'C', 'D', 'E'], bd = { A: 0, C: 2, D: 3, E: 4 };
+    var by = xylophone(m, bass, roots.map(function (r) { return bd[r]; }), 40, 110, 70, 'wood', -6), bx = {};
+    roots.forEach(function (r, i) { bx[r] = by[i].dropX; });
+    var bh = []; SONG_BASS_ROOTS.forEach(function (r, bar) { for (var j = 0; j < 8; j++) bh.push([bar * 16 + j * 2, r]); });
+    slideDropper(bass, 8, bh, function (r) { return bx[r]; });
+    m.pits.push(bass);
+    // drums: the bouncing rock beat, solved for 144 BPM
+    var dr = buildPreset(m, 'rock'); dr.id = 3; dr.vol = 0.6;
+    m.pits.push(dr);
+    // harmony: the melody a third below, muted until you turn it on
+    var har = duplicatePit(m, mel, { transpose: -2 }); har.id = 4; har.mute = true; har.vol = 0.6;
+    m.pits.push(har);
+    return m;
+  }
+  var SONG = { melody: SONG_MELODY, bassRoots: SONG_BASS_ROOTS, noteDeg: noteDeg };
+
   var PRESETS = [
     { id: 'empty', group: 'Basics', name: 'Empty', desc: 'A blank pit. Place your own parts.' },
     { id: 'stairs', group: 'Melody and bass', name: 'Melody stairs', desc: 'Four bars in a zig-zag staircase, ending on a beat-locked pad.' },
     { id: 'arp', group: 'Melody and bass', name: 'Arpeggio', desc: 'Four bars that walk up the notes one after another.' },
     { id: 'bass', group: 'Melody and bass', name: 'Bass bounce', desc: 'A beat-locked pad kicks the ball onto two low bars.' }
-  ].concat(DRUM_BEATS.map(function (b) { return { id: b.id, group: 'Drum beats', name: b.name, desc: b.desc, tempo: b.tempo }; }));
+  ].concat(DRUM_BEATS.map(function (b) { return { id: b.id, group: 'Drum beats', name: b.name, desc: b.desc, tempo: b.tempo }; }),
+    [{ id: 'korobeiniki', group: 'Famous tunes', name: 'Korobeiniki (Tetris theme)', desc: 'A Russian folk song. Loads a whole machine: melody, bass and drums, plus a muted harmony pit.', tempo: 144, whole: true }]);
 
   function buildPreset(machine, id) {
     var pit, nid = machine.pits.reduce(function (m, q) { return Math.max(m, q.id); }, 0) + 1;
@@ -414,7 +509,7 @@ var DM = (function () {
     barLenForDegree: barLenForDegree, snapBarLen: snapBarLen, degreeMidi: degreeMidi, partMidi: partMidi,
     inScale: inScale, partLen: partLen, partAngle: partAngle, capsule: capsule, distToPart: distToPart,
     closestOnSeg: closestOnSeg, simulatePit: simulatePit, pathAt: pathAt, snapTime: snapTime,
-    startDelaySteps: startDelaySteps, stepLit: stepLit, migratePit: migratePit, simulateAll: simulateAll, leadTime: leadTime, PRESETS: PRESETS, _layoutLane: layoutLane, retuneTemplates: retuneTemplates, laneOffsets: laneOffsets, templateSig: templateSig, DRUM_BEATS: DRUM_BEATS, buildPreset: buildPreset, stepsOf: stepsOf, newPit: newPit, newMachine: newMachine, addPart: addPart,
+    startDelaySteps: startDelaySteps, stepLit: stepLit, stepX: stepX, fixDropper: fixDropper, dropXs: dropXs, migratePit: migratePit, simulateAll: simulateAll, leadTime: leadTime, PRESETS: PRESETS, buildSong: buildSong, SONG: SONG, _layoutLane: layoutLane, retuneTemplates: retuneTemplates, laneOffsets: laneOffsets, templateSig: templateSig, DRUM_BEATS: DRUM_BEATS, buildPreset: buildPreset, stepsOf: stepsOf, newPit: newPit, newMachine: newMachine, addPart: addPart,
     clone: clone, duplicatePit: duplicatePit, loopEvents: loopEvents, starterMachine: starterMachine
   };
   return api;
