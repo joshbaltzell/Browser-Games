@@ -341,6 +341,7 @@
     life: ['Ball life', '<p>How long each ball lives before it fades away. One bar is four beats.</p><p>Short lives stop bouncing balls from piling up into a wall of sound.</p>'],
     shift: ['Shift', '<p>Moves every note in this pit up or down the scale. Plus 2 steps is about a third higher, which sounds good stacked on the original.</p>'],
     start: ['Start', '<p>Delays this pit by a number of sixteenth steps (the little cells in the step row).</p>'],
+    pit: ['This pit', '<p><b>Mute</b> silences this pit.</p><p><b>Solo</b> plays only this pit (and any other soloed pits), so you can hear one part on its own. Tap it again to hear everything.</p><p>A pit you can\u2019t hear looks dimmed. The row of cells is the beat: one bar split into 16 steps, and each lit step drops a ball.</p>'],
     delay: ['Delay', '<p>Delays this pit by whole bars. Copy a pit and delay the copy by one bar and you get a round, like a song sung in turns.</p>']
   };
   function hide(id) { $(id).hidden = true; }
@@ -614,9 +615,9 @@
       if (inRect(c.hdr, px, py)) {
         var right = c.hdr.x + c.hdr.w;
         if (px > right - 26) return { cell: c, zone: 'remove' };
-        if (px > right - 52) return { cell: c, zone: 'solo' };
-        if (px > right - 78) return { cell: c, zone: 'mute' };
-        if (px > right - 104) return { cell: c, zone: 'help' };
+        if (px > right - 66) return { cell: c, zone: 'solo' };
+        if (px > right - 106) return { cell: c, zone: 'mute' };
+        if (px > right - 130) return { cell: c, zone: 'help' };
         return { cell: c, zone: 'hdr' };
       }
       if (inRect(c.row, px, py)) {
@@ -656,7 +657,7 @@
     if (z.zone === 'remove') { removePit(c.i); return; }
     if (z.zone === 'mute') { pit.mute = !pit.mute; save(); return; }
     if (z.zone === 'solo') { pit.solo = !pit.solo; save(); return; }
-    if (z.zone === 'help') { showHelp('steps'); return; }
+    if (z.zone === 'help') { showHelp('pit'); return; }
     if (z.zone === 'rowlabel') { S.dropSel = z.di; renderDock(); return; }
     if (z.zone === 'step') { S.dropSel = z.di; edit(function () { pit.droppers[z.di].steps[z.idx] = !pit.droppers[z.di].steps[z.idx]; }); return; }
     if (z.zone === 'strip') { stripTap(c, px, py); return; }
@@ -809,18 +810,26 @@
     ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#7f8ba6'; ctx.fillText('life ' + lifeLabel(DM.lifeBeats(pit)), c.hdr.x + 62, c.hdr.y + 14);
     ctx.font = '700 11px ui-monospace, Menlo, Consolas, monospace';
     var right = c.hdr.x + c.hdr.w;
-    function led(x, label, on, col) {
-      ctx.fillStyle = on ? col : '#2a3148'; if (on) glow(col, 8);
-      ctx.beginPath(); ctx.arc(x, c.hdr.y + 14, 4.5, 0, 7); ctx.fill(); noGlow();
-      ctx.fillStyle = '#7f8ba6'; ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.fillText(label, x + 8, c.hdr.y + 14);
+    function pill(x, w, label, on, col) {
+      var y = c.hdr.y + 6, h = 16;
+      if (on) glow(col, 8);
+      ctx.fillStyle = on ? col : '#1a2133'; rrect(x, y, w, h, 8); ctx.fill(); noGlow();
+      ctx.strokeStyle = on ? col : '#3d4966'; ctx.lineWidth = 1; rrect(x, y, w, h, 8); ctx.stroke();
+      ctx.fillStyle = on ? '#0b0e16' : '#9fb0d8'; ctx.font = '700 10px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.fillText(label, x + w / 2, y + h / 2 + 0.5);
     }
-    led(right - 72, 'M', pit.mute, '#ff5f85'); led(right - 46, 'S', pit.solo, '#5ee6ff');
-    ctx.strokeStyle = '#5b6a90'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(right - 92, c.hdr.y + 14, 7, 0, 7); ctx.stroke();
-    ctx.fillStyle = '#9fb0d8'; ctx.textAlign = 'center'; ctx.fillText('?', right - 92, c.hdr.y + 14.5);
+    pill(right - 104, 36, 'Mute', pit.mute, '#ff5f85'); pill(right - 64, 36, 'Solo', pit.solo, '#5ee6ff');
+    ctx.font = '700 11px ui-monospace, Menlo, Consolas, monospace';
+    ctx.strokeStyle = '#5b6a90'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(right - 118, c.hdr.y + 14, 7, 0, 7); ctx.stroke();
+    ctx.fillStyle = '#9fb0d8'; ctx.textAlign = 'center'; ctx.fillText('?', right - 118, c.hdr.y + 14.5);
     ctx.fillStyle = '#7f8ba6'; ctx.textAlign = 'center'; ctx.fillText(m.pits.length > 1 ? '✕' : '', right - 14, c.hdr.y + 14);
     drawStepRow(c);
     drawPit(c, now);
     drawStrip(c);
+    if (!audible(pit)) {   // a pit you can't hear (muted, or another pit is soloed) is dimmed
+      var top = c.hdr.y + c.hdr.h;
+      ctx.save(); ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(9, 12, 20, 0.62)';
+      rrect(f.x + 2, top, f.w - 4, f.y + f.h - top - 2, 6); ctx.fill(); ctx.restore();
+    }
   }
 
   function drawStepRow(c) {
