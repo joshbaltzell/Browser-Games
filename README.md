@@ -77,12 +77,29 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 ├── index.html        # Games hub / launcher (with starfield background)
 ├── hub.js            # Renders game cards from the GAMES array + starfield
 ├── styles.css        # Hub styling
-├── docs/             # Design specs and implementation plans
+├── docs/             # Design specs, plans and notes
+├── tools/            # Helper scripts (pack.js builds the upload zips)
 └── games/
-    └── <game>/       # one folder per game: index.html + game.js + style.css,
-                      # self-contained; some also have a dev/ folder of
-                      # Node test or tuning scripts
+    ├── kit/          # shared scripts some games load (kit.js, device-notice.js)
+    └── <game>/       # one folder per game: index.html + game.js + style.css;
+                      # some also have a dev/ folder of Node test or tuning scripts
 ```
+
+## Uploading a game
+
+Each game can be packed into one zip, with `index.html` at the top level:
+
+```sh
+node tools/pack.js                  # every game -> dist/<game>.zip
+node tools/pack.js look-alive       # just one
+node tools/pack.js --back https://joshbaltzell.com/games/   # point "Back to games" here
+```
+
+The zip holds only what players need. The script copies in any shared `kit/` files the
+game uses and leaves out `dev/`, `test/`, `src/`, notes and other build files. By default it
+hides the "Back to games" links. It checks that nothing in the zip points outside it.
+Only files tracked by git are packed, so commit a new file before packing.
+`dist/` is not committed.
 
 ## Adding a new game
 

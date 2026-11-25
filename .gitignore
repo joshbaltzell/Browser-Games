@@ -20,3 +20,6 @@ npm-debug.log*
 # Jam Tunnel sample downloads (dev/build-samples.py)
 games/jam-tunnel/dev/.cache/
 games/*/art-src/
+
+# Built game zips (tools/pack.js)
+dist/
