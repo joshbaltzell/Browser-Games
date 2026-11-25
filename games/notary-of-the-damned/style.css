@@ -608,3 +608,9 @@ button { font: inherit; color: inherit; }
 @media (max-width: 760px) and (min-height: 561px) {
   .howto { grid-template-columns: 1fr; }
 }
+
+/* The seal is a drawing now: the real Office seal or an obvious fake (2026-11-25). */
+.sealmark { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+.sealsvg { width: 3.3em; height: 3.3em; display: block; }
+.sealcap { font-size: .62em; letter-spacing: .12em; color: var(--ink-faint); }
+.sealmark { border: none; padding: 0; margin: .1em 0 0 .2em; }

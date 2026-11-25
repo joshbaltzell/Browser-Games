@@ -250,6 +250,40 @@ function updateDocket(crackIndex) {
 // ----------------------------------------------------------------------------
 // Dossier + Standing Orders rendering
 // ----------------------------------------------------------------------------
+// The seal as a small drawing. "real" is always the same; the rest are the forgeries in data.js (FORGERIES).
+function sealSvg(kind) {
+  const W = '<svg class="sealsvg" viewBox="0 0 64 64" aria-hidden="true">';
+  const rim = (txt, col) => '<defs><path id="sr-' + kind + '" d="M32 32 m-21 0 a21 21 0 1 1 42 0 a21 21 0 1 1 -42 0"/></defs>' +
+    '<text font-size="6.2" font-family="Georgia,serif" font-weight="700" fill="' + col + '" letter-spacing=".4"><textPath href="#sr-' + kind + '">' + txt + '</textPath></text>';
+  const wax = '<path d="M32 3 C40 2 47 6 52 10 C59 14 62 22 61 31 C62 40 58 48 52 53 C46 59 38 62 31 61 C22 62 14 58 9 52 C3 46 2 38 3 30 C3 21 7 14 13 9 C18 5 25 3 32 3Z" fill="#9e2a22"/>' +
+    '<circle cx="32" cy="32" r="24" fill="#b8342a" stroke="#7a1c16" stroke-width="1.5"/>';
+  if (kind === "real") return W + wax + rim("OFFICE OF THE FINAL LEDGER \u2022", "#f3d9b0") +
+    '<g fill="#f3d9b0"><circle cx="32" cy="24" r="6" fill="none" stroke="#f3d9b0" stroke-width="3"/><rect x="30.5" y="29" width="3" height="16"/><rect x="33" y="38" width="5" height="2.6"/><rect x="33" y="42" width="4" height="2.6"/></g></svg>';
+  if (kind === "fork") return W + wax + rim("OFFICE OF THE FINAL LEGDER \u2022", "#f3d9b0") +
+    '<g fill="#f3d9b0"><rect x="30.5" y="30" width="3" height="16"/><rect x="25" y="18" width="2.2" height="12"/><rect x="29" y="18" width="2.2" height="12"/><rect x="32.8" y="18" width="2.2" height="12"/><rect x="36.8" y="18" width="2.2" height="12"/><rect x="25" y="28" width="14" height="3"/></g></svg>';
+  if (kind === "crayon") return W + '<path d="M33 7 C45 6 57 16 56 31 C57 45 46 57 31 56 C17 58 6 46 8 32 C7 19 19 8 35 9" fill="none" stroke="#2f6fd6" stroke-width="3.5" stroke-linecap="round"/>' +
+    '<text x="32" y="30" text-anchor="middle" font-size="8" font-family="Comic Sans MS,Chalkboard SE,cursive" fill="#2f6fd6" transform="rotate(-8 32 32)">OFISHUL</text>' +
+    '<text x="32" y="43" text-anchor="middle" font-size="8" font-family="Comic Sans MS,Chalkboard SE,cursive" fill="#e0457b" transform="rotate(-8 32 32)">SEEL :)</text></svg>';
+  if (kind === "cap") {
+    let teeth = "";
+    for (let i = 0; i < 21; i++) { const a = i / 21 * Math.PI * 2, b = (i + 0.5) / 21 * Math.PI * 2; teeth += (i ? " L" : "M") + (32 + 27 * Math.cos(a)).toFixed(1) + " " + (32 + 27 * Math.sin(a)).toFixed(1) + " L" + (32 + 23 * Math.cos(b)).toFixed(1) + " " + (32 + 23 * Math.sin(b)).toFixed(1); }
+    return W + '<path d="' + teeth + 'Z" fill="#c9ccd3" stroke="#8a8f99" stroke-width="1"/><circle cx="32" cy="32" r="18" fill="#d9363e"/>' +
+      '<text x="32" y="30" text-anchor="middle" font-size="10" font-weight="900" font-family="Arial Black,Arial,sans-serif" fill="#fff" font-style="italic">FIZZ</text>' +
+      '<text x="32" y="41" text-anchor="middle" font-size="5.5" font-family="Arial,sans-serif" fill="#ffe7a0">COLA</text></svg>';
+  }
+  if (kind === "sticker") {
+    let pts = "";
+    for (let i = 0; i < 10; i++) { const r = i % 2 ? 11 : 26, a = -Math.PI / 2 + i * Math.PI / 5; pts += (32 + r * Math.cos(a)).toFixed(1) + "," + (33 + r * Math.sin(a)).toFixed(1) + " "; }
+    return W + '<polygon points="' + pts + '" fill="#f2c230" stroke="#b8860b" stroke-width="1.5"/>' +
+      '<text x="32" y="35" text-anchor="middle" font-size="5" font-weight="900" font-family="Arial,sans-serif" fill="#7a4b00">GOOD</text><text x="32" y="41" text-anchor="middle" font-size="5" font-weight="900" font-family="Arial,sans-serif" fill="#7a4b00">JOB!</text></svg>';
+  }
+  // potato
+  return W + '<path d="M14 22 C18 10 36 6 47 12 C58 18 60 34 54 44 C48 56 30 60 19 52 C8 45 9 31 14 22Z" fill="#a06a3a" opacity=".85"/>' +
+    '<circle cx="24" cy="22" r="2" fill="#6e4520"/><circle cx="46" cy="40" r="1.6" fill="#6e4520"/><circle cx="20" cy="44" r="1.4" fill="#6e4520"/>' +
+    '<text x="34" y="31" text-anchor="middle" font-size="8.5" font-weight="700" font-family="Georgia,serif" fill="#f1dcc0" transform="rotate(6 34 34)">SEAL</text>' +
+    '<text x="34" y="41" text-anchor="middle" font-size="6.5" font-family="Georgia,serif" fill="#f1dcc0" transform="rotate(6 34 34)">(REAL)</text></svg>';
+}
+
 function renderDossier() {
   const c = currentCase();
   const d = c.documents;
@@ -257,8 +291,10 @@ function renderDossier() {
   $("vIssued").textContent = fmtDate(d.certificate.issueDate);
   $("vDied").textContent = fmtDate(d.certificate.deathDate);
   const seal = $("vSeal");
-  seal.textContent = "SEAL: " + d.certificate.seal;
-  seal.classList.toggle("forged", d.certificate.seal !== "VALID");
+  const fake = d.certificate.seal !== "VALID" ? sealForgery(d.certificate) : null;
+  seal.innerHTML = sealSvg(fake ? fake.id : "real");
+  seal.setAttribute("aria-label", "Seal: " + (fake ? fake.desc : "the real Office seal, red wax with a key"));
+  seal.classList.toggle("forged", false);   // a fake has to be spotted, not labelled
   $("vTally").textContent = String(d.sins.tally);
   $("vKarma").textContent = String(d.sins.karmaWeight);
   $("vSins").textContent = d.sins.list.join(", ");

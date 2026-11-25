@@ -36,11 +36,11 @@ const RULE_DEFS = {
   R3: {
     id: "R3",
     label: "Order 3",
-    text: "The SEAL must read VALID.",
-    eg: "Order 3 example: SEAL VALID is fine. SEAL FORGED is not.",
+    text: "The certificate must bear the real Office seal: red wax, a key in the middle.",
+    eg: "Order 3 example: a crayon drawing, a bottle cap or a sticker is a forgery. Deny it.",
     reads: ["cert.seal"],
     check: (c) => c.documents.certificate.seal === "VALID",
-    why: (c) => "The seal reads " + c.documents.certificate.seal + ", not VALID.",
+    why: (c) => "The seal is " + sealForgery(c.documents.certificate).desc + ", not the real Office seal.",
   },
   // ---- Cruel clauses, introduced in the back half. -------------------------
   R4: {
@@ -83,6 +83,21 @@ const RULE_DEFS = {
 };
 
 // Dates use a simple comparable integer YYYYMMDD form for clarity.
+// Forged seals are always an obvious fake, picked by the name so the same soul always brings the same one.
+// The real seal never changes: red wax, OFFICE OF THE FINAL LEDGER around the rim, a key in the middle.
+const FORGERIES = [
+  { id: "crayon", desc: "a crayon drawing of a seal" },
+  { id: "cap", desc: "a soda bottle cap glued on" },
+  { id: "sticker", desc: "a gold star sticker" },
+  { id: "potato", desc: "a potato stamp" },
+  { id: "fork", desc: "a wax seal with a fork where the key goes, and LEDGER spelled wrong" },
+];
+function sealForgery(cert) {
+  let h = 0;
+  for (let i = 0; i < cert.name.length; i++) h = (h * 31 + cert.name.charCodeAt(i)) >>> 0;
+  return FORGERIES[h % FORGERIES.length];
+}
+
 function mkCert(name, deathDate, issueDate, seal) {
   return { name, deathDate, issueDate, seal };
 }
