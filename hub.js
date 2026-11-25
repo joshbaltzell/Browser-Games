@@ -144,17 +144,6 @@ const GAMES = [
       </svg>`,
   },
   {
-    title: "Echo Cartographer",
-    description:
-      "Navigate a pitch-black cave by sound alone. Space fires a real ping that reveals walls — right-click fires a decoy ping that throws the predator off your trail. Every echo you need to see is also a dinner bell.",
-    path: "games/echo-cartographer/index.html",
-    play: "desktop",
-    tags: ["stealth", "puzzle", "atmospheric"],
-    accent: "#8fffd0",
-    art: `
-      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg"><rect width="120" height="80" fill="#000"/><circle cx="42" cy="44" r="14" fill="none" stroke="#8fffd0" stroke-width="0.6" opacity="0.25"/><circle cx="42" cy="44" r="22" fill="none" stroke="#8fffd0" stroke-width="0.6" opacity="0.15"/><path d="M20 24 H64" stroke="#cfe8ff" stroke-width="1.4" opacity="0.5"/><path d="M64 24 V52" stroke="#ffffff" stroke-width="1.6" opacity="0.9"/><path d="M30 60 H58" stroke="#cfe8ff" stroke-width="1.4" opacity="0.35"/><path d="M76 18 V46" stroke="#cfe8ff" stroke-width="1.4" opacity="0.3"/><circle cx="42" cy="44" r="2.6" fill="#8fffd0"/><circle cx="42" cy="44" r="6" fill="#8fffd0" opacity="0.18"/><circle cx="92" cy="34" r="3" fill="#ff4d5e" opacity="0.7"/><circle cx="92" cy="34" r="7" fill="#ff4d5e" opacity="0.18"/><circle cx="100" cy="60" r="2" fill="#ffd27a"/><circle cx="100" cy="60" r="6" fill="none" stroke="#ffd27a" stroke-width="0.6" opacity="0.5"/></svg>`,
-  },
-  {
     title: "Knit One",
     description:
       "You are the yarn. Lay it around the posts, tie a real knot, then drop the ball and see if it holds. Ten tutorial rooms, then 20 puzzles where heavy balls need two or three strands.",
