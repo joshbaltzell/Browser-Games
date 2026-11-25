@@ -13,6 +13,7 @@ const GAMES = [
     description:
       "Survive an endless neon swarm. Move, auto-fire, vacuum up XP and stack upgrades. How long can you last?",
     path: "games/neon-swarm/index.html",
+    play: "desktop",
     tags: ["Survival", "Action", "Roguelite"],
     accent: "#00e5ff",
     // Inline SVG art so the hub needs no image assets.
@@ -33,6 +34,7 @@ const GAMES = [
     description:
       "A Newtonian take on Asteroids: drift, thrust, and blast procedurally generated rocks and UFOs. Chain combos and ride the particle storm.",
     path: "games/void-breaker/index.html",
+    play: "desktop",
     tags: ["Arcade", "Shooter", "Physics"],
     accent: "#5b8cff",
     art: `
@@ -48,6 +50,7 @@ const GAMES = [
     description:
       "Stack falling neon tetrominoes, clear lines, and chase the four-line Tetra. The blocks fall faster every level — how long can you keep the storm at bay?",
     path: "games/tetra-storm/index.html",
+    play: "desktop",
     tags: ["Puzzle", "Blocks", "Arcade"],
     accent: "#b388ff",
     art: `
@@ -65,6 +68,7 @@ const GAMES = [
     description:
       "Bounce ever upward across drifting platforms, springs and crumbling ledges. Steer carefully, never fall, and climb as high as the sky allows.",
     path: "games/sky-climber/index.html",
+    play: "phone",
     tags: ["Platformer", "Arcade", "Skill"],
     accent: "#ff9f1c",
     art: `
@@ -80,6 +84,7 @@ const GAMES = [
     description:
       "A room-by-room neon dungeon crawler. Clear rooms, fight six enemy archetypes, and build your skill tree one level at a time.",
     path: "games/neon-gauntlet/index.html",
+    play: "desktop",
     tags: ["Dungeon", "Roguelite", "Action"],
     accent: "#ff3b6b",
     art: `
@@ -100,6 +105,7 @@ const GAMES = [
     description:
       "Tic-Tac-Toe like you've never seen it. Play on mega grids, infinite voids, nested dimensions, or with gravity. Features neon particle physics and an intelligent AI.",
     path: "games/crazy-tic-tac-toe/index.html",
+    play: "phone",
     tags: ["Puzzle", "Arcade", "Strategy"],
     accent: "#00ffd2",
     art: `
@@ -120,6 +126,7 @@ const GAMES = [
     description:
       "Connect Four in neon. Drop glowing discs and line up four in a row before the machine does.",
     path: "games/neon-four/index.html",
+    play: "phone",
     tags: ["Board", "Strategy", "Arcade"],
     accent: "#ff2bd6",
     art: `
@@ -141,6 +148,7 @@ const GAMES = [
     description:
       "Navigate a pitch-black cave by sound alone. Space fires a real ping that reveals walls — right-click fires a decoy ping that throws the predator off your trail. Every echo you need to see is also a dinner bell.",
     path: "games/echo-cartographer/index.html",
+    play: "desktop",
     tags: ["stealth", "puzzle", "atmospheric"],
     accent: "#8fffd0",
     art: `
@@ -151,6 +159,7 @@ const GAMES = [
     description:
       "You are the yarn. Lay it around the posts, tie a real knot, then drop the ball and see if it holds. Ten tutorial rooms, then 20 puzzles where heavy balls need two or three strands.",
     path: "games/knit-one/index.html",
+    play: "phone",
     tags: ["physics", "puzzle", "cozy"],
     accent: "#d98c6a",
     art: `
@@ -161,6 +170,7 @@ const GAMES = [
     description:
       "Chain word cards into a sentence and it happens, literally. Each page deals 12 fresh random words. Careful: the last noun takes the blow.",
     path: "games/last-words/index.html",
+    play: "landscape",
     tags: ["word puzzle", "card combat", "story"],
     accent: "#b3261e",
     art: `
@@ -171,6 +181,7 @@ const GAMES = [
     description:
       "A luminous droplet rolls forever forward through an agate cavern. One button flips gravity, throwing you on a committed parabolic arc between floor and ceiling — read the curve, time the launch, and bank off the bulges to carry your speed.",
     path: "games/switchback/index.html",
+    play: "landscape",
     tags: ["arcade", "one-button", "runner"],
     accent: "#5fd6c4",
     art: `
@@ -181,6 +192,7 @@ const GAMES = [
     description:
       "You are the underworld's paperwork clerk. Cross-check each ghost's dossier against a shifting rulebook, then slam the brass stamp on APPROVED or DENIED — but the souls you deny don't leave. They pile in the corner and start to fight back.",
     path: "games/notary-of-the-damned/index.html",
+    play: "landscape",
     tags: ["bureaucratic horror", "puzzle", "document matching"],
     accent: "#86a04f",
     art: `
@@ -191,6 +203,7 @@ const GAMES = [
     description:
       "Drive a slow, sturdy tank through a toon-shaded arena, blast an endless stream of enemy tanks, and rack up your survival score.",
     path: "games/tank-yard-fable/index.html",
+    play: "desktop",
     tags: ["Action", "Survival", "3D"],
     accent: "#3ddc6a",
     // Inline SVG art so the hub needs no image assets.
@@ -209,6 +222,7 @@ const GAMES = [
     description:
       "Fly through your song in a glowing tunnel. Pick a genre, then add drums, bass, lead and chords from parts that music theory says fit together.",
     path: "games/jam-tunnel/index.html",
+    play: "landscape",
     tags: ["Music", "Creative", "3D"],
     accent: "#ff8a3d",
     art: `
@@ -231,6 +245,7 @@ const GAMES = [
     description:
       "A satirical idle game about vibe coding. Approve everything the AI proposes without reading it, then automate the approving. In English, Spanish and Portuguese.",
     path: "games/dont-ask-again/index.html",
+    play: "phone",
     tags: ["Idle", "Satire", "Clicker"],
     accent: "#d97757",
     art: `
@@ -250,6 +265,7 @@ const GAMES = [
     description:
       "Aliens took over your gym and won't let you cancel. Go cancel in person.",
     path: "games/gyms-of-war/index.html",
+    play: "desktop",
     tags: ["Shooter", "3D", "Satire"],
     accent: "#b6ff3c",
     // The emblem from the game's assets (a transparent WebP, 256 px).
@@ -260,6 +276,7 @@ const GAMES = [
     description:
       "Tap pads to make the pond sing, and keep the slugs off the lilies.",
     path: "games/pond-chorus/index.html",
+    play: "phone",
     tags: ["Music", "Puzzle", "Cozy"],
     accent: "#7bd389",
     art: `<img class="scene" src="games/pond-chorus/assets/hub-card.jpg" alt="" loading="lazy" />`,
@@ -269,6 +286,7 @@ const GAMES = [
     description:
       "A new wolf is in the meadow. Rebalance the animals until the meadow is fair.",
     path: "games/nerf-the-wolves/index.html",
+    play: "landscape",
     tags: ["Puzzle", "Satire", "Strategy"],
     accent: "#f2b84b",
     art: `<img class="scene" src="games/nerf-the-wolves/assets/hub-card.jpg" alt="" loading="lazy" />`,
@@ -278,6 +296,7 @@ const GAMES = [
     description:
       "30 seconds to launch. Record your earlier attempts and let them help you.",
     path: "games/launch-window/index.html",
+    play: "landscape",
     tags: ["Puzzle", "Time", "Robots"],
     accent: "#f2c230",
     art: `<img class="scene" src="games/launch-window/assets/hub-card.jpg" alt="" loading="lazy" />`,
@@ -287,6 +306,7 @@ const GAMES = [
     description:
       "One lawn, two sides: send bugs to raid the picnic, then defend it as Gran.",
     path: "games/picnic-raid/index.html",
+    play: "phone",
     tags: ["Strategy", "Tower Defense", "Cozy"],
     accent: "#d8463a",
     art: `<img class="scene" src="games/picnic-raid/assets/hub-card.jpg" alt="" loading="lazy" />`,
@@ -296,6 +316,7 @@ const GAMES = [
     description:
       "Three holes. One rule is rigged. Work out which, and call it.",
     path: "games/honest-minigolf/index.html",
+    play: "landscape",
     tags: ["Sports", "Puzzle", "Deduction"],
     accent: "#e9b43c",
     art: `<img class="scene" src="games/honest-minigolf/assets/hub-card.jpg" alt="" loading="lazy" />`,
@@ -305,6 +326,7 @@ const GAMES = [
     description:
       "Win the crowd for three minutes: play, record a band of yourselves and rock the plaza.",
     path: "games/mabel-and-the-mabels/index.html",
+    play: "landscape",
     tags: ["Music", "Action", "Rhythm"],
     accent: "#f08a4b",
     art: `<img class="scene" src="games/mabel-and-the-mabels/assets/hub-card.jpg" alt="" loading="lazy" />`,
@@ -314,11 +336,18 @@ const GAMES = [
     description:
       "A colony of tiny aliens finds a crowd of microbes and takes it for a city. Build one disguised cell that survives the acid, grows without taking over, and passes for a local. Ten dishes.",
     path: "games/look-alive/index.html",
+    play: "phone",
     tags: ["Puzzle", "Simulation", "Prototype"],
     accent: "#ff6b95",
     art: `<img class="scene" src="games/look-alive/assets/hub-card.jpg" alt="" loading="lazy" />`,
   },
 ];
+
+const PLAY_MARKS = {
+  phone: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><line x1="10.5" y1="18.5" x2="13.5" y2="18.5"/></svg>Phone`,
+  landscape: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="7" width="19" height="10" rx="2.5"/><line x1="18.5" y1="10.5" x2="18.5" y2="13.5"/></svg>Turn sideways`,
+  desktop: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><line x1="12" y1="16" x2="12" y2="20"/><line x1="8" y1="20" x2="16" y2="20"/></svg>Computer`,
+};
 
 function buildCard(game) {
   const card = document.createElement("a");
@@ -337,6 +366,7 @@ function buildCard(game) {
       <p class="card-desc">${game.description}</p>
       <div class="card-tags">${tags}</div>
     </div>
+    <span class="play-mark play-${game.play}">${PLAY_MARKS[game.play] || ""}</span>
     <span class="card-cta">Play <span class="arrow">&rarr;</span></span>
   `;
   return card;

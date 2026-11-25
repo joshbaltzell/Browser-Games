@@ -101,6 +101,10 @@
   const winTitle = document.getElementById('win-title');
   const winDesc = document.getElementById('win-desc');
   const canvasNavTooltip = document.getElementById('canvas-nav-tooltip');
+  if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+    const zk = document.getElementById('nav-zoom-key');
+    if (zk) zk.textContent = 'Pinch';
+  }
 
   // --- INITIALIZE ---
   function init() {

@@ -1,3 +1,4 @@
+var SB_TOUCH = !!(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);   // phones: touch wording
 /*
  * SWITCHBACK — Phase 1: Core Mechanic Prototype.
  *
@@ -1703,7 +1704,7 @@ function drawTitle() {
     { text: "ONE button flips gravity. Read the arc, bank the curves.", font: "500 19px system-ui, sans-serif", color: COLORS.muted, gap: 28 },
     { text: "Crystals shatter on the beat — outflip the collapse.", font: "500 17px system-ui, sans-serif", color: COLORS.agateRimTeal, gap: 28 },
     { text: "Grab BLACK Coke Zero cans (+boost) · dodge SILVER Diet Coke.", font: "500 16px system-ui, sans-serif", color: COLORS.amberSoft, gap: 60 },
-    { text: "PRESS SPACE  /  CLICK  /  TAP", font: "800 28px system-ui, sans-serif", color: startCol, gap: 32 },
+    { text: SB_TOUCH ? "TAP TO START" : "PRESS SPACE  /  CLICK  /  TAP", font: "800 28px system-ui, sans-serif", color: startCol, gap: 32 },
     { text: "to flip — press now to start", font: "600 16px system-ui, sans-serif", color: COLORS.muted, gap: 52 },
   ];
   if (best > 0) {
@@ -1725,7 +1726,7 @@ function drawGameOver() {
   } else {
     lines.push({ text: "Best  " + best + " m", font: "600 18px system-ui, sans-serif", color: COLORS.muted, gap: 58 });
   }
-  lines.push({ text: "Press SPACE / CLICK to try again", font: "700 20px system-ui, sans-serif", color: COLORS.surface, gap: 0 });
+  lines.push({ text: SB_TOUCH ? "Tap to try again" : "Press SPACE / CLICK to try again", font: "700 20px system-ui, sans-serif", color: COLORS.surface, gap: 0 });
   centerText(lines);
 }
 
@@ -1805,7 +1806,7 @@ function drawOnboardingHint() {
   ctx.font = "700 18px system-ui, sans-serif";
   ctx.textAlign = "center";
   const ly = player.gravitySign > 0 ? player.y - 42 : player.y + 54;
-  ctx.fillText("TAP / SPACE TO FLIP", PLAYER_X, ly);
+  ctx.fillText(SB_TOUCH ? "TAP TO FLIP" : "TAP / SPACE TO FLIP", PLAYER_X, ly);
   ctx.restore();
   ctx.globalAlpha = 1;
 }

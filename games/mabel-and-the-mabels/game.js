@@ -49,6 +49,7 @@
   var rng = Kit.rng((Math.random() * 1e9) | 0);
   var S = null, g = null, clock = null, ac = null;
   var keys = {}, pointerPos = { x: -1, y: -1 };
+  var TOUCH = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);   // phones: hints name the touch controls, not keys
 
   function T(k) { return g ? g.tune[k] : TUNE[k].v; }
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
@@ -71,7 +72,7 @@
       drops: [], pressFx: null, qGood: null, demoAt: 0
     };
     for (var i = 0; i < 16; i++) S.strip.push(0);
-    setHint('Move with WASD. Tap Space to play.', 1e9);
+    setHint(TOUCH ? 'Drag on the left half to move. Tap the right half to play.' : 'Move with WASD. Tap Space to play.', 1e9);
     startDemo();
   }
 
@@ -114,7 +115,7 @@
     S.gs = 0; S.beatAt = -9999; S.barAt = -9999; S.lastStepAt = 0;
     S.fx = []; S.drops = [];
     for (var i = 0; i < 16; i++) S.strip[i] = 0;
-    setHint('Your turn. Move with WASD. Tap Space on the beat.', 1e9);
+    setHint(TOUCH ? 'Your turn. Drag on the left to move. Tap the right half on the beat.' : 'Your turn. Move with WASD. Tap Space on the beat.', 1e9);
   }
 
   function updateDrops() {
@@ -952,6 +953,7 @@
     onStart: function (game) {
       clock = Kit.audio.clock({ bpm: 112, stepsPerBeat: 2, onStep: onClockStep });
       Kit.pointer(game.canvas, { down: onDown, move: onMove, up: onUp });
+      if (TOUCH) { var ctl = document.querySelector('.controls span'); if (ctl) ctl.textContent = 'Drag on the left half to move. Tap the right half to play.'; }
       window.addEventListener('keydown', onKeyDown);
       window.addEventListener('keyup', onKeyUp);
       window.addEventListener('blur', function () { keys = {}; if (S) S.stick = null; });

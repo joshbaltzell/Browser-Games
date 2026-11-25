@@ -449,3 +449,21 @@ body.idle .tray:hover, body.idle .layers:hover { opacity: 1; transform: none; }
 @media (pointer: coarse) { .hover-hint { display: none; } }
 #sound.icon { padding: 8px 10px; }
 .card[data-genre]:hover, .card[data-genre]:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset, 0 0 24px color-mix(in srgb, var(--accent) 25%, transparent); }
+
+/* --- PHONE TAP SIZES AND CARD STRIPS --- */
+@media (pointer: coarse) {
+  button, .chip { min-height: 44px; }
+  .transport button.icon, #sound.icon { min-width: 44px; }
+  .layer .acts button { min-height: 44px; }
+  .layer .acts button.icon { min-width: 44px; }
+  .song .back, .back { display: inline-flex; align-items: center; min-height: 44px; }
+  .seg button, .jam .acts button, .section-panel .row button, .section-panel .chip { min-height: 44px; }
+  .row input[type="range"] { min-height: 44px; }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  /* swipeable strips stay inside the panel; the next card peeks so it is clear there is more */
+  .cards, .cards.four, .cards.next, .cards.three { overscroll-behavior-x: contain; max-width: 100%; scrollbar-width: thin; }
+  .cards > .card { flex-basis: 82%; }
+  .cards.four > .card, .cards.next > .card, .cards.three > .card { flex-basis: 62%; }
+  .tray, .layers { overflow-x: hidden; }
+}
