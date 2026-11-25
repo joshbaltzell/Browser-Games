@@ -55,3 +55,10 @@ Slice 1: a 90-second set with the guitar, grumps and pigeons, and two recordable
 ## Out of Slice 1
 
 Snare, tomato throwers, umbrella ladies, chefs, the Noise Inspector, the third band member, the encore, the share text.
+
+## Revision: rhythm decides (Josh, 2026-11-25: "I seem to be able to survive by just pressing spacebar a lot")
+
+- Before, an on-beat press only changed loudness; mashing every step charmed as fast as careful play.
+- Now a note pressed within 100 ms before its step is **on beat**: it charms and pushes at 1.2x plus 0.15x per GROOVE pip (up to 8 pips, so up to 2.4x). An **off-beat** note, or a **mash** (a second press in the same step), charms and pushes at 0.2x and reaches only 60% of the ring, and empties the groove. Recorded band copies are unchanged.
+- GROOVE meter under the coins; the press text reads GROOVE xN; the ring turns pink at 4+; the plaza thump grows with the groove; the beat cue (approach ring) dims after the first minute but never vanishes.
+- Balance, measured with the new `__game.debug.step(q)` hook (no audio clock; Mabel dodges like the auto bot), one 90 s set each: mash every step loses at about 16 s; off-beat every step loses at about 17 s; 20% on beat loses at about 80 s; 35% on beat survives with 3 of 4 strings; 50% or more, every beat, or every other beat survive easily. A person pressing once per step at a random moment lands about 37% on beat.

@@ -39,7 +39,9 @@
   };
   var STEP_MS = 60000 / 112 / 2;
   var DEG = Math.PI / 180;
-  var WINDOW_MS = 90;       // a press this close before a step counts as on the beat
+  var WINDOW_MS = 100;      // a press this close before a step counts as on the beat
+  // Rhythm matters: an on-beat note hits harder and builds the groove; an off-beat note or a mash (two presses in one step) is weak and breaks it.
+  var GROOVE_MAX = 8, GOOD_MULT = 1.2, GROOVE_PER = 0.15, WEAK_MULT = 0.2;
   var DEMO_NOTES = [0, 2, 4, 7, 8, 10, 12, 14];   // the demo riff, in steps of a 16-step loop
   var DEMO_STEPS = 32;      // two passes of the riff
   var DEMO_SKIP_MS = 800;   // skippable after this long
@@ -69,7 +71,7 @@
       strings: T('strings'), hecklers: [], copies: [], coins: 0, fans: 0, nextTh: 0,
       fx: [], hearts: [], flying: [], strip: [], recInstr: null, rec: null, recStart: 0, countFrom: 0, countN: 0,
       cards: null, hint: null, nextId: 1, endSteps: 0, stick: null, everPlayed: false, applause: 0,
-      drops: [], pressFx: null, qGood: null, demoAt: 0
+      drops: [], pressFx: null, qGood: null, demoAt: 0, groove: 0, pressedStep: -1
     };
     for (var i = 0; i < 16; i++) S.strip.push(0);
     setHint(TOUCH ? 'Drag on the left half to move. Tap the right half to play.' : 'Move with WASD. Tap Space to play.', 1e9);
@@ -222,24 +224,29 @@
 
   // ===== one musical step =============================================
 
-  function fireNote(instr, p, x, y, dx, dy, color, t, delay, q) {
+  function fireNote(instr, p, x, y, dx, dy, color, t, delay, q, mult) {
+    if (mult == null) mult = 1;
     var targets = [];
     S.hecklers.forEach(function (h) { if (h.state === 'walk' || h.state === 'fly' || h.state === 'leave') targets.push({ id: h.id, x: h.x, y: h.y }); });
     var hits = BandSim.hits(instr, p, { x: x, y: y }, { x: dx, y: dy }, targets);
+    if (mult < 1 && BandSim.INSTR[instr].shape === 'ring') {   // a weak note only reaches part of the way
+      var rr = BandSim.INSTR[instr].radius(p) * 0.6;
+      hits = hits.filter(function (hh) { for (var j = 0; j < targets.length; j++) if (targets[j].id === hh.id) return Math.hypot(targets[j].x - x, targets[j].y - y) <= rr; return false; });
+    }
     play(instr, { time: t, power: p, gain: q === 'good' ? 1.35 : q === 'off' ? 0.7 : 1 });
     var d = BandSim.INSTR[instr];
     S.fx.push({
       kind: d.shape, x: x, y: y, dx: dx, dy: dy, p: p, color: color, t0: S.time + delay, dur: 440, q: q,
-      reach: d.shape === 'ring' ? d.radius(p) : d.length
+      reach: (d.shape === 'ring' ? d.radius(p) : d.length) * (mult >= 1 ? 1 : 0.6)
     });
     var conv = 0;
     hits.forEach(function (hit) {
       var h = null;
       for (var i = 0; i < S.hecklers.length; i++) if (S.hecklers[i].id === hit.id) h = S.hecklers[i];
       if (!h) return;
-      h.pat -= hit.charm;
+      h.pat -= hit.charm * mult;
       h.wob = 380;
-      var nx = h.x + hit.px * hit.push, ny = h.y + hit.py * hit.push, dist = Math.hypot(nx - CX, ny - CY);
+      var nx = h.x + hit.px * hit.push * mult, ny = h.y + hit.py * hit.push * mult, dist = Math.hypot(nx - CX, ny - CY);
       if (dist > 430) { nx = CX + (nx - CX) * 430 / dist; ny = CY + (ny - CY) * 430 / dist; }
       h.x = nx; h.y = ny;
       if (h.pat <= 0) { toFan(h); conv++; }
@@ -279,7 +286,7 @@
     // hecklers arrive
     if (S.mode === 'play' || S.mode === 'rec') {
       BandSim.wave(S.setStep, 'short').forEach(spawn);
-      if (S.setStep === 10 && S.everPlayed) setHint('Press as the ring closes on a square. That is the beat.', 7000);
+      if (S.setStep === 10 && S.everPlayed) setHint('Press as the ring closes on a square. On-beat notes hit hard and build GROOVE. Mashing does almost nothing.', 8000);
       if (S.setStep === 112) setHint('Rest a beat and the next note is bigger.', 6000);
       if (S.setStep === 136) setHint('Pigeons steal coins. Ring one and it drops the coin.', 5000);
       S.setStep++;
@@ -297,7 +304,9 @@
       M.strumUntil = at + 150;
       var q = S.qGood;
       S.qGood = null;
-      fireNote(S.mode === 'rec' ? S.recInstr : 'guitar', notePower, M.x, M.y, M.dx, M.dy, PAL.yellow, t, delay, q);
+      if (q === 'good') S.groove = Math.min(GROOVE_MAX, S.groove + 1); else if (q) S.groove = 0;
+      var mult = q === 'good' ? GOOD_MULT + GROOVE_PER * S.groove : q ? WEAK_MULT : 1;
+      fireNote(S.mode === 'rec' ? S.recInstr : 'guitar', notePower, M.x, M.y, M.dx, M.dy, q === 'good' && S.groove >= 4 ? PAL.pink : PAL.yellow, t, delay, q, mult);
       if (q === 'good') Kit.burst(M.x, M.y - 60, { n: 8, color: PAL.yellow, speed: 140, life: 380, gravity: 0, size: 3 });
     } else if (canPlay) S.rest++;
     S.queued = false;
@@ -596,7 +605,7 @@
 
   function cueAmount() {
     if (S.mode === 'rec' || S.mode === 'countin') return 1;
-    return 1 - clamp((S.setStep - CUE_FADE[0]) / (CUE_FADE[1] - CUE_FADE[0]), 0, 1);
+    return 1 - 0.55 * clamp((S.setStep - CUE_FADE[0]) / (CUE_FADE[1] - CUE_FADE[0]), 0, 1);   // the beat cue never vanishes, it only dims
   }
 
   // A ring that closes on Mabel as the next step arrives. The last WINDOW_MS is the window: it brightens.
@@ -627,7 +636,7 @@
     if (f.good) {
       ctx.translate(M.x, M.y - 190 - k * 24);
       ctx.scale(1 + 0.2 * (1 - k), 1 + 0.2 * (1 - k));
-      twice(ctx, PAL.yellow, PAL.pink, function () { ctx.font = '34px ' + SLAB; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('ON BEAT', 0, 0); });
+      twice(ctx, PAL.yellow, PAL.pink, function () { ctx.font = '34px ' + SLAB; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(S.groove >= 2 ? 'GROOVE \u00d7' + S.groove : 'ON BEAT', 0, 0); });
     } else {
       text(ctx, f.text, M.x, M.y - 190 - k * 12, '700 20px ' + SANS, '#b8a8cc', 'center');
     }
@@ -635,7 +644,7 @@
   }
 
   function drawWorld(ctx) {
-    var pulse = Math.max(0, 1 - (S.time - S.barAt) / 200), sc = 1 + 0.02 * pulse;
+    var pulse = Math.max(0, 1 - (S.time - S.barAt) / 200), sc = 1 + (0.02 + 0.005 * (S.groove || 0)) * pulse;   // the plaza thumps harder as the groove builds
     ctx.save();
     ctx.translate(CX, CY); ctx.scale(sc, sc); ctx.translate(-CX, -CY);
     drawTargetRing(ctx);
@@ -715,6 +724,14 @@
       text(ctx, S.coins + (S.coins === 1 ? ' coin' : ' coins'), 135, 28, '32px ' + SLAB, PAL.paper, 'center');
       var th = thresholds(), msg = S.nextTh < 2 ? 'Next band member: ' + th[S.nextTh] : 'Full band';
       text(ctx, msg, 135, 62, '700 16px ' + SANS, PAL.yellow, 'center');
+    });
+    // the groove meter: one pip per on-beat note in a row; an off-beat note or a mash empties it
+    block(ctx, 990, 108, 270, 46, PAL.night, S.groove >= 4 ? PAL.pink : PAL.orange, 1, function () {
+      text(ctx, 'GROOVE', 14, 24, '15px ' + SLAB, S.groove ? PAL.yellow : '#8f7fa8');
+      for (var g = 0; g < GROOVE_MAX; g++) {
+        ctx.fillStyle = g < S.groove ? (S.groove >= 4 ? PAL.pink : PAL.yellow) : '#3c3150';
+        ctx.fillRect(100 + g * 20, 14, 14, 18);
+      }
     });
   }
 
@@ -835,7 +852,7 @@
     ctx.globalAlpha = clamp(age / 400, 0, 1);
     var w = 760;
     block(ctx, CX - w / 2, 560, w, 76, PAL.paper, PAL.pink, -1, function () {
-      text(ctx, 'Just an example. Play any notes you like, on the beat.', w / 2, 38, '700 26px ' + SANS, PAL.night, 'center');
+      text(ctx, 'Just an example. Any notes work, but only on-beat notes hit hard.', w / 2, 38, '700 26px ' + SANS, PAL.night, 'center');
     });
     block(ctx, 360, 98, 560, 34, PAL.night, PAL.orange, 1, function () {
       text(ctx, 'The beat strip. Every note lands on a square.', 280, 18, '700 17px ' + SANS, PAL.paper, 'center');
@@ -880,9 +897,10 @@
     if (S.mode === 'demo') { if (S.time - S.demoAt > DEMO_SKIP_MS) endDemo(); return; }
     if (S.mode === 'ready') { firstInput(); S.qGood = 'good'; }
     else if (S.mode === 'play' || S.mode === 'rec' || S.mode === 'ending') {
-      var until = S.lastStepAt + STEP_MS - S.time, good = until <= WINDOW_MS;
-      S.qGood = good ? 'good' : 'off';
-      S.pressFx = { at: S.time, good: good, text: 'off beat' };
+      var until = S.lastStepAt + STEP_MS - S.time, good = until <= WINDOW_MS, mash = S.pressedStep === S.gs;
+      S.pressedStep = S.gs;
+      S.qGood = mash ? 'mash' : good ? 'good' : 'off';
+      S.pressFx = { at: S.time, good: good && !mash, text: mash ? 'too many notes' : 'off beat' };
     }
     S.queued = true;
     if (S.hint && S.hint.until > 1e8) S.hint = null;
@@ -999,6 +1017,20 @@
       begin: function () { begin(); },
       press: function () { pressNote(); },
       pick: pick,
+      // One step with no audio clock, for balance tests: q is 'good', 'off', 'mash' or null (no press). Mabel dodges like the auto bot.
+      step: function (q) {
+        if (S.mode === 'demo') endDemo();
+        if (S.mode === 'ready') firstInput();
+        if (S.mode === 'choice') pick(0);
+        S.queued = !!q; S.qGood = q || null;
+        var M = S.mabel, near = null, nd = 1e9;
+        S.hecklers.forEach(function (h) { var d = Math.hypot(h.x - M.x, h.y - M.y); if (h.state === 'walk' && d < nd) { nd = d; near = h; } });
+        if (near && nd < 110) { M.x -= (near.x - M.x) / nd * 14; M.y -= (near.y - M.y) / nd * 14; }
+        var dc = Math.hypot(M.x - CX, M.y - CY); if (dc > 250) { M.x = CX + (M.x - CX) * 250 / dc; M.y = CY + (M.y - CY) * 250 / dc; }
+        stepLogic(S.dbg++, undefined, 0);
+        for (var k = 0; k < 16; k++) update(STEP_MS / 16);
+        return { mode: S.mode, coins: S.coins, fans: S.fans, copies: S.copies.length, strings: S.strings, groove: S.groove };
+      },
       // Plays n steps with no audio clock: a bot that plays every other step and keeps away from hecklers.
       auto: function (n, bot) {
         if (S.mode === 'demo') endDemo();
