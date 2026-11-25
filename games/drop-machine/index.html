@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Beat Drop</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="top">
+  <div class="line1">
+    <a class="back" href="../../index.html">← Back to games</a>
+    <h1>BEAT DROP</h1>
+  </div>
+  <div class="row" id="main">
+    <button id="play" class="btn primary" type="button" title="Play or stop (Space)">Play</button>
+    <button id="undo" class="btn" type="button" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo"><span class="long">Undo</span><span class="short">&#8630;</span></button>
+    <button id="redo" class="btn" type="button" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo"><span class="long">Redo</span><span class="short">&#8631;</span></button>
+    <button id="floor" class="btn" type="button">+ Floor</button>
+    <button id="floorDown" class="btn" type="button">&minus; Floor</button>
+    <button id="dup" class="btn" type="button">Copy pit</button>
+    <button id="soundToggle" class="btn only-phone" type="button" aria-expanded="false">Sound</button>
+  </div>
+  <div class="row" id="sound">
+    <span class="ctl"><label class="ctl">Tempo <input id="bpm" type="range" min="70" max="160" step="1"><output id="bpmOut"></output></label><button class="q" data-help="tempo" type="button" aria-label="What is tempo?">?</button></span>
+    <span class="ctl"><label class="ctl">Key <select id="key"></select></label><button class="q" data-help="key" type="button" aria-label="What is a key?">?</button></span>
+    <span class="ctl stack"><span class="ctl"><label class="ctl">Scale <select id="scale"></select></label><button class="q" data-help="scale" type="button" aria-label="What is a scale?">?</button></span><small id="scaleMood"></small></span>
+    <span class="ctl"><label class="ctl">Free <input id="tight" type="range" min="0" max="1" step="0.05"> Tight</label><button class="q" data-help="tight" type="button" aria-label="What is Free and Tight?">?</button></span>
+    <label class="ctl">Volume <input id="master" type="range" min="0" max="1" step="0.05"></label>
+    <button id="new" class="btn small" type="button">New machine</button>
+  </div>
+</header>
+<nav id="tabs" aria-label="Pits"></nav>
+<main id="stage"><canvas id="cv"></canvas></main>
+<footer id="dock"></footer>
+<div id="modal" class="modal" hidden>
+  <div class="card">
+    <h2>Copy this pit</h2>
+    <label class="ctl block">Shift the notes <select id="dTr">
+      <option value="0">Same notes</option>
+      <option value="2">Up 2 steps (a third)</option>
+      <option value="4">Up 4 steps (a fifth)</option>
+      <option value="-2">Down 2 steps</option>
+      <option value="-4">Down 4 steps</option>
+    </select></label>
+    <label class="ctl block"><input id="dDelay" type="checkbox"> Start 1 bar later (plays as a round)</label>
+    <label class="ctl block"><input id="dMirror" type="checkbox"> Mirror left to right</label>
+    <div class="row end"><button id="dCancel" class="btn" type="button">Cancel</button><button id="dOk" class="btn primary" type="button">Copy pit</button></div>
+  </div>
+</div>
+<div id="info" class="modal" hidden>
+  <div class="card">
+    <h2 id="infoTitle"></h2>
+    <div id="infoBody" class="body"></div>
+    <div class="row end" id="infoBtns"></div>
+  </div>
+</div>
+<div id="pick" class="modal" hidden>
+  <div class="card wide">
+    <h2 id="pickTitle"></h2>
+    <div id="pickList" class="list"></div>
+    <div class="row end" id="pickBtns"></div>
+  </div>
+</div>
+<div id="toast" hidden></div>
+<script src="../kit/kit.js"></script>
+<script src="sim.js"></script>
+<script src="audio.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

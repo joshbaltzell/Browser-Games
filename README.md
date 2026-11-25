@@ -61,6 +61,7 @@ The landing page (`index.html`) lists every game as a card. Click one to play.
 
 | Game | Description |
 | --- | --- |
+| **[Beat Drop](games/drop-machine/)** | *Draft.* Build a ball-drop machine that plays music: a 16-step dropper releases balls on the beat, and bars, drum skins and beat-locked springs play notes in key. Copy pits to make rounds, add floors for deeper machines. |
 | **[Jam Tunnel](games/jam-tunnel/)** | *Draft.* Fly through your song in a WebGL tunnel. Pick a genre (southern rock, trap, pop, classic hip hop, country), then add drums, bass, melody and chords from three suggested parts that music theory says fit together, and turn the loop into a full song. |
 
 ### Idle
