@@ -45,6 +45,10 @@ var SOUNDS = {
     if (o.go) { Kit.audio.bell(t, { midi: 81, gain: 0.25, dur: 0.6 }); return; }
     Kit.audio.tick(t, { freq: 1800, gain: 0.3, dur: 0.04 });
   },
+  // the beat tick: one short hi-hat on every step so the player can hear where to press; louder on the main beats
+  tick: function (t, o) {
+    Kit.audio.tick(t, { freq: 5200, gain: o.accent ? 0.2 : 0.11, dur: 0.03 });
+  },
   splat: { voice: 'noiseHit', freq: 500, gain: 0.3, dur: 0.18 }
 };
 var play = Kit.audio.sfx(SOUNDS);
