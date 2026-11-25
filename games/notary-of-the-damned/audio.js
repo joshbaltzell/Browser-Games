@@ -2,8 +2,7 @@
  * NOTARY OF THE DAMNED — audio. Web Audio synthesis, created lazily on the
  * first user gesture (file://-safe). No assets.
  *
- * Identity: a continuous dot-matrix PRINTER GRIND under everything (filtered
- * noise chopped by an LFO), plus event sounds: a two-part stamp thump (wood on
+ * Identity: a slow, warm background loop in D minor (see startGrind), plus event sounds: a two-part stamp thump (wood on
  * pad, then pad on paper, pitched per verdict), paper rustle, a pneumatic-tube
  * thunk for memos, a bell for strikes, a quiet ding for correct calls, and
  * breathy WHISPER synth. A mute toggle (persisted) silences all of it.
@@ -96,49 +95,57 @@ function noiseBurst(type, freq, q, gain, dur, delay) {
   src.stop(t + dur + 0.02);
 }
 
-// The ever-present printer grind. Started on the first gesture, modulated by
-// pile size so the desk literally sounds worse as denials accrue.
+// Background music (replaces the old printer grind, which sounded like broken audio).
+// A slow, warm loop in D minor for an underworld records office: a soft pad, a plucked bass and a music-box line.
+// Scheduled a little ahead on the audio clock. The pile of denials makes it darker and slightly out of tune;
+// a running-out timer (rush) speeds it up and fills in the music box. Names kept: startGrind, setGrindIntensity.
+const MUSIC_CHORDS = [[50, 53, 57], [46, 50, 53], [43, 46, 50], [45, 49, 52]];   // Dm, Bb, Gm, A (MIDI)
+let music = null;
+function mtof(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+function mVoice(type, midi, t, dur, gain, attack, detune) {
+  const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+  osc.type = type; osc.frequency.setValueAtTime(mtof(midi), t);
+  if (detune) osc.detune.setValueAtTime(detune, t);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(g).connect(music.bus);
+  osc.start(t); osc.stop(t + dur + 0.05);
+}
+function musicStep(step, t) {
+  const m = music, chord = MUSIC_CHORDS[Math.floor(step / 8) % 4], k = step % 8, eighth = 60 / m.bpm / 2;
+  const sour = Math.min(30, m.pile * 4);   // cents out of tune as the pile grows
+  if (k === 0) chord.forEach(function (n, i) { mVoice("triangle", n, t, eighth * 8.5, 0.035, 0.5, i === 1 ? -sour : sour * 0.5); });
+  if (k === 0 || k === 4) mVoice("sine", chord[0] - 12, t, eighth * 3, 0.11, 0.01);
+  const box = m.rush > 0.3 ? true : (k === 2 || k === 5 || k === 7);
+  if (box) mVoice("sine", chord[(k + Math.floor(step / 8)) % 3] + 24, t, 0.6, m.playing ? 0.03 : 0.016, 0.005);
+}
+function musicTick() {
+  if (!music || !audioCtx) return;
+  const ahead = audioCtx.currentTime + 0.25;
+  while (music.next < ahead) {
+    musicStep(music.step, Math.max(music.next, audioCtx.currentTime));
+    music.next += 60 / music.bpm / 2; music.step++;
+  }
+}
 function startGrind() {
   if (!audioCtx || grindOn) return;
-  getNoiseBuffer();
-  const src = audioCtx.createBufferSource();
-  src.buffer = noiseBuf;
-  src.loop = true;
-
-  const filter = audioCtx.createBiquadFilter();
-  filter.type = "bandpass";
-  filter.frequency.value = 900;
-  filter.Q.value = 0.7;
-
-  // LFO chops the noise into a mechanical "chunk-chunk-chunk" grind.
-  const lfo = audioCtx.createOscillator();
-  lfo.type = "square";
-  lfo.frequency.value = 7.5;
-  const lfoGain = audioCtx.createGain();
-  lfoGain.gain.value = 0.04;
-
-  const gain = audioCtx.createGain();
-  gain.gain.value = 0.0;
-  gain.gain.setTargetAtTime(0.045, audioCtx.currentTime, 1.2);
-
-  lfo.connect(lfoGain);
-  lfoGain.connect(gain.gain);
-  src.connect(filter).connect(gain).connect(masterGain);
-  src.start();
-  lfo.start();
-  grindNodes = { src, lfo, lfoGain, filter, gain };
+  const bus = audioCtx.createGain(), lp = audioCtx.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 2600; lp.Q.value = 0.3;
+  bus.gain.value = 0; bus.gain.setTargetAtTime(0.9, audioCtx.currentTime, 1.5);
+  bus.connect(lp).connect(masterGain);
+  music = { bus: bus, lp: lp, bpm: 76, step: 0, next: audioCtx.currentTime + 0.15, pile: 0, rush: 0, playing: false, timer: setInterval(musicTick, 60) };
+  grindNodes = music;
   grindOn = true;
 }
-// `rush` (0..1) speeds the grind up when the soft timer runs low.
+// `rush` (0..1) speeds the music up when the soft timer runs low.
 function setGrindIntensity(pileN, playing, rush) {
-  if (!grindNodes || !audioCtx) return;
-  const t = audioCtx.currentTime;
-  const r = rush || 0;
-  const base = playing ? 0.045 : 0.012;
-  const lvl = Math.min(0.13, base + pileN * 0.006 + r * 0.03);
-  grindNodes.gain.gain.setTargetAtTime(lvl, t, 0.4);
-  grindNodes.lfo.frequency.setTargetAtTime(7.5 + pileN * 0.4 + r * 6, t, 0.6);
-  grindNodes.filter.frequency.setTargetAtTime(900 - pileN * 18, t, 0.6);
+  if (!music || !audioCtx) return;
+  const r = rush || 0, t = audioCtx.currentTime;
+  music.pile = pileN || 0; music.rush = r; music.playing = !!playing;
+  music.bpm = 76 + r * 36;
+  music.bus.gain.setTargetAtTime(playing ? 0.9 : 0.55, t, 0.5);
+  music.lp.frequency.setTargetAtTime(Math.max(900, 2600 - music.pile * 150), t, 0.8);
 }
 
 // Breathy whisper: filtered noise burst with a slow formant sweep.
