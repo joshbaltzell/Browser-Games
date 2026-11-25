@@ -6,7 +6,7 @@
   var COLORS = { wood: '#ffb347', metal: '#5ee6ff', glass: '#d6bcff', drum: '#ff5f85', pad: '#5fe58a' };
   var PHOSPHOR = '#6dff9c';
   var MAX_BALLS = 32, MAX_PIT_BALLS = 8, MAX_DROPPERS = 3;
-  var MAX_PITS = 4;
+  var MAX_PITS = 6;
 
   var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   var $ = function (id) { return document.getElementById(id); };
@@ -120,6 +120,7 @@
   function rebuild() {
     var m = S.machine, sd = stepDur();
     S.cache = {};
+    m.pits.forEach(function (pit) { pit.droppers.forEach(DM.fixDropper); });   // every dropper has a bar count and 16 steps per bar
     m.pits.forEach(function (pit) {
       var all = DM.simulateAll(pit, m);
       var drops = all.map(function (res) {
@@ -471,7 +472,7 @@
   }
   function openPitPicker() {
     var full = S.machine.pits.length >= MAX_PITS;
-    openPicker(full ? 'Famous tunes (four pits is the most)' : 'Add a pit', DM.PRESETS.filter(function (it) { return !full || it.whole; }), {
+    openPicker(full ? 'Famous tunes (' + MAX_PITS + ' pits is the most)' : 'Add a pit', DM.PRESETS.filter(function (it) { return !full || it.whole; }), {
       confirmLabel: 'Add pit',
       onPreview: function (it) {
         if (it.whole) { var sm = DM.buildSong(); previewPit(sm.pits[0], sm, 32); previewPit(sm.pits[1], sm, 32); return; }
@@ -494,6 +495,7 @@
     });
   }
   function addPresetPit(id) {
+    if (S.machine.pits.length >= MAX_PITS) return;
     edit(function () { S.machine.pits.push(DM.buildPreset(S.machine, id)); });
     S.active = S.machine.pits.length - 1; S.sel = null; S.dropSel = 0; afterChange(true);
   }
@@ -650,6 +652,7 @@
     var maxBars = 1; idx.forEach(function (i) { m.pits[i].droppers.forEach(function (d) { maxBars = Math.max(maxBars, d.bars || 1); }); });
     var pageH = maxBars > 1 ? 14 : 0, rowsH = maxDrop * rowH + 4 + pageH;
     var minRow = 16 * (phone ? 19 : 15) + ROW_LABEL;           // the 16 step cells stay easy to see and tap
+    if (!phone) minRow = Math.min(minRow, (W - pad * 2 - (n - 1) * gap) / n - 16);   // many pits: narrower cells, but everything stays on screen
     var vpH = Math.max(80, H - pad * 2 - hdrH - rowsH - stripH - 16);
     var availW = (W - pad * 2 - (n - 1) * gap) / n - 16;        // pit width per cell
     // Scale so the whole pit fits the height; only very tall pits (after +Floor) fall back to scrolling.
@@ -908,7 +911,7 @@
     // header: label, LEDs
     ctx.font = '700 11px ui-monospace, Menlo, Consolas, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     ctx.fillStyle = '#ffb347'; ctx.fillText('PIT ' + (c.i + 1), c.hdr.x + 16, c.hdr.y + 14);
-    ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#7f8ba6'; ctx.fillText('life ' + lifeLabel(DM.lifeBeats(pit)), c.hdr.x + 62, c.hdr.y + 14);
+    ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#7f8ba6'; if (c.hdr.w >= 300) ctx.fillText('life ' + lifeLabel(DM.lifeBeats(pit)), c.hdr.x + 62, c.hdr.y + 14);   // narrow pits: the Pit panel still shows it
     ctx.font = '700 11px ui-monospace, Menlo, Consolas, monospace';
     var right = c.hdr.x + c.hdr.w;
     function pill(x, w, label, on, col) {
