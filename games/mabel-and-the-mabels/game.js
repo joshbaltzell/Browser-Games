@@ -115,7 +115,7 @@
     S.gs = 0; S.beatAt = -9999; S.barAt = -9999; S.lastStepAt = 0;
     S.fx = []; S.drops = [];
     for (var i = 0; i < 16; i++) S.strip[i] = 0;
-    setHint(TOUCH ? 'Your turn. Drag on the left to move. Tap the right half on the beat.' : 'Your turn. Move with WASD. Tap Space on the beat.', 1e9);
+    setHint(TOUCH ? 'Your turn. Tap the right half to play and charm the grumps. Drag on the left to move.' : 'Your turn. Tap Space to play and charm the grumps. Move with WASD.', 1e9);
   }
 
   function updateDrops() {
@@ -194,7 +194,7 @@
     S.countFrom = S.recStart - 8;
     S.countN = 0;
     S.cards = null;
-    setHint('Next you record a part. What you play gets looped as a band member.', 5000);
+    setHint('Next: play one short pattern, once. Your new band member repeats it for the rest of the set.', 6000);
   }
 
   function endRec() {
@@ -208,6 +208,7 @@
     S.rec = null;
     S.mabel.popAt = S.time;
     for (var i = 0; i < 16; i++) S.strip[i] = 0;
+    setHint('Done. Your band member loops that part now. Keep playing.', 5000);
   }
 
   function startEnding() {
@@ -758,11 +759,11 @@
         text(ctx, 'REC', 68, 40, '34px ' + SLAB, PAL.paper);
         text(ctx, (rs + 1) + ' / 16', 262, 40, '34px ' + SLAB, PAL.paper, 'right');
       });
-      loopBar(ctx, rs, 'This 2-bar pattern repeats as your band member.');
+      loopBar(ctx, rs, 'Recording once. After this it loops by itself.');
     } else if (S.mode === 'countin') {
       var n = S.countN;
       var k = clamp((S.time - (S.countAt || 0)) / 400, 0, 1);
-      loopBar(ctx, -1, 'Play a pattern. It will loop.');
+      loopBar(ctx, -1, 'Get ready: play any pattern when REC starts.');
       if (n > 0) {
         ctx.save();
         ctx.globalAlpha = 1 - k * 0.5;
@@ -834,7 +835,7 @@
     ctx.globalAlpha = clamp(age / 400, 0, 1);
     var w = 760;
     block(ctx, CX - w / 2, 560, w, 76, PAL.paper, PAL.pink, -1, function () {
-      text(ctx, 'Fire on the beat. Your notes make the song.', w / 2, 38, '700 30px ' + SANS, PAL.night, 'center');
+      text(ctx, 'Just an example. Play any notes you like, on the beat.', w / 2, 38, '700 26px ' + SANS, PAL.night, 'center');
     });
     block(ctx, 360, 98, 560, 34, PAL.night, PAL.orange, 1, function () {
       text(ctx, 'The beat strip. Every note lands on a square.', 280, 18, '700 17px ' + SANS, PAL.paper, 'center');
