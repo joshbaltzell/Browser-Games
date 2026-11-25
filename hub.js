@@ -64,22 +64,6 @@ const GAMES = [
       </svg>`,
   },
   {
-    title: "Sky Climber",
-    description:
-      "Bounce ever upward across drifting platforms, springs and crumbling ledges. Steer carefully, never fall, and climb as high as the sky allows.",
-    path: "games/sky-climber/index.html",
-    play: "phone",
-    tags: ["Platformer", "Arcade", "Skill"],
-    accent: "#ff9f1c",
-    art: `
-      <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect x="22" y="58" width="28" height="7" rx="3.5" fill="#ff9f1c" />
-        <rect x="62" y="44" width="28" height="7" rx="3.5" fill="#ff9f1c" />
-        <rect x="34" y="28" width="28" height="7" rx="3.5" fill="#ff9f1c" />
-        <circle cx="78" cy="34" r="6" fill="#ffd27a" />
-      </svg>`,
-  },
-  {
     title: "Neon Gauntlet",
     description:
       "A room-by-room neon dungeon crawler. Clear rooms, fight six enemy archetypes, and build your skill tree one level at a time.",
