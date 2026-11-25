@@ -7,7 +7,8 @@ var LAD = (function () {
     { id: 'growth', name: 'Growth (speed)', color: PINK, pat: 'stripes' },
     { id: 'waste', name: 'Smell', color: AMB, pat: 'dots' },
     { id: 'casualties', name: 'Growth (share)', color: VIO, pat: 'cross' },
-    { id: 'regularity', name: 'Naturalness', color: CY, pat: 'zigzag' }
+    { id: 'regularity', name: 'Naturalness', color: CY, pat: 'zigzag' },
+    { id: 'motion', name: 'Movement', color: '#e6ebff', pat: 'checks' }   // habitat 3 only (index 4): ticks led by Movement; pale checks, so it is told apart by pattern as well as colour
   ];
   var dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
   var pats = {};
@@ -31,6 +32,7 @@ var LAD = (function () {
       g.strokeStyle = '#04050a'; g.fillStyle = '#04050a'; g.lineWidth = 2;
       if (kind === 'stripes') { g.beginPath(); g.moveTo(-2, 12); g.lineTo(12, -2); g.moveTo(-2, 7); g.lineTo(7, -2); g.moveTo(3, 12); g.lineTo(12, 3); g.stroke(); }
       else if (kind === 'dots') { g.beginPath(); g.arc(3, 3, 1.6, 0, 7); g.arc(8, 8, 1.6, 0, 7); g.fill(); }
+      else if (kind === 'checks') { g.fillRect(0, 0, 5, 5); g.fillRect(5, 5, 5, 5); }
       else if (kind === 'cross') { g.lineWidth = 1.5; g.beginPath(); g.moveTo(-1, 11); g.lineTo(11, -1); g.moveTo(-1, -1); g.lineTo(11, 11); g.stroke(); }
       else { g.lineWidth = 1.6; g.beginPath(); g.moveTo(0, 7); g.lineTo(2.5, 2); g.lineTo(5, 7); g.lineTo(7.5, 2); g.lineTo(10, 7); g.stroke(); }
       pats[key] = t;
@@ -273,10 +275,46 @@ var LAD = (function () {
   var DOTS = [[-78, 18], [-70, 34], [-62, 16], [-56, 30], [-48, 14], [-42, 28], [-34, 18], [-28, 34], [-20, 16], [-66, 46]];   // signal dots: angle, extra distance
   var FLUID = [[-40, 20], [30, 50], [150, 40], [200, 30], [260, 55], [320, 35], [100, 60], [350, 62], [60, 30], [230, 62], [290, 22], [10, 70]];
 
+  // The Light lineage in the Skin: the skin ring with flat purple patches set in it (real: bacteriorhodopsin sits in purple patches of the membrane).
+  // Step 2 adds one sensing spot with a ring. Step 3 makes the spot two halves with different fills and marks. Told apart by shape and pattern, not colour alone.
+  var LIGHT_STEP = { lightpump: 1, lightsense: 2, lightcolor: 3 };
+  function arcPath(r, a0, a1) { var p = pol(r, a0), q = pol(r, a1); return 'M' + n1(p[0]) + ' ' + n1(p[1]) + ' A' + r + ' ' + r + ' 0 0 1 ' + n1(q[0]) + ' ' + n1(q[1]); }
+  function lightRing(r, id, over) {   // over: only the marks, for laying over the glowing 3D portrait (which already draws the skin itself)
+    var st = LIGHT_STEP[id], o = over ? '' : '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="' + PINK + '" stroke-width="6"/><circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + (r + 4) + '" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="1.2"/>';
+    [-122, -12, 52, 118, 188].forEach(function (a) {
+      o += '<path class="lpatch" d="' + arcPath(r, a - 11, a + 11) + '" fill="none" stroke="#2a1470" stroke-width="16" stroke-linecap="butt"/><path class="lpatch" d="' + arcPath(r, a - 10, a + 10) + '" fill="none" stroke="#8b5cf6" stroke-width="12" stroke-linecap="butt"/>';
+    });
+    if (st < 2) return o;
+    var p = pol(r, -67), x = n1(p[0]), y = n1(p[1]);
+    if (st === 2) return o + '<circle class="lspot" cx="' + x + '" cy="' + y + '" r="18" fill="none" stroke="#ffe08a" stroke-width="2.4"/><circle cx="' + x + '" cy="' + y + '" r="11" fill="#ffe08a"/>';
+    return o + '<circle class="lspot" cx="' + x + '" cy="' + y + '" r="21" fill="none" stroke="#fff" stroke-width="2.4"/>' +
+      '<path d="M' + x + ' ' + n1(y - 14) + ' A14 14 0 0 0 ' + x + ' ' + n1(y + 14) + ' Z" fill="' + AMB + '"/><path d="M' + x + ' ' + n1(y - 14) + ' A14 14 0 0 1 ' + x + ' ' + n1(y + 14) + ' Z" fill="' + CY + '"/>' +
+      '<circle cx="' + n1(x - 7) + '" cy="' + n1(y - 5) + '" r="1.9" fill="#3a2305"/><circle cx="' + n1(x - 6) + '" cy="' + n1(y + 5) + '" r="1.9" fill="#3a2305"/><circle cx="' + n1(x - 3) + '" cy="' + y + '" r="1.5" fill="#3a2305"/>' +
+      '<path d="M' + n1(x + 3) + ' ' + n1(y - 10) + ' L' + n1(x + 11) + ' ' + n1(y - 4) + ' M' + n1(x + 3) + ' ' + n1(y - 3) + ' L' + n1(x + 12) + ' ' + n1(y + 3) + ' M' + n1(x + 3) + ' ' + n1(y + 4) + ' L' + n1(x + 9) + ' ' + n1(y + 9) + '" stroke="#06364a" stroke-width="2" fill="none"/>' +
+      '<line x1="' + x + '" y1="' + n1(y - 14) + '" x2="' + x + '" y2="' + n1(y + 14) + '" stroke="#fff" stroke-width="1.6"/>';
+  }
+  // The Light marks alone, in the same 600 x 410 space as cellArt, for the WebGL portrait on Adapt (the shader draws the skin; these sit over it, in register).
+  function lightMarks(slots) {
+    var env = (slots && slots.envelope) || [], i;
+    for (i = 0; i < 2; i++) if (LIGHT_STEP[env[i]]) return '<g class="lmarks" data-step="' + LIGHT_STEP[env[i]] + '" pointer-events="none">' + lightRing(i ? CG.r2 : CG.r1, env[i], true) + '</g>';
+    return '';
+  }
+  // Where the newest Light mark is, for a callout: step 1 a patch, steps 2 and 3 the spot. { step, x, y } or null.
+  function lightSpot(slots) {
+    var env = (slots && slots.envelope) || [], i, st, r, p;
+    for (i = 0; i < 2; i++) if (LIGHT_STEP[env[i]]) { st = LIGHT_STEP[env[i]]; r = i ? CG.r2 : CG.r1; p = pol(r, st < 2 ? -12 : -67); return { step: st, x: n1(p[0]), y: n1(p[1]) }; }
+    return null;
+  }
   function ringArt(r, id, idx) {
     var o = '';
+    if (LIGHT_STEP[id]) return lightRing(r, id);
     if (!id) return '<circle class="emptyring" cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '"/>';
     if (id === 'lipids') return '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="' + PINK + '" stroke-width="10"/><circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + (r + 3) + '" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>';
+    if (id === 'tetraether') {   // one fused ring, no leaflet gap: a solid amber-white band with a bright core line and tiny cross-links
+      o = '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="#ffcf8a" stroke-width="9"/><circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="1.6"/>';
+      for (var tq = 0; tq < 24; tq++) { var tp = pol(r - 3.5, tq * 15 + idx * 7), tr = pol(r + 3.5, tq * 15 + idx * 7); o += '<line x1="' + n1(tp[0]) + '" y1="' + n1(tp[1]) + '" x2="' + n1(tr[0]) + '" y2="' + n1(tr[1]) + '" stroke="#7a4a12" stroke-width="1.2" stroke-opacity=".7"/>'; }
+      return o;
+    }
     if (id === 'wall') return '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="#ffb0c8" stroke-width="8" stroke-dasharray="11 4"/><circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + (r + 5) + '" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="1"/>';
     o += '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + r + '" fill="none" stroke="' + PINK + '" stroke-width="4"/>';   // pump: little pumps in the skin, each throwing acid out
     for (var i = 0; i < 10; i++) {
@@ -297,7 +335,12 @@ var LAD = (function () {
   function insidesArt(id) {
     var fill = id === 'acidproof' ? 'rgba(245,165,36,.34)' : 'rgba(255,107,149,.14)', o = '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + CG.rf + '" fill="' + fill + '"/>';
     if (id === 'acidproof') FLUID.forEach(function (d) { var p = pol(d[1] + 20, d[0]); o += '<circle cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="3.2" fill="' + AMB + '" opacity=".85"/>'; });
-    else if (id === 'repair') {
+    else if (id === 'chaperones') {   // little cups cradling folded blobs
+      FLUID.slice(0, 6).forEach(function (d, k) { var p = pol(d[1] + 18, d[0] * 1.3 + k * 20), a = k * 1.1; o += '<path d="M' + n1(p[0] - 8) + ' ' + n1(p[1] - 3) + ' A8 8 0 0 0 ' + n1(p[0] + 8) + ' ' + n1(p[1] - 3) + '" fill="none" stroke="' + AMB + '" stroke-width="2.2" stroke-linecap="round" transform="rotate(' + Math.round(a * 57) + ' ' + n1(p[0]) + ' ' + n1(p[1]) + ')"/><circle cx="' + n1(p[0]) + '" cy="' + n1(p[1] - 1) + '" r="3.2" fill="#ff9fbb"/>'; });
+    } else if (id === 'polyamines') {   // a lace of short thread bundles wrapped round the DNA loop
+      o += '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="52" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="2" stroke-dasharray="1 4"/>';
+      for (var pk = 0; pk < 16; pk++) { var pa = pol(52, pk * 22.5), pb = pol(66, pk * 22.5 + 9); o += '<line x1="' + n1(pa[0]) + '" y1="' + n1(pa[1]) + '" x2="' + n1(pb[0]) + '" y2="' + n1(pb[1]) + '" stroke="' + CY + '" stroke-width="2" stroke-linecap="round" stroke-opacity=".85"/><circle cx="' + n1(pb[0]) + '" cy="' + n1(pb[1]) + '" r="2.4" fill="' + CY + '"/>'; }
+    } else if (id === 'repair') {
       FLUID.slice(0, 7).forEach(function (d, k) { var p = pol(d[1] + 22, d[0]); o += '<polygon points="' + hexPts(p[0], p[1], 7, k) + '" fill="none" stroke="' + CY + '" stroke-width="1.4" stroke-opacity=".85"/>'; });
     } else o += '<circle cx="' + CG.cx + '" cy="' + CG.cy + '" r="' + CG.rf + '" fill="none" stroke="#fff" stroke-opacity=".12" stroke-dasharray="2 5"/>';
     return o;
@@ -310,6 +353,11 @@ var LAD = (function () {
       [[-30, -6, 5], [30, 6, 4], [-22, 22, 3.5], [24, -20, 3.5], [0, -34, 3]].forEach(function (b) { o += '<circle cx="' + (cx + b[0]) + '" cy="' + (cy + b[1]) + '" r="' + b[2] + '" fill="none" stroke="' + AMB + '" stroke-width="1.6"/>'; });
       return o;
     }
+    if (id === 'heatps') {   // a core with heat-stable stacked discs: a ring of amber plates around a warm white centre
+      o += '<circle cx="' + cx + '" cy="' + cy + '" r="30" fill="#2a1408" stroke="#ffcf8a" stroke-width="3"/>';
+      for (var hk = 0; hk < 4; hk++) o += '<line x1="' + (cx - 22 + hk * 1) + '" y1="' + (cy - 15 + hk * 10) + '" x2="' + (cx + 22 - hk * 1) + '" y2="' + (cy - 15 + hk * 10) + '" stroke="' + AMB + '" stroke-width="4" stroke-linecap="round"/>';
+      return o + '<circle cx="' + cx + '" cy="' + cy + '" r="7" fill="#fff" fill-opacity=".9"/>';
+    }
     return o + '<circle cx="' + cx + '" cy="' + cy + '" r="' + CG.rc + '" fill="#ff9fbb" stroke="#fff" stroke-width="2"/><circle cx="' + cx + '" cy="' + cy + '" r="11" fill="#fff" fill-opacity=".85"/><circle cx="' + cx + '" cy="' + cy + '" r="34" fill="none" stroke="#fff" stroke-opacity=".35" stroke-dasharray="3 5"/>';
   }
   function divisionArt(id) {
@@ -319,6 +367,12 @@ var LAD = (function () {
     if (id === 'clock') {
       o += '<line x1="' + x0 + '" y1="' + cy + '" x2="' + x1 + '" y2="' + cy + '" stroke="' + CY + '" stroke-opacity=".5"/>';
       for (var i = 0; i < 9; i++) o += '<polygon points="' + hexPts(x0 + 18 + i * ((x1 - x0 - 36) / 8), cy, 8, 0) + '" fill="#0a1f2b" stroke="' + CY + '" stroke-width="1.6"/>';
+      return o + pinch;
+    }
+    if (id === 'filament') {   // a long chained outline: one cell that stays joined, with faint walls between the links
+      var fw = (x1 - x0 - 20) / 5;
+      o += '<rect x="' + (x0 + 10) + '" y="' + (cy - 8) + '" width="' + (x1 - x0 - 20) + '" height="16" rx="8" fill="rgba(255,179,71,.10)" stroke="' + AMB + '" stroke-width="2.4"/>';
+      for (var fk = 1; fk < 5; fk++) o += '<line x1="' + n1(x0 + 10 + fk * fw) + '" y1="' + (cy - 8) + '" x2="' + n1(x0 + 10 + fk * fw) + '" y2="' + (cy + 8) + '" stroke="' + AMB + '" stroke-width="1.6" stroke-opacity=".8"/>';
       return o + pinch;
     }
     if (id === 'copier') return '<line x1="' + x0 + '" y1="' + (cy - 4) + '" x2="' + x1 + '" y2="' + (cy - 4) + '" stroke="' + CY + '" stroke-width="2"/><line x1="' + x0 + '" y1="' + (cy + 4) + '" x2="' + x1 + '" y2="' + (cy + 4) + '" stroke="' + CY + '" stroke-width="2"/>' + pinch;
@@ -340,12 +394,18 @@ var LAD = (function () {
   function motorArt(id) {
     var a = pol(CG.r1, 140), t = pol(CG.r1 + 36, 140), o = '';
     if (!id) return '<circle class="emptydot" cx="' + n1(pol(CG.r1 + 4, 140)[0]) + '" cy="' + n1(pol(CG.r1 + 4, 140)[1]) + '" r="6"/>';
+    if (id === 'pili') {   // short stiff threads fanned out, each ending in a hook
+      for (var pi = 0; pi < 5; pi++) { var pa = pol(CG.r1, 118 + pi * 11), pb = pol(CG.r1 + 24 + (pi % 2) * 8, 118 + pi * 11); o += '<line x1="' + n1(pa[0]) + '" y1="' + n1(pa[1]) + '" x2="' + n1(pb[0]) + '" y2="' + n1(pb[1]) + '" stroke="' + AMB + '" stroke-width="2.6" stroke-linecap="round"/><circle cx="' + n1(pb[0]) + '" cy="' + n1(pb[1]) + '" r="2.8" fill="' + AMB + '"/>'; }
+      return o;
+    }
     o += '<path d="M' + n1(a[0]) + ' ' + n1(a[1]) + ' Q' + n1((a[0] + t[0]) / 2 - 12) + ' ' + n1((a[1] + t[1]) / 2 + 12) + ' ' + n1(t[0] - 14) + ' ' + n1(t[1] + 6) + ' T' + n1(t[0] - 40) + ' ' + n1(t[1] + 18) + '" fill="none" stroke="' + AMB + '" stroke-width="3" stroke-linecap="round"/>';
     return o;
   }
   function reflexArt(rf) {
     var p = pol(CG.r1, -135), o = '', rot = -45;
     if (!rf) return '<ellipse class="emptyring" cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" rx="15" ry="8" transform="rotate(' + rot + ' ' + n1(p[0]) + ' ' + n1(p[1]) + ')"/>';
+    if (rf.kind === 'bio' && rf.id === 'nightferm') return '<ellipse cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" rx="16" ry="9" fill="#0b1740" stroke="#5a7bff" stroke-width="2.4" transform="rotate(' + rot + ' ' + n1(p[0]) + ' ' + n1(p[1]) + ')"/><circle cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="3.6" fill="#9db4ff"/>';
+    if (rf.kind === 'machine' && rf.sensor === 'temp') { var ha = (rf.action === 'cooler' ? 150 : -60) * Math.PI / 180; return '<polygon points="' + hexPts(p[0], p[1], 14, 0) + '" fill="#0a1f2b" stroke="' + CY + '" stroke-width="2.4"/><line x1="' + n1(p[0]) + '" y1="' + n1(p[1]) + '" x2="' + n1(p[0] + Math.cos(ha) * 10) + '" y2="' + n1(p[1] + Math.sin(ha) * 10) + '" stroke="' + AMB + '" stroke-width="2.4" stroke-linecap="round"/><circle cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="2.6" fill="' + CY + '"/>'; }
     if (rf.kind === 'machine') return '<polygon points="' + hexPts(p[0], p[1], 14, 0) + '" fill="#0a1f2b" stroke="' + CY + '" stroke-width="2.4"/><circle cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="4.5" fill="' + CY + '"/>';
     return '<ellipse cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" rx="16" ry="9" fill="#12372e" stroke="' + GRN + '" stroke-width="2.4" transform="rotate(' + rot + ' ' + n1(p[0]) + ' ' + n1(p[1]) + ')"/><circle cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="3.6" fill="' + GRN + '"/>';
   }
@@ -370,5 +430,5 @@ var LAD = (function () {
       g('envelope', function (s) { return envelopeArt(s.envelope); }) + g('signal', function (s) { return signalArt(s.signal); }) + g('motor', function (s) { return motorArt(s.motor); }) + g('reflex', function (s) { return reflexArt(s.reflex); });
   }
 
-  return { cellArt: cellArt, ANCHOR: ANCHOR, CG: CG, VIO: VIO, PINK: PINK, AMB: AMB, GRN: GRN, CY: CY, RED: RED, CH: CH, MACH: MACH, fit: fit, pattern: pattern, drawCells: drawCells, chart: chart, ribbon: ribbon, foodStrip: foodStrip, portrait: portrait, hash: hash };
+  return { cellArt: cellArt, lightMarks: lightMarks, lightSpot: lightSpot, ANCHOR: ANCHOR, CG: CG, VIO: VIO, PINK: PINK, AMB: AMB, GRN: GRN, CY: CY, RED: RED, CH: CH, MACH: MACH, fit: fit, pattern: pattern, drawCells: drawCells, chart: chart, ribbon: ribbon, foodStrip: foodStrip, portrait: portrait, hash: hash };
 })();

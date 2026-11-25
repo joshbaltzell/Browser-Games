@@ -1,0 +1,26 @@
+{
+ "slug": "look-alive",
+ "outDir": "games/look-alive/art-src/intro",
+ "cap": 20,
+ "style": "STYLE (applies to every image): a dark, elegant, slightly cute science-fiction storybook illustration, as a stylised video game cutscene. Mostly black or deep-navy background with soft glowing light and gentle bloom, and a subtle circular lens vignette at the edges. Limited palette: crystal violet (#8B5CF6) for native microbes, safranin pink (#FF5C8A) for the small alien scout craft and the player's disguised cells, iodine amber (#F5A524) for warm light and chemicals, malachite green (#2DD4A7) for guardian immune cells. Never gory or frightening. No text, no letters, no numbers, no watermark, no signature, no user interface.",
+ "requests": [
+  {
+   "id": "IH-1",
+   "file": "intro-h2-1-stamp.png",
+   "size": "1536x864",
+   "prompt": "A small sample capsule glowing safranin pink, resting on a dark surface, with a soft round stamp mark of light on its lid. Behind it, out of focus, the tiny pink scout pod lifting off toward a distant faint amber glow on the horizon. Calm and triumphant. No text, no letters. Any microbes in the scene are plain glowing blobs and rods with NO faces: no eyes, no mouths, no smiles, no expressions."
+  },
+  {
+   "id": "IH-2",
+   "file": "intro-h2-2-river.png",
+   "size": "1536x864",
+   "prompt": "A hot spring outflow seen from the height of a single microbe: a steaming river in a shallow channel, the ground either side banded in soft natural layers of pale pink, then green over orange, then a thin rim, like the bands in a rock. The tiny pink scout pod hovers above the steam. No buildings, no roads, no animals."
+  },
+  {
+   "id": "IH-3",
+   "file": "intro-h2-3-shadow.png",
+   "size": "1536x864",
+   "prompt": "At the cool edge of a microbial mat, a vast, very blurred dark shape fills one side of the frame, far out of focus, like a slow weather front. In front of it the green and orange layers are thinner and worn. The tiny pink scout pod watches from the warm side. It must NOT look like an animal: no legs, no head, no eyes, no segments. Just a soft blurred shadow."
+  }
+ ]
+}

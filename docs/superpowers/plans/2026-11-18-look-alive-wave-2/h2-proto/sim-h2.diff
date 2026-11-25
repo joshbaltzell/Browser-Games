@@ -1,0 +1,276 @@
+--- orig/sim.js	2026-11-18 23:11:44
++++ proto/sim.js	2026-11-18 23:12:05
+@@ -34,6 +34,21 @@
+     }
+     return cap;
+   }
++  // ---- habitat 2 (D.temp): a temperature per cell, hot down the middle column, cool at the left and right edges (the grid wraps, so the two cool edges meet)
++  function makeTemp(n, T) {
++    var a = new Float32Array(n * n), x, y;
++    for (x = 0; x < n; x++) { var u = (x + 0.5) / n, t = T.cool + (T.hot - T.cool) * (0.5 - 0.5 * Math.cos(6.2832 * u)); for (y = 0; y < n; y++) a[y * n + x] = t; }
++    return a;
++  }
++  function sstep(a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
++  // The natives' bands come from the food map: thin pink streamers above the photosynthesis line, the dense green and orange mat below it, a thin grazed rim under 40 C
++  function bandOf(t, B) { return B.hot + (B.mat - B.hot) * (1 - sstep(B.photoLo, B.photoHi, t)) - (B.mat - B.rim) * (1 - sstep(B.grazeLo, B.grazeHi, t)); }
++  function makeCapD(n, D) {
++    var cap = makeCap(n); if (!D || !D.temp) return cap;
++    var tp = makeTemp(n, D.temp), B = D.temp.bands, i;
++    for (i = 0; i < n * n; i++) cap[i] *= bandOf(tp[i], B);
++    return cap;
++  }
+   function makeBust(n) {  // how hard the food crash hits each cell, 0.3 (a refuge) to 1.0
+     var m = new Float32Array(n * n), x, y;
+     for (y = 0; y < n; y++) for (x = 0; x < n; x++) {
+@@ -64,7 +79,13 @@
+   }
+   function runTicks(P, D) { return D.ticks || P.ticks; }
+   // A dish has one event (D.event) or several (D.events, the first of them is also D.event). Their levels combine as the largest.
+-  function evList(D) { return D.events && D.events.length ? D.events : (D.event && D.event.tick >= 0 ? [D.event] : []); }
++  function evList(D) {
++    if (D.diel) {   // day and night: one 'bust' per night, every `period` ticks from `first`
++      if (!D._diel) { D._diel = []; for (var k = D.diel.first; k < (D.ticks || 300); k += D.diel.period) D._diel.push({ type: 'bust', tick: k, announce: k - 20, rMult: 0, aMult: 0, depth: D.diel.depth, dur: D.diel.dur, bustDeath: D.diel.bustDeath, night: true }); }
++      return D._diel;
++    }
++    return D.events && D.events.length ? D.events : (D.event && D.event.tick >= 0 ? [D.event] : []);
++  }
+   function evLevelD(D, tick, ramp) { var l = evList(D), m = 0; for (var i = 0; i < l.length; i++) { var v = evLevel(l[i], tick, ramp); if (v > m) m = v; } return m; }
+   function evNext(D, tick) { var l = evList(D), best = -1; for (var i = 0; i < l.length; i++) if (l[i].tick >= tick && (best < 0 || l[i].tick < best)) best = l[i].tick; return best; }
+   function evLastEnd(D, ramp) { var l = evList(D), m = 0; for (var i = 0; i < l.length; i++) { var e = l[i].tick + (l[i].dur || 0) + ramp; if (e > m) m = e; } return m; }
+@@ -108,6 +129,10 @@
+       if (f.acid) p.acidKeep *= 1 - f.acid;
+       if (f.reg) { p.reg[id] = f.reg; p.regMachine += f.reg; }
+     });
++    if (D.temp) {   // habitat 2: heat tolerance (C), grip against the current, grazing kept, the cool-side cost of a heat-stable power card
++      p.tol = D.temp.base + (met.fx.heat || 0); p.grip = 0; p.grazeKeep = 1; p.coolBelow = met.fx.coolBelow || 0; p.coolMult = met.fx.coolMult || 1;
++      (b.parts || []).forEach(function (id) { var c = Cards.part(id); if (!c) return; var f = c.fx; if (f.heat) p.tol += f.heat; if (f.grip) p.grip = Math.max(p.grip, f.grip); if (f.graze) p.grazeKeep *= 1 - f.graze; });
++    }
+     p.acidBlock = 1 - p.acidKeep;
+     p.acidRate = p.acid * p.acidKeep;                                  // fraction of the colony the acid dissolves each tick
+     p.births = p.paceMult * p.yield * p.slopMult * p.partBirths;      // gross division multiplier of the build, before quorum, radio and rules
+@@ -291,7 +316,7 @@
+     var n = opts.n || 64, nn = n * n, T = runTicks(P, D), i, k;
+     var s = {
+       P: P, D: D, build: build, n: n, T: T, tick: 0, rng: (opts.seed || 12345) | 0, bp: params(P, D, build),
+-      cap: makeCap(n), bustMap: makeBust(n),
++      cap: makeCapD(n, D), bustMap: makeBust(n), temp: D.temp ? makeTemp(n, D.temp) : null,
+       N: new Float32Array(nn), R: new Float32Array(nn), F: new Float32Array(nn), WA: new Float32Array(nn), WB: new Float32Array(nn),
+       Q: new Float32Array(nn), FD: new Float32Array(nn), Z: new Float32Array(nn), SP: new Float32Array(nn),   // Z: napping units, SP: spores (both are part of the colony but inactive)
+       tN: new Float32Array(nn), tR: new Float32Array(nn), tF: new Float32Array(nn), tA: new Float32Array(nn), tB: new Float32Array(nn), tQ: new Float32Array(nn),
+@@ -309,11 +334,17 @@
+         s.N[i] = base.N[i]; s.F[i] = base.F[i]; s.WA[i] = base.WA[i]; s.WB[i] = base.WB[i]; s.FD[i] = base.F[i];
+         s.R[i] = share / (1 - share) * base.N[i];
+       }
++      if (opts.place && s.temp) {   // checks only: start the colony in the cool half (under 50 C) or the hot half (50 C and up), same total
++        var tot0 = 0, tot1 = 0;
++        for (i = 0; i < nn; i++) tot0 += s.R[i];
++        for (i = 0; i < nn; i++) { if (opts.place === 'cool' ? s.temp[i] >= 40 : s.temp[i] < 55) s.R[i] = 0; tot1 += s.R[i]; }
++        for (i = 0; i < nn; i++) s.R[i] *= tot1 > 0 ? tot0 / tot1 : 0;
++      }
+       s.shareNow = s.sharePrev = share;
+     }
+     if (s.recordHistory) {
+       var H = s.H = { tick: new Uint16Array(T + 1), susp: {} };
+-      HK.forEach(function (key) { H[key] = new Float32Array(T + 1); });
++      hkOf(D).forEach(function (key) { H[key] = new Float32Array(T + 1); });
+       CHAN.forEach(function (c) { H.susp[c] = new Float32Array(T + 1); });
+       if (base) record(s);
+     }
+@@ -321,12 +352,14 @@
+   }
+   var HK = ['share', 'nativeShare', 'nat', 'rob', 'food', 'total', 'stage', 'kill', 'fires', 'lead', 'births', 'rate', 'nrate', 'qsig', 'radioMult',
+     'rawG', 'rawW', 'rawC', 'rawR', 'regT', 'regM', 'regF', 'regD', 'regR', 'sloppy', 'acid', 'dorm'];
++  var HK_T = ['heat', 'graze', 'cool'];   // habitat 2 only: colony fraction lost per tick to heat and to grazers, and the colony fraction under 40 C
++  function hkOf(D) { return D && D.temp ? HK.concat(HK_T) : HK; }
+ 
+   // The settled native-only dish, computed once per grid size and then copied.
+-  function baseState(P, n) {
+-    var key = n + ':' + P.settle + ':' + P.native.rate + ':' + P.foodHalf + ':' + P.regrow + ':' + P.native.crowd;
++  function baseState(P, n, DD) {
++    var key = n + ':' + P.settle + ':' + P.native.rate + ':' + P.foodHalf + ':' + P.regrow + ':' + P.native.crowd + (DD && DD.temp ? ':T' + JSON.stringify([DD.temp.hot, DD.temp.cool, DD.temp.bands]) : '');
+     if (baseCache[key]) return baseCache[key];
+-    var D = { allowed: null, event: { type: 'none', tick: -1 }, ticks: P.settle };
++    var D = { allowed: null, event: { type: 'none', tick: -1 }, ticks: P.settle, temp: DD && DD.temp ? { hot: DD.temp.hot, cool: DD.temp.cool, bands: DD.temp.bands, base: 0, settle: true } : null };
+     var s = newState(P, D, DEFAULT_BUILD, { n: n, history: false }, null), i, nn = n * n;
+     for (i = 0; i < nn; i++) { s.N[i] = 0.9 * s.cap[i]; s.F[i] = 0.35 * s.cap[i]; }
+     s.settling = true;
+@@ -346,6 +379,7 @@
+       case 'share': return s.shareNow;
+       case 'susp_growth': return s.lvl[0];
+       case 'susp_waste': return s.lvl[1];
++      case 'temp': return s.temp ? s.temp[i] : 0;
+       case 'ttev': { var nx = evNext(s.D, s.tick); return nx < 0 ? (evList(s.D).length ? 0 : 999) : nx - s.tick; }
+     }
+     return 0;
+@@ -382,13 +416,27 @@
+     var sumZ = 0, sumSP = 0, sumN = 0, sumR = 0, bN = 0, bR = 0, bR0 = 0, cas = 0, upRt = 0, upNt = 0, killed = 0, fireMass = 0, sloppyMass = 0, qSum = 0;
+     var Kh = P.foodHalf, fpb = P.foodPerBirth, mixN = Pn.mixA, wAmt = bp.wasteAmt, mixR = bp.mix;
+     var baseDeath = Pr.death * bp.deathMult + bp.deathAdd + (D.abundance && !settling ? D.abundance.death || 0 : 0);
++    // habitat 2 (D.temp): heat stress and grazing per cell, the current, and the heat-direction rule actions
++    var TT = settling || !D.temp ? null : D.temp, TP = TT ? s.temp : null, tol = TT ? bp.tol : 0, hW = TT ? TT.width : 1, hDie = TT ? TT.heatDeath : 0;
++    var gMax = TT ? (TT.graze || 0) * bp.grazeKeep : 0, gTop = TT ? TT.grazeTop : 0, gRamp = TT ? TT.grazeRamp : 1, heatSum = 0, grazeSum = 0, coolSum = 0;
++    var gs = n / 16, heatDir = rule && (rule.action === 'hotter' || rule.action === 'cooler'), flowK = TT && !heatDir ? Math.min(0.45, (TT.flow || 0) * gs * (1 - bp.grip)) : 0;   // a heat rule holds station against the current
++    if (TT) s.darkLag = (s.darkLag || 0) + Pe.foodAlpha * (evl - (s.darkLag || 0));
++    var o2m = TT && D.diel && (bp.metabolism === 'respiration' || bp.metabolism === 'fuelcell') ? 1 - TT.o2Night * evl : 1;   // nights are anoxic: oxygen users stall
+     var acidD = settling ? 0 : bp.acidRate, ab = D.abundance, crowdR = Pr.crowd * (ab && !settling ? ab.crowd : 1), acidLoss = 0, abFood = ab && !settling ? ab.food || 0 : 0, abCross = ab && !settling ? ab.cross || 1 : 1;
+ 
+     for (i = 0; i < nn; i++) {
+       var nv = N[i], rv = R[i], fv = F[i];
+       var phi = fv / (fv + Kh), phiR = abFood > 0 ? fv * abFood / (fv * abFood + Kh) : phi;
+       var m = rbRate * mulR * radioM * (runK > 0 ? 1 + runK * (rv / s.N0) : 1), dm = 1, kmul = 1, bmul = 1, mf = moveFoodBase, ma = 0;
+-      var m0 = m, bioQ = 1, spIn = 0, spOut = 0, napIn = 0, napOut = 0, zv = napP ? Z[i] : 0, sv = spore ? SP[i] : 0;   // m0: the division rate the immune system measures (biology reflexes and the quorum signal are not counted)
++      var tmul = 1, heatD = 0, grazeD = 0;
++      if (TP) {
++        var tc = TP[i], hx = (tc - tol) / hW;
++        if (hx > 0) { tmul = hx >= 1 ? 0 : 1 - hx; heatD = hDie * clamp(hx - 0.5, 0, 1.5); }
++        if (bp.coolBelow && tc < bp.coolBelow) tmul *= bp.coolMult;
++        if (gMax > 0 && tc < gTop) { grazeD = gMax * clamp((gTop - tc) / gRamp, 0, 1); coolSum += rv; }
++        m *= tmul * o2m;
++      }
++      var nfB = 0, m0 = m, bioQ = 1, spIn = 0, spOut = 0, napIn = 0, napOut = 0, zv = napP ? Z[i] : 0, sv = spore ? SP[i] : 0;   // m0: the division rate the immune system measures (biology reflexes and the quorum signal are not counted)
+       if (useQ) { var qv = Q[i]; bioQ = 1 - Pq.max * qv / (qv + Pq.half); qSum += qv; }
+       if (bio) {
+         var lv = 0;
+@@ -400,6 +448,11 @@
+           var dg = s.attackEma * (1 + Pe.noise * hz(i, t, 2));
+           lv = clamp((dg - bio.fx.attackAbove) / bio.fx.softness, 0, 1);
+           bioQ *= 1 - lv; kmul *= 1 - bio.fx.repair * lv; dm *= 1 - lv * (1 - bio.fx.deathMult);
++        } else if (bioId === 'nightferm') {   // habitat 2: when local food falls (night), live on stored sugar: some births go on, fewer deaths
++          var nf = bio.fx, dk = s.darkLag * (1 + Pe.noise * hz(i, t, 5));   // senses the dark itself (light, a few ticks late), not hunger
++          lv = clamp((dk - nf.darkAbove) / nf.softness, 0, 1);
++          nfB = nf.store * lv;   // births from stored sugar: no food used, added after the food limit below
++          bioQ *= 1 - lv; dm *= 1 - lv * (1 - nf.deathMult);
+         } else if (spore) {
+           var fs = FD[i] * (1 + Pe.noise * hz(i, t, 1)), bf = bio.fx;
+           lv = clamp((bf.foodBelow - fs) / bf.softness, 0, 1);
+@@ -418,6 +471,8 @@
+             case 'sloppy': m0 *= rfx.sloppyBirths; sloppyMass += rv; break;
+             case 'toward': mf += rfx.move; break;
+             case 'away': ma = rfx.move; break;
++            case 'hotter': mf = rfx.move; break;
++            case 'cooler': ma = rfx.move; break;
+           }
+         }
+       }
+@@ -426,6 +481,7 @@
+       var upN = bn * fpb, upR = br * fpb, tot = upN + upR;
+       var sc = tot > fv ? fv / (tot + 1e-12) : 1;
+       bn *= sc; br *= sc; br0 *= sc; upN *= sc; upR *= sc;
++      if (nfB > 0) { var bs = m0 * nfB * rv; br += bs; br0 += bs; }
+       var casCell = nv * Pn.crowd * cross * abCross * rv;
+       var deathN = nv * (Pn.death + Pn.crowd * nv) + casCell;
+       if (napP) {
+@@ -433,11 +489,12 @@
+       }
+       var deathR = rv * (baseDeath + crowdR * (rv + Pr.cross * crossEv * nv) + bustDeath * bustTf * bmul) * dm + rv * acidD;
+       acidLoss += rv * acidD;
++      if (TP) { deathR += rv * (heatD + grazeD); heatSum += rv * heatD; grazeSum += rv * grazeD; }
+       var killCell = rv * killR * killTf * kmul;
+       var nN = nv + bn - deathN; if (nN < 0) nN = 0;
+       var nR = rv + br - deathR - killCell - napIn + napOut - spIn + spOut; if (nR < 0) nR = 0;
+-      if (napP) { var nZ = zv + napIn - napOut - zv * (baseDeath * napP.death + acidD); Z[i] = nZ < 0 ? 0 : nZ; sumZ += Z[i]; }
+-      if (spore) { SP[i] = sv + spIn - spOut; sumSP += SP[i]; }
++      if (napP) { var nZ = zv + napIn - napOut - zv * (baseDeath * napP.death + acidD + heatD + grazeD); Z[i] = nZ < 0 ? 0 : nZ; sumZ += Z[i]; }
++      if (spore) { SP[i] = sv + spIn - spOut - sv * grazeD; sumSP += SP[i]; }   // grazers swallow spores too (habitat 2); heat does not hurt them
+       var nF = fv - upN - upR + P.regrow * (cap[i] * (1 - bustD * bustMap[i]) - fv); if (nF < 0) nF = 0;
+       var eR = upR * wAmt;
+       WA[i] = WA[i] * (1 - P.wasteDecay) + upN * mixN + eR * mixR;
+@@ -451,15 +508,21 @@
+     var sloppyFrac = sumR > 1e-9 ? sloppyMass / sumR : 0;
+ 
+     // ---- movement: some units drift to the richest (food) or emptiest (away) neighbour ----
+-    if (anyMove) {
++    if (anyMove || flowK > 0) {
+       var tR = s.tR, tN = s.tN, nb = [0, 0, 0, 0], xx, yy, best, bv, cv, mvf, mva;
+       // tR currently holds the 'away' fractions. Compute moves into tN, then fold in.
+       for (i = 0; i < nn; i++) tN[i] = 0;
+       for (i = 0; i < nn; i++) {
+         mvf = mv[i]; mva = tR[i];
+-        if (R[i] <= 0 || (mvf <= 0 && mva <= 0)) continue;
++        if (R[i] <= 0 || (mvf <= 0 && mva <= 0 && flowK <= 0)) continue;
+         xx = i % n; yy = (i - xx) / n;
+         nb[0] = ((yy + n - 1) % n) * n + xx; nb[1] = ((yy + 1) % n) * n + xx; nb[2] = yy * n + (xx + n - 1) % n; nb[3] = yy * n + (xx + 1) % n;
++        if (flowK > 0) { var dn2 = TP[nb[2]] < TP[nb[3]] ? nb[2] : nb[3]; if (TP[dn2] < TP[i]) { var q0 = R[i] * flowK; tN[i] -= q0; tN[dn2] += q0; } }   // the current carries cells downstream, to the cooler side
++        if (heatDir && TP) {   // the heat compass: toward the hottest (or coolest) neighbour, exact, no noise
++          var mvh = Math.min(0.45, (mvf > 0 ? mvf : mva) * gs);
++          if (mvh > 0) { best = nb[0]; bv = TP[best]; for (k = 1; k < 4; k++) { cv = TP[nb[k]]; if (mvf > 0 ? cv > bv : cv < bv) { bv = cv; best = nb[k]; } } if (mvf > 0 ? bv > TP[i] : bv < TP[i]) { var qh = R[i] * mvh; tN[i] -= qh; tN[best] += qh; } }
++          continue;
++        }
+         if (mvf > 0) {
+           best = -1; bv = noisyMove ? FD[i] * (1 + Pe.noise * hz(i, t, 3)) * 1.02 : F[i];
+           for (k = 0; k < 4; k++) {
+@@ -480,7 +543,7 @@
+     // ---- diffusion (periodic edges) and the delayed food reading ----
+     var tmp;
+     diffuse(N, s.tN, P.popDiffuse, n); tmp = s.N; s.N = s.tN; s.tN = tmp;
+-    diffuse(R, s.tR, P.popDiffuse, n); tmp = s.R; s.R = s.tR; s.tR = tmp;
++    diffuse(R, s.tR, TT ? Math.min(0.9, (TT.rDiffuse != null ? TT.rDiffuse : P.popDiffuse) * gs * gs) * (1 - TT.gripDiffuse * bp.grip) : P.popDiffuse, n); tmp = s.R; s.R = s.tR; s.tR = tmp;
+     diffuse(F, s.tF, P.foodDiffuse, n); tmp = s.F; s.F = s.tF; s.tF = tmp;
+     diffuse(WA, s.tA, P.wasteDiffuse, n); tmp = s.WA; s.WA = s.tA; s.tA = tmp;
+     diffuse(WB, s.tB, P.wasteDiffuse, n); tmp = s.WB; s.WB = s.tB; s.tB = tmp;
+@@ -500,6 +563,7 @@
+     s.flatRing[s.ringPos] = dShare; s.ringPos = (s.ringPos + 1) % s.flatRing.length; if (s.ringN < s.flatRing.length) s.ringN++;
+     s.sloppyFrac = sloppyFrac;
+     s.radioNow = radioM; s.qNow = qSum / nn;
++    if (TT) { s.heatNow = sumR > 1e-9 ? heatSum / sumR : 0; s.grazeNow = sumR > 1e-9 ? grazeSum / sumR : 0; s.coolNow = sumR > 1e-9 ? coolSum / sumR : 0; }
+     s.sums = { dorm: tR2 > 0 ? tDo / tR2 : 0, N: tN2, R: tR2, F: tF2, births: bR, cas: cas, acid: sumR > 1e-9 ? acidLoss / sumR : 0, rate: sumR > 1e-9 ? bR / sumR : 0, nrate: sumN > 1e-9 ? bN / sumN : 0 };
+     s.attackEma += Pe.attackAlpha * ((killR * killTf + bustDeath * bustTf) - s.attackEma);
+ 
+@@ -570,18 +634,21 @@
+     H.rawG[t] = s.raw[0]; H.rawW[t] = s.raw[1]; H.rawC[t] = s.raw[2]; H.rawR[t] = s.raw[3];
+     if (s.regSrc) { H.regT[t] = s.regSrc[0]; H.regM[t] = s.regSrc[1]; H.regF[t] = s.regSrc[2]; H.regD[t] = s.regSrc[3]; H.regR[t] = s.regSrc[4]; }
+     if (sm) { H.acid[t] = sm.acid; H.births[t] = sm.births / nn; H.rate[t] = s.emaBR; H.nrate[t] = sm.nrate; }
++    if (H.heat) { H.heat[t] = s.heatNow || 0; H.graze[t] = s.grazeNow || 0; H.cool[t] = s.coolNow || 0; }
+     H.qsig[t] = s.qNow || 0; H.radioMult[t] = s.radioNow || 1; H.sloppy[t] = s.sloppyFrac;
+   }
+ 
+   // ---------------------------------------------------------------- snapshots
+   var ARR = ['N', 'R', 'F', 'WA', 'WB', 'Q', 'FD', 'Z', 'SP'];
+   var SCAL = ['tick', 'rng', 'S', 'stage', 'emaBR', 'emaBN', 'emaRho', 'attackEma', 'killNow', 'shareNow', 'sharePrev', 'ringPos', 'ringN', 'sloppyFrac', 'fireNow', 'radioNow', 'qNow'];
++  var SCAL_T = ['darkLag', 'heatNow', 'grazeNow', 'coolNow'];   // habitat 2 only
+   function snapshot(s) {
+     var o = { tick: s.tick, st: { fast: s.fast.slice(), slow: s.slow.slice(), raw: s.raw.slice(), lvl: s.lvl.slice(), flatRing: new Float32Array(s.flatRing),
+       sums: s.sums ? JSON.parse(JSON.stringify(s.sums)) : null, regSrc: s.regSrc ? s.regSrc.slice() : null } };
+     var k, nn = s.n * s.n, wa = new Float32Array(nn);
+     for (k = 0; k < ARR.length; k++) o.st[ARR[k]] = new Float32Array(s[ARR[k]]);
+     for (k = 0; k < SCAL.length; k++) o.st[SCAL[k]] = s[SCAL[k]];
++    if (s.temp) for (k = 0; k < SCAL_T.length; k++) o.st[SCAL_T[k]] = s[SCAL_T[k]];
+     for (k = 0; k < nn; k++) wa[k] = s.WA[k] + s.WB[k];
+     var rb = new Float32Array(nn); for (k = 0; k < nn; k++) rb[k] = s.R[k] + s.Z[k] + s.SP[k];
+     o.robot = rb; o.native = o.st.N; o.food = o.st.F; o.waste = wa; o.quorum = o.st.Q;
+@@ -590,14 +657,15 @@
+   function resumeState(run, snapIndex) {
+     var sn = run.snaps[snapIndex], P = run.P, D = run.dish, st = sn.st, k;
+     var s = newState(P, D, run.build, { n: run.n, history: true, snapEvery: 0, seed: 1 }, null);
+-    s.cap = makeCap(s.n); s.bustMap = makeBust(s.n); s.N0 = baseState(P, s.n).mean;
++    s.cap = makeCapD(s.n, D); s.bustMap = makeBust(s.n); s.N0 = baseState(P, s.n, D).mean;
+     for (k = 0; k < ARR.length; k++) s[ARR[k]].set(st[ARR[k]]);
+     for (k = 0; k < SCAL.length; k++) s[SCAL[k]] = st[SCAL[k]];
++    if (s.temp) for (k = 0; k < SCAL_T.length; k++) s[SCAL_T[k]] = st[SCAL_T[k]];
+     s.fast = st.fast.slice(); s.slow = st.slow.slice(); s.raw = st.raw.slice(); s.lvl = st.lvl.slice(); s.flatRing = new Float32Array(st.flatRing);
+     s.sums = st.sums ? JSON.parse(JSON.stringify(st.sums)) : null; s.regSrc = st.regSrc ? st.regSrc.slice() : null;
+     var H = s.H, G = run.H, e = sn.tick + 1;
+     H.tick.set(G.tick.subarray(0, e));
+-    HK.forEach(function (key) { H[key].set(G[key].subarray(0, e)); });
++    hkOf(D).forEach(function (key) { H[key].set(G[key].subarray(0, e)); });
+     CHAN.forEach(function (c) { H.susp[c].set(G.susp[c].subarray(0, e)); });
+     return s;
+   }
+@@ -613,7 +681,7 @@
+   // ---------------------------------------------------------------- public API
+   function play(P, D, build, opts) {
+     opts = opts || {}; build = normalize(build);
+-    var s = newState(P, D, build, opts, baseState(P, opts.n || 64));
++    var s = newState(P, D, build, opts, baseState(P, opts.n || 64, D));
+     if (s.snapEvery) s.snaps.push(snapshot(s));
+     return finish(s);
+   }
+@@ -649,7 +717,7 @@
+   function scout(P, D, opts) {
+     opts = opts || {};
+     var n = opts.n || 64;
+-    var s = newState(P, D, DEFAULT_BUILD, { n: n, history: true, noRobots: true }, baseState(P, n));
++    var s = newState(P, D, DEFAULT_BUILD, { n: n, history: true, noRobots: true }, baseState(P, n, D));
+     s.D = D; s.bp = params(P, {}, DEFAULT_BUILD);
+     while (s.tick < s.T) step(s);
+     var H = s.H, T = s.T, t, pre = D.event.tick > 0 ? D.event.announce : T;

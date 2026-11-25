@@ -3,7 +3,7 @@
 // Flow: dish list -> (world) -> dish briefing -> Watch (carried cell, unchanged) -> Adapt (loadout) -> Run (replay) -> Result.
 (function () {
   'use strict';
-  var Cards = LookAliveCards, Lv = LookAliveLevels, Sim = LookAlive, P = Lv.PLANET, D = LAD, W = Lv.WORLD;
+  var Cards = LookAliveCards, Lv = LookAliveLevels, Sim = LookAlive, P = Lv.PLANET, D = LAD, W = Lv.WORLD, Lv2 = window.LookAliveLevels2 || null, Lv3 = window.LookAliveLevels3 || null;
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -24,22 +24,59 @@
     if (GL.canvas && GL.canvas.parentNode) GL.canvas.parentNode.removeChild(GL.canvas);
     GL.canvas = null; $('runDish').style.display = '';
   }
-  function glFailed(why) { GL.failed = true; GL.reason = why; glDestroy(); glNote('Simple dish view: the detailed view is not available here (' + why + ').'); }
+  function glFailed(why) {
+    GL.failed = true; GL.reason = why; glDestroy();
+    if (why !== 'slow') { glNote('Simple dish view: the detailed view is not available here (' + why + ').'); return; }
+    // Too slow is not final: the detailed view is tried again at the lowest detail on the next dish, or now from this button.
+    GL.wasSlow = true; glNote('Simple dish view: the detailed view was running very slowly. ');
+    var b = el('button', 'dretry', 'Try the detailed view again'); b.type = 'button'; b.addEventListener('click', glRetry); $('dishFbNote').appendChild(b);
+  }
+  function glRetry() { if (GL.failed && GL.reason === 'slow') { GL.failed = false; GL.reason = ''; glNote(''); S.liveKey = ''; if (S.run && dishGL()) { setGLRun(GL.r, S.run); GL.r.setTick(S.t); $('runDish').style.display = 'none'; } } }
   function dishGL() {
     if (GL.forced || GL.failed || !window.LookAliveRender) return null;
     if (!GL.r) {
       var c = document.createElement('canvas'); c.id = 'runDishGL'; c.className = 'dishcanvas gl'; c.setAttribute('role', 'img'); c.setAttribute('aria-label', 'The dish: purple natives, pink you, amber waste');
       $('dishWrap').appendChild(c);
-      var r = window.LookAliveRender.create(c, { host: $('dishWrap'), reduced: reduced, onfail: glFailed });
+      var r = window.LookAliveRender.create(c, { host: $('dishWrap'), reduced: reduced, onfail: glFailed, tier: GL.wasSlow ? 'phone' : undefined });
       if (!r.supported) { if (c.parentNode) c.parentNode.removeChild(c); GL.failed = true; GL.reason = r.err || 'no WebGL2'; glNote('Simple dish view: the detailed view is not available here (' + GL.reason + ').'); return null; }
       GL.r = r; GL.canvas = c; glNote('');
     }
     return GL.r.supported ? GL.r : null;
   }
-  function setGLRun(g, run) {
-    g.setRun(run, run.dish, run.build, { slots: Sim.toSlots(run.build), machine: machineCount(run.build) });
+  function setGLRun(g, run, keep) {
+    var o = { slots: Sim.toSlots(run.build), machine: machineCount(run.build) }; if (keep) o.keepView = true;
+    g.setRun(run, run.dish, run.build, o);
   }
-  function glJump() { var g = GL.r; if (g && g.supported && S.run) { g.setTick(S.t); g.rackFocus('jump'); } }
+  function glJump(target) { var g = GL.r; if (g && g.supported && S.run) { g.setTick(S.t); if (target) g.rackFocus('jump', target); else g.rackFocus('jump'); } }
+  // ---------------------------------------------------------------- event zoom (Run mode, lost run): the camera goes to a spot the sim records
+  var EZ_KIND = { acid: 'colony', overgrew: 'colony', bloom: 'colony', starved: 'food', bust: 'food', below: 'thinning', band: 'thinning', cooked: 'thinning', grazed: 'thinning', burned: 'thinning', eaten: 'food' };
+  function ezKindFor(run) { var a = run && run.autopsy; return a && EZ_KIND[a.cause] || null; }
+  // The located spot for the lost run's cause, or null (no spot, or the renderer has no locate yet). Falls back to the colony.
+  function ezLocate(run) {
+    var g = GL.r, kind = ezKindFor(run); if (!kind || !g || !g.supported || typeof g.locate !== 'function') return null;
+    var tick = run.autopsy.from, p = g.locate(kind, tick);
+    if (!p && kind !== 'colony') { kind = 'colony'; p = g.locate(kind, tick); }
+    return p ? { x: p.x, y: p.y, cool: !!p.cool, kind: kind } : null;
+  }
+  function ezReset() { var z = S.ez; z.fired = false; z.kind = null; z.target = null; z.since = 0; z.cool = false; z.used = null; }
+  function ezPhrase() {
+    var z = S.ez; if (z.used === 'thinning') return 'CAMERA: where your colony is thinning' + (z.cool ? ', in the cool water' : '');
+    return z.used === 'food' ? 'CAMERA: where food ran out under your colony' : 'CAMERA: your colony';
+  }
+  function ezSlow() { var z = S.ez, g = GL.r; return !!((z.since && !z.fired) || (z.fired && z.used && g && typeof g.eventActive === 'function' && g.eventActive())); }
+  // Called every frame after playback advances. tPrev is the tick before this frame.
+  function ezTick(tPrev) {
+    var z = S.ez, run = S.run, g = GL.r; if (!run) return;
+    if (tPrev <= 0.001) ezReset();
+    if (S.mode !== 'run' || run.v.win || !run.autopsy || !S.playing || z.fired || S.cmp.held) return;
+    if (!g || !g.supported || typeof g.eventZoom !== 'function') return;
+    if (reduced || g.userMoved) { z.fired = true; z.since = 0; return; }   // no automatic camera under reduced motion, or once the player has moved it
+    var from = Math.max(1, run.autopsy.from - 6);   // start a little early: the glide takes about 1.5 s
+    if (!z.since) { if (tPrev < from && S.t >= from) z.since = performance.now(); else return; }
+    if (performance.now() - z.since > 3000) { z.fired = true; return; }
+    var tg = ezLocate(run); if (!tg) { z.fired = true; return; }
+    if (g.eventZoom({ x: tg.x, y: tg.y })) { z.fired = true; z.target = tg; z.kind = EZ_KIND[run.autopsy.cause]; z.used = tg.kind; z.cool = tg.cool; }
+  }
   function portraitGL() {
     if (GL.pfailed || GL.forced || !window.LookAliveRender) return null;
     if (!GL.p) {
@@ -58,18 +95,53 @@
     var eff = sl;
     if (gh && gh.slot) { eff = {}; for (var k in sl) eff[k] = sl[k]; var gs = Sim.toSlots(gh.build); eff[gh.slot] = gs[gh.slot]; }
     p.draw(eff);
+    // the Light steps: the shader has no marks for them, so the same marks cellArt draws sit over the portrait in the same 600 x 410 space
+    var lm = D.lightMarks ? D.lightMarks(eff) : '';
+    if (lm) $('cellSvg').insertAdjacentHTML('beforeend', gh && gh.slot === 'envelope' ? lm.replace('class="lmarks"', 'class="lmarks ghost"') : lm);
   }
 
-  var ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  var ORDER1 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], ORDER = ORDER1;
+  var ORDER2 = Lv2 ? Lv2.ORDER : [];
+  // Habitat 2 (levels2.js): world of a dish id, its order, its world object. World 1 stays the default everywhere.
+  // Habitat 3 (levels3.js, the thick water): dishes 15 and 16, the third tab. Its dishes carry `agents` (the individual-cell simulation in sim3.js).
+  var ORDER3 = Lv3 ? Lv3.ORDER.slice() : [];
+  if (Lv3 && Lv.dish(17) && ORDER3.indexOf(17) < 0) ORDER3.push(17);   // dish 17 (the bright place) follows 16 even where levels3.js has not listed it in ORDER yet
+  // The number the player sees for a dish: its place in play order (warm crowd, then hot river, then salt flat). Stored ids, save keys and __la hooks keep the id.
+  function dishNo(id) { var i = ORDER1.concat(ORDER2, ORDER3).indexOf(id); return i < 0 ? id : i + 1; }
+  if (Sim.setDishNumber) Sim.setDishNumber(dishNo);   // the simulation's own wording ("Opens on dish 12", "Taught on dish 5") shows the same numbers
+  function prevDishId(id) { var a = ORDER1.concat(ORDER2, ORDER3), i = a.indexOf(id); return i > 0 ? a[i - 1] : null; }   // the dish before this one in play order (null for the first)
+  function dishTotal() { return ORDER1.length + ORDER2.length + ORDER3.length; }
+  function dishRange(ids) { return 'dishes ' + dishNo(ids[0]) + ' to ' + dishNo(ids[ids.length - 1]); }
+  var NUM_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+  function worldNo(id) { return ORDER3.indexOf(id) >= 0 ? 3 : ORDER2.indexOf(id) >= 0 ? 2 : 1; }
+  function worldOfDish(d) { return d && d.world === 3 ? 3 : d && d.world === 2 ? 2 : 1; }
+  function orderOf(w) { return w === 3 ? ORDER3 : w === 2 ? ORDER2 : ORDER1; }
+  function orderForDish(d) { return orderOf(worldOfDish(d)); }
+  function worldObj(w) { return w === 3 && Lv3 ? Lv3.WORLD : w === 2 && Lv2 ? Lv2.WORLD : W; }
+  function worldLv(w) { return w === 3 ? Lv3 : w === 2 ? Lv2 : null; }
+  // Which dish pages may show the second tab's pictures: switch these on once the thumbnails exist (assets/thumbs/dish-N.jpg).
+  var THUMBS2 = { 11: true, 12: true, 13: true, 14: true, 18: true, 19: true };
+  var THUMB_FILE = { 18: 11, 19: 14 };   // dishes 18 and 19 borrow a picture until they have their own
+  var THUMBS3 = { 15: false, 16: false, 17: false };   // no wall thumbnails for the thick water yet (assets/thumbs/dish-15.jpg and dish-16.jpg): plain tiles until they exist
+  // Pictures for the third world's mini-intro, borrowed until it has its own: slide 1 intro-5 (the plan: a scout among the locals), slide 2 h2-3 (a flat, bright place), slide 3 intro-2 (big green shapes on the ground).
+  var INTRO3_IMG = ['assets/intro/intro-5.jpg', 'assets/intro/h2-3.jpg', 'assets/intro/intro-2.jpg'];
+  var WORLD3_IMG = 'assets/cards/world-banded.jpg';   // placeholder for the third world's picture on the world screen
   var GRADE_RANK = { Passable: 1, Convincing: 2, Benign: 3 };
   var GRADE_NEXT = { Passable: 'Convincing needs the guards never to reach Inspection.', Convincing: 'Benign needs every stat inside its zone the whole run, with 1 energy spare.', Benign: 'That is the best grade. Nothing more to earn here.' };
   var NB_TITLE = { 1: 'How acid-loving microbes keep acid out', 2: 'The growth curve and carrying capacity', 3: 'Fermentation and respiration', 4: 'Variation between cells', 5: 'Sensing and response', 6: 'How acid-lovers trade energy for safety', 7: 'Why real cells cannot have everything', 8: 'Bet-hedging: sleepers and spores', 9: 'Why variation is normal in living things', 10: 'A summary page from the lab' };
   var PACE_NAMES = ['Glacial', 'Sluggish', 'Slow', 'Unhurried', 'Native rate', 'Brisk', 'Quick', 'Eager', 'Frantic'];
-  var SLOP_NAMES = ['Spreadsheet', 'Ledger', 'Tidy', 'Careful', 'Casual', 'Relaxed', 'Messy', 'Chaotic', 'Teenager'];
-  var STAMPS = ['SUFFICIENTLY BACTERIAL', 'PASSES AS NATIVE', 'NOTHING TO SEE HERE', 'APPROVED BY THE IMMUNE SYSTEM', 'UNREMARKABLE', 'CLEARED FOR COLONISATION'];
+  var SLOP_NAMES = ['Perfectly regular', 'Ledger', 'Tidy', 'Careful', 'Casual', 'Relaxed', 'Messy', 'Chaotic', 'Teenager'];
+  var STAMPS = ['SUFFICIENTLY BACTERIAL', 'PASSES AS NATIVE', 'NOTHING TO SEE HERE', 'OF NO INTEREST TO THE GUARDS', 'UNREMARKABLE', 'CLEARED FOR COLONISATION'];
   var STAGE_NAMES = ['Calm', 'Curiosity', 'Inspection', 'Response'];
   var CAUSE_WORDS = { acid: 'Dissolved by the acid', 'exposed:growth': 'Cover blown: Growth (speed)', 'exposed:waste': 'Cover blown: Smell', 'exposed:casualties': 'Cover blown: Growth (share)', 'exposed:regularity': 'Cover blown: Naturalness',
-    overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band' };
+    'exposed:motion': 'Cover blown: Movement', overgrew: 'Took over the dish', starved: 'Starved out', below: 'Fell below the band', bust: 'Lost to the food crash', bloom: 'Lost to the bloom', band: 'Not enough time in the band', cooked: 'Cooked by the heat', grazed: 'Eaten at the cool edge', burned: 'Burned by the bright core', eaten: 'Ate its own food away' };
+  // Memo "from" line per loss cause (M5). Unknown causes fall back to the sample lab.
+  var MEMO_FROM = { acid: 'Desk of Dissolved Samples', 'exposed:growth': 'Guard-watch desk', 'exposed:waste': 'Guard-watch desk', 'exposed:casualties': 'Guard-watch desk', 'exposed:regularity': 'Guard-watch desk', 'exposed:motion': 'Guard-watch desk',
+    overgrew: 'Head-count desk', below: 'Head-count desk', starved: 'Head-count desk', band: 'Head-count desk', bust: 'Meal-schedule desk', bloom: 'Meal-schedule desk', cooked: 'Warm-water desk', grazed: 'Cool-edge desk', burned: 'Bright-place desk' };
+  // The thick water (dishes 15 and 16): a scout that starves is the food-route desk's business, not the head count's.
+  var MEMO_FROM3 = { eaten: 'Food-route desk', starved: 'Food-route desk', burned: 'Bright-place desk', 'exposed:motion': 'Guard-watch desk' };
+  // Story pictures (section D). A missing file logs a console error even with onerror, so each picture is switched on only once it exists.
+  var STORY_ART = { cell: false, crowd: false, ripple: true };
 
   // ---------------------------------------------------------------- storage (every access guarded)
   var KEY = 'bg.look-alive.';
@@ -86,13 +158,14 @@
   function canonWins(w) { for (var k in w) canonBuild(w[k]); return w; }
 
   var S = {
-    screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null },
-    cleared: load('cleared2', {}), grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, unlocked: load('unlocked2', false),
+    screen: 'list', dish: null, build: null, carried: null, undo: [], rule: { sensor: null, cmp: null, value: null, action: null, otherwise: null },
+    cleared: load('cleared2', {}), used: load('used3', {}), evolved: load('evolved3', {}), evo: null, evoShown: false, pathSel: null, pathMore: null, pathFocus: null, evolvedNew: [], grades: load('grades2', {}), whyOpen: false, runGrade: null, wins: canonWins(load('wins2', {})), seenWorld: load('world2', false), seenIntro: load('intro2', false), introAt: 0, introWorld: 1, afterIntro: 'list', worldView: 1, worldTab: (function () { var v = load('worldTab', 1); return v === 2 || v === 3 ? v : 1; })(), seenIntroB: load('introB', false), seenWorldB: load('worldB', false), seenIntroC: load('introC', false), seenWorldC: load('worldC', false), unlocked: load('unlocked2', false), revealed: load('revealed', null), endAt: 0,
     slot: null, layer: 0, preview: null, pointed: false,
     note: '', noteUntil: 0, worldBack: 'list',
     mode: 'watch', run: null, stopAt: null, watchDone: false, runFinished: false, ghost: null, prev: {},
     t: 0, playing: false, speed: 4, resultShown: false, overlayOpen: false, runCount: 0, troubleTick: -1, cardEls: [], shownDish: -1, chipCache: {},
-    lastAutopsy: null, lastRunLost: false, tipLevel: 0, dialKeys: [], vcache: '', fail: null, real: false, liveKey: ''
+    lastAutopsy: null, lastRunLost: false, tipLevel: 0, dialKeys: [], vcache: '', fail: null, real: false, liveKey: '',
+    ez: { fired: false, kind: null, target: null, since: 0, tPrev: 0, cool: false, used: null }, cmp: { held: false, kept: false, base: null, run: null, runFor: null, diff: '' }
   };
 
   function dishObj() { return S.dish == null ? null : Lv.dish(S.dish); }
@@ -101,7 +174,7 @@
 
   // ---------------------------------------------------------------- build helpers
   function carriedFor(id) {
-    var w = id > 1 ? S.wins[id - 1] : null, d = Lv.dish(id);
+    var pv = prevDishId(id), w = pv != null ? S.wins[pv] : null, d = Lv.dish(id);
     if (w) { var c = Sim.conform(d, w); if (Sim.validate(d, c).ok) return copy(c); }   // old saved builds: factory parts back in locked slots
     return Lv.carry(id);
   }
@@ -124,6 +197,12 @@
   function sameReflex(a, b) { return JSON.stringify(a || null) === JSON.stringify(b || null); }
 
   // ---------------------------------------------------------------- step bar and handler line
+  function findingBody(a) {
+    var t = a && a.text ? a.text.replace(/^[^:]{0,70}\btick \d+(?: to \d+)?:\s*/, '') : '';
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  // The headline above the finding. For a burned colony the headline's second sentence says what the finding then says again with its counts, so only the first sentence is kept.
+  function headlineOf(a) { return a && a.cause === 'burned' && a.headline ? a.headline.split('. ')[0].replace(/\.$/, '') + '.' : (a ? a.headline : ''); }
   function failSentence(a) { return a && a.headline ? a.headline.split('. ')[0].replace(/\.$/, '') : ''; }
   function refresh() {
     var step = 0, text = '', d = dishObj(), a = S.lastAutopsy;
@@ -157,12 +236,14 @@
 
   // ---------------------------------------------------------------- screens
   function show(name) {
-    if (name !== 'list' && name !== 'world' && name !== 'intro' && S.dish == null) name = 'list';
+    compareSet(false);
+    if (name !== 'list' && name !== 'world' && name !== 'intro' && name !== 'ending' && S.dish == null) name = 'list';
     if (name === 'run' && !S.run) name = 'adapt';
     S.screen = name; hidePop();
-    ['intro', 'list', 'world', 'brief', 'adapt', 'run'].forEach(function (s) { $('screen-' + s).classList.toggle('on', s === name); });
+    if (name !== 'ending' && END.on) endStop();
+    ['intro', 'ending', 'list', 'world', 'brief', 'adapt', 'run'].forEach(function (s) { $('screen-' + s).classList.toggle('on', s === name); });
     var d = dishObj();
-    $('dishTitle').textContent = d && name !== 'list' && name !== 'world' && name !== 'intro' ? 'Dish ' + d.id + ': ' + d.title : '';
+    $('dishTitle').textContent = d && name !== 'list' && name !== 'world' && name !== 'intro' && name !== 'ending' ? 'Dish ' + dishNo(d.id) + ': ' + d.title : '';
     if (name === 'intro') renderIntro();
     if (name === 'list') renderList();
     if (name === 'world') renderWorld();
@@ -172,69 +253,213 @@
     refresh();
   }
 
+  // ---------------------------------------------------------------- the ending: five slides over a drawn picture (ending.js)
+  var ENDING = [
+    ['Cover held', 'Three times.', 'We passed in the warm crowd, in the hot river and in the thick water. Every lab stamp came back the same: cover held.'],
+    ['Balance', 'Why they let us stay.', 'None of the locals takes more than its place gives back. Too many, too fast, and the place dies with them. We learned to live the same way. That is why they let us stay.'],
+    ['The weather', 'It was never weather.', 'The mountain that twitched. The slow thing that wore the layers away. The bright place that drifts. We logged them all as weather. We were wrong.'],
+    ['Pull back', 'They are made of cells like us.', 'We turned our eyes up, past the crowd, past the dish. The big still things are not mountains. They are thousands of cells like us, holding together and agreeing. One life, made of many.'],
+    ['Our next study', 'Many cells. One life.', 'We do not know how so many agree. We intend to find out.']
+  ];
+  var END = { on: false, pic: null };
+  function renderEnding() {
+    var n = S.endAt, b = ENDING[n];
+    $('endKicker').textContent = b[0] + ' · ' + (n + 1) + ' of ' + ENDING.length; $('endTitle').textContent = b[1]; $('endText').textContent = b[2];
+    var dots = ''; for (var i = 0; i < ENDING.length; i++) dots += '<i' + (i === n ? ' class="on"' : '') + '></i>';
+    $('endDots').innerHTML = dots;
+    $('endBack').disabled = n === 0; $('endLeave').hidden = n === ENDING.length - 1; $('endGo').textContent = n === ENDING.length - 1 ? 'Back to the dish list' : 'Next';
+    if (END.pic) END.pic.setSlide(n);
+  }
+  function openEnding() {
+    S.endAt = 0; show('ending'); renderEnding();
+    if (!END.pic && window.LookAliveEnding) END.pic = window.LookAliveEnding.create($('endCanvas'), reduced);
+    if (END.pic) { END.on = true; END.pic.setSlide(0); END.pic.start(); }
+  }
+  function endStop() { END.on = false; if (END.pic) END.pic.stop(); }
+  function endNext() { if (S.endAt < ENDING.length - 1) { S.endAt++; renderEnding(); } else endDone(); }
+  function endBack() { if (S.endAt > 0) { S.endAt--; renderEnding(); } }
+  function endDone() { show('list'); }
+  function endLeave() { show('list'); }
+  window.addEventListener('resize', function () { if (S.screen === 'ending' && END.pic) END.pic.redraw(); });
+
   // ---------------------------------------------------------------- intro: five picture beats (the aliens never name a cow or a stomach; they only see what they see)
   var INTRO = [
     ['Arrival', 'You are very small.', 'So is everyone you know, and together you think as one colony, faster than any single cell could. You travelled a long way to find this: a blue and green world, thick with life.'],
     ['Landing', 'The ground is mountains.', 'We went down to the surface. Our eyes are small, so every grain of soil is a mountain and one drop of water is a lake.'],
     ['Sensors', 'A warm mountain.', 'Our sensors found a mountain nearby that gives off heat. It is far too big and too still to be alive. But inside it, there is a crowd of life, denser than anything we have ever seen.'],
     ['The crowd', 'It must be a civilization.', 'So many, so close, so busy. Where we come from, a crowd like this means a civilization. We think a city lives inside the warm mountain, so we will treat it as one.'],
-    ['The plan', 'We must blend in.', 'Our scouts took samples. Individuals can join another group, so we will send one to join theirs. First, its disguise is tested in a petri dish.']
+    ['The plan', 'We must blend in.', 'Our scouts took samples. Every local is about our size, which is the size minds come in, so the crowd is full of them. Individuals can join another group: we will send one of ours to join theirs, once its disguise passes a test dish.']
   ];
   function renderIntro() {
-    var n = S.introAt, b = INTRO[n], img = $('introImg');
-    $('introKicker').textContent = b[0] + ' · ' + (n + 1) + ' of ' + INTRO.length; $('introTitle').textContent = b[1]; $('introText').textContent = b[2];
-    var src = 'assets/intro/intro-' + (n + 1) + '.jpg';
+    var IL = introList(), n = S.introAt, b = IL[n], img = $('introImg');
+    $('introKicker').textContent = b[0] + ' · ' + (n + 1) + ' of ' + IL.length; $('introTitle').textContent = b[1]; $('introText').textContent = b[2];
+    var src = S.introWorld === 3 ? INTRO3_IMG[n] : 'assets/intro/' + (S.introWorld === 2 ? 'h2-' : 'intro-') + (n + 1) + '.jpg';
     if (img.getAttribute('src') !== src) { img.style.visibility = ''; if (reduced) img.src = src; else { img.classList.add('fade'); setTimeout(function () { img.src = src; img.classList.remove('fade'); }, 180); } }
-    var dots = ''; for (var i = 0; i < INTRO.length; i++) dots += '<i' + (i === n ? ' class="on"' : '') + '></i>';
+    var dots = ''; for (var i = 0; i < IL.length; i++) dots += '<i' + (i === n ? ' class="on"' : '') + '></i>';
     $('introDots').innerHTML = dots;
-    $('introBack').disabled = n === 0; $('introGo').textContent = n === INTRO.length - 1 ? 'Begin' : 'Next';
+    $('introBack').disabled = n === 0; $('introGo').textContent = n === IL.length - 1 ? 'Begin' : 'Next';
   }
-  function introNext() { if (S.introAt < INTRO.length - 1) { S.introAt++; renderIntro(); } else introDone(); }
-  function introDone() { S.seenIntro = true; save('intro2', true); show('list'); }
+  function introList() { return S.introWorld === 3 && Lv3 ? Lv3.INTRO : S.introWorld === 2 && Lv2 ? Lv2.INTRO : INTRO; }
+  function introLen() { return introList().length; }
+  function seenIntroOf(w) { return w === 3 ? S.seenIntroC : S.seenIntroB; }
+  function seenWorldOf(w) { return w === 3 ? S.seenWorldC : S.seenWorldB; }
+  function introNext() { if (S.introAt < introLen() - 1) { S.introAt++; renderIntro(); } else introDone(); }
+  function introDone() {
+    if (S.introWorld >= 2) {   // habitat 2 or 3 mini-intro, then its world facts (first visit only), then where the player was headed
+      var iw = S.introWorld;
+      if (iw === 3) { S.seenIntroC = true; save('introC', true); } else { S.seenIntroB = true; save('introB', true); }
+      S.introWorld = 1;
+      if (!seenWorldOf(iw)) { S.worldView = iw; S.worldBack = S.afterIntro; show('world'); } else show(S.afterIntro);
+      return;
+    }
+    S.seenIntro = true; save('intro2', true); show('list');
+  }
+  // First time the second or third world is opened (tab or its first dish): mini-intro, then world facts. Returns true when it took over the screen.
+  function firstVisit(w, back) {
+    if (!worldLv(w) || (seenIntroOf(w) && seenWorldOf(w))) return false;
+    S.afterIntro = back; S.introAt = 0;
+    if (!seenIntroOf(w)) { S.introWorld = w; show('intro'); } else { S.worldView = w; S.worldBack = back; show('world'); }
+    return true;
+  }
 
   // ---------------------------------------------------------------- dish list
   function isLocked(id) {
     if (S.unlocked) return false;
-    var i = ORDER.indexOf(id); return i > 0 && !S.cleared[ORDER[i - 1]];
+    var w = worldNo(id), o = orderOf(w), i = o.indexOf(id);
+    if (S.cleared[id] || o.slice(i + 1).some(function (j) { return S.cleared[j]; })) return false;   // a save made before a dish was inserted earlier in the order never re-locks what it already reached
+    if (w >= 2 && i === 0) return !S.cleared[prevWorldLast(w)];
+    return i > 0 && !S.cleared[o[i - 1]];
   }
-  function renderList() {
-    var box = $('dishList'); box.innerHTML = '';
-    ORDER.forEach(function (id) {
-      var d = Lv.dish(id), locked = isLocked(id), cleared = !!S.cleared[id], gr = S.grades[id];
-      if (id === 1) box.appendChild(el('div', 'grouph', 'Learning the cell <span class="dim">dishes 1 to 5: one new problem each</span>'));
-      if (id === 6) box.appendChild(el('div', 'grouph', 'Exams <span class="dim">dishes 6 to 10: no answer tips, several cells can pass</span>'));
-      var row = el('div', 'dishrow' + (locked ? ' locked' : '') + (cleared ? ' cleared' : ''));
-      var st = locked ? 'Locked' : cleared ? (d.exam && gr ? gr : 'Cleared') : 'Open';
-      row.innerHTML = '<div class="num">' + id + '</div><div class="mid"><div class="t">' + esc(d.title) + '</div><div class="g">' + esc(d.problem) + '</div>' +
-        '<div class="c">You start with: ' + esc(buildWords(carriedFor(id))) + '</div></div><div class="st' + (gr ? ' g-' + gr.toLowerCase() : '') + '">' + st + '</div>';
-      var b = el('button', 'big', locked ? 'Locked' : cleared ? 'Again' : 'Start');
-      b.disabled = locked; b.setAttribute('data-dish', id);
-      b.addEventListener('click', function () { selectDish(id); });
-      row.appendChild(b); box.appendChild(row);
+  function prevWorldLast(w) { var o = orderOf(w - 1); return o[o.length - 1]; }   // the dish that opens world w: the last one of the world before it
+  function tabLocked(w) { return w >= 2 && (!worldLv(w) || isLocked(orderOf(w)[0])); }
+  function setTab(w) {
+    if (tabLocked(w)) return;
+    S.worldTab = w; save('worldTab', w); renderList();
+    if (w >= 2) firstVisit(w, 'list');
+  }
+  // The Scale of Mind strip: the state after the highest dish cleared (WORLD.scale in levels.js).
+  function scaleIndex() { var n = 0; ORDER1.forEach(function (id) { if (S.cleared[id]) n = Math.max(n, id); }); return Math.min(n, W.scale.length - 1); }
+  function renderScale(boxId, w) {
+    var box = $(boxId); if (!box) return;
+    var show2 = worldObj(w || 1); box.style.display = show2.scale ? '' : 'none'; if (!show2.scale) { box.innerHTML = ''; return; }
+    var i = scaleIndex(), s = W.scale[i];
+    box.innerHTML = '<div class="sp">' + (STORY_ART.cell ? '<img src="assets/story/scale-cell.jpg" alt="">' : '') + (i >= 10 && STORY_ART.crowd ? '<img src="assets/story/scale-crowd.jpg" alt="">' : '') + '</div>' +
+      '<div class="st"><div class="sk">' + esc(W.scaleLabel) + '</div><p class="sv">' + esc(s.state) + '</p><div class="ss"><span>' + esc(W.sizeLabel) + ':</span> ' + esc(s.size) + '</div></div>';
+  }
+  function renderTabs() {
+    var box = $('worldTabs'); if (!box) return;
+    if (!Lv2) { box.style.display = 'none'; return; }
+    box.style.display = ''; box.innerHTML = '';
+    (Lv3 ? [1, 2, 3] : [1, 2]).forEach(function (w) {
+      var lk = tabLocked(w), b = el('button', 'wtab' + (S.worldTab === w ? ' on' : '') + (lk ? ' locked' : ''), '<span class="wt">' + (lk ? '?' : w === 1 ? 'The warm crowd' : esc(worldObj(w).name)) + '</span>' + (lk ? '<span class="wl">Locked: clear dish ' + dishNo(prevWorldLast(w)) + ' first</span>' : ''));
+      b.type = 'button'; b.setAttribute('data-world', w); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', S.worldTab === w ? 'true' : 'false'); b.disabled = lk;
+      b.addEventListener('click', function () { setTab(w); }); box.appendChild(b);
     });
   }
+  function renderList() {
+    var box = $('dishList'); box.innerHTML = ''; var wall = null, tw = S.worldTab;
+    if (tw >= 2 && tabLocked(tw)) tw = S.worldTab = 1;
+    renderTabs();
+    if (!S.revealed) {   // first load with this feature: every dish already open counts as seen, so nothing flips for old saves
+      S.revealed = {}; [1, 2, 3].forEach(function (w) { if (worldLv(w) || w === 1) orderOf(w).forEach(function (id) { if (!isLocked(id)) S.revealed[id] = true; }); }); save('revealed', S.revealed);
+    }
+    var revealedNow = false;
+    orderOf(tw).forEach(function (id) {
+      var d = Lv.dish(id), locked = isLocked(id), cleared = !!S.cleared[id], gr = S.grades[id];
+      if (id === 11) { box.appendChild(el('div', 'grouph', esc(Lv2.WORLD.name) + ' <span class="dim">' + dishRange(ORDER2) + ': heat, the cool edge, the night, the cold swing, then an exam and the way out</span>')); wall = el('div', 'wall'); box.appendChild(wall); }
+      if (tw === 3 && id === ORDER3[0]) { box.appendChild(el('div', 'grouph', esc(Lv3.WORLD.name) + ' <span class="dim">' + dishRange(ORDER3) + ': food in clumps, stopping when fed, the bright place, food that can be eaten away, then an exam</span>')); wall = el('div', 'wall'); box.appendChild(wall); }
+      if (id === 1 || id === 6) {
+        box.appendChild(el('div', 'grouph', id === 1 ? 'Learning the cell <span class="dim">' + dishRange(ORDER1.slice(0, 5)) + ': one new problem each</span>' : 'Exams <span class="dim">' + dishRange(ORDER1.slice(5)) + ': no answer tips, several cells can pass</span>'));
+        wall = el('div', 'wall'); box.appendChild(wall);
+      }
+      var st = locked ? 'Locked' : cleared ? (d.exam && gr ? gr : 'Cleared') : 'Open';
+      var fresh = !locked && !S.unlocked && !cleared && id !== 1 && !S.revealed[id];
+      if (!locked && !S.revealed[id]) { S.revealed[id] = true; revealedNow = true; }
+      var tile = el('div', 'dtile' + (locked ? ' locked mystery' : cleared ? ' cleared' : ' open') + (fresh ? ' reveal' : ''));
+      if (locked) {
+        tile.innerHTML = '<div class="dthumb"><span class="qm" aria-hidden="true">?</span></div><div class="dmeta"><span class="num">' + dishNo(id) + '</span><span class="t">?</span></div><div class="g"></div><div class="c"></div>';
+      } else tile.innerHTML = '<div class="dthumb">' + ((tw === 2 && !THUMBS2[id]) || (tw === 3 && !THUMBS3[id]) ? '' : '<img alt="" src="assets/thumbs/dish-' + (THUMB_FILE[id] || id) + '.jpg">') + (cleared ? '<span class="dstamp' + (gr ? ' g-' + gr.toLowerCase() : '') + '">' + esc(st) + '</span>' : '') + '</div>' +
+        '<div class="dmeta"><span class="num">' + dishNo(id) + '</span><span class="t">' + esc(d.title) + '</span></div><div class="g">' + esc(d.problem) + '</div>' +
+        '<div class="c">You start with: ' + esc(buildWords(carriedFor(id))) + '</div>';
+      var im = tile.querySelector('img'); if (im) im.addEventListener('error', function () { im.remove(); });
+      var b = el('button', 'big', locked ? 'Locked' : cleared ? 'Again' : 'Start'); b.disabled = locked; b.setAttribute('data-dish', id);
+      b.addEventListener('click', function () { selectDish(id); }); tile.appendChild(b); wall.appendChild(tile);
+    });
+    if (revealedNow) save('revealed', S.revealed);
+    var we = $('watchEnding'); if (we) we.hidden = !S.cleared[ORDER3[ORDER3.length - 1]];
+    renderScale('scaleList', tw);
+  }
+  function blankRule() { return { sensor: null, cmp: null, value: null, action: null, otherwise: null }; }
   function selectDish(id) {
-    S.dish = id; S.carried = carriedFor(id); S.build = copy(S.carried); S.undo = []; S.rule = { sensor: null, cmp: null, value: null, action: null };
+    compareSet(false); S.cmp = { held: false, kept: false, base: null, run: null, runFor: null, diff: '' }; ezReset();
+    if (GL.failed && GL.reason === 'slow') { GL.failed = false; GL.reason = ''; glNote(''); }   // a slow spell on one dish does not lock the simple view in for the rest of the session
+    S.dish = id; S.carried = carriedFor(id); S.build = copy(S.carried); S.undo = []; S.rule = blankRule();
     S.slot = Lv.dish(id).opens[0] || Lv.dish(id).slots[0]; S.layer = 0; S.pointed = Lv.dish(id).opens.length > 0; S.whyOpen = false; S.runGrade = null; S.note = ''; S.preview = null; S.run = null; S.ghost = null; S.shownDish = -1; S.lastAutopsy = null; S.lastRunLost = false; S.tipLevel = 0; S.runCount = 0; S.overlayOpen = false; S.fail = null;
     closeOverlay();
-    if (id === 1 && !S.seenWorld) { S.worldBack = 'brief'; show('world'); } else show('brief');
+    if (id === 1 && !S.seenWorld) { S.worldView = 1; S.worldBack = 'brief'; show('world'); }
+    else if (id === ORDER2[0] && firstVisit(2, 'brief')) { /* mini-intro, then the world facts, then this briefing */ }
+    else if (id === ORDER3[0] && firstVisit(3, 'brief')) { /* the same for the thick water */ }
+    else show('brief');
   }
 
   // ---------------------------------------------------------------- world and dish briefing
   function renderWorld() {
-    $('worldName').textContent = W.name;
+    var wv = S.worldView, w2 = wv >= 2 && !!worldLv(wv), WW = worldObj(w2 ? wv : 1), wimg = $('worldImg'), lk = $('localsKey');
+    $('worldName').textContent = WW.name;
+    if (lk) lk.style.display = w2 ? 'none' : '';
+    if (wimg) { var ws = wv === 3 && w2 ? WORLD3_IMG : w2 ? 'assets/cards/world-banded.jpg' : 'assets/cards/world-acidica.jpg'; if (wimg.getAttribute('src') !== ws) { wimg.style.display = ''; wimg.src = ws; } if (w2) wimg.alt = ''; }
     var box = $('worldFacts'); box.innerHTML = '';
-    W.facts.forEach(function (f, i) { box.appendChild(el('div', 'fact', '<div class="fn">' + (i + 1) + '</div><p>' + esc(f) + '</p>')); });
-    $('worldBadge').textContent = W.badge || '';
-    $('worldMission').textContent = W.mission;
+    WW.facts.forEach(function (f, i) { box.appendChild(el('div', 'fact', '<div class="fn">' + (i + 1) + '</div><p>' + esc(f) + '</p>')); });
+    $('worldBadge').textContent = WW.badge || '';
+    $('worldMission').textContent = WW.mission;
+    renderScale('scaleWorld', w2 ? wv : 1);
   }
   function worldContinue() {
-    S.seenWorld = true; save('world2', true);
+    if (S.worldView === 3) { S.seenWorldC = true; save('worldC', true); S.worldView = 1; }
+    else if (S.worldView === 2) { S.seenWorldB = true; save('worldB', true); S.worldView = 1; } else { S.seenWorld = true; save('world2', true); }
     if (S.worldBack === 'brief' && S.dish != null) show('brief'); else show(S.worldBack || 'list');
   }
   // Environment analysis report: readings come from the dish's own parameters. Lines appear one by one (all at once with reduced motion).
-  var CH_WORDS = { growth: 'growth rate', waste: 'smell (waste trail)', casualties: 'casualties', regularity: 'regularity' };
+  var CH_WORDS = { growth: 'growth rate', waste: 'smell (waste trail)', casualties: 'casualties', regularity: 'regularity', motion: 'movement' };
+  // Habitat 3 (dishes with `agents`): every number below comes from the dish's own settings (levels3.js, defaults of sim3.js).
+  function pct0(x) { return Math.round(x * 100) + '%'; }
+  function nativeMixWords(nt) {
+    var q = nt.quad || 0, h = nt.halo || 0, sa = nt.sali || 0, tot = q + h + sa || 1;
+    function tenth(n) { return Math.max(n ? 1 : 0, Math.round(10 * n / tot)); }
+    return 'about ' + tenth(q) + ' in 10 are flat squares that sit still, about ' + tenth(h) + ' in 10 are rods that swim and stop to feed, about ' + tenth(sa) + ' in 10 are rods that swim';
+  }
+  // The bright place on dish 17, from the dish's own numbers (micrometres): a patch whose outer band feeds a cell and whose middle burns.
+  function lightWords(L) {
+    var r = L.r != null ? L.r : L.radius, core = L.core != null ? L.core : L.coreR;
+    if (r == null || core == null) return 'one bright patch drifts across the dish. Its edge gives a cell a little energy, and its middle burns';
+    return 'one bright patch, ' + Math.round(2 * r) + ' micrometres across, drifts across the dish. Its edge gives a cell a little energy. The middle ' + Math.round(2 * core) + ' micrometres across burns. The locals are not harmed';
+  }
+  function reportLines3(d) {
+    var A = d.agents, bo = A.boulders || {}, nt = A.natives || {}, tot = (nt.quad || 0) + (nt.halo || 0) + (nt.sali || 0), band = d.band;
+    var L = A.light, lrows = L ? [['The bright place', lightWords(L)]] : [];
+    return [
+      ['Food', (bo.count || 0) + ' green boulders leak the sweetness. ' + (bo.deplete ? 'Each gives out if more than ' + bo.deplete.free + ' scouts feed on it at once, and a boulder that gives out stays gone for good' : 'Each lasts ' + bo.lifeMin + ' to ' + bo.lifeMax + ' ticks, then another one comes up somewhere new')],
+      ['Locals', tot + ' at the start: ' + nativeMixWords(nt)]].concat(lrows, [
+      ['Inspectors', !d.suspicion ? 'none in this dish' : (d.channels || []).map(function (c) { return CH_WORDS[c] || c; }).join(', ')],
+      ['The band', 'stay between ' + pct0(band.lo) + ' and ' + pct0(band.hi) + ' of the dish for ' + pct0(band.need) + ' of the run'],
+      ['Time', 'scouts swim at their true speed, and grow about a hundred times faster than real ones'],
+      ['Energy budget', d.energy + ' of 5 units for your cell']
+    ]);
+  }
   function reportLines(d) {
+    if (d.agents) return reportLines3(d);
+    if (d.temp) {
+      var T = d.temp, ev = eventsOf(d), nights = ev.length > 0 && !!T.o2Night, gap = T.hot - T.cool;
+      var u40 = T.cool >= 40 ? 0 : Math.acos(1 - 2 * (40 - T.cool) / (T.hot - T.cool)) / (2 * Math.PI), pct40 = Math.round(200 * u40);
+      return [
+        ['Temperature', T.hot + ' C at the source, ' + T.cool + ' C at the edges (' + (gap >= 30 ? 'a strong gradient' : gap >= 15 ? 'a moderate gradient' : 'a gentle gradient') + ')'],
+        ['Light', nights ? 'bright by day; dark from tick ' + ev[0].tick + ' for ' + ev[0].dur + ' ticks, every ' + (ev.length > 1 ? ev[1].tick - ev[0].tick : '80') + ' ticks' : 'bright all run'],
+        ['Oxygen', nights ? 'high by day, none at night' : 'high'],
+        ['Erosion', T.graze > 0 ? 'a slow shadow below 40 C, about ' + pct40 + '% of the dish' : 'none: the water stays above 40 C'],
+        ['Inspectors', !d.suspicion ? 'none in this dish' : (d.channels || []).map(function (c) { return CH_WORDS[c] || c; }).join(', ') + (d.regWeight > 1 ? ' (strict)' : '')],
+        ['Energy budget', d.energy + ' of 5 units for your cell']
+      ];
+    }
     var acid = d.acid || 0, ph = Math.max(0.5, 3.2 - 2.6 * acid), strength = acid < 0.25 ? 'moderate' : acid < 0.45 ? 'strong' : acid < 0.65 ? 'very strong' : 'extreme';
     var evs = eventsOf(d), warn = evs.length ? evs[0].tick - evs[0].announce : 0, food = (d.abundance ? 'plentiful' : 'steady') + (evs.length ? '; ' + (evs.length > 1 ? 'crashes' : 'a crash') + ' at tick ' + evs.map(function (e) { return e.tick; }).join(' and ') + ', each warned ' + warn + ' ticks ahead' : '');
     var insp = !d.suspicion ? 'none in this dish' : (d.channels || []).map(function (c) { return CH_WORDS[c] || c; }).join(', ') + (d.regWeight > 1 ? ' (strict)' : '');
@@ -246,7 +471,7 @@
     ];
   }
   function renderReport(d) {
-    var box = $('briefReport'), rows = reportLines(d), html = '<div class="rh">Environment analysis · ' + esc(W.name) + ' · site ' + d.id + ' of ' + ORDER.length + '</div>';
+    var box = $('briefReport'), rows = reportLines(d), html = '<div class="rh">Environment analysis · ' + esc(worldObj(worldOfDish(d)).name) + ' · site ' + (orderForDish(d).indexOf(d.id) + 1) + ' of ' + orderForDish(d).length + '</div>';
     rows.forEach(function (r) { html += '<div class="rl pending"><span class="rk">' + esc(r[0]) + '</span><span>' + esc(r[1]) + '</span></div>'; });
     html += '<div class="rl status pending">Building petri dish… ready. Your artificial microbe is loaded for a compatibility test.</div>';
     box.innerHTML = html;
@@ -259,12 +484,15 @@
   }
   function renderBrief() {
     var d = dishObj(); renderReport(d);
-    $('briefKicker').textContent = 'Dish ' + d.id + ' of ' + ORDER.length;
+    $('briefKicker').textContent = 'Dish ' + dishNo(d.id) + ' of ' + dishTotal();
     $('briefTitle').textContent = d.title;
     $('briefProblem').textContent = d.problem; $('briefGoal').textContent = d.goal;
+    var fn = d.fieldNote || ['', ''], fps = $('briefNote').querySelectorAll('p');
+    fps[0].textContent = fn[0] || ''; fps[1].textContent = fn[1] || ''; $('briefNote').style.display = d.fieldNote ? '' : 'none';
     $('briefExam').style.display = d.exam ? '' : 'none';
     $('briefFig').innerHTML = figHtml(S.carried);
-    $('briefCell').textContent = buildWords(S.carried) + (S.dish > 1 && S.wins[S.dish - 1] ? ' (the cell that won the last dish)' : '') + '. It goes in unchanged.';
+    $('briefCover').innerHTML = coverName(S.carried);
+    $('briefCell').textContent = buildWords(S.carried) + (prevDishId(S.dish) != null && S.wins[prevDishId(S.dish)] ? ' (the cell that won the last dish)' : '') + '. It goes in unchanged.';
   }
 
   // ---------------------------------------------------------------- simulation wrappers
@@ -289,11 +517,11 @@
 
   // ---------------------------------------------------------------- Watch
   function enterWatch() {
-    var d = dishObj(); if (!d) return;
+    var d = dishObj(); if (!d) return; compareSet(false);
     var run = simulate(S.carried);
     S.mode = 'watch'; S.run = run; S.ghost = null; S.stopAt = watchStop(run); S.watchDone = false; S.runFinished = false;
     S.lastAutopsy = run.autopsy; S.lastRunLost = false; S.tipLevel = 0; setFail(run, S.carried);
-    S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = d.aliveOnly ? 1 : 4; setSpeedUI();   // dish 1: the colony is gone in 12 ticks, so it is watched at 1x
+    S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = d.aliveOnly || d.agents ? 1 : 4; setSpeedUI();   // dish 1: the colony is gone in 12 ticks, so it is watched at 1x
     closeOverlay(); show('run');
   }
   function watchFinished() { S.watchDone = true; S.playing = false; setPlayLabel(); renderVerdict(); refresh(); }
@@ -337,8 +565,73 @@
     S.runGrade = isExam(d) ? Sim.grade(run, d, build) : null;
     if (S.runGrade && (!S.grades[d.id] || GRADE_RANK[S.runGrade] > GRADE_RANK[S.grades[d.id]])) { S.grades[d.id] = S.runGrade; save('grades2', S.grades); }
   }
+  // ---- lineages: a stage of a lineage (Sim.lineageStage) is earned by clearing a dish with the stage before it fitted. Every call is guarded.
+  // Two saved maps: `used3` (stages cleared with, recorded on every win) and `evolved3` (steps the player has evolved: a win offers the step after a used one, and the player evolves it from the evolution panel).
+  // A saved game from before `evolved3` existed gets the steps its `used3` entries had opened.
+  function lineageOf(id) { try { return typeof Sim.lineageStage === 'function' ? Sim.lineageStage(id) || null : null; } catch (e) { return null; } }
+  function lsId(x) { return x && typeof x === 'object' ? x.id : x || null; }
+  function impliedEvolved(used) {
+    var out = {}; Object.keys(used || {}).forEach(function (id) { if (!used[id]) return; var ls = lineageOf(id), nx = ls && lsId(ls.next); if (nx) out[nx] = true; });
+    return out;
+  }
+  (function migrateEvolved() {
+    var raw = null; try { raw = localStorage.getItem(KEY + 'evolved3'); } catch (e) { raw = null; }
+    if (raw === null && Object.keys(S.used).length) { S.evolved = impliedEvolved(S.used); save('evolved3', S.evolved); }
+  })();
+  // What Sim.treeState reads as `used`: exactly the stages before each evolved step, so the tree opens exactly the evolved steps.
+  function derivedUsed() {
+    var out = {}; Object.keys(S.evolved).forEach(function (id) { if (!S.evolved[id]) return; var ls = lineageOf(id), pv = ls && lsId(ls.prev); if (pv && ls.stage > 1) out[pv] = true; });
+    return out;
+  }
+  // Steps a win has made ready but the player has not evolved yet: the step after each used stage.
+  function pendingEvolutions() {
+    var out = [];
+    Object.keys(S.used).forEach(function (id) {
+      if (!S.used[id]) return;
+      var ls = lineageOf(id), nx = ls && lsId(ls.next); if (!nx || S.evolved[nx]) return;
+      var n = lineageOf(nx); out.push({ id: nx, from: id, lineage: ls.lineage, stage: n ? n.stage : ls.stage + 1 });
+    });
+    out.sort(function (a, b) { return a.lineage < b.lineage ? -1 : a.lineage > b.lineage ? 1 : a.stage - b.stage; });
+    return out;
+  }
+  function buildCardIds(b) {
+    var n = Sim.normalize(b) || {}, o = [];
+    if (n.metabolism) o.push(Cards.canon(n.metabolism));
+    (n.parts || []).forEach(function (id) { o.push(Cards.canon(id)); });
+    if (n.reflex && n.reflex.kind === 'bio') o.push(Cards.canon(n.reflex.id));
+    return o;
+  }
+  // A dish was cleared with this cell: every fitted stage counts as used. S.evo lists the steps this win makes ready; the player evolves one (or the only one) from the evolution panel.
+  function recordUsed(build, dishId) {
+    var changed = false;
+    buildCardIds(build).forEach(function (id) {
+      var ls = lineageOf(id); if (!ls || S.used[id]) return;
+      S.used[id] = true; changed = true;
+    });
+    if (changed) save('used3', S.used);
+    var cands = pendingEvolutions();
+    S.evolvedNew = cands.map(function (c) { return c.id; });
+    S.evo = cands.length ? { cands: cands, sel: 0, dish: dishId, build: copy(build) } : null;
+  }
+  // Why a stage the player has not earned cannot be fitted, or '' when it can (a stage already fitted, a first stage and a card outside a lineage are never held back).
+  function earnLock(id) {
+    var ls = lineageOf(id); if (!ls || !(ls.stage > 1)) return '';
+    if (S.build && buildCardIds(S.build).indexOf(id) >= 0) return '';
+    if (S.evolved[id]) return '';
+    var pv = lsId(ls.prev); if (!pv) return '';
+    var c = cardOrBio(pv);
+    if (S.used[pv]) return 'It is ready to evolve. Win a dish and choose it.';
+    return 'Clear a dish with ' + (c ? c.name : pv) + ' fitted to evolve this.';
+  }
+  // Dishes that offer a card, for "Offered on dish 17."
+  function offeredOn(id) {
+    var c = cardOrBio(id), out = []; if (!c) return out;
+    ORDER1.concat(ORDER2, ORDER3).forEach(function (n) { var o = Lv.dish(n); try { if (o && Sim.offered(o, c.slot).some(function (x) { return x.id === id; })) out.push(n); } catch (e) { /* skip */ } });
+    return out;
+  }
+  function dishWords(ids) { ids = ids.map(dishNo); return ids.length < 2 ? 'dish ' + ids.join('') : 'dishes ' + ids.slice(0, -1).join(', ') + ' and ' + ids[ids.length - 1]; }
   function winCarried() {  // the carried cell already wins: take it as the win
-    var d = dishObj(); S.cleared[d.id] = true; S.wins[d.id] = copy(S.carried); save('cleared2', S.cleared); save('wins2', S.wins);
+    var d = dishObj(); S.cleared[d.id] = true; S.wins[d.id] = copy(S.carried); save('cleared2', S.cleared); save('wins2', S.wins); recordUsed(S.carried, d.id);
     recordGrade(S.run, d, S.carried);
     showResult();
   }
@@ -346,10 +639,15 @@
   // ---------------------------------------------------------------- Adapt: body-slot loadout
   var SLOT_ORDER = Sim.SLOT_ORDER;
   var NEW_SLOT_HINT = { 1: 'New slots: Envelope and Insides. Pick what keeps the acid out.', 2: 'New slot: Signal. Pick how your cells hold their own numbers down.',
-    3: 'New slot: Power. Your waste depends on how you make energy.', 4: 'New slot: Division. Dividing in step is the tell.', 5: 'New slot: Reflex. Pick how your cell reacts to the crash.' };
+    3: 'New slot: Power. Your waste depends on how you make energy.', 4: 'New slot: Division. Dividing in step is the tell.', 5: 'New slot: Reflex. Pick how your cell reacts to the crash.',
+    11: 'Hot water. Find the slots that hold a heat card.', 12: 'New slot: Motor. Pick how your cells keep out of the cool water.' };
   // Tag positions on the 600 x 410 diagram: side, top.
   var TAGPOS = { reflex: ['L', 14], envelope: ['L', 92], division: ['L', 174], motor: ['L', 330], signal: ['R', 14], insides: ['R', 92], power: ['R', 174] };
   var TAG_W = 160, TAG_H = 62;
+  var COACH = { 1: 'Start here. Pick a card in the list that keeps the acid out.', 2: 'Start here. Pick a Signal card so your cells hold their own numbers down.' };
+  // Josh, wave 2 decision 4: tutorial dishes show only the slots you can change. Set to 0 to show locked slots everywhere again.
+  var HIDE_LOCKED_BELOW = 5;
+  function tagHidden(d, k) { return !!d && !isExam(d) && d.id < HIDE_LOCKED_BELOW && slotStateOf(k) !== 'open'; }
   var LOCK_SVG = '<svg class="lockico" viewBox="0 0 9 10" aria-hidden="true"><rect x="0.5" y="4" width="8" height="5.5" rx="1" fill="currentColor"/><path d="M2.3 4V3a2.2 2.2 0 0 1 4.4 0v1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
   function mutate(fn) {
     S.undo.push(copy(S.build)); if (S.undo.length > 60) S.undo.shift();
@@ -387,18 +685,38 @@
     var ea = k === 'envelope' ? !a.length : !a, eb = k === 'envelope' ? !b.length : !b;
     return eb ? 'new' : ea ? 'removed' : 'swapped';
   }
+  // The thick water: words for what the slots do and why some are shut, in place of the first world's.
+  var BLURB3 = { signal: 'How a cell tastes the water around it, so it can steer by it.' };
+  var NOTE3 = { food: 'The sweetness in the water at the cell\'s own square. The reading is exact.', pause: 'The cell does not divide while the rule fires.' };
+  function lockedWords(d, k) {
+    if (!d.agents) return Sim.lockedReason(d, k);
+    var later = ORDER3.filter(function (id) { var o = Lv.dish(id); return id > d.id && o.slots.indexOf(k) >= 0 && (o.opens || []).indexOf(k) >= 0; })[0];
+    return later ? 'Opens on dish ' + dishNo(later) + '.' : 'Not used on these dishes.';
+  }
   function slotStateOf(k) { return Sim.slotState(dishObj(), k); }
   function selectable(k) { return slotStateOf(k) === 'open'; }
   function selectSlot(k) {
-    if (!selectable(k)) { var lr = Sim.lockedReason(dishObj(), k); setNote(Cards.slotInfo(k).name + ': ' + (lr || 'locked') + (slotStateOf(k) === 'factory' ? ' It cannot be changed yet.' : '')); return false; }
+    if (!selectable(k)) { var lr = Sim.lockedReason(dishObj(), k); setNote(Cards.slotInfo(k).name + ': ' + (dishObj().agents ? lockedWords(dishObj(), k) : lr || 'locked') + (slotStateOf(k) === 'factory' ? ' It cannot be changed yet.' : '')); return false; }
     S.slot = k; S.preview = null; renderAdapt(false); return true;
   }
 
   // ---- fitting and clearing, always through LookAlive.fit / unfit
   function doFit(k, id) {
-    var d = dishObj(), r = Sim.fit(d, S.build, id, layerArg(k));
+    var d = dishObj(), miss = treeMissingIds(id);
+    if (miss.length) { r = { ok: false, reason: 'Needs ' + treeNames(miss) + ' fitted first' }; setNote(r.reason); showPreviewText(r.reason, true); return r; }
+    var lk = earnLock(id);
+    if (lk) { r = { ok: false, reason: lk }; setNote(lk); showPreviewText(lk, true); return r; }
+    var sib = lineageSibling(k, id); if (sib && sib.layer != null) S.layer = sib.layer;   // a step takes the place of the step of its lineage that is fitted
+    var r = Sim.fit(d, S.build, id, layerArg(k));
     if (!r.ok) { setNote(r.reason); showPreviewText(r.reason, true); return r; }
     commit(r.build); return r;
+  }
+  // The fitted card of the same lineage as `id` in slot k, as { id, layer }, or null.
+  function lineageSibling(k, id) {
+    var ls = lineageOf(id); if (!ls) return null;
+    var ids = fittedIds(k), i;
+    for (i = 0; i < ids.length; i++) { var o = lineageOf(ids[i]); if (ids[i] !== id && o && o.lineage === ls.lineage) return { id: ids[i], layer: k === 'envelope' ? i : null }; }
+    return null;
   }
   function doUnfit(k, id) {
     var d = dishObj(), r = Sim.unfit(d, S.build, k, id);
@@ -416,7 +734,7 @@
     if (id && Cards.bio(id)) name = Cards.bio(id).name;
     if (id === null) { r = Sim.unfit(d, S.build, k, k === 'envelope' ? slotsNow().envelope[S.layer] : undefined); name = 'this slot'; }
     else if (fitted) r = Sim.unfit(d, S.build, k, id);
-    else r = Sim.fit(d, S.build, id, layerArg(k));
+    else { var sib = lineageSibling(k, id); r = Sim.fit(d, S.build, id, sib && sib.layer != null ? sib.layer : layerArg(k)); }
     if (!r.ok) { S.preview = null; showPreviewText(r.reason, true); renderCell(); return; }
     S.preview = { slot: k, build: r.build };
     var list = (id === null || fitted) ? changesBetween(d, S.build, r.build) : effectsFor(d, Cards.part(id) || Cards.bio(id), false).changes;
@@ -445,33 +763,47 @@
     SLOT_ORDER.forEach(function (k) { state[k] = slotStateOf(k); });
     var nw = S.pointed ? d.opens : [], lead = '';
     SLOT_ORDER.forEach(function (k) {
+      if (tagHidden(d, k)) return;
       var p = TAGPOS[k], a = D.ANCHOR[k], x = p[0] === 'L' ? TAG_W + 2 : 600 - TAG_W - 2, y = p[1] + TAG_H / 2;
       lead += '<line class="leader' + (S.slot === k ? ' sel' : '') + '" x1="' + x + '" y1="' + y + '" x2="' + Math.round(a[0]) + '" y2="' + Math.round(a[1]) + '"/><circle cx="' + Math.round(a[0]) + '" cy="' + Math.round(a[1]) + '" r="2.5" fill="' + (S.slot === k ? '#5fd0ff' : '#8a90a8') + '"/>';
     });
     var fi = fixInfo(), fixSlots = fi.slots;
     $('cellSvg').innerHTML = D.cellArt(sl, { state: state, sel: S.slot, nw: nw, fix: fixSlots, ghost: gh && gh.slot ? gh.slot : null, ghostSlots: gh && gh.slot ? Sim.toSlots(gh.build) : null }) + lead;
+    $('cellWrap').classList.toggle('hidelocked', d.id < HIDE_LOCKED_BELOW && !isExam(d));
     drawPortrait(sl, gh);
     var box = $('tagLayer'), carried = S.carried;
     if (!box.firstChild) {
       SLOT_ORDER.forEach(function (k) {
         var p = TAGPOS[k], b = el('button', 'tag'); b.type = 'button'; b.setAttribute('data-slot', k);
         b.style.left = (p[0] === 'L' ? 2 / 6 : (600 - TAG_W - 2) / 6) + '%'; b.style.top = (p[1] / 4.1) + '%';
-        b.addEventListener('click', function () { selectSlot(k); });
+        b.addEventListener('click', function (e) { if (selectSlot(k) && e.detail === 0) { var f = $('optList').querySelector('.opt, .optempty'); if (f) f.focus({ preventScroll: true }); } });
         box.appendChild(b);
       });
     }
     Array.prototype.forEach.call(box.children, function (b) {
-      var k = b.getAttribute('data-slot'), st = state[k], info = Cards.slotInfo(k), ch = st === 'open' ? slotChange(k) : '', txt = slotText(k, sl), status = '';
-      if (st !== 'open') status = Sim.lockedReason(d, k);
+      var k = b.getAttribute('data-slot'), hid = tagHidden(d, k); b.hidden = hid; b.style.display = hid ? 'none' : ''; if (hid) return;
+      var st = state[k], info = Cards.slotInfo(k), ch = st === 'open' ? slotChange(k) : '', txt = slotText(k, sl), status = '';
+      if (st !== 'open') status = lockedWords(d, k);
       else if (fixSlots.indexOf(k) >= 0) status = '<span class="pill fx">changes ' + esc(fi.by[k].join(', ')) + '</span>';
       else if (S.pointed && d.opens.indexOf(k) >= 0) status = '<span class="pill pt">new slot</span>';
       else if (ch) status = '<span class="pill ' + ch + '">' + ch + '</span>';
       b.className = 'tag' + (fixSlots.indexOf(k) >= 0 ? ' fixhl' : '') + (S.slot === k && st === 'open' ? ' sel' : '') + (st === 'factory' ? ' factory' : st === 'locked' ? ' locked' : '') + (S.pointed && d.opens.indexOf(k) >= 0 ? ' new' : '');
       b.innerHTML = '<span class="tn">' + (st !== 'open' ? LOCK_SVG : '') + esc(info.name) + '</span><span class="tv">' + esc(txt) + '</span><span class="ts">' + status + '</span>';
       b.setAttribute('aria-disabled', st === 'open' ? 'false' : 'true');
-      b.setAttribute('aria-label', info.name + ': ' + txt + (st !== 'open' ? '. ' + Sim.lockedReason(d, k) : ''));
-      b.title = info.name + ' (' + info.where + '). ' + txt + (st !== 'open' ? '. ' + Sim.lockedReason(d, k) : '');
+      b.setAttribute('aria-label', info.name + ': ' + txt + (st !== 'open' ? '. ' + lockedWords(d, k) : ''));
+      b.title = info.name + ' (' + info.where + '). ' + txt + (st !== 'open' ? '. ' + lockedWords(d, k) : '');
     });
+    var fl = $('factoryLine'), fac = SLOT_ORDER.filter(function (k) { return tagHidden(d, k) && slotStateOf(k) === 'factory'; });
+    if (fac.length) { fl.innerHTML = LOCK_SVG + '<span>Factory fitted, cannot change yet: ' + fac.map(function (k) { return esc(cardName(Lv.FACTORY[k])) + ' (' + esc(Cards.slotInfo(k).name) + ')'; }).join(', ') + '</span>'; fl.style.display = ''; }
+    else fl.style.display = 'none';
+    var co = $('coach'), ck = S.pointed && COACH[d.id] && !isExam(d) ? d.opens[0] : null;
+    if (ck && !tagHidden(d, ck)) {
+      var cp = TAGPOS[ck], left = cp[0] === 'L';
+      co.className = 'coach ' + (left ? 'cl' : 'cr'); co.textContent = COACH[d.id];
+      co.style.top = ((cp[1] + TAG_H / 2) / 4.1) + '%';
+      co.style.left = left ? ((TAG_W + 12) / 6) + '%' : ''; co.style.right = left ? '' : ((TAG_W + 12) / 6) + '%';
+      co.style.display = '';
+    } else co.style.display = 'none';
   }
   $('cellSvg').addEventListener('click', function (e) {
     var g = e.target.closest ? e.target.closest('.slotg') : null; if (!g || !e.target.classList.contains('hl')) return;
@@ -480,12 +812,15 @@
 
   // ---- the options panel
   function thumbEl(id, cls) {
+    if (id === 'machinerule') return el('div', cls + ' noimg', 'R');   // a machine rule has no card picture (a heat rule uses the compass card)
     var img = document.createElement('img'); img.className = cls; img.alt = ''; img.src = 'assets/cards/card-' + id + '.jpg';
     img.onerror = function () { var d2 = el('div', cls + ' noimg', esc((cardOrBio(id) ? cardOrBio(id).name : '?').charAt(0))); if (img.parentNode) img.parentNode.replaceChild(d2, img); };
     return img;
   }
   // The one wording for a stat change, used on cards, in the preview line and for the ghost markers: { stat, words, direction, steps, tone, checked }.
-  var STAT_WORDS = { acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'], natural: ['Naturalness up', 'Naturalness down'], crash: ['Crash survival up', 'Crash survival down'] };
+  function statWords(id, up) { var w = STAT_WORDS[id] || [Sim.STAT_INFO[id].name + ' better', Sim.STAT_INFO[id].name + ' worse']; return w[up ? 0 : 1]; }
+  var STAT_WORDS = { acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'], natural: ['Naturalness up', 'Naturalness down'], crash: ['Crash survival up', 'Crash survival down'],
+    reach: ['Food reach better', 'Food reach worse'], motion: ['Movement closer', 'Movement further off'], light: ['Light safer', 'Light harsher'] };   // reach and motion: the thick water (dishes 15 and 16)
   function effArrows(x) { var a = x.direction === 'up' ? '\u25B2' : '\u25BC', o = ''; for (var i = 0; i < x.steps; i++) o += a; return o; }
   function changesHtml(list) { return list.map(function (x) { return '<span class="ef t-' + x.tone + '">' + esc(x.words) + ' <b>' + effArrows(x) + '</b></span>'; }).join(''); }
   function changesText(list) { return list.map(function (x) { return x.words + ' ' + effArrows(x); }).join(', '); }
@@ -496,7 +831,7 @@
       if (x.id !== 'acid' && (dis || Sim.dissolved(d, a))) return;
       var moved = x.better !== null || Math.abs(x.delta) >= 0.04 || x.fromState !== x.toState; if (!moved) return;
       var up = x.delta > 0 || (x.delta === 0 && x.health > 0);
-      out.push({ stat: x.id, direction: up ? 'up' : 'down', steps: Math.abs(x.health) >= 0.15 ? 2 : 1, words: STAT_WORDS[x.id][up ? 0 : 1], tone: !x.checked ? 'neutral' : x.better === true ? 'good' : x.better === false ? 'bad' : 'neutral', checked: x.checked });
+      out.push({ stat: x.id, direction: up ? 'up' : 'down', steps: Math.abs(x.health) >= 0.15 ? 2 : 1, words: statWords(x.id, up), tone: !x.checked ? 'neutral' : x.better === true ? 'good' : x.better === false ? 'bad' : 'neutral', checked: x.checked });
     });
     return out;
   }
@@ -517,17 +852,21 @@
       if (x.id === 'acid') return;
       var dl = x.value - ref[i].value; if (Math.abs(dl) < 0.03) return;
       var up = dl > 0;
-      ef.changes.push({ stat: x.id, name: x.name, direction: up ? 'up' : 'down', steps: Math.abs(dl) >= 0.15 ? 2 : 1, words: STAT_WORDS[x.id][up ? 0 : 1], tone: !x.checked ? 'neutral' : x.state === 'safe' ? 'good' : 'bad', checked: x.checked });
+      ef.changes.push({ stat: x.id, name: x.name, direction: up ? 'up' : 'down', steps: Math.abs(dl) >= 0.15 ? 2 : 1, words: statWords(x.id, up), tone: !x.checked ? 'neutral' : x.state === 'safe' ? 'good' : 'bad', checked: x.checked });
     });
     return ef;
   }
   function optionEl(k, c) {
     var mach = c.shelf === 'machine', fitted = fittedIds(k).indexOf(c.id) >= 0, w = el('div', 'opt ' + (mach ? 'mach' : 'bio')), r = null, why = '';
     w.setAttribute('data-id', c.id); w.setAttribute('role', 'button'); w.tabIndex = 0;
+    var miss = fitted ? [] : treeMissingIds(c.id);
     if (!fitted) { r = Sim.fit(dishObj(), S.build, c.id, layerArg(k)); if (!r.ok) why = r.reason; }
+    if (miss.length) why = 'Needs ' + treeNames(miss) + ' fitted first';
+    var lock = fitted ? '' : earnLock(c.id); if (lock) why = lock;
     w.setAttribute('aria-pressed', fitted ? 'true' : 'false');
-    if (fitted) w.classList.add('fitted'); if (why) w.classList.add('blocked');
-    var real = c.real, game = c.game || c.sentence, ef = effectsFor(dishObj(), c, fitted);
+    if (fitted) w.classList.add('fitted'); if (why) w.classList.add('blocked'); if (miss.length || lock) w.classList.add('lk');
+    var real = c.real, d0 = dishObj(), game = c.game || c.sentence, ef = effectsFor(d0, c, fitted), g3 = null;
+    if (d0.agents) { g3 = c.game3 || (c.world === 3 ? c.game : c.real); game = g3; }   // the thick water: a card's game3 text; its own text if it is new here; else the real biology
     var inn = el('div', 'in'), tb = el('div', 'thumbbox'), tx = el('div', 'otxt');
     tb.appendChild(thumbEl(c.id, 'thumb')); tb.appendChild(el('div', 'fittag', 'Fitted'));
     var en = c.kind === 'metabolism' || c.kind === 'part' ? (c.energy ? 'Energy ' + c.energy : 'No energy') : 'No energy';
@@ -537,11 +876,14 @@
     w.title = game + (c.layers > 1 ? ' Takes both Envelope layers.' : '');
     tx.innerHTML = '<div class="oh"><b>' + esc(c.name) + '</b><span class="shelf ' + (mach ? 'mach' : 'bio') + '">' + (mach ? 'Machine' : 'Biology') + '</span></div>' +
       '<div class="eff chg" title="' + esc(chgTxt) + '">' + (fitted ? lead : '<i>Changes:</i>') + '<span>' + chg + '<span class="ef en">' + en + '</span></span></div>' +
-      '<p class="real" title="' + esc(real) + '"><i>Real</i>' + esc(real) + '</p>' +
-      '<div class="why">' + (why ? esc(why) : (c.layers > 1 ? 'Takes both Envelope layers.' : '')) + '</div>';
+      (g3 != null ? '<p class="g3" title="' + esc(g3) + '">' + esc(g3) + '</p>' : '') +
+      (g3 !== real ? '<p class="real" title="' + esc(real) + '"><i>Real</i>' + esc(real) + '</p>' : '') +
+      '<div class="why' + (miss.length || lock ? ' wlink' : '') + '">' + (why ? '<span class="wt">' + esc(why) + '</span>' : (c.layers > 1 ? 'Takes both Envelope layers.' : '')) + (miss.length || lock ? '<button type="button" class="treelink">Show in the skill tree</button>' : '') + '</div>';
     inn.appendChild(tb); inn.appendChild(tx); w.appendChild(inn);
+    var tl = w.querySelector('.treelink');
+    if (tl) { tl.addEventListener('click', function (e) { e.stopPropagation(); treeOpen(tl, c.id); }); tl.addEventListener('keydown', function (e) { e.stopPropagation(); }); }
     w.addEventListener('click', function () { toggleOption(k, c.id); });
-    w.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); S.focusId = c.id; toggleOption(k, c.id); } });
+    w.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); S.focusId = c.id; toggleOption(k, c.id); } });
     w.addEventListener('mouseenter', function () { previewOption(k, c.id); w.classList.add('pv'); });
     w.addEventListener('focus', function () { previewOption(k, c.id); w.classList.add('pv'); });
     w.addEventListener('mouseleave', function () { w.classList.remove('pv'); clearPreview(); });
@@ -549,16 +891,93 @@
     return w;
   }
   function emptyOptionEl(k) {
-    var sl = slotsNow(), isEmpty = fittedIds(k).length === 0, w = el('div', 'optempty' + (isEmpty ? ' fitted' : ''));
+    // This row is the way to take the part off. Its state word says whether the slot (the chosen layer, on the Skin) is empty now.
+    // A Machine rule in the Reflex slot is a part too, though it is not a card id, so it counts as fitted here.
+    var sl = slotsNow(), isEmpty = k === 'reflex' ? !sl.reflex : k === 'envelope' ? !sl.envelope[S.layer] : fittedIds(k).length === 0, w = el('div', 'optempty' + (isEmpty ? ' fitted' : ''));
     w.setAttribute('role', 'button'); w.tabIndex = 0; w.setAttribute('data-id', 'empty'); w.setAttribute('aria-pressed', isEmpty ? 'true' : 'false');
     var target = k === 'envelope' ? sl.envelope[S.layer] : undefined;
-    w.innerHTML = '<span>Empty' + (k === 'envelope' ? ' (this layer)' : '') + '</span><span>' + (isEmpty ? 'Fitted' : 'take it off') + '</span>';
+    w.innerHTML = '<span>Empty' + (k === 'envelope' ? ' (this layer)' : '') + '</span><span>' + (isEmpty ? 'Nothing fitted' : 'take it off') + '</span>';
     function go() { if (isEmpty || (k === 'envelope' && !target)) { showPreviewText('This slot is already empty.', false); return; } doUnfit(k, target); }
-    w.addEventListener('click', go); w.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); S.focusId = 'empty'; go(); } });
+    w.addEventListener('click', go); w.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); S.focusId = 'empty'; go(); } });
     w.addEventListener('mouseenter', function () { if (!isEmpty && !(k === 'envelope' && !target)) previewOption(k, null); });
     w.addEventListener('focus', function () { if (!isEmpty && !(k === 'envelope' && !target)) previewOption(k, null); });
     w.addEventListener('mouseleave', clearPreview); w.addEventListener('blur', clearPreview);
     return w;
+  }
+
+  // ---------------------------------------------------------------- the path row: a lineage on this slot's shelf, shown as steps in order (fixed-size tiles, joined by arrows)
+  var STEP_MARK = {
+    fitted: TREE_MARK_FITTED(), ready: TREE_MARK_READY(), next: TREE_MARK_LOCK(), far: TREE_MARK_LOCK()
+  };
+  function TREE_MARK_FITTED() { return '<svg class="smark" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.5 8.3l2.3 2.3 4.7-5" fill="none" stroke="#0b0820" stroke-width="2"/></svg>'; }
+  function TREE_MARK_READY() { return '<svg class="smark" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 5v6M5 8h6" stroke="currentColor" stroke-width="1.6"/></svg>'; }
+  function TREE_MARK_LOCK() { return '<svg class="smark" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7.2" width="9" height="6.8" rx="1.2" fill="currentColor"/><path d="M5.4 7.2V5.4a2.6 2.6 0 0 1 5.2 0v1.8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>'; }
+  var STEP_WORD = { fitted: 'Fitted', ready: 'Ready', next: 'Locked', far: 'Locked' };
+  function lineageTitle(l) { var br = treeCall('treeBranches') || [], i; for (i = 0; i < br.length; i++) if (br[i].id === l) return br[i].name; return l; }
+  // The lineages whose cards are on this slot's shelf on this dish: [{ lineage, items: [{ c, ls }] }], items in step order.
+  function lineageGroups(d, k) {
+    var gs = {}, order = [];
+    Sim.offered(d, k).forEach(function (c) { var ls = lineageOf(c.id); if (!ls) return; if (!gs[ls.lineage]) { gs[ls.lineage] = []; order.push(ls.lineage); } gs[ls.lineage].push({ c: c, ls: ls }); });
+    return order.map(function (l) { gs[l].sort(function (a, b) { return a.ls.stage - b.ls.stage; }); return { lineage: l, items: gs[l] }; });
+  }
+  function stepModel(g) {
+    var ids = S.build ? buildCardIds(S.build) : [], gone = false;
+    return g.items.map(function (it, i) {
+      var id = it.c.id, fit = ids.indexOf(id) >= 0, ready = it.ls.stage <= 1 || !!S.evolved[id], st = fit ? 'fitted' : ready ? 'ready' : !gone ? 'next' : 'far', reason = '';
+      if (!fit && !ready) gone = true;
+      var pv = i ? g.items[i - 1].c : null;
+      if (st === 'next') reason = S.used[lsId(it.ls.prev)] ? 'It is ready to evolve. Win a dish and choose it.' : 'Clear a dish with ' + (pv ? pv.name : 'the step before') + ' fitted.';
+      else if (st === 'far') reason = 'Evolve ' + (pv ? pv.name : 'the step before') + ' first.';
+      return { id: id, c: it.c, stage: it.ls.stage, state: st, reason: reason, i: i };
+    });
+  }
+  function stepGame(c) { var d0 = dishObj(); return d0.agents ? (c.game3 || (c.world === 3 ? c.game : c.real)) : (c.game || c.sentence); }
+  // The detail shows the game text's first sentence and the real line first; the rest of the game text is behind a fixed "more" toggle (the box never changes size).
+  function firstSentence(t) { var m = /^[\s\S]*?[.!?](?=\s|$)/.exec(t); return m ? m[0] : t; }
+  function pathDetailHtml(m, n) {
+    var c = m.c, g = stepGame(c) || '', f1 = firstSentence(g), more = g.length > f1.length + 1, open = more && S.pathMore === m.id;
+    return '<div class="pd-h"><b>' + esc(c.name) + '</b><span>Step ' + m.stage + ' of ' + n + ' \u00B7 ' + (c.energy ? 'Energy ' + c.energy : 'No energy') + ' \u00B7 ' + STEP_WORD[m.state] + '</span>' +
+      '<button type="button" class="pd-more" aria-expanded="' + (open ? 'true' : 'false') + '"' + (more ? '' : ' hidden') + '>' + (open ? 'less' : 'more') + '</button></div>' +
+      '<div class="pd-t' + (open ? ' open' : '') + '"><p class="pd-g">' + esc(open ? g : f1) + '</p><p class="pd-r" title="' + esc(c.real || '') + '"><i>Real</i>' + esc(c.real || '') + '</p></div>' +
+      '<div class="pd-w">' + (m.reason ? esc(m.reason) : '') + '</div>' +
+      '<div class="pd-k">' + (m.stage > 1 ? 'This step still does everything the earlier steps do.' : 'Every later step does everything this step does.') + '</div>';
+  }
+  function pathBlock(d, k, g) {
+    var blk = el('div', 'pathblock'), model = stepModel(g), n = model.length;
+    blk.setAttribute('data-lineage', g.lineage);
+    blk.innerHTML = '<div class="path-h"><b>' + esc(lineageTitle(g.lineage)) + '</b><span class="path-tag">Path</span></div><div class="path-sub">Each step opens when a dish is cleared with the step before it.</div>' +
+      '<div class="pathstrip" role="group" aria-label="' + esc(lineageTitle(g.lineage)) + ' path, steps in order"></div><div class="pathdetail" aria-live="polite"></div>';
+    var strip = blk.querySelector('.pathstrip'), det = blk.querySelector('.pathdetail');
+    function shown() {
+      var by = {}; model.forEach(function (m) { by[m.id] = m; });
+      var ready = model.filter(function (x) { return x.state === 'ready'; });
+      var m = (S.pathFocus && by[S.pathFocus]) || model.filter(function (x) { return x.state === 'fitted'; })[0] || (S.pathSel && by[S.pathSel]) || ready[ready.length - 1] || model[0];
+      return m;
+    }
+    det.addEventListener('click', function (e) { var b = e.target.closest ? e.target.closest('.pd-more') : null; if (!b) return; var id = det.getAttribute('data-id'); S.pathMore = S.pathMore === id ? null : id; paint(); var nb = det.querySelector('.pd-more'); if (nb) nb.focus({ preventScroll: true }); });
+    function paint() { var m = shown(); det.innerHTML = pathDetailHtml(m, n); det.setAttribute('data-id', m.id); Array.prototype.forEach.call(strip.querySelectorAll('.step'), function (t) { t.classList.toggle('sel', t.getAttribute('data-id') === m.id); }); }
+    model.forEach(function (m, i) {
+      if (i) strip.insertAdjacentHTML('beforeend', '<svg class="parr' + (m.state === 'next' || m.state === 'far' ? ' dash' : '') + '" viewBox="0 0 14 24" aria-hidden="true"><path d="M1 12h9M6.5 7.5 11 12l-4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>');
+      var t = el('div', 'step st-' + m.state); t.tabIndex = 0; t.setAttribute('role', 'button'); t.setAttribute('data-id', m.id); t.setAttribute('data-stage', m.stage); t.setAttribute('data-state', m.state); t.setAttribute('data-reason', m.reason);
+      t.setAttribute('aria-pressed', m.state === 'fitted' ? 'true' : 'false');
+      t.setAttribute('aria-label', 'Step ' + m.stage + ', ' + m.c.name + ', ' + (m.c.energy ? 'energy ' + m.c.energy : 'no energy') + ', ' + STEP_WORD[m.state].toLowerCase() + (m.reason ? '. ' + m.reason : ''));
+      t.innerHTML = '<div class="s1">' + STEP_MARK[m.state] + '<span>Step ' + m.stage + '</span></div><div class="s2">' + esc(m.c.name) + '</div><div class="s3">' + (m.c.energy ? 'Energy ' + m.c.energy : 'No energy') + '</div><div class="s4">' + STEP_WORD[m.state] + '</div><div class="s5">' + (m.state === 'next' ? esc(m.reason) : '') + '</div>';
+      function toggle() { S.pathSel = m.id; S.focusId = m.id; var r = m.state === 'fitted' ? doUnfit(k, m.id) : doFit(k, m.id); if (!r || !r.ok) { S.focusId = null; paint(); } }
+      t.addEventListener('click', toggle);
+      t.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggle(); } });
+      function on() { S.pathFocus = m.id; previewOption(k, m.id); if (m.state === 'next' || m.state === 'far') showPreviewText(m.reason, true); t.classList.add('pv'); paint(); }
+      function off() { S.pathFocus = null; t.classList.remove('pv'); clearPreview(); paint(); }
+      t.addEventListener('mouseenter', on); t.addEventListener('focus', on); t.addEventListener('mouseleave', off); t.addEventListener('blur', off);
+      strip.appendChild(t);
+    });
+    paint();
+    return blk;
+  }
+  function renderPath(d, k) {
+    var box = $('pathBox'), gs = lineageGroups(d, k);
+    box.innerHTML = ''; box.hidden = !gs.length; $('optPanel').classList.toggle('haspath', gs.length > 0);
+    gs.forEach(function (g) { box.appendChild(pathBlock(d, k, g)); });
+    return gs;
   }
   function renderLayers(k) {
     var box = $('layerRows'); box.innerHTML = '';
@@ -596,23 +1015,49 @@
     var d = dishObj(), k = S.slot, info = Cards.slotInfo(k), list = $('optList');
     if (!selectable(k)) { k = S.slot = d.slots[0]; info = Cards.slotInfo(k); }
     $('optName').innerHTML = esc(info.name) + (S.pointed && d.opens.indexOf(k) >= 0 ? ' <span class="pill pt">new slot</span>' : '');
-    $('optBlurb').textContent = info.blurb + ' On the cell: ' + info.where + '.';
+    $('optBlurb').textContent = (d.agents && BLURB3[k] || info.blurb) + ' On the cell: ' + info.where + '.';
     renderLayers(k);
     var keepTop = list.scrollTop;
     list.innerHTML = '';
-    Sim.offered(d, k).forEach(function (c) { list.appendChild(optionEl(k, c)); });
+    var pg = renderPath(d, k), inPath = {}; pg.forEach(function (g) { g.items.forEach(function (it) { inPath[it.c.id] = true; }); });
+    Sim.offered(d, k).forEach(function (c) { if (!inPath[c.id]) list.appendChild(optionEl(k, c)); });
     if (info.empty) list.appendChild(emptyOptionEl(k));
     if (k === 'reflex' && d.allowed.sensors.length) { var rb = el('div', 'rulebox'); rb.id = 'ruleBox'; list.appendChild(rb); renderRuleBox(); }
-    list.classList.toggle('showreal', !!S.real);
+    list.classList.toggle('showreal', !!S.real); list.classList.toggle('g3', !!d.agents);
     list.scrollTop = S.lastOptSlot === k ? keepTop : 0; S.lastOptSlot = k;
-    if (S.focusId) { var ft = list.querySelector('[data-id="' + S.focusId + '"]'); S.focusId = null; if (ft) ft.focus({ preventScroll: true }); }
+    if (S.focusId) { var ft = $('pathBox').querySelector('[data-id="' + S.focusId + '"]') || list.querySelector('[data-id="' + S.focusId + '"]'); S.focusId = null; if (ft) ft.focus({ preventScroll: true }); }
   }
 
   // ---------------------------------------------------------------- machine rule: tap-to-fill sentence (the Reflex slot's Machine option)
   function ruleComplete() { var r = S.rule; return r.sensor && r.cmp && r.value != null && r.action; }
+  // Values a sensor offers on this dish: a dish with its own rule (habitat 3) lists them in d.rule.marks, every other dish uses the card's list.
+  function ruleValues(d, id) { return d && d.rule && d.rule.marks && d.rule.marks[id] ? d.rule.marks[id] : Cards.sensor(id).values; }
+  function ruleOtherwise(d) { return S.rule.otherwise || (d && d.rule && d.rule.defaultOtherwise) || null; }
+  // The rule of an agent dish (dish 16): WHEN <sensor> <is above | is below> <mark> / DO <action> / OTHERWISE <action>, on three fixed rows with fixed-width blanks.
+  function ruleBlank3(kind, text, filled, title) { return '<button type="button" class="blank b-' + kind + (filled ? '' : ' empty') + '" data-rule="' + kind + '" title="' + esc(title || text) + '">' + esc(text) + '</button>'; }
+  function renderRuleBox3() {
+    var d = dishObj(), box = $('ruleBox'), r = S.rule; if (!box) return;
+    var sn = r.sensor ? Cards.sensor(r.sensor) : null, ac = r.action ? Cards.action(r.action) : null, ow = ruleOtherwise(d), oa = ow ? Cards.action(ow) : null;
+    var inst = S.build.reflex && S.build.reflex.kind === 'machine';
+    var vtxt = r.value != null ? String(r.value) + (sn && sn.unit ? ' ' + sn.unit : '') : 'mark';
+    var rows = '<div class="r3row"><span class="r3k">WHEN</span>' + ruleBlank3('sensor', sn ? sn.name : 'sensor', !!sn) + ruleBlank3('cmp', r.cmp ? (r.cmp === 'lt' ? 'is below' : 'is above') : 'above / below', !!r.cmp) + ruleBlank3('value', vtxt, r.value != null) + '</div>' +
+      '<div class="r3row"><span class="r3k">DO</span>' + ruleBlank3('action', ac ? ac.name : 'action', !!ac) + '</div>' +
+      '<div class="r3row"><span class="r3k">OTHERWISE</span>' + ruleBlank3('otherwise', oa ? oa.name : 'action', !!oa) + '</div>';
+    var note = (sn ? (NOTE3[sn.id] || sn.note) + ' ' : '') + (ac ? (NOTE3[ac.id] || ac.note) : '');
+    box.className = 'rulebox' + (inst ? ' sel' : '');
+    box.innerHTML = '<div class="rulecard rule3"><div class="c-head"><b>Machine rule</b><span class="shelf mach">Machine</span><span class="cost">No energy</span></div>' + rows +
+      '<div class="rulenote">' + esc(note || 'Tap each blank to fill in the rule. A cell reads only its own square, and the reading is exact: no real cell can do that.') + '</div>' +
+      '<div class="rulebtns"><button type="button" id="ruleUse"' + (ruleComplete() && !inst ? '' : ' disabled') + '>Use this rule</button><button type="button" id="ruleClear"' + (inst ? '' : ' disabled') + '>Remove rule</button></div></div>';
+    Array.prototype.forEach.call(box.querySelectorAll('[data-rule]'), function (b) {
+      b.addEventListener('click', function (e) { e.stopPropagation(); openRulePop(b, b.getAttribute('data-rule')); });
+    });
+    $('ruleUse').addEventListener('click', installRule);
+    $('ruleClear').addEventListener('click', function () { doUnfit('reflex'); });
+  }
   function ruleBlank(kind, text, filled) { return '<button type="button" class="blank' + (filled ? '' : ' empty') + '" data-rule="' + kind + '">' + esc(text) + '</button>'; }
   function renderRuleBox() {
     var d = dishObj(), box = $('ruleBox'), r = S.rule; if (!box) return;
+    if (d.agents) { renderRuleBox3(); return; }
     var sn = r.sensor ? Cards.sensor(r.sensor) : null, ac = r.action ? Cards.action(r.action) : null;
     var inst = S.build.reflex && S.build.reflex.kind === 'machine';
     var sent = 'When ' + ruleBlank('sensor', sn ? sn.name : 'sensor', !!sn) + ' is ' + ruleBlank('cmp', r.cmp ? (r.cmp === 'lt' ? 'less than' : 'more than') : 'more / less', !!r.cmp) + ' ' +
@@ -631,7 +1076,7 @@
   }
   function ruleChoose(kind, val) {
     var r = S.rule;
-    if (kind === 'sensor') { r.sensor = val; var sn = Cards.sensor(val); if (sn.values.indexOf(r.value) < 0) r.value = null; }
+    if (kind === 'sensor') { r.sensor = val; if (ruleValues(dishObj(), val).indexOf(r.value) < 0) r.value = null; }
     else r[kind] = val;
     var inst = S.build.reflex && S.build.reflex.kind === 'machine';
     if (ruleComplete() && inst) installRule(); else renderRuleBox();
@@ -639,17 +1084,19 @@
   }
   function installRule() {
     if (!ruleComplete()) return;
-    var r = S.rule, res = Sim.fit(dishObj(), S.build, { kind: 'machine', sensor: r.sensor, cmp: r.cmp, value: r.value, action: r.action });
+    var r = S.rule, d = dishObj(), rf = { kind: 'machine', sensor: r.sensor, cmp: r.cmp, value: r.value, action: r.action };
+    if (d.agents) rf.otherwise = ruleOtherwise(d);   // an agent dish's rule is "when ..., X; otherwise Y"
+    var res = Sim.fit(d, S.build, rf);
     if (!res.ok) { setNote(res.reason); return; }
     commit(res.build);
   }
   function openRulePop(btn, kind) {
     var d = dishObj(), items = [], r = S.rule;
     if (kind === 'sensor') d.allowed.sensors.forEach(function (id) { var s = Cards.sensor(id); items.push({ label: s.name + (s.global ? '  (global)' : ''), note: s.note, v: id }); });
-    else if (kind === 'cmp') items = [{ label: 'more than', v: 'gt' }, { label: 'less than', v: 'lt' }];
+    else if (kind === 'cmp') items = d.agents ? [{ label: 'is above', v: 'gt' }, { label: 'is below', v: 'lt' }] : [{ label: 'more than', v: 'gt' }, { label: 'less than', v: 'lt' }];
     else if (kind === 'value') {
       if (!r.sensor) { setNote('Pick a sensor first.'); return; }
-      Cards.sensor(r.sensor).values.forEach(function (v) { items.push({ label: String(v) + (Cards.sensor(r.sensor).unit ? ' ' + Cards.sensor(r.sensor).unit : ''), v: v }); });
+      ruleValues(d, r.sensor).forEach(function (v) { items.push({ label: String(v) + (Cards.sensor(r.sensor).unit ? ' ' + Cards.sensor(r.sensor).unit : ''), v: v }); });
     } else d.allowed.actions.forEach(function (id) { var a = Cards.action(id); items.push({ label: a.name, note: a.note, v: id }); });
     openPop(btn, items, function (v) { ruleChoose(kind, v); });
   }
@@ -703,25 +1150,29 @@
   }
   function pos(v) { return (Math.max(0, Math.min(1, v)) * 100).toFixed(1) + '%'; }
   // s: the stat now. o: { ghost: stat to show as a ghost marker, diff: statDiff entry (for the arrow), fail: show the failed tag, ghostVerdict: bool }
+  function mpos(v) { return (Math.max(0.015, Math.min(0.985, v)) * 100).toFixed(1) + '%'; }   // markers stay fully visible at either end
   function setBar(row, s, o) {
     o = o || {};
     var z = row.querySelector('.sb-zone'), m = row.querySelector('.sb-mark'), g = row.querySelector('.sb-ghost'), v = row.querySelector('.sb-verdict'), ar = row.querySelector('.sb-arrow'), tg = row.querySelector('.sb-tag');
     var unc = s.state === 'unchecked';   // not checked on this dish: greyed, no safe zone, never red
     z.style.display = unc ? 'none' : '';
     z.style.left = pos(s.safe[0]); z.style.width = ((s.safe[1] - s.safe[0]) * 100).toFixed(1) + '%';
-    var ok = s.state === 'safe', edge = s.state === 'edge';
-    if (s.value == null) m.style.display = 'none'; else { m.style.display = ''; m.style.left = pos(s.value); }
-    m.className = 'sb-mark ' + (unc ? 'neu' : ok ? 'ok' : edge ? 'amb' : 'bad');
     var gh = o.ghost, showG = gh && gh.value != null && (s.value == null || Math.abs(gh.value - s.value) >= 0.004 || gh.state !== s.state);
     if (o.forecast) { showG = o.forecast.value != null && (s.value == null || Math.abs(o.forecast.value - s.value) >= 0.004); gh = o.forecast; }
-    g.style.display = showG ? '' : 'none';
+    // While a card or dial is previewed, the solid marker slides to where the change would put it and the outline stays where the cell is now.
+    var pv = !!(o.ghost && showG), sh = pv ? gh : s, ok = sh.state === 'safe', edge = sh.state === 'edge';
+    if (sh.value == null) m.style.display = 'none'; else { m.style.display = ''; m.style.left = mpos(sh.value); }
+    m.className = 'sb-mark ' + (unc ? 'neu' : ok ? 'ok' : edge ? 'amb' : 'bad');
+    row.classList.toggle('safe', !unc && ok); row.classList.toggle('pvrow', pv);
+    g.style.display = showG && (!pv || s.value != null) ? '' : 'none';
     // ghost colour = the tone of the change (the same tone as the card's words)
     var gtone = 'bad';
     if (showG && o.ghost) gtone = unc ? 'neu' : (o.diff && o.diff.better === true) ? 'ok' : (o.diff && o.diff.better === false) ? 'bad' : gh.state === 'safe' ? 'ok' : gh.state === 'edge' ? 'amb' : 'bad';
-    if (showG) { g.style.left = pos(gh.value); g.className = 'sb-ghost' + (o.forecast ? ' fc' : ' ' + gtone); }
+    if (showG) { g.style.left = mpos(pv ? s.value : gh.value); g.className = 'sb-ghost' + (o.forecast ? ' fc' : pv ? ' was' : ' ' + gtone); }
     var txt = s.verdict, cls = unc ? 'neu' : ok ? 'ok' : edge ? 'amb' : 'bad';
     if (o.ghost && showG) { txt = '\u2192 ' + gh.verdict; cls = gtone + ' pv'; }
-    if (v.textContent !== txt) v.textContent = txt;
+    if (!unc && ok) txt = '\u2713 ' + txt.replace(/^\u2192 /, '');   // safe reads at a glance: a tick, never an arrow
+    if (v.textContent !== txt) { v.textContent = txt; v.title = txt; }
     v.className = 'sb-verdict ' + cls;
     var arrow = '', acl = '';
     if (o.ghost && o.diff && showG) {
@@ -793,7 +1244,7 @@
   function startStandard() {
     var d = dishObj(); if (!isExam(d)) return;
     var c = Lv.standard(d.id); if (!c) return;
-    S.layer = 0; S.rule = { sensor: null, cmp: null, value: null, action: null };
+    S.layer = 0; S.rule = blankRule();
     commit(Sim.conform(d, c));
   }
   function renderAdapt(full) {
@@ -833,15 +1284,65 @@
   function doRun() {
     var d = dishObj(); if (!d) return null;
     var v = Sim.validate(d, S.build); if (!v.ok) { renderProblems(); return null; }
-    S.ghost = S.prev[d.id] || null;
+    compareSet(false); var C = S.cmp, prevRec = S.prev[d.id] || null;
+    if (C.kept && !C.base) C.base = prevRec;   // Keep switched on before any baseline existed: the first earlier run becomes the baseline
+    S.ghost = C.kept && C.base ? C.base : prevRec;
     var run = simulate(S.build);
-    S.mode = 'run'; S.run = run; S.runCount++; S.prev[d.id] = { share: run.H.share, total: run.H.total };
-    S.stopAt = null; S.runFinished = false; S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = 2; setSpeedUI();
-    if (run.v.win) { S.cleared[d.id] = true; S.wins[d.id] = copy(S.build); save('cleared2', S.cleared); save('wins2', S.wins); S.lastRunLost = false; recordGrade(run, d, S.build); }
+    S.mode = 'run'; S.run = run; S.runCount++; if (!(C.kept && C.base)) S.prev[d.id] = { share: run.H.share, total: run.H.total, build: copy(S.build) };
+    ezReset(); S.ez.tPrev = 0; cmpSync();
+    S.stopAt = null; S.runFinished = false; S.t = 0; S.playing = true; S.resultShown = false; S.troubleTick = trouble(run); S.speed = d.agents ? 1 : 2; setSpeedUI();
+    S.evolvedNew = []; S.evo = null;
+    if (run.v.win) { S.cleared[d.id] = true; S.wins[d.id] = copy(S.build); save('cleared2', S.cleared); save('wins2', S.wins); recordUsed(S.build, d.id); S.lastRunLost = false; recordGrade(run, d, S.build); }
     else { S.lastAutopsy = run.autopsy; S.lastRunLost = true; S.tipLevel = 0; setFail(run, S.build); }
     closeOverlay(); show('run');
     return run;
   }
+
+  // ---------------------------------------------------------------- Run: compare with the previous run (hold the button to see it in the dish at the same tick and camera)
+  function cmpDiffText(prevB, curB, d) {
+    var out = [], pn = Sim.normalize(prevB), cn = Sim.normalize(curB);
+    if (pn.metabolism !== cn.metabolism) out.push('Power ' + cardName(pn.metabolism) + ' to ' + cardName(cn.metabolism));
+    (cn.parts || []).forEach(function (id) { if ((pn.parts || []).indexOf(id) < 0) out.push(cardName(id) + ' added'); });
+    (pn.parts || []).forEach(function (id) { if ((cn.parts || []).indexOf(id) < 0) out.push(cardName(id) + ' removed'); });
+    var pr = pn.reflex ? JSON.stringify(pn.reflex) : '', cr = cn.reflex ? JSON.stringify(cn.reflex) : '';
+    if (pr !== cr) out.push(!pn.reflex ? reflexName(cn.reflex) + ' added' : !cn.reflex ? reflexName(pn.reflex) + ' removed' : (reflexName(pn.reflex) === reflexName(cn.reflex) ? reflexName(cn.reflex) + ' changed' : reflexName(pn.reflex) + ' to ' + reflexName(cn.reflex)));
+    if (pn.pace !== cn.pace) out.push('Pace ' + pn.pace + ' to ' + cn.pace);
+    if ((pn.slop || 0) !== (cn.slop || 0)) out.push('Sloppiness ' + (pn.slop || 0) + ' to ' + (cn.slop || 0));
+    if (!out.length) return 'Nothing differs: this is the same cell as the previous run.';
+    var eff = ''; try { eff = changesText(changesBetween(d, prevB, curB)); } catch (e) { eff = ''; }
+    return 'Changed: ' + out.join(', ') + (eff ? '. Effect: ' + eff : '');
+  }
+  function cmpSupported() { var g = GL.r; return !g || !g.supported || typeof g.eventZoom === 'function'; }   // a renderer that can keep the camera across setRun; the simple 2D view needs nothing
+  function cmpSync() {
+    var C = S.cmp, run = S.run, b = $('cmpBtn'), base = S.screen === 'run' && S.mode === 'run' ? S.ghost : null, why = '';
+    if (!base || !base.build) why = S.mode === 'watch' ? 'Compare works on your own runs, not on Watch.' : 'No previous run on this dish yet. Run a changed cell and this holds the one before.';
+    else if (!cmpSupported()) why = 'This view cannot hold the camera still while swapping runs.';
+    b.disabled = !!why; b.title = why || 'Hold to see the previous run in the dish at this tick. Release to come back.';
+    $('cmpKeep').checked = C.kept; $('cmpKeepL').title = 'Keep: later runs compare against the same previous run instead of replacing it.';
+    C.diff = why ? '' : cmpDiffText(base.build, run.build, run.dish);
+    var t = why ? 'Nothing to compare yet.' : C.diff; if ($('cmpDiff').textContent !== t) { $('cmpDiff').textContent = t; $('cmpDiff').title = t; }
+    C.available = !why;
+  }
+  // The previous run, simulated once with the game's own path and cached until the baseline changes.
+  function cmpRun() { var C = S.cmp, base = S.ghost; if (!base || !base.build) return null; if (!C.run || C.runFor !== base) { C.run = simulate(base.build); C.runFor = base; } return C.run; }
+  function compareSet(on) {
+    var C = S.cmp, g = GL.r, want = !!on; if (!C) return false;
+    if (want) { if (S.screen !== 'run' || S.mode !== 'run' || !S.run || $('cmpBtn').disabled || S.overlayOpen) want = false; else if (!cmpRun()) want = false; }
+    if (want === C.held) return C.held;
+    C.held = want; var shown = want ? C.run : S.run;
+    if (g && g.supported && shown && g.run !== shown) { try { setGLRun(g, shown, true); g.setTick(Math.min(S.t, shown.T)); } catch (e) { if (window.console) console.error(e && e.stack || e); } }
+    var b = $('cmpBtn'); b.classList.toggle('held', want); b.textContent = want ? 'Showing: previous run' : 'Hold: previous run';
+    return C.held;
+  }
+  (function () {
+    var b = $('cmpBtn'), down = function () { compareSet(true); }, up = function () { compareSet(false); };
+    b.addEventListener('pointerdown', function (e) { if (e.button) return; down(); });
+    ['pointerup', 'pointercancel', 'pointerleave', 'blur'].forEach(function (n) { b.addEventListener(n, up); });
+    b.addEventListener('keydown', function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!e.repeat) down(); } });
+    b.addEventListener('keyup', function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); up(); } });
+    b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    $('cmpKeep').addEventListener('change', function () { S.cmp.kept = this.checked; S.cmp.base = this.checked ? S.ghost || null : null; });
+  })();
 
   // ---------------------------------------------------------------- Run: playback
   function stripCards(run) {
@@ -856,7 +1357,7 @@
       var c = Cards.part(id), tag = { quorum: 'acts when crowded', radio: 'acts to hold share', wall: 'acts in trouble', repair: 'acts in trouble' }[id] || 'always on';
       add(id, c.name, c.shelf === 'machine', tag, { quorum: 'q', radio: 'r', wall: 't', repair: 't' }[id] || 'const');
     });
-    if (b.reflex) add('reflex', reflexName(b.reflex), b.reflex.kind === 'machine', 'armed', 'fire', b.reflex.kind === 'bio' ? b.reflex.id : 'machinerule');
+    if (b.reflex) add('reflex', reflexName(b.reflex), b.reflex.kind === 'machine', 'armed', 'fire', b.reflex.kind === 'bio' ? b.reflex.id : (b.reflex.sensor === 'temp' || b.reflex.action === 'hotter' || b.reflex.action === 'cooler') ? 'compass' : 'machinerule');
     if (b.reflex) { var mx = 0; for (var t = 0; t <= run.T; t++) if (run.H.fires[t] > mx) mx = run.H.fires[t]; run.fired = mx >= 0.03; }
   }
   function anyChannel(run) { return D.CH.some(function (c) { return run.channels[c.id]; }); }
@@ -869,23 +1370,32 @@
       if (!run.channels[c.id]) return;
       var bg = { stripes: 'repeating-linear-gradient(135deg,' + c.color + ' 0 2px,#10060a 2px 4px)', dots: 'radial-gradient(' + c.color + ' 1.3px,#0a0a05 1.7px) 0 0/4px 4px',
         cross: 'repeating-linear-gradient(45deg,' + c.color + ' 0 1px,#0a0814 1px 4px),repeating-linear-gradient(-45deg,' + c.color + ' 0 1px,transparent 1px 4px)',
-        zigzag: 'repeating-linear-gradient(90deg,' + c.color + ' 0 1px,#04101a 1px 3px)' }[c.pat];
+        zigzag: 'repeating-linear-gradient(90deg,' + c.color + ' 0 1px,#04101a 1px 3px)', checks: 'repeating-conic-gradient(' + c.color + ' 0 25%,#080a14 0 50%) 0 0/6px 6px' }[c.pat];
       keyHtml += '<span><i style="background:' + bg + ';border:1px solid ' + c.color + '"></i>' + c.name + '</span>';
     });
     $('ribbonKey').innerHTML = any ? keyHtml + '<span style="margin-left:auto">leading suspicion each tick</span>' : '';
-    buildBars($('liveBars'), d.stats); S.liveKey = '';
+    buildBars($('liveBars'), d.stats); $('liveBars').classList.toggle('three', d.stats.length > 4); S.liveKey = '';
     $('immune').style.display = any ? '' : 'none';
     $('ribbon').style.display = any ? '' : 'none';
     $('ribbonKey').style.display = any ? '' : 'none';
     $('legGrn').style.display = any ? '' : 'none';
-    $('g1Title').innerHTML = any ? 'Your share of the dish <span class="dim">band and event marked</span>' : 'Your colony <span class="dim">percent of what you started with</span>';
-    $('g2Title').innerHTML = any ? 'Suspicion total <span class="dim">stage lines at 1.5, 4.5 and 8</span>' : 'Lost to acid <span class="dim">share of your colony dissolved each tick</span>';
+    $('legWaste').hidden = !!d.agents; $('legBoul').hidden = !d.agents; $('legLight').hidden = !(d.agents && d.agents.light);   // the thick water has no waste trail; its green boulders are the food
+    S.chartCaps = any ? ['Your share of the dish: band and event marked', 'Suspicion total: stage lines at 1.5, 4.5 and 8'] : ['Your colony: percent of what you started with', 'Lost to acid: share of your colony dissolved each tick'];
+    $('tabShare').textContent = any ? 'Your share' : 'Your colony'; $('tabSusp').textContent = any ? 'Suspicion' : 'Lost to acid';
+    setChartTab(S.chartTab || 'share');
     var imm = $('immune'); imm.innerHTML = '<div class="stg" data-st="1">Curiosity</div><div class="stg" data-st="2">Inspection</div><div class="stg" data-st="3">Response</div><div class="kill" id="killTxt"></div>';
     S.lastStage = -1; S.vcache = '';
     $('skipBtn').textContent = S.mode === 'watch' ? 'Skip' : 'Skip to trouble';
     $('resultBtn').style.visibility = S.mode === 'watch' ? 'hidden' : 'visible';
     $('readLine').textContent = '';
-    setPlayLabel(); renderVerdict();
+    setPlayLabel(); renderVerdict(); cmpSync();
+  }
+  function setChartTab(k) {
+    S.chartTab = k; var share = k === 'share';
+    $('tabShare').classList.toggle('on', share); $('tabShare').setAttribute('aria-selected', share ? 'true' : 'false');
+    $('tabSusp').classList.toggle('on', !share); $('tabSusp').setAttribute('aria-selected', share ? 'false' : 'true');
+    $('paneShare').hidden = !share; $('paneSusp').hidden = share;
+    $('chartCap').textContent = (S.chartCaps || ['', ''])[share ? 0 : 1];
   }
   function setPlayLabel() { $('playBtn').textContent = S.playing ? 'Pause' : 'Play'; }
   function setSpeedUI() { Array.prototype.forEach.call(document.querySelectorAll('#speeds button'), function (x) { x.classList.toggle('on', +x.getAttribute('data-sp') === S.speed); }); }
@@ -893,14 +1403,14 @@
     var run = S.run; if (!run) return;
     var text = '', btn = '';
     if (S.mode === 'watch') {
-      if (!S.watchDone) text = 'Watching your cell as it is...';
+      if (!S.watchDone) text = '';
       else if (run.v.win) { text = 'Your carried cell already survives this dish.'; btn = 'Continue'; }
-      else { text = run.autopsy.headline + ' ' + run.autopsy.text; btn = 'Adapt your cell'; }
-    } else if (!S.runFinished) text = 'Running your changed cell...';
+      else { text = headlineOf(run.autopsy) + ' ' + findingBody(run.autopsy); btn = 'Adapt your cell'; }
+    } else if (!S.runFinished) text = '';
     else if (run.v.win) { text = 'Your cell made it. The guards did not notice.'; btn = 'See result'; }
-    else { text = run.autopsy.headline + ' ' + run.autopsy.text; btn = 'Back to Adapt'; }
+    else { text = headlineOf(run.autopsy) + ' ' + findingBody(run.autopsy); btn = 'Back to Adapt'; }
     var key = text + '|' + btn; if (key === S.vcache) return; S.vcache = key;
-    $('verdictText').textContent = text;
+    $('verdictText').textContent = text; $('verdictText').title = text;
     var b = $('verdictBtn'); b.textContent = btn || 'Adapt your cell'; b.style.visibility = btn ? 'visible' : 'hidden';
   }
   function verdictAction() {
@@ -920,14 +1430,21 @@
     if (S.mode === 'watch') { S.t = S.stopAt; S.playing = false; setPlayLabel(); glJump(); watchFinished(); return; }
     var t = S.troubleTick;
     if (t < 0) { if (run.autopsy && run.autopsy.from) t = run.autopsy.from; else { flashSkip('No trouble in this run'); return; } }
-    S.playing = false; S.t = t; setPlayLabel(); glJump();
+    S.playing = false; S.t = t; setPlayLabel(); glJump(S.mode === 'run' && !run.v.win ? ezLocate(run) : null);
   }
   function flashSkip(msg) { var b = $('skipBtn'), old = 'Skip to trouble'; b.textContent = msg; setTimeout(function () { b.textContent = old; }, 1600); }
+  // Dish 1 Watch at the default 1x: the first ticks play slowly so the player sees the pink cells dissolve (the colony is gone by tick 12).
+  function playRate() {
+    var run = S.run;
+    if (S.mode === 'run' && ezSlow()) return Math.min(S.speed, 1) * 0.35;   // playback slows while the camera is on the deciding moment
+    if (S.mode !== 'watch' || !run || !run.dish.aliveOnly || S.speed !== 1) return S.speed;
+    return S.t < 6 ? 0.25 : S.t < 12 ? 0.5 : 1;
+  }
   // Advance playback by dt seconds (also callable from the debug hook).
   function advance(dt) {
     var run = S.run; if (!run || !S.playing) return;
     if (S.holdUntil && performance.now() < S.holdUntil) return;   // the rack focus plays before the action starts
-    S.t += dt * 12 * S.speed;
+    S.t += dt * (run.agents ? 8 : 12) * playRate();   // 1x is 12 ticks a second; on the thick water's dishes (individual cells) it is 8, so swimmers can be followed
     var lim = S.mode === 'watch' && S.stopAt != null ? S.stopAt : run.T;
     if (S.t >= lim) {
       S.t = lim; S.playing = false; setPlayLabel();
@@ -951,26 +1468,42 @@
     var showFail = lost && (S.mode === 'watch' ? S.watchDone : S.resultShown || S.runFinished);
     var key = (final ? 'F' : ti) + '|' + (showFail ? 1 : 0) + '|' + S.mode + run.build.pace;
     if (key === S.liveKey) return; S.liveKey = key;
+    if (box.getAttribute('data-ids') !== d.stats.join(',') || box.children.length !== d.stats.length) { buildBars(box, d.stats); box.classList.toggle('three', d.stats.length > 4); }   // never draw into rows left over from another dish
     var fc = Sim.stats(d, run.build), live = final ? fc : Sim.liveStats(run, ti);
     $('liveTitle').innerHTML = final ? 'Forecast for your cell <span class="dim">the failing bar is marked</span>' : 'Live stats <span class="dim">outline marker = the forecast</span>';
     Array.prototype.forEach.call(box.children, function (row, i) {
       setBar(row, live[i], { forecast: final ? null : fc[i], fail: showFail && run.autopsy.stat === live[i].id });
     });
   }
+  // The simple (non-WebGL) dish view of an agent dish: draw3.js draws every recorded cell at its own place.
+  function drawFallback3(c, run, t) {
+    var w = c.clientWidth, h = c.clientHeight; if (!w || !h) return;
+    var dpr = Math.min(2, window.devicePixelRatio || 1), pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+    if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
+    var ctx = c.getContext('2d'), size = Math.min(w, h);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+    ctx.save(); ctx.translate((w - size) / 2, (h - size) / 2);
+    // draw3.js reads sim3's own constants (dish radius, grid, food scale), which a game-shaped run keeps under P3 while run.P is the game's.
+    var r3 = run.__fb3 || (run.__fb3 = { frames: run.frames, foods: run.foods, boulders: run.boulders, light: run.light || null, P: run.P3, build: run.build });
+    window.LookAliveDraw3.frame(ctx, r3, t, { cx: 0, cy: 0, zoom: 1 }, { size: size, reduced: reduced, trails: false });
+    ctx.restore();
+  }
   function drawRun(ts) {
     var run = S.run; if (!run) return;
     var H = run.H, T = run.T, ti = Math.min(T, Math.floor(S.t)), d = run.dish, any = anyChannel(run);
-    var si = Math.min(run.snaps.length - 1, Math.floor(S.t / 10)), A = run.snaps[si], B = run.snaps[Math.min(run.snaps.length - 1, si + 1)];
-    var f = si >= run.snaps.length - 1 ? 0 : (S.t - si * 10) / 10;
+    var sr = S.cmp.held && S.cmp.run ? S.cmp.run : run, st = Math.min(S.t, sr.T);   // sr: the run the dish shows (the previous run while the compare button is held)
+    var si = Math.min(sr.snaps.length - 1, Math.floor(st / 10)), A = sr.snaps[si], B = sr.snaps[Math.min(sr.snaps.length - 1, si + 1)];
+    var f = si >= sr.snaps.length - 1 ? 0 : (st - si * 10) / 10;
     var tm = reduced ? 0 : ts / 1000, acidNow = H.acid[ti] || 0;
     var gdish = dishGL();
     if (gdish) {
-      if (gdish.run !== run) setGLRun(gdish, run);
+      if (gdish.run !== sr) setGLRun(gdish, sr);
       $('runDish').style.display = 'none'; GL.canvas.style.display = '';
-      gdish.setTick(S.t); gdish.frame(ts);
+      gdish.setTick(st); gdish.frame(ts);
     } else {
       $('runDish').style.display = '';
-      D.drawCells($('runDish'), A, B, f, { n: run.n, nativeRef: H.nat[0], stage: any ? H.stage[ti] : 0, kill: any ? H.kill[ti] : 0, time: tm, stress: d.acid ? Math.min(1, acidNow * 3) : 0, acid: !!d.acid });
+      if (sr.agents && window.LookAliveDraw3) drawFallback3($('runDish'), sr, st, tm);   // individual cells: drawn where they really are
+      else D.drawCells($('runDish'), A, B, f, { n: sr.n, nativeRef: sr.H.nat[0], stage: any ? H.stage[ti] : 0, kill: any ? H.kill[ti] : 0, time: tm, stress: d.acid ? Math.min(1, acidNow * 3) : 0, acid: !!d.acid });
     }
     var rl = d.aliveOnly ? 'Colony alive: ' + Math.round(H.rob[ti] / H.rob[0] * 100) + '%   Lost to acid: ' + (acidNow * 100).toFixed(0) + '% per tick'
       : 'Your share of the dish: ' + (H.share[ti] * 100).toFixed(1) + '%' + (acidNow > 0.005 ? '   Lost to acid: ' + (acidNow * 100).toFixed(0) + '% per tick' : '');
@@ -982,6 +1515,8 @@
     });
     S.marks = marks;
     if (crashNow) rl += '   FOOD CRASH';
+    if (S.cmp.held && S.cmp.run) rl = 'PREVIOUS RUN   Your share of the dish: ' + (S.cmp.run.H.share[Math.min(S.cmp.run.T, ti)] * 100).toFixed(1) + '%';
+    else if (gdish && typeof gdish.eventActive === 'function' && gdish.eventActive() && S.ez.used) rl += '   ' + ezPhrase();
     if ($('readLine').textContent !== rl) $('readLine').textContent = rl;
     var pin = S.resultShown && run.autopsy && S.mode === 'run' ? { from: run.autopsy.from, to: run.autopsy.to } : null;
     var g = S.ghost, t;
@@ -992,7 +1527,7 @@
         S.lastStage = stg;
         Array.prototype.forEach.call($('immune').querySelectorAll('.stg'), function (e) { var n = +e.getAttribute('data-st'); e.classList.toggle('on', n <= stg); e.classList.toggle('s3', n === 3 && stg >= 3); });
       }
-      var kt = $('killTxt'), ktxt = stg >= 3 ? 'Killing ' + (H.kill[ti] * 100).toFixed(1) + '% of you per tick' : stg >= 1 ? 'Watching. Nothing dies yet.' : 'The immune system has not noticed you.';
+      var kt = $('killTxt'), ktxt = stg >= 3 ? 'Killing ' + (H.kill[ti] * 100).toFixed(1) + '% of you per tick' : stg >= 1 ? 'Watching. Nothing dies yet.' : 'The guards have not noticed you.';
       if (kt.textContent !== ktxt) { kt.textContent = ktxt; kt.classList.toggle('hot', stg >= 3); }
       var ymax = 0.3; for (t = 0; t <= T; t++) if (H.share[t] > ymax) ymax = Math.min(1, Math.ceil(H.share[t] * 10) / 10);
       var band = d.band;
@@ -1020,7 +1555,7 @@
       var on = c.kind !== 'const' && acting(c, run, ti);
       c.e.classList.toggle('flash', on);
       if (c.kind === 'fire') {
-        var never = S.t >= T - 0.5 && !run.fired, tag = never ? 'never triggered' : on ? 'FIRING' : (S.t >= T - 0.5 ? 'fired ' + (function () { var n = 0; for (var q = 0; q <= T; q++) if (H.fires[q] > 0.03) n++; return n; })() + ' ticks' : 'armed');
+        var never = !run.agents && S.t >= T - 0.5 && !run.fired, tag = run.agents ? 'armed' :  never ? 'never triggered' : on ? 'FIRING' : (S.t >= T - 0.5 ? 'fired ' + (function () { var n = 0; for (var q = 0; q <= T; q++) if (H.fires[q] > 0.03) n++; return n; })() + ' ticks' : 'armed');
         c.e.classList.toggle('never', never); if (c.small.textContent !== tag) c.small.textContent = tag;
       }
     });
@@ -1028,12 +1563,27 @@
   }
 
   // ---------------------------------------------------------------- Result overlay
-  function closeOverlay() { $('overlay').hidden = true; S.overlayOpen = false; if (S.screen === 'run') refresh(); }
+  function closeOverlay() { if (S.evoShown) evolveCommit(); $('overlay').hidden = true; S.overlayOpen = false; if (S.screen === 'run') refresh(); }
   function coverName(b) {
     var genus = { respiration: 'Helicobacter', fermentation: 'Lactobacillus', fuelcell: 'Vibrio' }[b.metabolism] || 'Helicobacter';
     var epi = [], bio = { stringent: 'parcus', sporulate: 'sporans', sos: 'reparans' }, ptx = { wall: 'armatus', quorum: 'sociabilis', naps: 'dormiens', acidproof: 'acidotolerans', flagellum: 'natans', clock: 'horarius', radio: 'radiatus', copier: 'perfectus', repair: 'reparatus', pump: 'protonicus', lipids: 'densus', shell: 'testaceus' };
-    if (b.reflex) epi.push(b.reflex.kind === 'bio' ? bio[b.reflex.id] : 'computans');
-    b.parts.forEach(function (id) { epi.push(ptx[id]); });
+    var C2 = Lv2 ? Lv2.COVER : null, cb = C2 ? Cards.part(b.metabolism) : null;
+    if (C2) {   // habitat 2 names (HABITAT-2 7.8): the world-1 lists plus the new cards; the genus follows the Power card
+      genus = C2.genus[b.metabolism] || genus; for (var k in C2.epithet) { if (k === 'heatrule' || k === 'nightferm') continue; if (k === 'heatps') continue; ptx[k] = C2.epithet[k]; } bio.nightferm = C2.epithet.nightferm;
+    }
+    var d3 = dishObj(), C3 = d3 && d3.agents && Lv3 ? Lv3.COVER : null;
+    if (C3) {   // the thick water: Salinibacter or Haloquadratum, and epithets from the motor, the signal and the rule
+      var e3 = [];
+      b.parts.forEach(function (id) { if (C3.epithet[id]) e3.push(C3.epithet[id]); });
+      if (b.reflex && b.reflex.kind === 'machine' && b.reflex.action === 'stay') e3.push(C3.epithet.stayrule);
+      if (b.pace > 4) e3.push('festinans'); if (b.pace < 4) e3.push('modestus');
+      if (!e3.length) e3.push('normalis');
+      return '<i>' + (C3.genus[b.metabolism] || 'Salinibacter') + ' ' + e3[D.hash(JSON.stringify(b)) % e3.length] + '</i>';
+    }
+    if (b.reflex) epi.push(b.reflex.kind === 'bio' ? bio[b.reflex.id] : (C2 && b.reflex.sensor === 'temp' ? C2.epithet.heatrule : 'computans'));
+    b.parts.forEach(function (id) { if (ptx[id]) epi.push(ptx[id]); });
+    if (C2 && b.metabolism === 'heatps') epi.push(C2.epithet.heatps);
+    if (C2 && cb && b.parts) { var tol = 0, fx = function (c) { return c && c.fx && c.fx.heat ? c.fx.heat : 0; }; tol = 45 + fx(cb); b.parts.forEach(function (id) { tol += fx(Cards.part(id)); }); if (tol >= C2.calidus.fromHeat) epi.push(C2.calidus.epithet); }
     if (machineCount(b)) epi.push('suspiciosus');
     if (b.slop >= 6) epi.push('adolescens'); if (b.pace < 4) epi.push('modestus'); if (b.pace > 4) epi.push('festinans');
     if (b.metabolism === 'fermentation') epi.push('acidophilus');
@@ -1043,58 +1593,166 @@
   }
   function failStatLine(run) {
     var a = run.autopsy, st = Sim.stats(dishObj(), run.build).filter(function (x) { return x.id === a.stat; })[0];
-    return Sim.STAT_INFO[a.stat].name + (st && st.state !== 'unchecked' ? ': ' + st.verdict : '') + ' (' + (CAUSE_WORDS[a.cause] || a.cause) + ')';
+    return Sim.STAT_INFO[a.stat].name + (st && st.state !== 'unchecked' ? ': ' + st.verdict : '') + ' (' + (a.cause === 'bust' && run.dish && run.dish.temp ? 'Lost to the night' : (CAUSE_WORDS[a.cause] || a.cause)) + ')';
+  }
+  // Why scouts died, from the run's own death log (habitat 3): "Scouts lost: 18 starved, 0 to the guards".
+  function deathsText(run) {
+    var n = { starved: 0, glare: 0, guards: 0 };
+    (run.deaths || []).forEach(function (x) { if (n[x.cause] != null && !x.kind) n[x.cause]++; });
+    return 'Scouts lost: ' + n.starved + ' starved, ' + (run.light ? n.glare + ' burned, ' : '') + n.guards + ' to the guards';
   }
   function recordRow(run, d) {
     var v = run.v;
     var spare = d.exam ? ' Energy left: ' + (d.energy - Sim.energyOf(Sim.normalize(run.build))) + ' of ' + d.energy + '.' : '';
     if (d.aliveOnly) return '<div class="row"><b>Record</b><span>Colony at the end: ' + Math.round(run.H.rob[run.T] / run.H.rob[0] * 100) + '% of where it started.</span></div>';
-    return '<div class="row"><b>Record</b><span>In the band ' + Math.round(v.bandFrac * 100) + '% of the time (needs ' + Math.round(d.band.need * 100) + '%). Final share ' + (v.finalShare * 100).toFixed(1) + '%. Highest immune stage: ' + STAGE_NAMES[v.maxStage] + '.' + spare + '</span></div>';
+    return '<div class="row"><b>Record</b><span>In the band ' + Math.round(v.bandFrac * 100) + '% of the time (needs ' + Math.round(d.band.need * 100) + '%). Final share ' + (v.finalShare * 100).toFixed(1) + '%. Highest guard alert: ' + STAGE_NAMES[v.maxStage] + '.' + spare + '</span></div>';
+  }
+  var TAG_WORDS = { 'exposed:motion': 'NEVER STOPPED.', acid: 'DISSOLVED.', overgrew: 'TOOK OVER.', starved: 'STARVED OUT.', bust: 'STARVED OUT.', bloom: 'OUTGROWN.', below: 'TOO FEW.', band: 'OUT OF STEP.', cooked: 'COOKED.', grazed: 'EATEN.', burned: 'BURNED.', eaten: 'ATE IT ALL.' };
+  function slideTag(cause, d) { if (cause === 'bust' && d && d.temp) return 'LOST TO THE NIGHT.'; return TAG_WORDS[cause] || (/^exposed:/.test(cause) ? 'COVER BLOWN.' : 'FAILED.'); }
+  function timelineSvg(T, from, to) {
+    function x(t) { return 10 + 580 * Math.max(0, Math.min(T, t)) / T; }
+    var o = '<svg class="slidetime" viewBox="0 0 600 46" role="img" aria-label="Timeline: it went wrong at tick ' + from + ' of ' + T + '"><line class="tl" x1="10" y1="22" x2="590" y2="22"/>', i;
+    for (i = 0; i <= 10; i++) o += '<line class="tk" x1="' + x(T * i / 10).toFixed(1) + '" y1="17" x2="' + x(T * i / 10).toFixed(1) + '" y2="27"/>';
+    o += '<rect class="tb" x="' + x(from).toFixed(1) + '" y="14" width="' + Math.max(2, x(to) - x(from)).toFixed(1) + '" height="16"/>';
+    o += '<circle class="pin" cx="' + x(from).toFixed(1) + '" cy="22" r="7"/><circle class="pinhi" cx="' + (x(from) - 2).toFixed(1) + '" cy="20" r="2"/>';
+    return o + '<text class="tt" x="' + Math.max(26, Math.min(574, x(from))).toFixed(1) + '" y="43">tick ' + from + '</text></svg>';
+  }
+  function chalkSvg() { return '<svg class="chalk" viewBox="0 0 130 44" aria-hidden="true"><path class="ch" d="M4 8 C 34 2, 64 34, 112 26"/><path class="ch" d="M100 16 L 115 26 L 99 35"/></svg>'; }
+  function dishSnapshot(t) {   // the dish at the moment it went wrong, as a still for the slide
+    try {
+      var g = GL.r;
+      if (g && g.supported && GL.canvas) { g.setTick(t); g.visible = true; g.frame(performance.now()); var u = GL.canvas.toDataURL('image/jpeg', 0.85); g.setTick(S.t); return u; }
+      var c = $('runDish'); if (c && c.width) return c.toDataURL('image/jpeg', 0.85);
+    } catch (e) { /* lost context */ }
+    return '';
   }
   function showResult() {
-    var run = S.run, d = dishObj(); if (!run) return;
+    var run = S.run, d = dishObj(); if (!run) return; compareSet(false);
     S.resultShown = true; var v = run.v, ov = $('overlay'), html;
+    if (v.win && S.evo) { showEvolve(); return; }
     if (v.win) {
       var stamp = STAMPS[D.hash(JSON.stringify(run.build)) % STAMPS.length];
-      var next = ORDER[ORDER.indexOf(d.id) + 1], gr = d.exam ? Sim.grade(run, d, run.build) : null;
+      var ORD = orderForDish(d), next = ORD[ORD.indexOf(d.id) + 1], gr = d.exam ? Sim.grade(run, d, run.build) : null;
+      var evoHtml = S.evolvedNew && S.evolvedNew.length ? '<div class="evolvedline" id="evolvedLine"><svg class="evoico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 14 8 8 14.5 2 8z" fill="currentColor"/><path d="M8 4.5v5M5.8 6.7 8 4.5l2.2 2.2" fill="none" stroke="#0b0820" stroke-width="1.5"/></svg><span>Evolved here: ' + esc(S.evolvedNew.map(cardName).join(', ')) + '</span></div>' : '';
       var gradeHtml = gr ? '<div class="gradebox g-' + gr.toLowerCase() + '" id="gradeBox"><span class="gk">Exam grade</span><b>' + gr + '</b><span class="gn">' + esc(GRADE_NEXT[gr]) + '</span></div>' : '';
-      var last = next == null && ORDER.every(function (i) { return S.cleared[i]; });
-      html = '<div class="winwrap"><div class="paper memo"><h2>CLEARED</h2><div class="stampbox"><div class="stamp' + (reduced ? '' : ' slam') + '" id="stamp">' + stamp + '</div></div>' +
-        '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' + gradeHtml +
-        '<div class="row"><b>Dish</b><span>' + d.id + ': ' + esc(d.title) + '</span></div>' + recordRow(run, d) +
-        '<div class="pbtns">' + (next != null ? '<button type="button" data-act="next">Next dish</button>' : last ? '<button type="button" data-act="complete">Sampling complete</button>' : '') + '<button type="button" data-act="watch">Watch replay</button><button type="button" data-act="list">Dish list</button></div></div>' +
-        '<div class="paper notebook"><h3>From our samples: notebook page ' + (ORDER.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id]) + '</h4><p>' + esc(d.notebook) + '</p><div class="scrawl">(Copied from the locals. Keep it secret from the guards.)</div></div></div>';
+      var last = next == null && ORD.every(function (i) { return S.cleared[i]; });
+      var finale = next == null && worldOfDish(d) === 3;   // the last dish of the game: its win leads straight into the ending, whatever else is cleared
+      html = '<div class="winwrap' + (d.stats.length > 4 ? ' tall' : '') + '"><div class="paper memo"><h2>CLEARED</h2><div class="stampbox"><div class="stamp win' + (reduced ? '' : ' slam') + '" id="stamp">' + stamp + '</div></div>' +
+        '<div class="covername" id="coverName">' + coverName(run.build) + '</div><div class="covercap">Registered cover name</div>' + gradeHtml + '<div class="covercap">Final readings</div><div class="paperbars statbars' + (d.stats.length > 4 ? ' n5' : '') + '" id="winBars"></div>' + evoHtml +
+        '<div class="row"><b>Dish</b><span>' + dishNo(d.id) + ': ' + esc(d.title) + '</span></div>' + recordRow(run, d) + (d.agents ? '<div class="deathline win" id="deathLine">' + esc(deathsText(run)) + '</div>' : '') + (d.reading ? '<div class="row reading"><b>Reading</b><span id="winReading">' + esc(d.reading) + '</span></div>' : '') +
+        '<div class="pbtns">' + (next != null ? '<button type="button" data-act="next">Next dish</button>' : finale ? '<button type="button" data-act="ending" id="toEnding">Continue</button>' : last ? '<button type="button" data-act="complete">Sampling complete</button>' : '') + '<button type="button" data-act="watch">Watch replay</button><button type="button" data-act="list">Dish list</button></div></div>' +
+        '<div class="paper notebook"><h3>From our samples: notebook page ' + (ORD.indexOf(d.id) + 1) + '</h3><h4>' + esc(NB_TITLE[d.id] || d.nbTitle) + '</h4><p>' + esc(d.notebook) + '</p>' + (d.colony ? '<div class="scrawl colony"><b>Colony comment:</b> <span id="colonyNote">' + esc(d.colony) + '</span></div>' : '') + '</div></div>';
     } else {
       var a = run.autopsy;
-      html = '<div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span>Office of the Immune Coroner</span></div><div class="row"><b>Re</b><span>Colony, dish ' + d.id + ' (' + esc(d.title) + ')</span></div>' +
-        '<div class="row"><b>Finding</b><span class="head"><strong>' + esc(a.headline) + '</strong> ' + esc(a.text) + '</span></div>' +
+      html = '<div class="losswrap"><div class="slide" id="lossSlide"><div class="slidetag" id="slideTag">' + slideTag(a.cause, d) + '</div>' +
+        '<div class="slidetop"><img class="slideimg" id="slideImg" alt="The dish at the moment it went wrong"><div class="slidebars statbars" id="slideBars"></div></div><div class="slidenote" id="slideNote"></div>' + (d.agents ? '<div class="deathline" id="deathLine">' + esc(deathsText(run)) + '</div>' : '') +
+        timelineSvg(run.T, a.from, a.to) + '</div><div class="paper memo"><h2>MEMORANDUM</h2><div class="row"><b>From</b><span id="memoFrom">' + esc((d.agents && MEMO_FROM3[a.cause]) || MEMO_FROM[a.cause] || 'Sample lab') + '</span></div><div class="row"><b>Re</b><span>Colony, dish ' + dishNo(d.id) + ' (' + esc(d.title) + ')</span></div>' +
+        '<div class="row"><b>Finding</b><span class="head" id="memoFinding"><strong>' + esc(headlineOf(a)) + '</strong> <span class="rest">' + esc(findingBody(a)) + '</span></span></div>' +
         '<div class="row"><b>Stat that failed</b><span>' + esc(failStatLine(run)) + '</span></div>' +
         '<div class="row"><b>Also</b><span class="sec">' + (a.second ? esc(a.second.text) : 'No second cause of note.') + '</span></div>' +
         recordRow(run, d) +
         '<div class="row"><b>' + (d.exam ? 'Help' : 'Tip') + '</b><span class="tipspan"><button type="button" data-act="tip" id="memoTipBtn">' + (d.exam ? 'What changes this?' : 'Tip') + '</button><span id="memoTip"></span></span></div>' +
-        '<div class="pbtns"><button type="button" data-act="adapt">Back to Adapt</button><button type="button" data-act="jump">Jump to the moment</button><button type="button" data-act="watch">Watch replay</button></div></div>';
+        '<div class="pbtns"><button type="button" data-act="adapt">Back to Adapt</button><button type="button" data-act="jump">Jump to the moment</button><button type="button" data-act="watch">Watch replay</button></div></div></div>';
     }
     ov.innerHTML = html; ov.hidden = false; S.overlayOpen = true; renderTips(); refresh();
+    // The bars on the result cards are read from the run that just finished; the outlined marker is what the forecast said.
+    var fsx = Sim.runStats(run), fcx = Sim.stats(d, run.build);
+    if (v.win) { buildBars($('winBars'), d.stats); Array.prototype.forEach.call($('winBars').children, function (row, i) { setBar(row, fsx[i], {}); }); }
+    else {
+      buildBars($('slideBars'), d.stats); var hit = false;
+      Array.prototype.forEach.call($('slideBars').children, function (row, i) { var f = run.autopsy.stat === fsx[i].id, sx = fsx[i]; if (f && (sx.state === 'safe' || sx.state === 'edge')) { sx = Object.assign({}, sx, { state: 'low', verdict: CAUSE_WORDS[run.autopsy.cause] || 'This is what failed' }); } setBar(row, sx, { fail: f, forecast: fcx[i] }); if (f) { row.insertAdjacentHTML('beforeend', chalkSvg()); hit = true; } });
+      if (!hit) $('lossSlide').insertAdjacentHTML('beforeend', chalkSvg().replace('class="chalk"', 'class="chalk ontime"'));
+      var sn = $('slideNote'), au = run.autopsy, missed = fcx.filter(function (x) { return x.checked !== false && x.state !== 'unchecked'; }).every(function (x) { return x.state === 'safe'; });
+      var pc2 = function (x) { return (x * 100).toFixed(x < 0.1 ? 2 : 1).replace(/\.?0+$/, '') + '%'; };
+      sn.textContent = (d.band && !d.aliveOnly ? 'At tick ' + au.from + ' your share was ' + pc2(run.H.share[au.from] || 0) + '. The band is ' + pc2(d.band.lo) + ' to ' + pc2(d.band.hi) + '. ' : '') + 'Outlined marker: the forecast.' + (missed ? ' The forecast said every bar was safe; the full run disagreed.' : '');
+      var src = dishSnapshot(run.autopsy.from), im = $('slideImg'); if (src) im.src = src; else im.style.display = 'none';
+    }
+  }
+
+  // ---------------------------------------------------------------- the evolution moment: after a win that makes a step ready, before the win card
+  function slotsWithStep(build, lineage, id) {
+    var sl = JSON.parse(JSON.stringify(Sim.toSlots(build))), c = cardOrBio(id), k = c.slot;
+    if (k === 'envelope') {
+      var idx = -1; sl.envelope.forEach(function (x, i) { var l = lineageOf(x); if (l && l.lineage === lineage) idx = i; });
+      if (idx >= 0) sl.envelope[idx] = id; else if (sl.envelope.length < 2) sl.envelope.push(id);
+    } else if (k === 'reflex') sl.reflex = { kind: 'bio', id: id };
+    else sl[k] = id;
+    return sl;
+  }
+  function evoFig(slots) { return '<svg viewBox="150 50 300 300" aria-hidden="true">' + D.cellArt(slots, {}) + '</svg>'; }
+  // A fixed label on the "Gained" figure pointing at what is new (the Light marks only; nothing else moves).
+  var EVO_CALL = { 1: 'new:<br>light patches', 2: 'new:<br>sensing spot', 3: 'new:<br>colour spot' };
+  function evoCall(slots) {
+    var sp = D.lightSpot ? D.lightSpot(slots) : null; if (!sp) return '';
+    var ex = sp.step < 2 ? sp.x - 6 : sp.x - 23, ey = sp.step < 2 ? sp.y - 4 : sp.y - 10;
+    return '<svg class="evolead" viewBox="150 50 300 300" aria-hidden="true"><line x1="284" y1="80" x2="' + ex + '" y2="' + ey + '" stroke="#fff" stroke-width="2.4"/><circle cx="' + ex + '" cy="' + ey + '" r="3.4" fill="#fff"/></svg><span class="evocall">' + EVO_CALL[sp.step] + '</span>';
+  }
+  function evoDishOf(cd) { return S.evo.build && buildCardIds(S.evo.build).indexOf(cd.from) >= 0 ? S.evo.dish : (offeredOn(cd.from)[0] || S.evo.dish); }
+  function lineageLen(l) { var n = 0; Cards.parts.concat(Cards.bioReflexes).forEach(function (o) { if (o.tree && o.tree.lineage === l) n++; }); return n; }
+  function showEvolve() {
+    var E = S.evo, ov = $('overlay'), cd = E.cands[E.sel], from = cardOrBio(cd.from), to = cardOrBio(cd.id), nm = lineageTitle(cd.lineage), many = E.cands.length > 1, i;
+    var picks = '';
+    if (many) {
+      picks = '<div class="evochoose" role="group" aria-label="Choose one path to evolve now"><p class="evoq">Two paths are ready. Choose one to evolve now. The other stays ready for the next win.</p><div class="evopicks">';
+      E.cands.forEach(function (c, j) { var cc = cardOrBio(c.id); picks += '<button type="button" class="evopick' + (j === E.sel ? ' on' : '') + '" data-act="pick" data-i="' + j + '" aria-pressed="' + (j === E.sel ? 'true' : 'false') + '"><span class="pk">' + (j === E.sel ? TREE_MARK_FITTED() : TREE_MARK_READY()) + esc(lineageTitle(c.lineage)) + '</span><b>' + esc(cc ? cc.name : c.id) + '</b><small>Step ' + c.stage + '</small></button>'; });
+      picks += '</div></div>';
+    }
+    var add = String((to && (to.effect || to.sentence)) || '').replace(/^[A-Za-z ]+\. /, '');
+    ov.innerHTML = '<div class="evowrap"><div class="paper memo evo' + (many ? ' many' : '') + '" id="evoCard" role="dialog" aria-modal="true" aria-labelledby="evoH"><h2 id="evoH">OUR CELL HAS CHANGED</h2>' + picks +
+      '<div class="evopair"><figure class="evofig"><div class="evobox" id="evoFigA">' + evoFig(slotsWithStep(E.build, cd.lineage, cd.from)) + '</div><figcaption><span class="k">Used</span><b>' + esc(from ? from.name : cd.from) + '</b></figcaption></figure>' +
+      '<svg class="evoarr" viewBox="0 0 40 24" aria-hidden="true"><path d="M2 12h30M26 5l8 7-8 7" fill="none" stroke="currentColor" stroke-width="3"/></svg>' +
+      '<figure class="evofig gain' + (reduced ? '' : ' anim') + '"><div class="evobox" id="evoFigB">' + evoFig(slotsWithStep(E.build, cd.lineage, cd.id)) + evoCall(slotsWithStep(E.build, cd.lineage, cd.id)) + '</div><figcaption><span class="k">Gained</span><b>' + esc(to ? to.name : cd.id) + '</b></figcaption></figure></div>' +
+      '<div class="evoname"><b id="evoName">' + esc(to ? to.name : cd.id) + '</b><span>Step ' + cd.stage + ' of ' + lineageLen(cd.lineage) + ' on the ' + esc(nm) + ' path</span></div>' +
+      '<p class="evoadd" id="evoAdd">' + esc(add) + '</p>' +
+      '<p class="evocause" id="evoCause">It lived through dish ' + dishNo(evoDishOf(cd)) + ' with ' + esc(from ? from.name : cd.from) + ' fitted. That is how a path grows.</p>' +
+      '<div class="pbtns"><button type="button" data-act="evolve" id="evoGo">Continue</button></div></div></div>';
+    ov.hidden = false; S.overlayOpen = true; S.evoShown = true; refresh();
+    var go = $('evoGo'); if (go) go.focus({ preventScroll: true });
+  }
+  function evolveCommit() {
+    var E = S.evo; if (!E) return;
+    var cd = E.cands[E.sel]; S.evolved[cd.id] = true; save('evolved3', S.evolved);
+    S.evolvedNew = [cd.id]; S.evo = null; S.evoShown = false;
+    if (S.screen === 'adapt' && S.build) renderAdapt(false);
+  }
+  function evolveContinue() { if (!S.evo) return; evolveCommit(); showResult(); }
+  function evoPick(j) { if (!S.evo || j < 0 || j >= S.evo.cands.length) return; S.evo.sel = j; showEvolve(); var b = $('overlay').querySelector('.evopick[data-i="' + j + '"]'); if (b) b.focus({ preventScroll: true }); }
+  // The thick water's completion card, from its own text (levels3.js WORLD; its COMPLETE comes with the exam dish, which is not built yet).
+  function complete3() {
+    if (Lv3.COMPLETE) return Lv3.COMPLETE;
+    var WW = Lv3.WORLD;
+    return { title: 'THE THICK WATER, SO FAR', rows: [
+      ['Place', WW.facts[1]],
+      ['What we learned', 'A cell that cannot reach the sweetness starves, and a cell that swims past it for ever is noticed. Stopping where it is sweet is part of looking alive. And there is a bright place that drifts: a little of its light feeds a cell, and its middle burns.'],
+      ['Our samples', WW.badge],
+      ['Next', 'The locals here live like the ones before: none takes more than its place gives back. Neither do we now.']
+    ] };
   }
   function completeCard() {
-    var rows = ORDER.map(function (id) {
+    var cw = S.screen && dishObj() ? worldOfDish(dishObj()) : 1, CO = cw === 3 ? complete3() : cw === 2 ? Lv2.COMPLETE : null, ORD = orderOf(cw);
+    var rows = ORD.map(function (id) {
       var d = Lv.dish(id), g = S.grades[id];
-      return '<div class="crow2"><span class="cn">' + id + '</span><span class="ct">' + esc(d.title) + '</span><span class="cg ' + (g ? 'g-' + g.toLowerCase() : '') + '">' + (S.cleared[id] ? (d.exam ? (g || 'Cleared') : '\u2713 Cleared') : 'Not cleared') + '</span></div>';
+      return '<div class="crow2"><span class="cn">' + dishNo(id) + '</span><span class="ct">' + esc(d.title) + '</span><span class="cg ' + (g ? 'g-' + g.toLowerCase() : '') + '">' + (S.cleared[id] ? (d.exam ? (g || 'Cleared') : '\u2713 Cleared') : 'Not cleared') + '</span></div>';
     }).join('');
-    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>SAMPLING COMPLETE</h2><div class="covercap">The ten dishes</div><div class="clist">' + rows + '</div>' +
-      '<div class="row"><b>Next</b><span>A new site, with one rule turned upside down.</span></div><div class="pbtns"><button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
+    var srows = CO ? CO.rows : (W.complete || []).map(function (r) { return r[0] === 'Next' && Lv2 ? [r[0], 'The banded water: a new site, with one rule turned upside down. Open it from the dish list.'] : r; });
+    var story = srows.map(function (r) { return '<div class="row"><b>' + esc(r[0]) + '</b><span>' + esc(r[1]) + '</span></div>'; }).join('');
+    $('overlay').innerHTML = '<div class="paper memo complete" id="completeCard"><h2>' + (CO ? esc(CO.title) : 'SAMPLING COMPLETE') + '</h2>' + (cw === 1 && STORY_ART.ripple ? '<img class="completeimg" src="assets/story/complete-ripple.jpg" alt="A slow ripple crossing the surface of the warm mountain">' : '') + '<div class="covercap">' + 'The ' + (NUM_WORDS[ORD.length] || ORD.length) + ' dishes' + '</div><div class="clist">' + rows + '</div>' +
+      story + '<div class="pbtns">' + (cw === 3 && S.cleared[ORDER3[ORDER3.length - 1]] ? '<button type="button" class="big" data-act="ending">Continue</button>' : '') + '<button type="button" data-act="list">Dish list</button><button type="button" data-act="watch">Back to the result</button></div></div>';
     $('overlay').hidden = false; S.overlayOpen = true;
   }
   $('overlay').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button[data-act]') : null;
-    if (!b) { if (e.target === $('overlay')) closeOverlay(); return; }
+    if (!b) { if (e.target === $('overlay') && !S.evoShown) closeOverlay(); return; }
     var a = b.getAttribute('data-act');
     if (a === 'tip') pressTip();
+    else if (a === 'evolve') evolveContinue();
+    else if (a === 'pick') evoPick(+b.getAttribute('data-i'));
     else if (a === 'adapt') { closeOverlay(); show('adapt'); }
     else if (a === 'watch') { closeOverlay(); }
-    else if (a === 'jump') { closeOverlay(); S.playing = false; S.t = S.run.autopsy.from; setPlayLabel(); glJump(); }
-    else if (a === 'next') { closeOverlay(); selectDish(ORDER[ORDER.indexOf(S.dish) + 1]); }
+    else if (a === 'jump') { closeOverlay(); S.playing = false; S.t = S.run.autopsy.from; setPlayLabel(); glJump(S.mode === 'run' && !S.run.v.win ? ezLocate(S.run) : null); }
+    else if (a === 'next') { closeOverlay(); selectDish(orderOf(worldNo(S.dish))[orderOf(worldNo(S.dish)).indexOf(S.dish) + 1]); }
     else if (a === 'list') { closeOverlay(); show('list'); }
+    else if (a === 'ending') { closeOverlay(); openEnding(); }
     else if (a === 'complete') completeCard();
   });
 
@@ -1106,33 +1764,35 @@
       if (S.screen === 'adapt') {
         if (GL.p && GL.p.supported) GL.p.tick(ts);
         if (S.note && performance.now() > S.noteUntil) { S.note = ''; renderProblems(); }
-      } else if (S.screen === 'run' && S.run) { advance(dt); drawRun(ts); }
+      } else if (S.screen === 'run' && S.run) { var tp = S.t; advance(dt); ezTick(tp); drawRun(ts); }
     } catch (err) { if (window.console) console.error(err && err.stack || err); }
     requestAnimationFrame(frame);
   }
 
   // ---------------------------------------------------------------- wiring
   $('navList').addEventListener('click', function () { closeOverlay(); show('list'); });
-  $('navWorld').addEventListener('click', function () { closeOverlay(); S.worldBack = S.screen === 'world' ? S.worldBack : S.screen; show('world'); });
+  $('navWorld').addEventListener('click', function () { closeOverlay(); if (S.screen !== 'world') S.worldView = S.screen === 'list' ? S.worldTab : (S.dish != null ? worldNo(S.dish) : 1); S.worldBack = S.screen === 'world' ? S.worldBack : S.screen; show('world'); });
   $('worldGo').addEventListener('click', worldContinue);
   $('briefGo').addEventListener('click', enterWatch);
   $('introGo').addEventListener('click', introNext);
   $('introBack').addEventListener('click', function () { if (S.introAt > 0) { S.introAt--; renderIntro(); } });
   $('introSkip').addEventListener('click', introDone);
-  $('replayIntro').addEventListener('click', function () { S.introAt = 0; show('intro'); });
+  $('endGo').addEventListener('click', endNext); $('endBack').addEventListener('click', endBack); $('endLeave').addEventListener('click', endLeave);
+  $('watchEnding').addEventListener('click', openEnding);
+  $('replayIntro').addEventListener('click', function () { S.introAt = 0; S.introWorld = 1; show('intro'); });
   $('unlockAll').addEventListener('click', function () { S.unlocked = true; save('unlocked2', true); renderList(); });
   $('resetProgress').addEventListener('click', function () {
-    S.cleared = {}; S.wins = {}; S.grades = {}; save('grades2', {}); S.unlocked = false; S.seenWorld = false; S.seenIntro = false; save('intro2', false);
+    S.cleared = {}; S.wins = {}; S.grades = {}; S.used = {}; S.evolved = {}; S.evo = null; S.evoShown = false; S.evolvedNew = []; save('used3', {}); save('evolved3', {}); save('grades2', {}); S.unlocked = false; S.revealed = {}; save('revealed', {}); S.seenWorld = false; S.seenIntro = false; save('intro2', false); S.seenIntroB = false; S.seenWorldB = false; S.seenIntroC = false; S.seenWorldC = false; S.worldTab = 1; save('introB', false); save('worldB', false); save('introC', false); save('worldC', false); save('worldTab', 1);
     save('cleared2', {}); save('wins2', {}); save('unlocked2', false); save('world2', false); renderList();
   });
   $('undo').addEventListener('click', function () { if (!S.undo.length) return; S.build = S.undo.pop(); S.preview = null; syncRuleFromBuild(); renderAdapt(false); });
   $('reset').addEventListener('click', function () {
     mutate(function (b) { var n = copy(S.carried); b.pace = n.pace; b.slop = n.slop; b.metabolism = n.metabolism; b.parts = n.parts; b.reflex = n.reflex; });
     S.layer = 0;
-    S.rule = { sensor: null, cmp: null, value: null, action: null }; syncRuleFromBuild();
+    S.rule = blankRule(); syncRuleFromBuild();
   });
   function syncRuleFromBuild() {
-    var rf = S.build.reflex; if (rf && rf.kind === 'machine') S.rule = { sensor: rf.sensor, cmp: rf.cmp, value: rf.value, action: rf.action };
+    var rf = S.build.reflex; if (rf && rf.kind === 'machine') S.rule = { sensor: rf.sensor, cmp: rf.cmp, value: rf.value, action: rf.action, otherwise: rf.otherwise != null ? rf.otherwise : null };
     if ($('ruleBox')) renderRuleBox();
   }
   $('tipBtn').addEventListener('click', pressTip);
@@ -1141,6 +1801,7 @@
   $('playBtn').addEventListener('click', function () { setPlaying(!S.playing); });
   $('skipBtn').addEventListener('click', skip);
   $('verdictBtn').addEventListener('click', verdictAction);
+  $('tabShare').addEventListener('click', function () { setChartTab('share'); }); $('tabSusp').addEventListener('click', function () { setChartTab('susp'); });
   $('resultBtn').addEventListener('click', function () { if (S.run && S.mode === 'run') { S.runFinished = true; renderVerdict(); showResult(); } });
   $('realTog').addEventListener('change', function () { S.real = this.checked; $('optList').classList.toggle('showreal', S.real); });
   $('realTog').addEventListener('change', function () { S.real = this.checked; $('optList').classList.toggle('showreal', S.real); });
@@ -1148,6 +1809,14 @@
   Array.prototype.forEach.call(document.querySelectorAll('#speeds button'), function (b) { b.addEventListener('click', function () { S.speed = +b.getAttribute('data-sp'); setSpeedUI(); }); });
   document.addEventListener('keydown', function (e) {
     var tg = e.target && e.target.tagName; if (tg === 'TEXTAREA' || (tg === 'INPUT' && e.target.type !== 'range')) return;
+    if (T.open) return;   // the skill tree handles its own keys
+    if (S.screen === 'ending') {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'ArrowRight' || (e.key === 'Enter' && tg !== 'BUTTON')) { e.preventDefault(); endNext(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); endBack(); }
+      else if (e.key === 'Escape') { e.preventDefault(); endLeave(); }
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     var ovOpen = S.overlayOpen;
     if (e.key === ' ' || e.code === 'Space') {
@@ -1156,13 +1825,193 @@
       if (ovOpen) return;
       if (S.screen === 'intro') introNext(); else if (S.screen === 'world') worldContinue(); else if (S.screen === 'brief') enterWatch();
       else if (S.screen === 'adapt') doRun(); else if (S.screen === 'run') setPlaying(!S.playing);
-    } else if ((e.key === 'r' || e.key === 'R') && S.screen === 'run' && S.dish != null) {
+    } else if ((e.key === 'r' || e.key === 'R') && S.screen === 'run' && S.dish != null && !ovOpen) {
       if (S.mode === 'watch') enterWatch(); else doRun();
     } else if (S.screen === 'run' && S.run && !ovOpen && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault(); S.playing = false; setPlayLabel();
       seek(S.t + (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 10 : 1));
-    } else if (e.key === 'Escape') { closeOverlay(); hidePop(); }
+    } else if (e.key === 'Enter' && S.evoShown && tg !== 'BUTTON') { e.preventDefault(); evolveContinue();
+    } else if (e.key === 'Escape') { if (S.evoShown) { evolveContinue(); return; } closeOverlay(); hidePop(); }
   });
+
+  // ---------------------------------------------------------------- skill tree: a full-cover overlay (the page behind keeps its screen, dish and build)
+  // Every call into LookAlive.tree* is guarded, so a build without the tree data shows an empty tree and nothing throws.
+  var T = { open: false, sel: null, opener: null, nodes: [], byId: {}, st: {}, branches: [], tiles: {}, pos: {}, adapt: false, msg: '' };
+  var TREE_MARK = {
+    fitted: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.5 8.3l2.3 2.3 4.7-5" fill="none" stroke="#0b0820" stroke-width="2"/></svg>',
+    available: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 5v6M5 8h6" stroke="currentColor" stroke-width="1.6"/></svg>',
+    learned: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="1.6 2.2"/></svg>',
+    unlearned: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7.2" width="9" height="6.8" rx="1.2" fill="currentColor"/><path d="M5.4 7.2V5.4a2.6 2.6 0 0 1 5.2 0v1.8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>'
+  };
+  var EVO_MARK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 14 8 8 14.5 2 8z" fill="currentColor"/><path d="M8 4.8v5M5.9 6.9 8 4.8l2.1 2.1" fill="none" stroke="#0b0820" stroke-width="1.5"/></svg>';
+  var TREE_STATE_WORD = { fitted: 'Fitted in this cell', available: 'Available here', learned: 'Learned, not offered here', unlearned: 'Not yet learned' };
+  function treeCall(fn, a, b, c, d) { try { return typeof Sim[fn] === 'function' ? Sim[fn](a, b, c, d) : null; } catch (e) { return null; } }
+  function treeMissingIds(id) { var m = S.build ? treeCall('treeMissing', S.build, id) : null; return m && m.length ? m : []; }
+  function treeNames(ids) {
+    var n = ids.map(function (i) { var c = cardOrBio(i); return c ? c.name : i; });
+    return n.length < 2 ? n.join('') : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1];
+  }
+  function treeCtx() { var on = S.dish != null && S.build && S.screen !== 'list' && S.screen !== 'world' && S.screen !== 'intro'; return { D: on ? dishObj() : null, build: on ? S.build : null, adapt: !!(on && S.screen === 'adapt') }; }
+  function isEvolved(id) { var ls = lineageOf(id); return !!(ls && ls.stage > 1 && S.evolved[id]); }
+  function treeReason(n, s) {
+    var r = s.reason || '', ls = lineageOf(n.id);
+    if (ls && ls.stage > 1 && s.state === 'unlearned' && /^Clear a dish with/.test(r)) { var w = offeredOn(lsId(ls.prev)); if (w.length) r += ' Offered on ' + dishWords(w) + '.'; }
+    return r;
+  }
+  function treeBuild() {
+    var nodes = treeCall('treeNodes') || [], br = treeCall('treeBranches') || [], grid = $('treeGrid');
+    T.nodes = nodes; T.branches = br; T.byId = {}; T.tiles = {}; T.pos = {}; grid.innerHTML = '';
+    nodes.forEach(function (n) { T.byId[n.id] = n; });
+    var tiers = []; nodes.forEach(function (n) { if (tiers.indexOf(n.tier) < 0) tiers.push(n.tier); }); tiers.sort(function (a, b) { return a - b; });
+    var used = {}, rows = Math.max(tiers.length, 1);
+    br.forEach(function (b, bi) {
+      var h = el('div', 'tv-bh', esc(b.name)); h.style.gridColumn = String(bi + 1); h.style.gridRow = '1'; grid.appendChild(h);
+      nodes.filter(function (n) { return n.branch === b.id; }).forEach(function (n) {
+        var r = tiers.indexOf(n.tier); while (used[bi + ':' + r]) r++;
+        used[bi + ':' + r] = 1; rows = Math.max(rows, r + 1);
+        var t = el('button', 'tv-tile'); t.type = 'button'; t.setAttribute('data-id', n.id); t.style.gridColumn = String(bi + 1); t.style.gridRow = String(r + 2);
+        var ls = lineageOf(n.id);
+        t.innerHTML = '<span class="tv-mark"></span><span class="tv-name">' + (ls ? '<span class="tv-step" title="Step ' + ls.stage + ' of a path that grows by use">' + ls.stage + '</span><span class="tv-evo" hidden>' + EVO_MARK + '</span>' : '') + esc(n.name) + '</span><span class="tv-meta"><span>' + (n.energy ? 'Energy ' + n.energy : 'No energy') + '</span><span class="shelf ' + (n.shelf === 'machine' ? 'mach' : 'bio') + '">' + (n.shelf === 'machine' ? 'Machine' : 'Biology') + '</span></span>';
+        t.addEventListener('click', function () { treeSelect(n.id, true); });
+        t.addEventListener('keydown', treeTileKey);
+        grid.appendChild(t); T.tiles[n.id] = t; T.pos[n.id] = { c: bi, r: r };
+      });
+    });
+    grid.style.gridTemplateColumns = 'repeat(' + Math.max(br.length, 1) + ', minmax(138px, 1fr))'; $('treeInner').style.minWidth = (Math.max(br.length, 1) * 148 + 24) + 'px';
+    grid.style.gridTemplateRows = '26px repeat(' + rows + ', var(--th))'; T.rows = rows;
+  }
+  function treeSize() {
+    var sc = $('treeScroll'), avail = sc.clientHeight - 6 - 10 - 26 - 16 * T.rows, th = Math.max(44, Math.min(66, Math.floor(avail / T.rows)));
+    $('treeGrid').style.setProperty('--th', th + 'px');
+  }
+  function treeDraw() {
+    var inner = $('treeInner'), ib = inner.getBoundingClientRect(), svg = $('treeLines'), g = $('treeLineG'), out = '', cnt = 0;
+    svg.setAttribute('width', inner.scrollWidth); svg.setAttribute('height', inner.scrollHeight); g.innerHTML = ''; var gut = {};
+    function rc(id) { var b = T.tiles[id].getBoundingClientRect(); return { l: b.left - ib.left, r: b.right - ib.left, t: b.top - ib.top, b: b.bottom - ib.top, cx: (b.left + b.right) / 2 - ib.left, cy: (b.top + b.bottom) / 2 - ib.top }; }
+    T.nodes.forEach(function (n) {
+      ['after', 'with'].forEach(function (kind) {
+        (n[kind] || []).forEach(function (pid) {
+          if (!T.tiles[pid] || !T.tiles[n.id]) return;
+          var p = rc(pid), q = rc(n.id), d, mx, my;
+          var hh = p.b - p.t, sameCol = Math.abs(p.cx - q.cx) < 4;
+          if (sameCol && Math.abs(q.cy - p.cy) > hh * 1.6) {   // another tile sits between them: go round it in the gutter on the left, so the line never reads as a link to the tile it would cross
+            var gk = Math.round(p.l), go = 4 + 4 * (gut[gk] = (gut[gk] || 0) + 1) - 4, gx = p.l - go - 3;
+            d = 'M' + p.l + ' ' + p.cy + 'H' + gx + 'V' + q.cy + 'H' + (q.l - 2); mx = gx; my = (p.cy + q.cy) / 2;
+          }
+          else if (p.b < q.t - 2) { var k = (q.t - p.b) / 2; d = 'M' + p.cx + ' ' + p.b + 'C' + p.cx + ' ' + (p.b + k) + ' ' + q.cx + ' ' + (q.t - k) + ' ' + q.cx + ' ' + (q.t - 2); mx = (p.cx + q.cx) / 2; my = (p.b + q.t) / 2; }
+          else if (q.b < p.t - 2) { var k2 = (p.t - q.b) / 2; d = 'M' + p.cx + ' ' + p.t + 'C' + p.cx + ' ' + (p.t - k2) + ' ' + q.cx + ' ' + (q.b + k2) + ' ' + q.cx + ' ' + (q.b + 2); mx = (p.cx + q.cx) / 2; my = (p.t + q.b) / 2; }
+          else { var dy = p.b + 11; d = 'M' + p.cx + ' ' + p.b + 'Q' + (p.cx + q.cx) / 2 + ' ' + (dy + 8) + ' ' + q.cx + ' ' + (q.b + 2); mx = (p.cx + q.cx) / 2; my = dy + 3; }
+          out += '<path class="tv-line ' + kind + '" data-from="' + pid + '" data-to="' + n.id + '" data-kind="' + kind + '" d="' + d + '" marker-end="url(#tvArrow)"/>';
+          if (kind === 'with') out += '<text class="tv-wlab" data-from="' + pid + '" data-to="' + n.id + '" x="' + mx + '" y="' + (my + 3) + '" text-anchor="middle">with</text>';
+          cnt++;
+        });
+      });
+    });
+    g.innerHTML = out; T.lineCount = cnt; treeLight();
+  }
+  function treeLight() {
+    var s = T.sel;
+    Array.prototype.forEach.call($('treeLineG').children, function (e) {
+      var hit = !!s && (e.getAttribute('data-from') === s || e.getAttribute('data-to') === s);
+      e.classList.toggle('hl', hit); e.classList.toggle('faint', !!s && !hit);
+      if (e.tagName === 'path') e.setAttribute('marker-end', hit ? 'url(#tvArrowHl)' : 'url(#tvArrow)');
+    });
+    Object.keys(T.tiles).forEach(function (id) {
+      var rel = !!s && id !== s && (T.byId[s].after.concat(T.byId[s].with).indexOf(id) >= 0 || T.byId[id].after.concat(T.byId[id].with).indexOf(s) >= 0);
+      T.tiles[id].classList.toggle('rel', rel); T.tiles[id].classList.toggle('sel', id === s); T.tiles[id].setAttribute('aria-pressed', id === s ? 'true' : 'false');
+    });
+  }
+  function treeRefresh() {
+    var cx = treeCtx(), list = !cx.D; T.adapt = cx.adapt;
+    T.st = treeCall('treeState', cx.D, cx.build, S.cleared, derivedUsed()) || {};
+    T.nodes.forEach(function (n) {
+      var s = (T.st[n.id] || {}).state || 'unlearned', t = T.tiles[n.id];
+      t.className = 'tv-tile st-' + s + (n.shelf === 'machine' ? ' mach' : '') + (T.sel === n.id ? ' sel' : '');
+      t.firstChild.innerHTML = TREE_MARK[s];
+      var ev = isEvolved(n.id), eg = t.querySelector('.tv-evo'); t.classList.toggle('evolved', ev); if (eg) eg.hidden = !ev;
+      t.setAttribute('aria-label', n.name + (lineageOf(n.id) ? ', step ' + lineageOf(n.id).stage : '') + (ev ? ', evolved by use' : '') + ', ' + TREE_STATE_WORD[s].toLowerCase() + ', ' + (n.energy ? 'energy ' + n.energy : 'no energy') + ', ' + (n.shelf === 'machine' ? 'machine' : 'biology'));
+    });
+    $('treeLegend').innerHTML = ['fitted', 'available', 'learned', 'unlearned'].filter(function (s) { return !list || s === 'learned' || s === 'unlearned'; }).map(function (s) { return '<span class="lg st-' + s + '"><i>' + TREE_MARK[s] + '</i>' + TREE_STATE_WORD[s] + '</span>'; }).join('') + '<span class="lg st-evo"><i>' + EVO_MARK + '</i>Evolved by use</span><span class="lg ln"><svg viewBox="0 0 30 8" aria-hidden="true"><path d="M1 4H29" stroke="#8a90a8" stroke-width="1.8"/></svg>Learn first</span><span class="lg ln"><svg viewBox="0 0 30 8" aria-hidden="true"><path d="M1 4H29" stroke="#5fd0ff" stroke-width="1.8" stroke-dasharray="4 3"/></svg>With (fitted together)</span>';
+    $('treeNote').textContent = list ? 'No cell is open, so this shows only what is learned and what is not yet.' : (cx.adapt ? 'Cell on Dish ' + dishNo(cx.D.id) + '. Fit or take off a skill here and the Adapt page changes with it.' : 'Cell on Dish ' + dishNo(cx.D.id) + '. Open Adapt to fit skills.');
+    $('treeEnergy').textContent = cx.adapt ? 'Energy ' + $('energyNum').textContent : '';
+    treeDetail(); treeLight();
+  }
+  function treeDetail() {
+    var n = T.sel && T.byId[T.sel], act = $('treeAct');
+    if (!n) {
+      $('tdImg').innerHTML = ''; $('tdName').textContent = 'Pick a skill'; $('tdShelf').className = ''; $('tdShelf').textContent = ''; $('tdEn').textContent = '';
+      $('tdGame').textContent = 'Choose a skill to read what it does, what it costs and what it needs.'; $('tdReal').textContent = ''; $('tdState').textContent = ''; $('tdAfter').textContent = ''; $('tdWith').textContent = ''; act.hidden = true; $('tdMsg').textContent = ''; return;
+    }
+    var c = cardOrBio(n.id) || {}, s = (T.st[n.id] || {}), d = treeCtx().D, mach = n.shelf === 'machine';
+    var game = c.game || c.sentence || '', real = c.real || '';
+    if (d && d.agents) { game = c.game3 || (c.world === 3 ? c.game : c.real) || game; if (game === real) real = ''; }
+    var box = $('tdImg'); box.innerHTML = ''; var tb = el('div', 'thumbbox'); tb.appendChild(thumbEl(n.id, 'thumb')); box.appendChild(tb); box.className = 'td-img ' + (mach ? 'mach' : 'bio');
+    $('tdName').textContent = n.name; $('tdShelf').className = 'shelf ' + (mach ? 'mach' : 'bio'); $('tdShelf').textContent = mach ? 'Machine' : 'Biology';
+    $('tdEn').textContent = n.energy ? 'Energy ' + n.energy : 'No energy';
+    $('tdGame').textContent = game; $('tdGame').title = game; $('tdReal').innerHTML = real ? '<i>Real</i>' + esc(real) : ''; $('tdReal').title = real;
+    $('tdState').innerHTML = '<b class="st-' + (s.state || 'unlearned') + '"><i>' + TREE_MARK[s.state || 'unlearned'] + '</i>' + TREE_STATE_WORD[s.state || 'unlearned'] + '</b> ' + esc(treeReason(n, s));
+    $('tdAfter').innerHTML = (n.after || []).length ? '<b>Learn first:</b> ' + esc((n.after || []).map(function (i) { return T.byId[i] ? T.byId[i].name : i; }).join(', ')) : '';
+    $('tdWith').innerHTML = (n.with || []).length ? '<b>Needs fitted:</b> ' + esc((n.with || []).map(function (i) { var m = T.byId[i]; return m ? m.name + ' (' + Cards.slotInfo(m.slot).name + ')' : i; }).join(', ')) : '';
+    var st = s.state, can = T.adapt && n.kind !== 'rule' && (st === 'available' || st === 'fitted');
+    act.hidden = !can; if (can) { act.textContent = st === 'fitted' ? 'Take it off' : 'Fit this'; act.disabled = false; }
+    $('tdMsg').textContent = T.msg;
+  }
+  function treeSelect(id, user) {
+    if (!T.byId[id]) return false;
+    T.sel = id; T.msg = ''; treeRefresh();
+    var t = T.tiles[id], sc = $('treeScroll'); if (t && !user && t.scrollIntoView) t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    return true;
+  }
+  function treeAct() {
+    var n = T.sel && T.byId[T.sel]; if (!n || !T.adapt) return;
+    var st = (T.st[n.id] || {}).state, k = n.slot, r;
+    if (st === 'fitted') r = doUnfit(k, n.id);
+    else if (st === 'available') {
+      if (!selectable(k)) r = { ok: false, reason: Sim.lockedReason(dishObj(), k) || 'That slot is shut on this dish.' };
+      else { S.slot = k; if (k === 'envelope') S.layer = Math.min(1, slotsNow().envelope.length); r = doFit(k, n.id); }
+    }
+    T.msg = r && !r.ok ? r.reason || '' : ''; treeRefresh();
+  }
+  function treeOpen(opener, id) {
+    if (T.open) { if (id) treeSelect(id); return; }
+    T.open = true; T.opener = opener || $('navTree'); T.sel = null; T.msg = '';
+    hidePop();
+    var tv = $('treeview'); tv.hidden = false; $('head').inert = true; $('app').inert = true; document.documentElement.classList.add('tree-open');
+    treeBuild(); treeSize(); treeRefresh(); treeDraw();
+    if (id) treeSelect(id);
+    $('treeClose').focus({ preventScroll: true });
+  }
+  function treeClose() {
+    if (!T.open) return;
+    T.open = false; $('treeview').hidden = true; $('head').inert = false; $('app').inert = false; document.documentElement.classList.remove('tree-open');
+    var o = T.opener; if (!o || !o.isConnected || !o.offsetParent) o = $('navTree');
+    o.focus({ preventScroll: true });
+  }
+  function treeTileKey(e) {
+    var id = e.currentTarget.getAttribute('data-id'), me = T.pos[id], best = null, bd = 1e9;
+    if (e.key === 'Escape') { e.preventDefault(); treeClose(); return; }
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].indexOf(e.key) < 0) return;
+    e.preventDefault();
+    var dx = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0, dy = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+    Object.keys(T.pos).forEach(function (o) {
+      var p = T.pos[o], ac = (p.c - me.c) * dx, ar = (p.r - me.r) * dy; if (o === id) return;
+      if (dx ? ac <= 0 : ar <= 0) return;
+      var dist = dx ? ac * 100 + Math.abs(p.r - me.r) : ar * 100 + Math.abs(p.c - me.c) * 3;
+      if (dist < bd) { bd = dist; best = o; }
+    });
+    if (best) T.tiles[best].focus({ preventScroll: false });
+  }
+  $('navTree').addEventListener('click', function () { treeOpen(this); });
+  $('adaptTree').addEventListener('click', function () { treeOpen(this); });
+  $('treeClose').addEventListener('click', treeClose);
+  $('treeAct').addEventListener('click', treeAct);
+  $('treeview').addEventListener('click', function (e) { e.stopPropagation(); });
+  $('treeview').addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.preventDefault(); treeClose(); } });
+  window.addEventListener('resize', function () { if (T.open) { treeSize(); treeDraw(); } });
+  function treeInfo() {
+    var tiles = Object.keys(T.tiles).map(function (id) { var b = T.tiles[id].getBoundingClientRect(); return { id: id, state: (T.st[id] || {}).state || null, x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; });
+    return { open: T.open, selected: T.sel, tiles: tiles, lines: T.open ? $('treeLineG').querySelectorAll('path').length : 0, detail: T.open ? $('treeDetail').textContent.replace(/\s+/g, ' ').trim() : '' };
+  }
 
   // ---------------------------------------------------------------- debug hook
   window.__la = {
@@ -1170,18 +2019,30 @@
     glSig: function (t) { return GL.r ? GL.r.signature(t) : null; },
     glPortrait: function () { return GL.p; },
     forceFallback: function (on) { GL.forced = !!on; if (on) { glDestroy(); glNote('Simple dish view: forced for testing.'); if (GL.p) { $('cellWrap').classList.remove('cellglon'); $('cellGL').hidden = true; } } else { GL.failed = false; glNote(''); GL.pfailed = false; if (S.screen === 'adapt') renderCell(); } return { forced: GL.forced }; },
+    used: function () { return JSON.parse(JSON.stringify(S.used)); }, setUsed: function (m) { S.used = JSON.parse(JSON.stringify(m || {})); save('used3', S.used); S.evolved = impliedEvolved(S.used); save('evolved3', S.evolved); if (S.screen === 'adapt' && S.build) renderAdapt(false); if (T.open) treeRefresh(); return S.used; },
+    evolved: function () { return JSON.parse(JSON.stringify(S.evolved)); }, setEvolved: function (m) { S.evolved = JSON.parse(JSON.stringify(m || {})); save('evolved3', S.evolved); if (S.screen === 'adapt' && S.build) renderAdapt(false); if (T.open) treeRefresh(); return S.evolved; },
+    path: function () {
+      var box = $('pathBox'); if (!box || box.hidden) return null; var blk = box.querySelector('.pathblock'); if (!blk) return null;
+      return { lineage: blk.getAttribute('data-lineage'), steps: Array.prototype.map.call(blk.querySelectorAll('.step'), function (t) { var b = t.getBoundingClientRect(); return { id: t.getAttribute('data-id'), stage: +t.getAttribute('data-stage'), state: t.getAttribute('data-state'), x: Math.round(b.x), y: Math.round(b.y + window.scrollY), w: Math.round(b.width), h: Math.round(b.height), reason: t.getAttribute('data-reason') || '' }; }) };
+    },
+    tree: function (on) { if (on === false) treeClose(); else treeOpen($('navTree')); return T.open; }, treeSelect: function (id) { return treeSelect(id); }, treeInfo: treeInfo,
     S: S, show: show, selectDish: selectDish, enterWatch: enterWatch, run: doRun, seek: seek, skip: skip, showResult: showResult, advance: advance,
+    unlockWorld: function (w) { for (var v = 1; v < w; v++) orderOf(v).forEach(function (id) { S.cleared[id] = true; }); save('cleared2', S.cleared); renderList(); return { ok: !tabLocked(w), world: w }; },   // test setup: marks every dish before world w cleared, which opens its tab
+    world: function (w) { if (tabLocked(w)) return { ok: false, reason: 'locked' }; S.worldTab = w; save('worldTab', w); renderList(); show('list'); return { ok: true, world: w }; }, worldOrder: function (w) { return orderOf(w == null ? S.worldTab : w).slice(); }, setTab: setTab,
     worldContinue: worldContinue, verdictAction: verdictAction, pressTip: pressTip,
     selectSlot: selectSlot, fit: function (id, layer) { var k = (Cards.part(id) || Cards.bio(id)).slot; if (layer != null) S.layer = layer; if (!selectable(k)) return { ok: false, reason: Sim.lockedReason(dishObj(), k) }; S.slot = k; return doFit(k, id); },
     unfit: function (k, id) { return doUnfit(k, id); }, preview: previewOption, clearPreview: clearPreview, fixViaSlots: fixViaSlots,
-    tags: function () { return Array.prototype.map.call(document.querySelectorAll('#tagLayer .tag'), function (b) { return { slot: b.getAttribute('data-slot'), text: b.textContent, selectable: b.getAttribute('aria-disabled') === 'false', cls: b.className }; }); },
-    options: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt, #optList .optempty'), function (o) { var w = o.querySelector('.why'); return { id: o.getAttribute('data-id'), fitted: /fitted/.test(o.className), blocked: /blocked/.test(o.className), why: w ? w.textContent : '', img: (o.querySelector('img') || {}).complete ? o.querySelector('img').naturalWidth : null }; }); },
+    tags: function () { return Array.prototype.map.call(document.querySelectorAll('#tagLayer .tag'), function (b) { return { slot: b.getAttribute('data-slot'), text: b.textContent, selectable: b.getAttribute('aria-disabled') === 'false', cls: b.className, hidden: b.hidden }; }); },
+    options: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt, #optList .optempty'), function (o) { var w = o.querySelector('.wt') || o.querySelector('.why'); return { id: o.getAttribute('data-id'), fitted: /fitted/.test(o.className), blocked: /blocked/.test(o.className), why: w ? w.textContent : '', img: (o.querySelector('img') || {}).complete ? o.querySelector('img').naturalWidth : null }; }); },
     fix: function (id) { var d = dishObj(), f = d.fixes.filter(function (x) { return x.id === id; })[0]; S.undo.push(copy(S.build)); S.build = Lv.applyFix(S.build, f); syncRuleFromBuild(); renderAdapt(false); return S.build; },
     setBuild: function (b) { S.undo.push(copy(S.build)); S.build = copy(b); syncRuleFromBuild(); renderAdapt(false); },
     setDial: function (k, v) { mutate(function (bb) { bb[k] = v; }); },
     ruleChoose: ruleChoose, installRule: installRule, previewDial: previewDial,
     bars: function () { return Array.prototype.map.call(document.querySelectorAll('#statBars .sb'), function (r) { return { stat: r.getAttribute('data-stat'), verdict: r.querySelector('.sb-verdict').textContent, vcls: r.querySelector('.sb-verdict').className, mark: r.querySelector('.sb-mark').style.left, markCls: r.querySelector('.sb-mark').className, ghost: r.querySelector('.sb-ghost').style.display === 'none' ? null : r.querySelector('.sb-ghost').style.left, ghostCls: r.querySelector('.sb-ghost').className, arrow: r.querySelector('.sb-arrow').textContent, arrowCls: r.querySelector('.sb-arrow').className, tag: r.querySelector('.sb-tag').textContent, failed: r.classList.contains('failed'), unchecked: r.classList.contains('unchecked'), zoneShown: r.querySelector('.sb-zone').style.display !== 'none' }; }); },
     liveBars: function () { return Array.prototype.map.call(document.querySelectorAll('#liveBars .sb'), function (r) { return { stat: r.getAttribute('data-stat'), verdict: r.querySelector('.sb-verdict').textContent, mark: r.querySelector('.sb-mark').style.left, tag: r.querySelector('.sb-tag').textContent }; }); },
+    eventZoomState: function () { var z = S.ez, g = GL.r; return { fired: z.fired, kind: z.kind, target: z.target, active: !!(g && typeof g.eventActive === 'function' && g.eventActive()) }; },
+    compare: function (on) { return compareSet(on); }, compareState: function () { var C = S.cmp; return { available: !!C.available && !$('cmpBtn').disabled, held: C.held, kept: C.kept, diffText: C.diff }; },
+    ending: function () { openEnding(); return S.endAt; }, endingAt: function () { return S.endAt; }, endingProgress: function () { return END.pic ? END.pic.progress() : null; }, revealed: function () { return S.revealed; },
     completeCard: completeCard, whyList: whyList, startStandard: startStandard, marks: function () { return S.marks; }, grades: function () { return S.grades; },
     fixLine: function () { return $('fixLine').textContent; }, previewText: function () { return $('pvT').textContent; }, fail: function () { return S.fail; },
     cards: function () { return Array.prototype.map.call(document.querySelectorAll('#optList .opt'), function (o) { var c = o.querySelector('.chg'); return { id: o.getAttribute('data-id'), text: c.textContent, tones: Array.prototype.map.call(c.querySelectorAll('.ef[class*="t-"]'), function (x) { return x.className.replace(/.*t-/, '') + ':' + x.textContent.trim(); }) }; }); },

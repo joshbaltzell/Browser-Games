@@ -1,0 +1,41 @@
+{
+ "slug": "look-alive",
+ "outDir": "games/look-alive/art-src/story",
+ "cap": 15,
+ "style": "STYLE (applies to every image): a dark, elegant, slightly cute science-fiction storybook illustration, as a stylised video game cutscene. Mostly black or deep-navy background with soft glowing light and gentle bloom, and a subtle circular lens vignette at the edges. Limited palette: crystal violet (#8B5CF6) for native microbes, safranin pink (#FF5C8A) for the small alien scout craft and the player's disguised cells, iodine amber (#F5A524) for warm light and chemicals, malachite green (#2DD4A7) for guard cells. Never gory or frightening. No text, no letters, no numbers, no watermark, no signature, no user interface.",
+ "requests": [
+  {
+   "id": "ST-1",
+   "file": "intro-5-scale.png",
+   "size": "1536x864",
+   "refs": [
+    "ref-intro-5.png"
+   ],
+   "prompt": "Redraw this scene with the same style, palette and mood: small pink alien scout pods drifting among glowing violet bacteria, each pod extending a thin tendril to collect a tiny glowing droplet sample from a native cell, a round glass petri dish glowing faintly in the background. NEW: make the scale feel enormous. Each scout pod is exactly the same size as the violet bacteria beside it, as if they are equals. Far behind everything, filling the whole top third of the picture and out of focus, a vast smooth warm amber-lit curved surface, like the inner wall of an endless soft cave, so large that its texture cannot be resolved and its edge curves away beyond the frame. It must NOT look like an animal or an organ: no veins, no hair, no eye, no face, no recognisable body part. No buildings, no structures, no regular patterns. Across the bottom edge, a thin faint instrument ruler line with one tiny tick mark beside a single pod, as if the aliens measured one local and found it their own size. Quiet, hopeful, with a hint of a joke about scale."
+  },
+  {
+   "id": "ST-2",
+   "file": "complete-ripple.png",
+   "size": "1536x864",
+   "prompt": "Seen from the scale of a microscopic alien scout hovering just above the surface of the warm mountain: a vast dark warm ground stretching to the horizon like a plain at dusk, softly lit in amber from within. One enormous slow ripple is rolling across the whole plain toward the viewer, lifting the ground like a gentle wave in a calm sea, with dust motes and fine droplets jumping off its crest as it passes. A few tiny pink scout pods hover above it, two of them tumbling slightly in the disturbed air, small and calm. The ground is featureless and smooth at this scale: absolutely no fur, no hair, no skin pattern, no eye, no legs, no outline of any animal, no buildings, no structures, no roads. Uncanny, quiet, awe at something too large to understand."
+  },
+  {
+   "id": "ST-3",
+   "file": "complete-ripple-b.png",
+   "size": "1536x864",
+   "prompt": "Alternative to a ripple scene. A microscopic alien scout's sensor view low over a warm dark plain at dusk. A single long, slow, soft swell passes under the ground and the whole horizon gently rises and falls, shown as a smooth curved bulge travelling from left to right with a faint amber glow along its crest and a thin sensor overlay of concentric rings and a jumping trace line tracking it. Tiny pink scout pods in the foreground are knocked off balance. The ground is smooth and plain: no fur, no hair, no skin, no eye, no legs, no animal outline, no architecture of any kind. Calm, mysterious, a little funny."
+  },
+  {
+   "id": "ST-4",
+   "file": "scale-cell.png",
+   "size": "1024x1024",
+   "prompt": "A single small glowing violet rod-shaped bacterium alone in the centre of a black field, seen through a microscope lens, with one soft circular lens ring around it. Simple, iconic, centred, generous empty space, readable when shrunk to a small round icon. Plain bacterial cell only: no nucleus, no organelles, no face."
+  },
+  {
+   "id": "ST-5",
+   "file": "scale-crowd.png",
+   "size": "1024x1024",
+   "prompt": "A loose irregular cloud of many tiny glowing violet bacteria, rods and round cells mixed, drifting together in the centre of a black field, seen through a microscope lens, with one soft circular lens ring around them. The cloud is natural and unplanned: no grid, no rows, no pattern, no structures. Simple and iconic, readable when shrunk to a small round icon. Plain bacterial cells only: no nucleus, no organelles, no faces."
+  }
+ ]
+}

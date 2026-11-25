@@ -1,0 +1,27 @@
+Look Alive habitat 2 checks: dishes 11, 12, 13, 14
+PASS H0 OLD DISHES UNCHANGED fingerprint-wide --with2: "same as fingerprint-wide.json (7f1cc19f)"; fingerprint: "PASS fingerprint: 20 runs unchanged"
+  [4s] H0
+PASS H1 CARRIED CELL LOSES WITH ITS CAUSE 11@32: cooked/heat; 11@64: cooked/heat; 12@32: grazed/grazing; 12@64: grazed/grazing; 13@32: bust/night; 13@64: bust/night; 14@32: below/growth; 14@64: below/growth
+  [5s] H1
+PASS H2 EACH INTENDED FIX WINS 8 fixes: 11 chap: 32 win 1.000, 64 win 1.000; 11 tetra: 32 win 1.000, 64 win 1.000; 11 heatps: 32 win 1.000, 64 win 1.000; 12 pili: 32 win 1.000, 64 win 1.000; 12 filament: 32 win 1.000, 64 win 1.000; 12 compass: 32 win 1.000, 64 win 1.000; 13 nightferm: 32 win 1.000, 64 win 1.000; 13 sos: 32 win 0.978, 64 win 0.978; 14: no fixes (exam dish)
+  [6s] H2
+PASS H3 BREADTH (>=3 winners and >=2 slot patterns per dish, dish 14 under 3%) 11: 56 of 400 win (14.0%), 18 slot patterns; 12: 51 of 400 win (12.8%), 22 slot patterns; 13: 19 of 400 win (4.8%), 10 slot patterns; 14: 9 of 400 win (2.3%), 6 slot patterns
+  [30s] H3
+PASS H4 NO BUILD WINS ALL FOUR 143 H2/H3 winners, 138 distinct, 31 legal on all four (dish 14 energy 3 limits this); wins out of 4 among them: 0:0 1:15 2:12 3:4 4:0; best 3
+  [32s] H4
+PASS H5 INVERSION no grazers: cool win 0.090, hot win 0.083; grazers on: cool loss/grazed 0.048, hot win 0.051; chaperones+tetraether no reflex, grazers on: cool loss/grazed 0.000, hot loss/grazed 0.000; never-firing cooler rule on the carried cell: loss, mean share below 40 C 47.5% vs the same cell with no reflex 47.5%
+  [32s] H5
+PASS H6 BARS AGREE (SB1 all safe means win, SB2 loss has its stat unsafe; 95%) SB1 95.6% (65 of 68), SB2 98.9% (1099 of 1111). 11: 300 builds, 30 win; all-safe 26, of those win 26; losses 270, autopsy stat unsafe 269; 12: 300 builds, 38 win; all-safe 26, of those win 24; losses 262, autopsy stat unsafe 257; 13: 300 builds, 16 win; all-safe 14, of those win 13; losses 284, autopsy stat unsafe 280; 14: 300 builds, 5 win; all-safe 2, of those win 2; losses 295, autopsy stat unsafe 293. SB1 DISAGREE: 12 pace 7 slop 4 fuelcell + polyamines+filament+quorum | When temperature here is more than 50, then move toward cool. (below) | 12 pace 3 slop 0 respiration + polyamines+filament | stringent (below) | 13 pace 3 slop 6 respiration + wall+radio | sos (bust). SB2 FIRST MISSES: 11 pace 7 slop 0 heatps + polyamines+filament | nightferm (exposed:regularity -> natural, unsafe: growth) | 12 pace 7 slop 4 fuelcell + polyamines+filament+quorum | When temperature here is more than 50, then move toward cool. (below -> growth, unsafe: none) | 12 pace 3 slop 0 respiration + polyamines+filament | stringent (below -> growth, unsafe: none) | 12 pace 4 slop 2 respiration + pump | When temperature here is less than 50, then move toward heat. (cooked -> heat, unsafe: growth/natural) | 12 pace 4 slop 8 respiration + acidproof | When temperature here is less than 50, then move toward heat. (cooked -> heat, unsafe: growth) | 12 pace 2 slop 2 fermentation + lipids+filament+pili | When temperature here is less than 50, then move toward heat. (cooked -> heat, unsafe: growth)
+  [126s] H6
+PASS H7 DETERMINISTIC AND FAST 6 of 6 builds identical twice; resume(run, 12) identical on 4 of 4; mean 64x64 run 69.9 ms (limit 100)
+  [128s] H7
+FAIL H8 FORECAST AGREES WITH THE RUN (32 vs 64, >= 90%) 89.7% (104 of 116: 8 fix winners, 8 agree; plus up to 40 random winners per dish). DISAGREE: 11 pace 6 slop 0 respiration + tetraether+naps | When temperature here is more than 55, then move toward cool. (32 win, 64 loss) | 12 pace 6 slop 2 respiration + tetraether+repair+naps | sos (32 win, 64 loss) | 12 pace 2 slop 4 respiration + polyamines+filament+radio | stringent (32 win, 64 loss) | 12 pace 6 slop 2 fermentation + lipids+chaperones | When temperature here is less than 50, then move toward heat. (32 win, 64 loss) | 12 pace 3 slop 4 respiration + wall+filament+radio | stringent (32 win, 64 loss) | 12 pace 6 slop 4 respiration + shell+acidproof+filament | nightferm (32 win, 64 loss) | 12 pace 6 slop 4 respiration + polyamines+clock | nightferm (32 win, 64 loss) | 12 pace 5 slop 6 fermentation + chaperones+filament+pili | When temperature here is less than 50, then move toward heat. (32 win, 64 loss)
+  [137s] H8
+PASS H9 DIAL SMOOTHNESS (5 points) 11: 43 winners, 155 steps, worst change 2.1 points, 0 winners break the rule (0 steps); 12: 43 winners, 156 steps, worst change 2.4 points, 0 winners break the rule (0 steps); 13: 21 winners, 77 steps, worst change 1.5 points, 0 winners break the rule (0 steps)
+  [145s] H9
+PASS H10 TIPS 11: causes cooked,exposed:regularity,below,overgrew,starved all have a tip; 12: causes grazed,exposed:regularity,below,cooked,overgrew,starved all have a tip; 13: causes bust,exposed:regularity,cooked,below,starved,overgrew all have a tip; 14: causes below,cooked,bust,grazed,exposed:regularity,starved; winner cards checked 7 (chaperones,sporulate,filament,tetraether,polyamines,shell,naps); named in any tip: none; causes on the generic tip: starved
+  [145s] H10
+PASS H11 THE DIALS ALONE NEVER WIN (carried cell, every Pace and Sloppiness) 11: 0 dial-only wins at 64x64, 0 at 32x32; 12: 0 dial-only wins at 64x64, 0 at 32x32; 13: 0 dial-only wins at 64x64, 0 at 32x32; 14: 0 dial-only wins at 64x64, 0 at 32x32
+  [169s] H11
+
+11 of 12 lines pass (169 s)

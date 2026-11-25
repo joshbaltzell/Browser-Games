@@ -8,13 +8,18 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+  <filter id="inkRough" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.6" result="m"/><feComposite in="SourceGraphic" in2="m" operator="in"/></filter>
+  <filter id="chalkRough" x="-10%" y="-30%" width="120%" height="160%"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="3" result="t"/><feDisplacementMap in="SourceGraphic" in2="t" scale="2.6" xChannelSelector="R" yChannelSelector="G"/></filter>
+</defs></svg>
 <header id="head">
   <div id="topbar">
-    <a class="back" href="../../index.html">&larr; Back to games</a>
+    <a class="back" href="../../index.html" aria-label="Back to games">&larr;<span class="bk"> Back to games</span></a>
     <div class="brand">LOOK ALIVE <span id="dishTitle"></span></div>
     <nav id="nav">
       <button type="button" id="navList">Dishes</button>
       <button type="button" id="navWorld">World</button>
+      <button type="button" id="navTree">Skills</button>
     </nav>
   </div>
   <ol id="stepbar">
@@ -28,6 +33,23 @@
 </header>
 
 <main id="app">
+
+  <section class="screen" id="screen-ending">
+    <canvas id="endCanvas" class="endcanvas" role="img" aria-label="A painted microscope view. On the last two slides, a tall soft creature made of many glowing round cells, with waving tentacles at its top: one living thing made of many cells."></canvas>
+    <div class="endtext">
+      <div class="endinner">
+        <div class="kicker" id="endKicker"></div>
+        <h1 id="endTitle"></h1>
+        <p class="introp" id="endText"></p>
+        <div class="introbar">
+          <button type="button" class="ghost" id="endBack">Back</button>
+          <span class="introdots" id="endDots"></span>
+          <button type="button" class="ghost" id="endLeave">Dish list</button>
+          <button type="button" class="big" id="endGo">Next</button>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <section class="screen" id="screen-intro">
     <div class="briefwrap introwrap">
@@ -47,9 +69,11 @@
   <section class="screen" id="screen-list">
     <div class="listwrap">
       <h1>Pass as a native.</h1>
-      <p class="lede">Your people think a city lives inside a warm mountain, and your cell has gone in to blend in. Watch it fail, change it, and try again. The cell that wins a dish is the cell you start the next one with.</p>
+      <p class="lede">Your cell has gone into the warm mountain to blend in. Watch it fail, change it, and try again. The cell that wins a dish is the cell you start the next one with.</p>
+      <div class="scalestrip" id="scaleList"></div>
+      <div class="wtabs" id="worldTabs" role="tablist"></div>
       <div id="dishList"></div>
-      <div class="listfoot"><button type="button" class="ghost" id="replayIntro">Replay intro</button><button type="button" class="ghost" id="unlockAll">Unlock all dishes</button><button type="button" class="ghost" id="resetProgress">Clear saved progress</button></div>
+      <div class="listfoot"><button type="button" class="ghost" id="replayIntro">Replay intro</button><button type="button" class="ghost" id="watchEnding" hidden>Watch the ending</button><button type="button" class="ghost" id="unlockAll">Unlock all dishes</button><button type="button" class="ghost" id="resetProgress">Clear saved progress</button></div>
     </div>
   </section>
 
@@ -57,8 +81,10 @@
     <div class="briefwrap">
       <div class="kicker">The world</div>
       <h1 id="worldName"></h1>
+      <div class="scalestrip" id="scaleWorld"></div>
       <img class="worldimg" id="worldImg" src="assets/cards/world-acidica.jpg" alt="Your pink cell among purple native bacteria drifting in the sour, amber-streaked water of the warm crowd" onerror="this.style.display='none'">
       <div class="facts" id="worldFacts"></div>
+      <div class="localskey" id="localsKey" aria-label="How the locals look in the dish"><span><svg viewBox="0 0 40 16" aria-hidden="true"><rect x="1" y="4" width="17" height="8" rx="4"/><rect x="21" y="4" width="17" height="8" rx="4"/></svg><i>Lactobacillus</i> long rods, often in pairs</span><span><svg viewBox="0 0 40 16" aria-hidden="true"><circle cx="6" cy="8" r="4.5"/><circle cx="15" cy="8" r="4.5"/><circle cx="24" cy="8" r="4.5"/><circle cx="33" cy="8" r="4.5"/></svg><i>Streptococcus</i> beads in pairs and chains</span><span><svg viewBox="0 0 40 16" aria-hidden="true"><path d="M12 8c3-6 7-6 10 0s7 6 10 0"/><path d="M12 8C9 5 6 7 2 4M12 8C9 8 6 10 2 9M12 8c-3 3-6 4-9 7" stroke-width="1"/></svg><i>Helicobacter pylori</i> curved spirals with a tuft of tails</span></div>
       <p class="badge" id="worldBadge"></p>
       <p class="mission" id="worldMission"></p>
       <button type="button" class="big" id="worldGo">Continue</button>
@@ -67,13 +93,20 @@
 
   <section class="screen" id="screen-brief">
     <div class="briefwrap">
+    <div class="paper letter" id="briefLetter">
+      <div class="lethead"><svg class="leteye" viewBox="0 0 40 40" aria-hidden="true"><polygon points="20,2 36,11 36,29 20,38 4,29 4,11" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 20q11-10 22 0q-11 10-22 0z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="20" cy="20" r="3.5" fill="currentColor"/></svg><span class="letorg">Department of Plausible Deniability</span></div>
       <div class="kicker" id="briefKicker"></div>
       <h1 id="briefTitle"></h1>
       <div class="report" id="briefReport" aria-live="polite"></div>
+      <div class="fieldnote" id="briefNote"><b>Field note</b><p></p><p></p></div>
       <div class="briefrow"><b>The problem</b><span id="briefProblem"></span></div>
       <div class="briefrow"><b>Your goal</b><span id="briefGoal"></span></div>
       <div class="briefrow" id="briefExam"><b>This is an exam</b><span>There are no answer tips, and several different cells can pass. You are graded: Passable, Convincing or Benign.</span></div>
       <div class="briefrow"><b>Your cell</b><span class="briefcell"><span class="cellfig" id="briefFig"></span><span id="briefCell"></span></span></div>
+      <div class="specimen"><span id="briefCover"></span> &ndash; not a robot.</div>
+      <div class="letstamp" aria-hidden="true">BE COOL.</div>
+      <div class="coffee" aria-hidden="true"></div>
+    </div>
       <button type="button" class="big" id="briefGo">Start the test</button>
     </div>
   </section>
@@ -86,6 +119,7 @@
             <canvas id="cellGL" hidden></canvas>
             <svg id="cellSvg" viewBox="0 0 600 410" role="img" aria-label="Diagram of your cell with its body slots"></svg>
             <div id="tagLayer"></div>
+            <div id="factoryLine" class="factoryline" style="display:none"></div><div id="coach" class="coach" role="note" style="display:none"></div>
           </div>
         </div>
         <div class="previewbar" id="previewBar" aria-live="polite"><span class="pv-k" id="pvK">Preview</span><span class="pv-t" id="pvT"></span></div>
@@ -98,8 +132,9 @@
       </div>
       <div class="colC">
         <div class="panel optpanel" id="optPanel">
-          <div class="opthead"><div class="optnamerow"><div class="optname" id="optName"></div><label class="realtog"><input type="checkbox" id="realTog"> Real biology</label></div><div class="optblurb" id="optBlurb"></div></div>
+          <div class="opthead"><div class="optnamerow"><div class="optname" id="optName"></div><button type="button" class="treebtn" id="adaptTree" title="Open the skill tree">Skill tree</button><label class="realtog"><input type="checkbox" id="realTog"> Real biology</label></div><div class="optblurb" id="optBlurb"></div></div>
           <div id="layerRows" class="layerrows"></div>
+          <div id="pathBox" class="pathbox" hidden></div>
           <div id="optList" class="optlist"></div>
         </div>
       </div>
@@ -126,9 +161,11 @@
         <div class="panel dishpanel">
           <div class="yourcell" id="yourCell"><span class="cellfig" id="runFig"></span><small>Your cell</small></div>
           <div class="dishwrap" id="dishWrap"><canvas id="runDish" class="dishcanvas"></canvas></div>
-          <div class="legend"><i class="sw vio"></i> natives <i class="sw pink"></i> you <i class="sw amb"></i> waste <span id="legGrn"><i class="sw grn"></i> guards (immune cells)</span></div>
-          <div class="readline" id="readLine"></div>
+          <div class="legend"><i class="sw vio"></i> natives <i class="sw pink"></i> you <span id="legWaste"><i class="sw amb"></i> waste</span><span id="legBoul" hidden><i class="sw boul"></i> green boulders (food)</span><span id="legLight" hidden><i class="sw lit"></i> the bright place</span> <span id="legGrn"><i class="sw grn"></i> guards</span></div>
         </div>
+      </div>
+      <div class="runR">
+        <div class="panel verdict"><div class="vtext"><div class="readline" id="readLine"></div><div id="verdictText"></div></div><button type="button" id="verdictBtn" class="big">Adapt your cell</button></div>
         <div class="controls panel">
           <div class="crow">
             <button type="button" id="playBtn" class="pbtn">Pause</button>
@@ -137,15 +174,19 @@
             <button type="button" id="resultBtn">Result</button>
           </div>
           <div class="crow"><input type="range" id="scrub" min="0" max="300" value="0" step="1"><span id="tickNum" class="mono"></span></div>
+          <div class="crow cmprow"><button type="button" id="cmpBtn" class="cmpbtn" disabled>Hold: previous run</button><label class="cmpkeep" id="cmpKeepL"><input type="checkbox" id="cmpKeep"> Keep</label><span id="cmpDiff" class="cmpdiff dim" aria-live="polite"></span></div>
         </div>
-        <div class="cardstrip" id="cardStrip"></div>
-      </div>
-      <div class="runR">
-        <div class="panel verdict"><div id="verdictText"></div><button type="button" id="verdictBtn" class="big">Adapt your cell</button></div>
-        <div class="panel" id="instBox"><div class="ptitle small" id="liveTitle">Live stats</div><div id="liveBars" class="statbars two"></div></div>
+        <div class="panel chartpanel" id="chartPanel">
+          <div class="charttabs" role="tablist" aria-label="Charts">
+            <button type="button" role="tab" id="tabShare" aria-selected="true" aria-controls="paneShare" class="on">Your share</button>
+            <button type="button" role="tab" id="tabSusp" aria-selected="false" aria-controls="paneSusp">Suspicion</button>
+            <span class="chartcap dim" id="chartCap"></span>
+          </div>
+          <div id="paneShare" role="tabpanel" aria-labelledby="tabShare"><canvas id="gShare" class="graph"></canvas><canvas id="foodStrip" style="display:none"></canvas><canvas id="ribbon"></canvas><div class="ribbonkey" id="ribbonKey"></div></div>
+          <div id="paneSusp" role="tabpanel" aria-labelledby="tabSusp" hidden><canvas id="gSusp" class="graph"></canvas></div>
+        </div>
+        <div class="runrow"><div class="panel" id="instBox"><div class="ptitle small" id="liveTitle">Live stats</div><div id="liveBars" class="statbars two"></div></div><div class="cardstrip" id="cardStrip"></div></div>
         <div class="immune panel" id="immune"></div>
-        <div class="panel"><div class="ptitle small" id="g1Title"></div><canvas id="gShare" class="graph"></canvas><canvas id="foodStrip" style="display:none"></canvas><canvas id="ribbon"></canvas><div class="ribbonkey" id="ribbonKey"></div></div>
-        <div class="panel" id="g2Box"><div class="ptitle small" id="g2Title"></div><canvas id="gSusp" class="graph low"></canvas></div>
       </div>
     </div>
   </section>
@@ -154,11 +195,30 @@
   <div id="pop" hidden></div>
 </main>
 
+<div id="treeview" role="dialog" aria-modal="true" aria-label="Skill tree" hidden>
+  <div class="tv-head"><h2>Skill tree</h2><span class="tv-energy" id="treeEnergy"></span><div class="tv-legend" id="treeLegend"></div><button type="button" id="treeClose">Close</button></div>
+  <div class="tv-note" id="treeNote"></div>
+  <div class="tv-scroll" id="treeScroll"><div class="tv-inner" id="treeInner"><svg id="treeLines" aria-hidden="true" focusable="false"><defs>
+    <marker id="tvArrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#8a90a8"/></marker>
+    <marker id="tvArrowHl" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#ffffff"/></marker>
+  </defs><g id="treeLineG"></g></svg><div class="tv-grid" id="treeGrid"></div></div></div>
+  <div class="tv-detail" id="treeDetail">
+    <div class="td-img" id="tdImg"></div>
+    <div class="td-main"><div class="td-name"><b id="tdName"></b><span id="tdShelf"></span><span class="td-en" id="tdEn"></span></div><p class="td-game" id="tdGame"></p><p class="td-real" id="tdReal"></p></div>
+    <div class="td-side"><div class="td-state" id="tdState"></div><div class="td-req" id="tdAfter"></div><div class="td-req" id="tdWith"></div><div class="td-act"><button type="button" id="treeAct" hidden></button><span class="td-msg" id="tdMsg" aria-live="polite"></span></div></div>
+  </div>
+</div>
+
 <script src="cards.js"></script>
 <script src="levels.js"></script>
+<script src="levels2.js"></script>
+<script src="sim3.js"></script>
+<script src="levels3.js"></script>
 <script src="sim.js"></script>
 <script src="draw.js"></script>
+<script src="draw3.js"></script>
 <script src="render-gl.js"></script>
+<script src="ending.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

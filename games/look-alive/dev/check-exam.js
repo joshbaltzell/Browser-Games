@@ -1,6 +1,7 @@
 // Look Alive checks for the exam dishes 6 to 10 (GAMEPLAY-V2 section 14) and the trade-off reporting. Loaded by dev/check.js (it needs the legacy sweeps' results for X8).
 // Sampling, to keep the whole run under about eight minutes (all runs 16x16 unless a line says 64x64):
-//   dishes 6 and 9: every second card set, Pace 0 to 8 x Sloppiness 0, 2, 4, 6, 8 (45 dial settings);
+//   dish 6: every second card set, Pace 0 to 8 x Sloppiness 0, 2, 4, 6, 8 (45 dial settings);
+//   dish 9: every card set (99), 45 dial settings (every second card set hid two of its four winning slot patterns);
 //   dish 7: every card set that fits energy 2, all 81 dial settings, each with no reflex and the three Biology reflexes;
 //   dishes 8 and 10: every fourth card set, 45 dial settings, with no reflex, Stringent, Sporulate and SOS (machine rules are not swept: not tested on these dishes).
 module.exports = function (E) {
@@ -31,9 +32,9 @@ module.exports = function (E) {
   const X = {};
   EXAM.forEach(id => {
     const D = Lv.dish(id), all = B.configs(D), crashDish = D.event && D.event.tick > 0;
-    const stride = id === 7 ? 1 : crashDish ? (QUICK ? 8 : 4) : (QUICK ? 4 : 2);
+    const stride = id === 7 || id === 9 ? 1 : crashDish ? (QUICK ? 8 : 4) : (QUICK ? 4 : 2);
     const cfgs = all.filter((_, i) => i % stride === 0);
-    const rs = sweepDish(D, cfgs, id === 7 ? dialsFull : dialGrid, crashDish ? bioRefs : [null]);
+    const rs = sweepDish(D, cfgs, id === 7 ? dialsFull : dialGrid, crashDish || id === 7 ? bioRefs : [null]);
     X[id] = { D, rs, wins: rs.filter(r => r.win), cfgs: cfgs.length, all: all.length };
     lap('dish ' + id + ': ' + rs.length + ' runs (' + cfgs.length + ' of ' + all.length + ' card sets), ' + X[id].wins.length + ' wins');
   });
@@ -167,11 +168,107 @@ module.exports = function (E) {
     result(ok, 'X7 RANDOM LEGAL BUILDS WIN UNDER 10%', lines.join(' ; ') + ' (random card sets from the dish\'s open slots, random dials 0 to 8, a random reflex 70% of the time)');
   }
 
+  // ---------------------------------------------------------------- X9 exam breadth
+  // Every exam dish: at least 3 different winning slot patterns in its sweep sample (the Reflex slot counts: it is a slot the player fills).
+  // Dish 7 also keeps a floor on its win rate: energy 2 allows only two body patterns (Envelope, Envelope + Division), so its width is in the dials.
+  {
+    const FLOOR = { 7: 0.012 }, lines = []; let ok = true;
+    EXAM.forEach(id => {
+      const x = X[id], ws = x.wins.filter(r => r.alive), sigs = diffSigs(ws), n = Object.keys(sigs).length, rate = ws.length / x.rs.length;
+      const good = n >= 3 && rate >= (FLOOR[id] || 0);
+      ok = ok && good;
+      lines.push('dish ' + id + ': ' + ws.length + ' of ' + x.rs.length + ' sampled runs win (' + pc(rate) + (FLOOR[id] ? ', floor ' + pc(FLOOR[id]) : '') + '), ' + n + ' slot patterns ' + JSON.stringify(sigs) + (good ? '' : ' TOO NARROW'));
+    });
+    result(ok, 'X9 EXAM BREADTH (3 winning slot patterns on every exam dish; dish 7 win rate)', '\n       ' + lines.join('\n       '));
+  }
+
+  // ---------------------------------------------------------------- X10 no extreme dials
+  // Every exam dish: at least 2 slot patterns have a winner with Pace 1 to 7 and Sloppiness 1 to 6 that also wins at 64x64.
+  const mildWins = {};
+  {
+    const lines = []; let ok = true, ran = 0;
+    const mild = b => b.pace >= 1 && b.pace <= 7 && b.slop >= 1 && b.slop <= 6;
+    EXAM.forEach(id => {
+      const x = X[id], D = x.D, by = {};
+      x.wins.filter(r => r.alive && mild(r.build)).forEach(r => { const k = slotsUsed(r.build); (by[k] = by[k] || []).push(r); });
+      const conf = [];
+      Object.keys(by).sort((a, b) => by[b].length - by[a].length).forEach(k => {
+        if (conf.length >= 3) return;
+        const hit = by[k].slice().sort((a, b) => b.bandFrac - a.bandFrac).slice(0, 3).find(r => { ran++; return B.play(D, r.build, 64).v.win; });
+        if (hit) conf.push(hit);
+      });
+      mildWins[id] = conf;
+      const good = conf.length >= 2; ok = ok && good;
+      lines.push('dish ' + id + ': ' + Object.keys(by).length + ' slot patterns have a 16x16 winner with Pace 1 to 7 and Sloppiness 1 to 6; confirmed at 64x64 in ' + conf.length + ' patterns: ' + conf.map(r => '[' + words(r.build) + ']').join(' | ') + (good ? '' : ' FEWER THAN 2'));
+    });
+    result(ok, 'X10 NO EXTREME DIALS (2 slot patterns win with Pace 1 to 7 and Sloppiness 1 to 6, confirmed at 64x64)', '\n       ' + lines.join('\n       '));
+  }
+
+  // ---------------------------------------------------------------- X11 every exam cause has its own tip, and no tip spells out a winner
+  // Short card names as a tip would write them. A tip "spells out a winner" when it names every part and reflex of a confirmed winner (X2 and X10 picks),
+  // or gives a dial a number ("Pace 3", "Sloppiness to 5").
+  const SHORT = { pump: 'Proton pump', lipids: 'Tight membrane', acidproof: 'Acid-proof', shell: 'Sealed shell', wall: 'Cell wall', quorum: 'Head count', radio: 'Radio mesh', naps: 'Random naps',
+    clock: 'Sync pulse', copier: 'Perfect copier', repair: 'Self-repair', fuelcell: 'Fuel cell', stringent: 'Stringent', sporulate: 'Sporulate', sos: 'SOS' };
+  const has = (txt, nm) => txt.toLowerCase().indexOf(nm.toLowerCase()) >= 0;
+  const cardNames = b => (b.parts || []).concat(b.reflex && b.reflex.kind === 'bio' ? [b.reflex.id] : []).map(i => SHORT[i] || i);
+  {
+    // One probe per cause that each dish reliably produces (16x16): [pace, slop, power, parts, bio reflex]. Found by the M4 balance pass; re-derive them if a dish changes.
+    const PROBES = {
+      6: { acid: [4, 2, 'fermentation', [], null], 'exposed:regularity': [4, 2, 'fermentation', ['shell'], null], overgrew: [5, 2, 'fermentation', ['acidproof'], null], below: [2, 2, 'fermentation', ['pump'], null], 'exposed:waste': [4, 2, 'respiration', ['acidproof'], null] },
+      7: { acid: [4, 2, 'fermentation', [], null], 'exposed:regularity': [4, 2, 'fermentation', ['shell'], null], below: [3, 2, 'fermentation', ['pump'], null], 'exposed:growth': [6, 2, 'fermentation', ['shell'], null], 'exposed:waste': [4, 2, 'respiration', ['shell'], null], overgrew: [5, 2, 'fermentation', ['pump'], 'sporulate'], starved: [0, 6, 'fermentation', ['pump'], null] },
+      8: { acid: [4, 2, 'fermentation', [], null], bust: [4, 2, 'fermentation', [], 'sporulate'], 'exposed:waste': [4, 2, 'respiration', [], 'sporulate'], 'exposed:regularity': [4, 2, 'fermentation', ['shell'], null], below: [7, 2, 'fermentation', ['acidproof'], null], overgrew: [4, 2, 'fermentation', ['acidproof'], 'sporulate'] },
+      9: { acid: [4, 2, 'fermentation', [], null], 'exposed:regularity': [4, 2, 'fermentation', ['acidproof'], null], 'exposed:waste': [4, 2, 'respiration', ['acidproof'], null], overgrew: [6, 4, 'fermentation', ['acidproof'], null], below: [4, 2, 'fermentation', ['lipids'], 'sporulate'] },
+      10: { acid: [4, 2, 'fermentation', [], null], 'exposed:growth': [5, 2, 'fermentation', ['acidproof'], null], 'exposed:regularity': [4, 2, 'fermentation', ['acidproof'], null], bust: [5, 2, 'fermentation', ['pump'], null], starved: [4, 2, 'fermentation', ['pump'], null], 'exposed:waste': [4, 2, 'respiration', ['acidproof'], null], below: [4, 6, 'fermentation', ['acidproof'], null] }
+    };
+    const lines = [], bad = []; let nCause = 0;
+    EXAM.forEach(id => {
+      const D = Lv.dish(id), seen = {}, Rr = B.rng(1100 + id), other = D.tips.other;
+      Object.keys(PROBES[id]).forEach(want => {
+        const p = PROBES[id][want], b = B.build(p[0], p[1], p[2], p[3], p[4] ? B.bioRef(p[4]) : null), r = B.play(D, b, SN), a = r.v.win ? null : Sim.autopsy(r);
+        if (!a || a.cause !== want) bad.push('dish ' + id + ' probe for ' + want + ' [' + B.label(b) + '] gave ' + (a ? a.cause : 'a win'));
+        if (a) seen[a.cause] = seen[a.cause] || a.text;
+      });
+      for (let i = 0; i < (QUICK ? 150 : 400); i++) { const b = B.randomBuild(D, Rr); if (!Sim.validate(D, b).ok) continue; const r = B.play(D, b, SN); if (r.v.win) continue; const a = Sim.autopsy(r); seen[a.cause] = seen[a.cause] || a.text; }
+      const winners = (examples[id] || []).concat(mildWins[id] || []).map(r => r.build);
+      Object.keys(seen).forEach(c => {
+        nCause++;
+        const own = c !== 'other' && Object.prototype.hasOwnProperty.call(D.tips, c), t = Lv.tip(D, c), txt = t.join(' ');
+        const generic = !own || t[0] === other[0] || t[1] === other[1];
+        const gives = winners.filter(b => { const nm = cardNames(b); return nm.length && nm.every(x => has(txt, x)); }).map(b => B.label(b));
+        const dial = /\b(Pace|Sloppiness)( dial)?( to| at| of)? \d/.test(txt);
+        if (generic) bad.push('dish ' + id + ' ' + c + ': falls back to the generic tip');
+        if (gives.length) bad.push('dish ' + id + ' ' + c + ': tip names every card of a winner (' + gives[0] + ')');
+        if (dial) bad.push('dish ' + id + ' ' + c + ': tip gives a dial a number');
+      });
+      lines.push('dish ' + id + ': causes seen ' + Object.keys(seen).sort().join(', '));
+    });
+    const never = ['exposed:casualties', 'band'].filter(c => EXAM.every(id => !lines[EXAM.indexOf(id)].includes(c)));
+    result(bad.length === 0, 'X11 EVERY EXAM LOSS CAUSE HAS ITS OWN TIP, AND NO TIP SPELLS OUT A WINNER', nCause + ' dish and cause pairs (one probe per known cause plus ' + (QUICK ? 150 : 400) + ' random builds per dish)' + (never.length ? '; never seen on an exam dish: ' + never.join(', ') + ' (their shared tips stay as written)' : '') + (bad.length ? '. BAD: ' + bad.join(' | ') : '') + '\n       ' + lines.join('\n       '));
+  }
+
+  // ---------------------------------------------------------------- X12 the dish 8 hint names the problem and not the answer
+  // Answer cards: any card that, fitted alone to the carried cell or to the carried cell with Sporulate, wins dish 8 at 16x16 and 64x64.
+  // No dish 8 tip may name one, or paraphrase a reflex sentence or the Head count. The overgrowth tip must name both the overgrowth and the crashes, and say that Sporulate raises Growth.
+  {
+    const D = Lv.dish(8), c = carryOf(8), spore = Lv.applyFix(c, { changes: { reflex: { kind: 'bio', id: 'sporulate' } } }), answers = [], opts = [];
+    ['envelope', 'insides', 'division', 'signal'].forEach(sl => Sim.offered(D, sl).forEach(cd => opts.push(cd.id)));
+    D.allowed.bio.forEach(id => opts.push(id));
+    opts.forEach(id => [c, spore].forEach(base => {
+      const f = Sim.fit(D, base, id); if (!f.ok || answers.indexOf(id) >= 0) return;
+      if (play(8, f.build, SN).v.win && play(8, f.build, 64).v.win) answers.push(id);
+    }));
+    const all = Object.keys(D.tips).map(k => D.tips[k].join(' ')).join(' '), og = (D.tips.overgrew || []).join(' ');
+    const named = answers.filter(id => has(all, SHORT[id] || id));
+    const para = all.match(/pause dividing|stop dividing|senses? hunger|count each other|head count|quorum/i);
+    const problem = /crash/i.test(og) && /overgrowth|over the band|took over|too big/i.test(og) && /Sporulate raises your Growth/.test(og);
+    result(answers.length > 0 && named.length === 0 && !para && problem, 'X12 THE DISH 8 HINT NAMES THE PROBLEM, NOT THE ANSWER', 'answer cards on the carried cell (' + words(c) + '): ' + (answers.map(id => SHORT[id] || id).join(', ') || 'none') + '; named in a dish 8 tip: ' + (named.map(id => SHORT[id] || id).join(', ') || 'none') + '; paraphrase found: ' + (para ? '"' + para[0] + '"' : 'none') + '; overgrowth tip names the overgrowth, the crashes and "Sporulate raises your Growth": ' + problem);
+  }
+
   // ---------------------------------------------------------------- X8 dishes 1 to 5 unchanged
   {
-    const known = { P7: false, E6: false }, legacy = Object.keys(outcomes).filter(k => !/^(X|T)\d/.test(k));
+    const known = { P7: false }, legacy = Object.keys(outcomes).filter(k => !/^(X|T)\d/.test(k));
     const changed = legacy.filter(k => (k in known ? outcomes[k] !== known[k] : outcomes[k] !== true));
-    result(changed.length === 0, 'X8 DISHES 1 TO 5 STILL PASS EVERY EXISTING CHECK', legacy.length + ' existing lines: ' + legacy.filter(k => outcomes[k]).length + ' pass, ' + legacy.filter(k => !outcomes[k]).join(', ') + ' fail (before this pass the same two failed: P7 on dish 2 and E6)' + (changed.length ? '. CHANGED: ' + changed.join(', ') : ''));
+    result(changed.length === 0, 'X8 DISHES 1 TO 5 STILL PASS EVERY EXISTING CHECK', legacy.length + ' existing lines: ' + legacy.filter(k => outcomes[k]).length + ' pass, ' + legacy.filter(k => !outcomes[k]).join(', ') + ' fail (P7 on dish 2 is a known failure: dish 2 was left alone in the M4 balance pass; every other line must pass)' + (changed.length ? '. CHANGED: ' + changed.join(', ') : ''));
   }
 
   // ================================================================ trade-off reporting

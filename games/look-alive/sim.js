@@ -34,6 +34,22 @@ var LookAlive = (function () {
     }
     return cap;
   }
+  // ---- habitat 2 (D.temp): a temperature per cell, hot down the middle column, cool at the left and right edges (the grid wraps, so the two cool edges meet)
+  // (columns come from the mirrored distance, so the two mirrored columns are exactly equal)
+  function makeTemp(n, T) {
+    var a = new Float32Array(n * n), x, y;
+    for (x = 0; x < n; x++) { var u = Math.min(x + 0.5, n - x - 0.5) / n, t = T.cool + (T.hot - T.cool) * (0.5 - 0.5 * Math.cos(2 * Math.PI * u)); for (y = 0; y < n; y++) a[y * n + x] = t; }
+    return a;
+  }
+  function sstep(a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
+  // The natives' bands come from the food map: thin pink streamers above the photosynthesis line, the dense green and orange mat below it, a thin grazed rim under 40 C
+  function bandOf(t, B) { return B.hot + (B.mat - B.hot) * (1 - sstep(B.photoLo, B.photoHi, t)) - (B.mat - B.rim) * (1 - sstep(B.grazeLo, B.grazeHi, t)); }
+  function makeCapD(n, D) {
+    var cap = makeCap(n); if (!D || !D.temp) return cap;
+    var tp = makeTemp(n, D.temp), B = D.temp.bands, i;
+    for (i = 0; i < n * n; i++) cap[i] *= bandOf(tp[i], B);
+    return cap;
+  }
   function makeBust(n) {  // how hard the food crash hits each cell, 0.3 (a refuge) to 1.0
     var m = new Float32Array(n * n), x, y;
     for (y = 0; y < n; y++) for (x = 0; x < n; x++) {
@@ -77,7 +93,9 @@ var LookAlive = (function () {
   }
   // Which suspicion channels a dish switches on (a channel that is off contributes nothing).
   function channelList(D) { return D.suspicion === false ? [] : (D.channels || CHAN); }
-  function channelsOn(D) { var l = channelList(D), o = {}; CHAN.forEach(function (c) { o[c] = l.indexOf(c) >= 0; }); return o; }
+  function channelsOn(D) { var l = channelList(D), o = {}; CHAN.forEach(function (c) { o[c] = l.indexOf(c) >= 0; }); if (D.agents) o.motion = l.indexOf('motion') >= 0; return o; }
+  // ---- habitat 3 (D.agents): the individual-cell simulation in sim3.js; each hand-off below is a short branch behind D.agents and old dishes never reach it
+  function S3() { return typeof LookAliveSim3 !== 'undefined' ? LookAliveSim3 : require('./sim3.js'); }
 
   function params(P, D, build) {
     var Pr = P.robot, Pn = P.native, b = normalize(build);
@@ -108,6 +126,14 @@ var LookAlive = (function () {
       if (f.acid) p.acidKeep *= 1 - f.acid;
       if (f.reg) { p.reg[id] = f.reg; p.regMachine += f.reg; }
     });
+    if (D.temp) {   // habitat 2: heat tolerance (C), grip against the current, grazing kept, the cool-side cost of a heat-stable power card
+      p.tol = D.temp.base + (met.fx.heat || 0); p.grip = 0; p.grazeKeep = 1; p.coolBelow = met.fx.coolBelow || 0; p.coolMult = met.fx.coolMult || 1;
+      (b.parts || []).forEach(function (id) { var c = Cards.part(id); if (!c) return; var f = c.fx; if (f.heat) p.tol += f.heat; if (f.grip) p.grip = Math.max(p.grip, f.grip); if (f.graze) p.grazeKeep *= 1 - f.graze; });
+    }
+    if (D.acidHurry && p.acidKeep < 1 && p.ids.indexOf('acidproof') < 0) {   // fast dividers have newer, thinner membranes: a pump or a membrane leaks more of the acid as Pace goes up (acid-proof insides have nothing to leak)
+      var leak = D.acidHurry * Math.max(0, p.paceMult - (D.acidHurryFrom || 1));
+      p.acidKeep = Math.min(1, p.acidKeep + leak);
+    }
     p.acidBlock = 1 - p.acidKeep;
     p.acidRate = p.acid * p.acidKeep;                                  // fraction of the colony the acid dissolves each tick
     p.births = p.paceMult * p.yield * p.slopMult * p.partBirths;      // gross division multiplier of the build, before quorum, radio and rules
@@ -153,7 +179,11 @@ var LookAlive = (function () {
   function isOpen(D, slotId) { return (D.slots || []).indexOf(slotId) >= 0; }
   // 'open' | 'factory' (locked, factory part fitted) | 'locked'
   function slotState(D, slotId) { return isOpen(D, slotId) ? 'open' : (factoryOf(D, slotId) ? 'factory' : 'locked'); }
-  function opensOn(slotId) { var ds = Lv().DISHES; for (var i = 0; i < ds.length; i++) if (ds[i].slots.indexOf(slotId) >= 0) return ds[i].id; return null; }
+  // The number a player sees for a dish id (game.js sets it to the dish's place in play order; until then, and in Node, it is the id itself). Text only.
+  var dishNoFn = null;
+  function dn(id) { return dishNoFn ? dishNoFn(id) : id; }
+  function playOrder() { return Lv().DISHES.slice().sort(function (a, b) { return dn(a.id) - dn(b.id); }); }   // dishes in play order (ids are not: dishes were inserted later)
+  function opensOn(slotId) { var ds = playOrder(); for (var i = 0; i < ds.length; i++) if (ds[i].slots.indexOf(slotId) >= 0) return ds[i].id; return null; }
   // Cards a dish offers for a slot: the dish's allowed list intersected with the slot, only if the slot is open.
   function offered(D, slotId) {
     if (!isOpen(D, slotId)) return [];
@@ -222,8 +252,16 @@ var LookAlive = (function () {
         if (!ac || A.actions.indexOf(rf.action) < 0) pr.push('Unknown action "' + rf.action + '".');
         if (rf.cmp !== 'gt' && rf.cmp !== 'lt') pr.push('Comparison must be gt or lt.');
         if (typeof rf.value !== 'number' || !isFinite(rf.value)) pr.push('The rule needs a number.');
+        if (D.agents && rf.otherwise != null && (!Cards.action(rf.otherwise) || A.actions.indexOf(rf.otherwise) < 0)) pr.push('Unknown action "' + rf.otherwise + '".');
       } else pr.push('Reflex kind must be bio or machine.');
     }
+    var lin = {};   // one stage of a lineage at most
+    parts.forEach(function (id) {
+      var ls = lineageStage(id); if (!ls) return;
+      if (lin[ls.lineage] && lin[ls.lineage] !== id) pr.push('Only one stage of the ' + lineageName(ls.lineage) + ' lineage fits in a cell.');
+      lin[ls.lineage] = id;
+    });
+    treeProblems(b).forEach(function (p) { pr.push(p); });
     return { ok: pr.length === 0, problems: pr };
   }
 
@@ -238,7 +276,7 @@ var LookAlive = (function () {
     if (isOpen(D, slotId)) return null;
     if (slotId === 'motor') return 'The Motor slot is locked here.';
     var f = factoryOf(D, slotId), on = opensOn(slotId);
-    return f ? 'Factory fitted. Opens on dish ' + on + '.' : 'Opens on dish ' + on + '.';
+    return f ? 'Factory fitted. Opens on dish ' + dn(on) + '.' : 'Opens on dish ' + dn(on) + '.';
   }
   function fit(D, build, card, layer, loose) {
     var b = cp(normalize(build)), sl = toSlots(b), id, slotId, c;
@@ -286,12 +324,118 @@ var LookAlive = (function () {
     return { ok: true, build: nb };
   }
 
+  // ---------------------------------------------------------------- skill tree
+  // Data lives on the cards (`tree`: branch, tier, after = learn first, with = fit together). The Machine rule is not a card, so its node is defined here.
+  var TREE_BRANCHES = [{ id: 'power', name: 'Power' }, { id: 'skin', name: 'Skin' }, { id: 'insides', name: 'Insides' }, { id: 'divide', name: 'Divide' }, { id: 'sense', name: 'Sense' }, { id: 'move', name: 'Move' }, { id: 'react', name: 'React' }, { id: 'light', name: 'Light' }];
+  var RULE_NODE = { id: 'rule', name: 'Machine rule', slot: 'reflex', branch: 'react', tier: 2, after: [], 'with': [], energy: 0, shelf: 'machine', kind: 'rule' };
+  function treeBranches() { return TREE_BRANCHES.map(function (b) { return { id: b.id, name: b.name }; }); }
+  function offersNode(D, n) {
+    if (!D || !D.allowed) return false;
+    if (n.kind === 'rule') return isOpen(D, 'reflex') && D.allowed.sensors.length > 0 && D.allowed.actions.length > 0;
+    return offered(D, n.slot).some(function (c) { return c.id === n.id; });
+  }
+  function treeNodes() {
+    var ds = Lv().DISHES, list = [], bi = {};
+    TREE_BRANCHES.forEach(function (b, i) { bi[b.id] = i; });
+    function add(c, kind) {
+      var t = c.tree || {};
+      var nd = { id: c.id, name: c.name, slot: c.slot, branch: t.branch, tier: t.tier, after: (t.after || []).slice(), 'with': (t['with'] || []).slice(), energy: c.energy || 0, shelf: c.shelf, kind: kind, learnedOn: null };
+      if (t.lineage) { nd.lineage = t.lineage; nd.stage = t.stage; }
+      list.push(nd);
+    }
+    Cards.parts.forEach(function (c) { add(c, 'part'); });
+    Cards.bioReflexes.forEach(function (c) { add(c, 'reflex'); });
+    list.push(cp(RULE_NODE));
+    var po = playOrder(); list.forEach(function (n) { for (var i = 0; i < po.length; i++) if (offersNode(po[i], n)) { n.learnedOn = po[i].id; break; } });
+    list.sort(function (a, b) { return (bi[a.branch] - bi[b.branch]) || (a.tier - b.tier) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); });
+    return list;
+  }
+  // The stage of a card in an evolutionary lineage: { lineage, stage, prev, next } (prev and next are card ids or null), or null for a card outside any lineage.
+  function lineageStage(id) {
+    var c = Cards.part(id) || Cards.bio(id), t = c && c.tree;
+    if (!t || !t.lineage) return null;
+    var prev = null, next = null;
+    Cards.parts.concat(Cards.bioReflexes).forEach(function (o) {
+      var u = o.tree; if (!u || u.lineage !== t.lineage) return;
+      if (u.stage === t.stage - 1) prev = o.id; else if (u.stage === t.stage + 1) next = o.id;
+    });
+    return { lineage: t.lineage, stage: t.stage, prev: prev, next: next };
+  }
+  function lineageName(l) { for (var i = 0; i < TREE_BRANCHES.length; i++) if (TREE_BRANCHES[i].id === l) return TREE_BRANCHES[i].name; return l; }
+  function fittedIds(build) {
+    var b = normalize(build) || {}, o = {};
+    if (b.metabolism) o[Cards.canon(b.metabolism)] = true;
+    (b.parts || []).forEach(function (id) { o[Cards.canon(id)] = true; });
+    if (b.reflex) { if (b.reflex.kind === 'bio') o[Cards.canon(b.reflex.id)] = true; else if (b.reflex.kind === 'machine') o.rule = true; }
+    return o;
+  }
+  // The card ids in this card's `with` list that are not fitted in the build.
+  function treeMissing(build, id) {
+    var c = Cards.part(id) || Cards.bio(id);
+    var w = c && c.tree && c.tree['with'] || [], f = fittedIds(build);
+    return w.filter(function (x) { return !f[x]; });
+  }
+  function treeNeed(otherId) {   // "Toxin immunity fitted in the Insides slot"
+    var o = Cards.part(otherId) || Cards.bio(otherId), name = o ? o.name : otherId === 'rule' ? 'Machine rule' : otherId;
+    return name + ' fitted in the ' + slotName(o ? o.slot : otherId === 'rule' ? 'reflex' : '') + ' slot';
+  }
+  function treeNeedWords(c, otherId) { return c.name + ' needs ' + treeNeed(otherId) + '.'; }
+  function treeProblems(b) {
+    var pr = [], f = fittedIds(b);
+    Object.keys(f).forEach(function (id) {
+      var c = Cards.part(id) || Cards.bio(id);
+      if (!c || !c.tree || !c.tree['with'] || !c.tree['with'].length) return;
+      var miss = treeMissing(b, id);
+      if (miss.length) pr.push(treeNeedWords(c, miss[0]));
+    });
+    return pr;
+  }
+  // State of every skill, keyed by id: { state: 'fitted' | 'available' | 'learned' | 'unlearned', reason }.
+  // D is the dish being viewed (null from the dish list), build the cell being built (or null), cleared the game's { dishId: true } map.
+  // `used` (optional, default empty) is the { cardId: true } map of stages the player has cleared a dish with. A lineage stage after the first opens only when the stage before it is used.
+  function treeState(D, build, cleared, used) {
+    var nodes = treeNodes(), by = {}, fit = fittedIds(build), out = {}, cl = cleared || {}, us = used || {};
+    nodes.forEach(function (n) { by[n.id] = n; });
+    function learned(n) {
+      if (n.learnedOn == null) return false;
+      if (cl[n.learnedOn]) return true;
+      return !!D && (D.id === n.learnedOn || (dn(D.id) > dn(n.learnedOn) && offersNode(D, n)));
+    }
+    nodes.forEach(function (n) {
+      if (fit[n.id]) { out[n.id] = { state: 'fitted', reason: '' }; return; }
+      if (n.stage > 1) {
+        var pv = n.after.length ? by[n.after[0]] : null;
+        if (pv && !us[pv.id]) { out[n.id] = { state: 'unlearned', reason: 'Clear a dish with ' + pv.name + ' fitted to evolve this.' }; return; }
+      }
+      var unmet = n.after.filter(function (a) { return by[a] && !learned(by[a]); });
+      var ln = learned(n), here = !!D && offersNode(D, n);
+      if (ln && here && !unmet.length) {
+        var miss = treeMissing(build, n.id);
+        out[n.id] = { state: 'available', reason: miss.length ? 'Needs ' + treeNeed(miss[0]) + '.' : 'Ready to fit on this dish.' };
+      } else if (ln) {
+        var why;
+        if (!D) why = 'Learned on dish ' + dn(n.learnedOn) + '.';
+        else if (!isOpen(D, n.slot)) { var op = opensOn(n.slot); why = op != null && dn(op) > dn(D.id) ? 'Opens on dish ' + dn(op) + '.' : 'The ' + slotName(n.slot) + ' slot is locked on this dish.'; }
+        else why = 'Not offered on this dish.';
+        out[n.id] = { state: 'learned', reason: why };
+      } else {
+        var r;
+        if (unmet.length) r = 'Learn ' + by[unmet[0]].name + ' first.';
+        else if (n.learnedOn == null) r = 'No dish teaches this yet.';
+        else if (D && !isOpen(D, n.slot) && dn(opensOn(n.slot)) > dn(D.id)) r = 'Opens on dish ' + dn(opensOn(n.slot)) + '.';
+        else r = 'Taught on dish ' + dn(n.learnedOn) + '.';
+        out[n.id] = { state: 'unlearned', reason: r };
+      }
+    });
+    return out;
+  }
+
   // ---------------------------------------------------------------- state
   function newState(P, D, build, opts, base) {
     var n = opts.n || 64, nn = n * n, T = runTicks(P, D), i, k;
     var s = {
       P: P, D: D, build: build, n: n, T: T, tick: 0, rng: (opts.seed || 12345) | 0, bp: params(P, D, build),
-      cap: makeCap(n), bustMap: makeBust(n),
+      cap: makeCapD(n, D), bustMap: makeBust(n), temp: D.temp ? makeTemp(n, D.temp) : null,
       N: new Float32Array(nn), R: new Float32Array(nn), F: new Float32Array(nn), WA: new Float32Array(nn), WB: new Float32Array(nn),
       Q: new Float32Array(nn), FD: new Float32Array(nn), Z: new Float32Array(nn), SP: new Float32Array(nn),   // Z: napping units, SP: spores (both are part of the colony but inactive)
       tN: new Float32Array(nn), tR: new Float32Array(nn), tF: new Float32Array(nn), tA: new Float32Array(nn), tB: new Float32Array(nn), tQ: new Float32Array(nn),
@@ -309,11 +453,17 @@ var LookAlive = (function () {
         s.N[i] = base.N[i]; s.F[i] = base.F[i]; s.WA[i] = base.WA[i]; s.WB[i] = base.WB[i]; s.FD[i] = base.F[i];
         s.R[i] = share / (1 - share) * base.N[i];
       }
+      if (opts.place && s.temp) {   // checks only: start the colony in the cool half (under 50 C) or the hot half (50 C and up), same total
+        var tot0 = 0, tot1 = 0;
+        for (i = 0; i < nn; i++) tot0 += s.R[i];
+        for (i = 0; i < nn; i++) { if (opts.place === 'cool' ? s.temp[i] >= 40 : s.temp[i] < 55) s.R[i] = 0; tot1 += s.R[i]; }
+        for (i = 0; i < nn; i++) s.R[i] *= tot1 > 0 ? tot0 / tot1 : 0;
+      }
       s.shareNow = s.sharePrev = share;
     }
     if (s.recordHistory) {
       var H = s.H = { tick: new Uint16Array(T + 1), susp: {} };
-      HK.forEach(function (key) { H[key] = new Float32Array(T + 1); });
+      hkOf(D).forEach(function (key) { H[key] = new Float32Array(T + 1); });
       CHAN.forEach(function (c) { H.susp[c] = new Float32Array(T + 1); });
       if (base) record(s);
     }
@@ -321,12 +471,14 @@ var LookAlive = (function () {
   }
   var HK = ['share', 'nativeShare', 'nat', 'rob', 'food', 'total', 'stage', 'kill', 'fires', 'lead', 'births', 'rate', 'nrate', 'qsig', 'radioMult',
     'rawG', 'rawW', 'rawC', 'rawR', 'regT', 'regM', 'regF', 'regD', 'regR', 'sloppy', 'acid', 'dorm'];
+  var HK_T = ['heat', 'graze', 'cool'];   // habitat 2 only: colony fraction lost per tick to heat and to grazers, and the colony fraction under 40 C
+  function hkOf(D) { return D && D.temp ? HK.concat(HK_T) : HK; }
 
   // The settled native-only dish, computed once per grid size and then copied.
-  function baseState(P, n) {
-    var key = n + ':' + P.settle + ':' + P.native.rate + ':' + P.foodHalf + ':' + P.regrow + ':' + P.native.crowd;
+  function baseState(P, n, DD) {
+    var key = n + ':' + P.settle + ':' + P.native.rate + ':' + P.foodHalf + ':' + P.regrow + ':' + P.native.crowd + (DD && DD.temp ? ':T' + JSON.stringify([DD.temp.hot, DD.temp.cool, DD.temp.bands]) : '');
     if (baseCache[key]) return baseCache[key];
-    var D = { allowed: null, event: { type: 'none', tick: -1 }, ticks: P.settle };
+    var D = { allowed: null, event: { type: 'none', tick: -1 }, ticks: P.settle, temp: DD && DD.temp ? { hot: DD.temp.hot, cool: DD.temp.cool, bands: DD.temp.bands, base: 0, settle: true } : null };
     var s = newState(P, D, DEFAULT_BUILD, { n: n, history: false }, null), i, nn = n * n;
     for (i = 0; i < nn; i++) { s.N[i] = 0.9 * s.cap[i]; s.F[i] = 0.35 * s.cap[i]; }
     s.settling = true;
@@ -346,6 +498,7 @@ var LookAlive = (function () {
       case 'share': return s.shareNow;
       case 'susp_growth': return s.lvl[0];
       case 'susp_waste': return s.lvl[1];
+      case 'temp': return s.temp ? s.temp[i] + (s.tOff || 0) : 0;
       case 'ttev': { var nx = evNext(s.D, s.tick); return nx < 0 ? (evList(s.D).length ? 0 : 999) : nx - s.tick; }
     }
     return 0;
@@ -382,13 +535,35 @@ var LookAlive = (function () {
     var sumZ = 0, sumSP = 0, sumN = 0, sumR = 0, bN = 0, bR = 0, bR0 = 0, cas = 0, upRt = 0, upNt = 0, killed = 0, fireMass = 0, sloppyMass = 0, qSum = 0;
     var Kh = P.foodHalf, fpb = P.foodPerBirth, mixN = Pn.mixA, wAmt = bp.wasteAmt, mixR = bp.mix;
     var baseDeath = Pr.death * bp.deathMult + bp.deathAdd + (D.abundance && !settling ? D.abundance.death || 0 : 0);
+    // habitat 2 (D.temp): heat stress and grazing per cell, the current, and the heat-direction rule actions
+    var TT = settling || !D.temp ? null : D.temp, TP = TT ? s.temp : null, tol = TT ? bp.tol : 0, hW = TT ? TT.width : 1, hDie = TT ? TT.heatDeath : 0;
+    var gMax = TT ? (TT.graze || 0) * bp.grazeKeep : 0, gTop = TT ? TT.grazeTop : 0, gRamp = TT ? TT.grazeRamp : 1, heatSum = 0, grazeSum = 0, coolSum = 0;
+    var gs = n / 16, flowK = TT ? Math.min(0.45, (TT.flow || 0) * gs * (1 - bp.grip)) : 0, hm = null;   // cells whose heat rule fires hold station against the current (see hm)
+    if (TT) { hm = s.hm || (s.hm = new Int8Array(n * n)); hm.fill(0); }
+    if (TT) s.darkLag = (s.darkLag || 0) + Pe.foodAlpha * (evl - (s.darkLag || 0));
+    var o2m = TT && TT.o2Night && (bp.metabolism === 'respiration' || bp.metabolism === 'fuelcell') ? 1 - TT.o2Night * evl : 1;   // nights are anoxic: oxygen users stall
+    // A fast-dividing cell burns its stores sooner: on night dishes the dark kills faster above the dish's reference Pace (real: slow-growing bacteria survive sudden starvation longer).
+    // A swinging dish (D.temp.swing, dishes 18 and 19): the whole water warms and cools by up to swing.amp C over swing.period ticks, and a cell also stops below (its heat tolerance - swing.span) C.
+    var SW = TT && TT.swing ? TT.swing : null, tOff = SW ? SW.amp * Math.sin(2 * Math.PI * t / SW.period) : 0, coldLo = SW ? tol - SW.span : 0;
+    if (TT) s.tOff = tOff;
+    var hurry = TT && TT.nightHurry ? 1 + TT.nightHurry * Math.max(0, bp.paceMult - (TT.hurryFrom || 1)) : 1;
     var acidD = settling ? 0 : bp.acidRate, ab = D.abundance, crowdR = Pr.crowd * (ab && !settling ? ab.crowd : 1), acidLoss = 0, abFood = ab && !settling ? ab.food || 0 : 0, abCross = ab && !settling ? ab.cross || 1 : 1;
 
     for (i = 0; i < nn; i++) {
       var nv = N[i], rv = R[i], fv = F[i];
       var phi = fv / (fv + Kh), phiR = abFood > 0 ? fv * abFood / (fv * abFood + Kh) : phi;
       var m = rbRate * mulR * radioM * (runK > 0 ? 1 + runK * (rv / s.N0) : 1), dm = 1, kmul = 1, bmul = 1, mf = moveFoodBase, ma = 0;
-      var m0 = m, bioQ = 1, spIn = 0, spOut = 0, napIn = 0, napOut = 0, zv = napP ? Z[i] : 0, sv = spore ? SP[i] : 0;   // m0: the division rate the immune system measures (biology reflexes and the quorum signal are not counted)
+      var tmul = 1, heatD = 0, grazeD = 0;
+      if (TP) {
+        var tc = SW ? TP[i] + tOff : TP[i], hx = (tc - tol) / hW;
+        if (hx > 0) { tmul = hx >= 1 ? 0 : 1 - hx; heatD = hDie * clamp(hx - 0.5, 0, 1.5); }
+        if (SW) { var cx = (coldLo - tc) / hW; if (cx > 0) { tmul *= cx >= 1 ? 0 : 1 - cx; heatD += hDie * clamp(cx - 0.5, 0, 1.5); } }
+        if (SW && heatD > 0) heatD *= (SW.dMult || 1) * (1 + (SW.hurry || 0) * Math.max(0, bp.paceMult - (SW.from || 0.93)));   // a fast divider has the thinnest protection, so a swing kills it sooner (the same rule as the dark on night dishes)
+        if (bp.coolBelow && tc < bp.coolBelow) tmul *= bp.coolMult;
+        if (gMax > 0 && tc < gTop) { grazeD = gMax * clamp((gTop - tc) / gRamp, 0, 1); coolSum += rv; }
+        m *= tmul * o2m;
+      }
+      var nfB = 0, m0 = m, bioQ = 1, spIn = 0, spOut = 0, napIn = 0, napOut = 0, zv = napP ? Z[i] : 0, sv = spore ? SP[i] : 0;   // m0: the division rate the immune system measures (biology reflexes and the quorum signal are not counted)
       if (useQ) { var qv = Q[i]; bioQ = 1 - Pq.max * qv / (qv + Pq.half); qSum += qv; }
       if (bio) {
         var lv = 0;
@@ -400,6 +575,11 @@ var LookAlive = (function () {
           var dg = s.attackEma * (1 + Pe.noise * hz(i, t, 2));
           lv = clamp((dg - bio.fx.attackAbove) / bio.fx.softness, 0, 1);
           bioQ *= 1 - lv; kmul *= 1 - bio.fx.repair * lv; dm *= 1 - lv * (1 - bio.fx.deathMult);
+        } else if (bioId === 'nightferm') {   // habitat 2: when local food falls (night), live on stored sugar: some births go on, fewer deaths
+          var nf = bio.fx, dk = (s.darkLag || 0) * (1 + Pe.noise * hz(i, t, 5));   // senses the dark itself (light, a few ticks late), not hunger
+          lv = clamp((dk - nf.darkAbove) / nf.softness, 0, 1);
+          nfB = nf.store * lv;   // births from stored sugar: no food used, added after the food limit below
+          bioQ *= 1 - lv; dm *= 1 - lv * (1 - nf.deathMult);
         } else if (spore) {
           var fs = FD[i] * (1 + Pe.noise * hz(i, t, 1)), bf = bio.fx;
           lv = clamp((bf.foodBelow - fs) / bf.softness, 0, 1);
@@ -418,6 +598,8 @@ var LookAlive = (function () {
             case 'sloppy': m0 *= rfx.sloppyBirths; sloppyMass += rv; break;
             case 'toward': mf += rfx.move; break;
             case 'away': ma = rfx.move; break;
+            case 'hotter': if (TP) { mf = rfx.heatMove; hm[i] = 1; } break;
+            case 'cooler': if (TP) { ma = rfx.heatMove; hm[i] = -1; } break;
           }
         }
       }
@@ -426,18 +608,20 @@ var LookAlive = (function () {
       var upN = bn * fpb, upR = br * fpb, tot = upN + upR;
       var sc = tot > fv ? fv / (tot + 1e-12) : 1;
       bn *= sc; br *= sc; br0 *= sc; upN *= sc; upR *= sc;
+      if (nfB > 0) { var bs = m0 * nfB * rv; br += bs; br0 += bs; }
       var casCell = nv * Pn.crowd * cross * abCross * rv;
       var deathN = nv * (Pn.death + Pn.crowd * nv) + casCell;
       if (napP) {
         napIn = rv * napP.enter; napOut = zv * napP.wake * clamp((FD[i] - napP.wakeLo) / (napP.wakeHi - napP.wakeLo), 0, 1);
       }
-      var deathR = rv * (baseDeath + crowdR * (rv + Pr.cross * crossEv * nv) + bustDeath * bustTf * bmul) * dm + rv * acidD;
+      var deathR = rv * (baseDeath + crowdR * (rv + Pr.cross * crossEv * nv) + bustDeath * bustTf * bmul * hurry) * dm + rv * acidD;
       acidLoss += rv * acidD;
+      if (TP) { deathR += rv * (heatD + grazeD); heatSum += rv * heatD; grazeSum += rv * grazeD; }
       var killCell = rv * killR * killTf * kmul;
       var nN = nv + bn - deathN; if (nN < 0) nN = 0;
       var nR = rv + br - deathR - killCell - napIn + napOut - spIn + spOut; if (nR < 0) nR = 0;
-      if (napP) { var nZ = zv + napIn - napOut - zv * (baseDeath * napP.death + acidD); Z[i] = nZ < 0 ? 0 : nZ; sumZ += Z[i]; }
-      if (spore) { SP[i] = sv + spIn - spOut; sumSP += SP[i]; }
+      if (napP) { var nZ = zv + napIn - napOut - zv * (baseDeath * napP.death + acidD + heatD + grazeD); Z[i] = nZ < 0 ? 0 : nZ; sumZ += Z[i]; }
+      if (spore) { SP[i] = sv + spIn - spOut - sv * grazeD - (SW && SW.spore ? sv * heatD * SW.spore : 0); sumSP += SP[i]; }   // SW.spore (dish 19): the swing wears spores down too   // grazers swallow spores too (habitat 2); heat does not hurt them
       var nF = fv - upN - upR + P.regrow * (cap[i] * (1 - bustD * bustMap[i]) - fv); if (nF < 0) nF = 0;
       var eR = upR * wAmt;
       WA[i] = WA[i] * (1 - P.wasteDecay) + upN * mixN + eR * mixR;
@@ -451,15 +635,21 @@ var LookAlive = (function () {
     var sloppyFrac = sumR > 1e-9 ? sloppyMass / sumR : 0;
 
     // ---- movement: some units drift to the richest (food) or emptiest (away) neighbour ----
-    if (anyMove) {
+    if (anyMove || flowK > 0) {
       var tR = s.tR, tN = s.tN, nb = [0, 0, 0, 0], xx, yy, best, bv, cv, mvf, mva;
       // tR currently holds the 'away' fractions. Compute moves into tN, then fold in.
       for (i = 0; i < nn; i++) tN[i] = 0;
       for (i = 0; i < nn; i++) {
         mvf = mv[i]; mva = tR[i];
-        if (R[i] <= 0 || (mvf <= 0 && mva <= 0)) continue;
+        if (R[i] <= 0 || (mvf <= 0 && mva <= 0 && flowK <= 0)) continue;
         xx = i % n; yy = (i - xx) / n;
         nb[0] = ((yy + n - 1) % n) * n + xx; nb[1] = ((yy + 1) % n) * n + xx; nb[2] = yy * n + (xx + n - 1) % n; nb[3] = yy * n + (xx + 1) % n;
+        if (hm && hm[i]) {   // the heat compass (a firing rule): toward the hottest (or coolest) neighbour, exact, no noise; the cell holds station against the current
+          var hd = hm[i], mvh = Math.min(0.45, (hd > 0 ? mvf : mva) * gs);
+          if (mvh > 0) { best = nb[0]; bv = TP[best]; for (k = 1; k < 4; k++) { cv = TP[nb[k]]; if (hd > 0 ? cv > bv : cv < bv) { bv = cv; best = nb[k]; } } if (hd > 0 ? bv > TP[i] : bv < TP[i]) { var qh = R[i] * mvh; tN[i] -= qh; tN[best] += qh; } }
+          continue;
+        }
+        if (flowK > 0) { var dn2 = TP[nb[2]] < TP[nb[3]] ? nb[2] : nb[3]; if (TP[dn2] < TP[i]) { var q0 = R[i] * flowK; tN[i] -= q0; tN[dn2] += q0; } }   // the current carries cells downstream, to the cooler side
         if (mvf > 0) {
           best = -1; bv = noisyMove ? FD[i] * (1 + Pe.noise * hz(i, t, 3)) * 1.02 : F[i];
           for (k = 0; k < 4; k++) {
@@ -480,7 +670,7 @@ var LookAlive = (function () {
     // ---- diffusion (periodic edges) and the delayed food reading ----
     var tmp;
     diffuse(N, s.tN, P.popDiffuse, n); tmp = s.N; s.N = s.tN; s.tN = tmp;
-    diffuse(R, s.tR, P.popDiffuse, n); tmp = s.R; s.R = s.tR; s.tR = tmp;
+    diffuse(R, s.tR, TT ? Math.min(0.9, (TT.rDiffuse != null ? TT.rDiffuse : P.popDiffuse) * gs * gs) * (1 - TT.gripDiffuse * bp.grip) : P.popDiffuse, n); tmp = s.R; s.R = s.tR; s.tR = tmp;
     diffuse(F, s.tF, P.foodDiffuse, n); tmp = s.F; s.F = s.tF; s.tF = tmp;
     diffuse(WA, s.tA, P.wasteDiffuse, n); tmp = s.WA; s.WA = s.tA; s.tA = tmp;
     diffuse(WB, s.tB, P.wasteDiffuse, n); tmp = s.WB; s.WB = s.tB; s.tB = tmp;
@@ -500,6 +690,7 @@ var LookAlive = (function () {
     s.flatRing[s.ringPos] = dShare; s.ringPos = (s.ringPos + 1) % s.flatRing.length; if (s.ringN < s.flatRing.length) s.ringN++;
     s.sloppyFrac = sloppyFrac;
     s.radioNow = radioM; s.qNow = qSum / nn;
+    if (TT) { s.heatNow = sumR > 1e-9 ? heatSum / sumR : 0; s.grazeNow = sumR > 1e-9 ? grazeSum / sumR : 0; s.coolNow = sumR > 1e-9 ? coolSum / sumR : 0; }
     s.sums = { dorm: tR2 > 0 ? tDo / tR2 : 0, N: tN2, R: tR2, F: tF2, births: bR, cas: cas, acid: sumR > 1e-9 ? acidLoss / sumR : 0, rate: sumR > 1e-9 ? bR / sumR : 0, nrate: sumN > 1e-9 ? bN / sumN : 0 };
     s.attackEma += Pe.attackAlpha * ((killR * killTf + bustDeath * bustTf) - s.attackEma);
 
@@ -570,18 +761,21 @@ var LookAlive = (function () {
     H.rawG[t] = s.raw[0]; H.rawW[t] = s.raw[1]; H.rawC[t] = s.raw[2]; H.rawR[t] = s.raw[3];
     if (s.regSrc) { H.regT[t] = s.regSrc[0]; H.regM[t] = s.regSrc[1]; H.regF[t] = s.regSrc[2]; H.regD[t] = s.regSrc[3]; H.regR[t] = s.regSrc[4]; }
     if (sm) { H.acid[t] = sm.acid; H.births[t] = sm.births / nn; H.rate[t] = s.emaBR; H.nrate[t] = sm.nrate; }
+    if (H.heat) { H.heat[t] = s.heatNow || 0; H.graze[t] = s.grazeNow || 0; H.cool[t] = s.coolNow || 0; }
     H.qsig[t] = s.qNow || 0; H.radioMult[t] = s.radioNow || 1; H.sloppy[t] = s.sloppyFrac;
   }
 
   // ---------------------------------------------------------------- snapshots
   var ARR = ['N', 'R', 'F', 'WA', 'WB', 'Q', 'FD', 'Z', 'SP'];
   var SCAL = ['tick', 'rng', 'S', 'stage', 'emaBR', 'emaBN', 'emaRho', 'attackEma', 'killNow', 'shareNow', 'sharePrev', 'ringPos', 'ringN', 'sloppyFrac', 'fireNow', 'radioNow', 'qNow'];
+  var SCAL_T = ['darkLag', 'heatNow', 'grazeNow', 'coolNow'];   // habitat 2 only
   function snapshot(s) {
     var o = { tick: s.tick, st: { fast: s.fast.slice(), slow: s.slow.slice(), raw: s.raw.slice(), lvl: s.lvl.slice(), flatRing: new Float32Array(s.flatRing),
       sums: s.sums ? JSON.parse(JSON.stringify(s.sums)) : null, regSrc: s.regSrc ? s.regSrc.slice() : null } };
     var k, nn = s.n * s.n, wa = new Float32Array(nn);
     for (k = 0; k < ARR.length; k++) o.st[ARR[k]] = new Float32Array(s[ARR[k]]);
     for (k = 0; k < SCAL.length; k++) o.st[SCAL[k]] = s[SCAL[k]];
+    if (s.temp) for (k = 0; k < SCAL_T.length; k++) o.st[SCAL_T[k]] = s[SCAL_T[k]];
     for (k = 0; k < nn; k++) wa[k] = s.WA[k] + s.WB[k];
     var rb = new Float32Array(nn); for (k = 0; k < nn; k++) rb[k] = s.R[k] + s.Z[k] + s.SP[k];
     o.robot = rb; o.native = o.st.N; o.food = o.st.F; o.waste = wa; o.quorum = o.st.Q;
@@ -590,14 +784,15 @@ var LookAlive = (function () {
   function resumeState(run, snapIndex) {
     var sn = run.snaps[snapIndex], P = run.P, D = run.dish, st = sn.st, k;
     var s = newState(P, D, run.build, { n: run.n, history: true, snapEvery: 0, seed: 1 }, null);
-    s.cap = makeCap(s.n); s.bustMap = makeBust(s.n); s.N0 = baseState(P, s.n).mean;
+    s.cap = makeCapD(s.n, D); s.bustMap = makeBust(s.n); s.N0 = baseState(P, s.n, D).mean;
     for (k = 0; k < ARR.length; k++) s[ARR[k]].set(st[ARR[k]]);
     for (k = 0; k < SCAL.length; k++) s[SCAL[k]] = st[SCAL[k]];
+    if (s.temp) for (k = 0; k < SCAL_T.length; k++) s[SCAL_T[k]] = st[SCAL_T[k]];
     s.fast = st.fast.slice(); s.slow = st.slow.slice(); s.raw = st.raw.slice(); s.lvl = st.lvl.slice(); s.flatRing = new Float32Array(st.flatRing);
     s.sums = st.sums ? JSON.parse(JSON.stringify(st.sums)) : null; s.regSrc = st.regSrc ? st.regSrc.slice() : null;
     var H = s.H, G = run.H, e = sn.tick + 1;
     H.tick.set(G.tick.subarray(0, e));
-    HK.forEach(function (key) { H[key].set(G[key].subarray(0, e)); });
+    hkOf(D).forEach(function (key) { H[key].set(G[key].subarray(0, e)); });
     CHAN.forEach(function (c) { H.susp[c].set(G.susp[c].subarray(0, e)); });
     return s;
   }
@@ -613,16 +808,19 @@ var LookAlive = (function () {
   // ---------------------------------------------------------------- public API
   function play(P, D, build, opts) {
     opts = opts || {}; build = normalize(build);
-    var s = newState(P, D, build, opts, baseState(P, opts.n || 64));
+    if (D.agents) return S3().gameRun(D, build, { P: P, bp: params(P, D, build), channels: channelsOn(D), record: opts.record !== false });   // n and snapEvery do not apply: the grid is 64 and a snapshot is every 10 ticks
+    var s = newState(P, D, build, opts, baseState(P, opts.n || 64, D));
     if (s.snapEvery) s.snaps.push(snapshot(s));
     return finish(s);
   }
   // Re-run from a snapshot to the end (used to prove determinism).
   function resume(run, snapIndex) {
+    if (run.agents) return play(run.P, run.dish, run.build, {});   // individual cells replay from the seed
     var s = resumeState(run, snapIndex);
     return finish(s);
   }
   function restore(run, snapIndex) {
+    if (run.agents) return S3().restoreSnap(run, snapIndex);
     var sn = run.snaps[snapIndex], nn = run.n * run.n;
     var wa = new Float32Array(nn), i;
     for (i = 0; i < nn; i++) wa[i] = sn.st.WA[i] / Math.max(1e-9, sn.st.WA[i] + sn.st.WB[i]);
@@ -631,6 +829,7 @@ var LookAlive = (function () {
   }
 
   function verdict(run) {
+    if (run.agents) return run.v;
     var P = run.P, D = run.dish, H = run.H, T = run.T, band = D.band, t;
     var inBand = 0, cnt = 0, maxStage = 0, exposedAt = -1, peakS = 0;
     for (t = band.warm; t <= T; t++) { cnt++; if (H.share[t] >= band.lo && H.share[t] <= band.hi) inBand++; }
@@ -649,7 +848,7 @@ var LookAlive = (function () {
   function scout(P, D, opts) {
     opts = opts || {};
     var n = opts.n || 64;
-    var s = newState(P, D, DEFAULT_BUILD, { n: n, history: true, noRobots: true }, baseState(P, n));
+    var s = newState(P, D, DEFAULT_BUILD, { n: n, history: true, noRobots: true }, baseState(P, n, D));
     s.D = D; s.bp = params(P, {}, DEFAULT_BUILD);
     while (s.tick < s.T) step(s);
     var H = s.H, T = s.T, t, pre = D.event.tick > 0 ? D.event.announce : T;
@@ -715,6 +914,14 @@ var LookAlive = (function () {
       } else res.text = 'Dissolved by tick ' + td + ': nothing in your build keeps the acid out.';
       return res;
     }
+    // Habitat 2: a colony the heat killed is cooked, not starved.
+    if (D.temp && H.heat && !v.alive && heatLossOf(H, D) >= ST.heatSafe) {
+      var tk = T; for (t = 1; t <= T; t++) if (H.rob[t] <= run.P.extinct) { tk = t; break; }
+      res.cause = 'cooked'; res.from = 1; res.to = tk; res.dominance = 1; res.card = null;
+      if (D.temp.swing) res.text = 'Stopped by tick ' + tk + ': your cell works between about ' + Math.round(bp.tol - D.temp.swing.span) + ' and ' + Math.round(bp.tol) + ' C, and the water swings further than that.';
+      else res.text = 'Cooked by tick ' + tk + ': your cell tolerates about ' + Math.round(bp.tol) + ' C, and the water here reaches ' + D.temp.hot + ' C.';
+      return res;
+    }
     var te = v.exposedAt, E = D.event, below = 0, above = 0, tf = -1;
     for (t = band.warm; t <= T; t++) { if (H.share[t] < band.lo) below++; else if (H.share[t] > band.hi) above++; }
     for (t = T; t >= band.warm; t--) { if (H.share[t] < band.lo) tf = t; else break; }
@@ -772,7 +979,7 @@ var LookAlive = (function () {
       for (var cid in cs) if (!topId || cs[cid] > cs[topId]) topId = cid;
       res.cardShare = tot > 0 ? cs[topId] / tot : 1; res.topCard = topId;
       if (res.cardShare > res.dominance) res.dominance = res.cardShare;
-      res.text = (res.takeover ? 'Took over the dish by tick ' + te : v.exposedAt > 0 ? 'Exposed at tick ' + te : 'The immune system closed in from tick ' + te) + ': ' + why + '.' +
+      res.text = (res.takeover ? 'Took over the dish by tick ' + te : v.exposedAt > 0 ? 'Exposed at tick ' + te : 'The guards closed in from tick ' + te) + ': ' + why + '.' +
         (res.takeover ? '' : ' The locals check badges, and a border line formed around your colony.');
       if (second >= 0 && tot > 0 && sums[second] / tot >= 0.25) {
         res.second = { channel: second, cause: 'exposed:' + ck[second], text: 'It was also adding to ' + ck[second] + ' suspicion (' + pct(sums[second] / tot) + ' of the total).' };
@@ -780,10 +987,12 @@ var LookAlive = (function () {
     } else if (above > below) {
       var ta = band.warm; for (t = band.warm; t <= T; t++) if (H.share[t] > band.hi) { ta = t; break; }
       var peak = 0; for (t = 0; t <= T; t++) if (H.share[t] > peak) peak = H.share[t];
-      var cu = growthCulprit(run, true);
+      var cu = growthCulprit(run, true), spore = !!bp.bio && bp.bio.id === 'sporulate' && avg(H.dorm, ta, T) >= 0.25;
+      // Sporulate: spores never die and still count in the share, so a colony that sleeps while the natives die back ends up over the band. Name it plainly.
+      if (spore) cu = { id: 'sporulate', name: 'your Sporulate reflex (spores never die, and they still count in your share)' };
       res.cause = 'overgrew'; res.from = ta; res.to = T; res.dominance = above / Math.max(1, above + below);
       res.card = cu ? cu.name : null;
-      if (D.abundance) res.text = 'Took over the dish by tick ' + ta + ': your share passed ' + passed(H, band) + ' and the guards noticed.';
+      if (D.abundance) res.text = 'Took over the dish by tick ' + ta + ': your share passed ' + passed(H, band) + (spore ? ', pushed up by ' + cu.name + ',' : '') + ' and the guards noticed.';
       else res.text = 'Over the band from tick ' + ta + ': your share reached ' + pct(peak) + ' (ceiling ' + pct(band.hi) + ')' + (cu ? ', pushed up by ' + cu.name : '') + '.';
     } else if (below > 0) {
       var evs = evList(D), which = 0;
@@ -796,11 +1005,14 @@ var LookAlive = (function () {
       if (b.reflex && b.reflex.kind === 'bio') reflexText = Cards.bio(b.reflex.id).name;
       if (inEv && E.type === 'bust') {
         res.cause = 'bust'; res.card = b.reflex ? 'reflex' : null;
-        res.text = 'Lost to the bust, tick ' + Math.max(E.tick, ts - 30) + ' to ' + Math.min(T, ts + 30) + ': when food crashed ' + (which > 0 ? 'again ' : '') + 'at tick ' + E.tick + ' your share fell below ' + pct(band.lo) + ' and ' +
+        res.text = 'Lost to the bust, tick ' + Math.max(E.tick, ts - 30) + ' to ' + Math.min(T, ts + 30) + ': when ' + (D.temp ? 'the light went ' : 'food crashed ') + (which > 0 ? 'again ' : '') + 'at tick ' + E.tick + ' your share fell below ' + pct(band.lo) + ' and ' +
           (b.reflex ? 'your ' + reflexText + ' was not enough to stop it' : 'nothing in your build reacted') + '.';
       } else if (inEv && E.type === 'bloom') {
         res.cause = 'bloom'; res.card = cl ? cl.name : null;
         res.text = 'Lost to the bloom from tick ' + ts + ': after the natives surged at tick ' + E.tick + ' your share sank below ' + pct(band.lo) + (cl ? ', slowed by ' + cl.name : '') + '.';
+      } else if (D.temp && H.graze && Math.max(grazeLossOf(H, T), grazeLossEarly(H, T, band.lo)) >= ST.grazeSafe) {
+        res.cause = 'grazed'; res.card = null;
+        res.text = 'Grazed from tick ' + ts + ': ' + pct(avg(H.cool, band.warm, T)) + ' of your colony drifted below 40 C, where the slow shadow eats it.';
       } else {
         var dead = !v.alive;
         res.cause = dead ? 'starved' : 'below'; res.card = cl ? cl.name : null;
@@ -817,20 +1029,28 @@ var LookAlive = (function () {
 
   // Which of the five stats a loss is about, and a headline that starts with the stat in plain words.
   var CAUSE_STAT = { acid: 'acid', 'exposed:growth': 'growth', 'exposed:casualties': 'growth', overgrew: 'growth', below: 'growth', starved: 'growth', band: 'growth',
-    'exposed:waste': 'smell', 'exposed:regularity': 'natural', bust: 'crash', bloom: 'crash' };
+    'exposed:waste': 'smell', 'exposed:regularity': 'natural', bust: 'crash', bloom: 'crash', cooked: 'heat', grazed: 'grazing', 'exposed:motion': 'motion' };
+  // The stat a loss is blamed on. Individual-cell dishes read the cause from sim3 (starved is a Food reach loss there, not a Growth one).
+  function causeStat(D, cause) { return D && D.agents ? S3().CAUSE_STAT[cause] || 'growth' : CAUSE_STAT[cause]; }
   function autopsy(run) {
+    if (run.agents) {
+      var D3 = run.dish, sn3 = checkedIds(D3), st3 = causeStat(D3, run.autopsy3 && run.autopsy3.cause || (run.autopsy && run.autopsy.cause));
+      if (sn3.length && sn3.indexOf(st3) < 0) st3 = sn3[0];
+      return S3().finishAutopsy(run, st3, STAT_INFO[st3].name);
+    }
     var a = autopsyBase(run);
     if (!a) return a;
-    var D = run.dish, st = CAUSE_STAT[a.cause] || 'growth', sn = checkedIds(D);
+    var D = run.dish, st = CAUSE_STAT[a.cause] || 'growth', sn = checkedIds(D), crashId = D.temp ? 'night' : 'crash';
+    if (D.temp && st === 'crash') st = 'night';   // habitat 2: the bust is the night
     if (sn.length && sn.indexOf(st) < 0) st = sn[sn.length - 1] === 'acid' || a.cause === 'starved' ? 'acid' : sn[0];
     if (a.cause === 'acid' && st === 'acid' && sn.indexOf('growth') >= 0) {   // some acid kept out, but the colony was too slow to replace what got in
       var as = stats(D, run.build).filter(function (x) { return x.id === 'acid'; })[0];
       if (as && as.state === 'safe') st = 'growth';
     }
-    if (st === 'growth' && (a.cause === 'below' || a.cause === 'starved') && sn.indexOf('crash') >= 0) {   // sitting below the band after the crash is the crash's doing
+    if (st === 'growth' && (a.cause === 'below' || a.cause === 'starved') && sn.indexOf(crashId) >= 0) {   // sitting below the band after the crash is the crash's doing
       var cs = stats(D, run.build);
-      var gs = cs.filter(function (x) { return x.id === 'growth'; })[0], cr = cs.filter(function (x) { return x.id === 'crash'; })[0];
-      if (gs && cr && gs.state === 'safe' && cr.state !== 'safe') st = 'crash';
+      var gs = cs.filter(function (x) { return x.id === 'growth'; })[0], cr = cs.filter(function (x) { return x.id === crashId; })[0];
+      if (gs && cr && gs.state === 'safe' && cr.state !== 'safe') st = crashId;
     }
     a.stat = st;
     var name = STAT_INFO[st].name, t = a.to;
@@ -840,7 +1060,10 @@ var LookAlive = (function () {
       growth: a.cause === 'acid' ? 'The acid took more than you could replace, and you died out by tick ' + t + '.' : high ? 'You took over the dish' + (a.cause === 'overgrew' ? ' by tick ' + a.from : ' and the guards noticed by tick ' + t) + '.' : 'You faded out of the band by tick ' + a.from + '.',
       smell: 'The locals smelled you by tick ' + t + '.',
       natural: 'You looked like a machine, and were caught by tick ' + t + '.',
-      crash: 'The food crash wiped you out' + (a.from ? ' (below the band from tick ' + a.from + ')' : '') + '.'
+      crash: 'The food crash wiped you out' + (a.from ? ' (below the band from tick ' + a.from + ')' : '') + '.',
+      heat: 'The heat killed the colony by tick ' + t + '.',
+      grazing: 'Grazers ate you down from tick ' + a.from + '.',
+      night: 'The night wiped you out' + (a.from ? ' (below the band from tick ' + a.from + ')' : '') + '.'
     }[st];
     var verb = st === 'smell' ? 'was too different' : st === 'growth' ? (high ? 'was too fast' : 'was too slow') : st === 'natural' ? 'was too low' : 'was too low';
     a.headline = name + ' ' + verb + '. ' + tail;
@@ -908,6 +1131,9 @@ var LookAlive = (function () {
     var out = { runaway: false, energy: { used: 0, max: D.energy }, pace: [], slop: [], cards: cards, totals: [], chips: [], channels: ch, acid: null };
     function add(src, label, chips) { chips.forEach(function (c) { out.chips.push({ source: src, text: c }); }); cards.push({ id: src, label: label, chips: chips }); }
     out.pace = [Math.abs(bp.paceMult - 1) < 0.005 ? 'Births at the native rate' : 'Births ' + sgn(bp.paceMult - 1) + ' vs natives'];
+    if (D.temp && D.temp.swing && D.temp.swing.hurry && bp.paceMult > (D.temp.swing.from || 0.93) + 0.005) out.pace.push('Fast cells fail sooner when the water swings');
+    if (D.temp && D.temp.nightHurry && bp.paceMult > (D.temp.hurryFrom || 1) + 0.005) out.pace.push('Fast cells starve sooner in the dark');
+    if (D.acidHurry && bp.paceMult > (D.acidHurryFrom || 1) + 0.005 && bp.ids.indexOf('acidproof') < 0 && D.acid > 0 && bp.acidBlock > 0) out.pace.push('In this acid a fast cell lets more in. This is a rule of our dish, not a known fact');
     // Runaway is read off a short dry run of the model itself (16 by 16), so the warning cannot disagree with what the dish then does.
     var ab = D.abundance, runaway = false;
     if (ab && ab.run) {
@@ -949,6 +1175,10 @@ var LookAlive = (function () {
       if (bp.regMachine > 0 || bp.rule) out.totals.push('Machine parts raise Regularity');
       if (bp.isDefault) out.totals.push('Factory Defaults: an unchanged build is a tell');
     }
+    if (D.temp) {
+      out.totals.push('Heat: tolerates up to ' + Math.round(bp.tol) + ' C');
+      if (D.temp.graze > 0) out.totals.push('Grazers: ' + (bp.grazeKeep < 0.5 ? 'mostly resisted' : 'eat you below 40 C'));
+    }
     return out;
   }
 
@@ -959,29 +1189,53 @@ var LookAlive = (function () {
     growth:  { id: 'growth',  name: 'Growth',         ups: 'faster', downs: 'slower' },
     smell:   { id: 'smell',   name: 'Smell',          ups: 'closer to the locals', downs: 'further from the locals' },
     natural: { id: 'natural', name: 'Naturalness',    ups: 'more natural', downs: 'less natural' },
-    crash:   { id: 'crash',   name: 'Crash survival', ups: 'better', downs: 'worse' }
+    crash:   { id: 'crash',   name: 'Crash survival', ups: 'better', downs: 'worse' },
+    heat:    { id: 'heat',    name: 'Heat tolerance', ups: 'higher', downs: 'lower' },
+    grazing: { id: 'grazing', name: 'Grazing',        ups: 'safer', downs: 'worse' },
+    night:   { id: 'night',   name: 'Night survival', ups: 'better', downs: 'worse' },
+    reach:   { id: 'reach',   name: 'Food reach',     ups: 'better', downs: 'worse' },                 // habitat 3 only
+    motion:  { id: 'motion',  name: 'Movement',       ups: 'closer to the locals', downs: 'further from the locals' },   // habitat 3 only
+    light:   { id: 'light',   name: 'Light',          ups: 'safer', downs: 'harsher' }                                   // habitat 3, dishes with light only
   };
-  var STAT_ORDER = ['acid', 'growth', 'smell', 'natural', 'crash'];
+  var STAT_ORDER = ['acid', 'growth', 'smell', 'natural', 'crash', 'heat', 'grazing', 'night', 'reach', 'light', 'motion'];
   var ST = {
     acidScale: 0.25, acidSafeLoss: 0.06,        // value = 1 - loss/0.25; safe while the colony loses under 6% a tick to the acid
     shareLo: 0.0125, shareHi: 0.6,              // growth bar: log scale of the share from 1.25% to 60%
     peakLine: 10, peakSafe: 7.5,                // smell and naturalness: value = 1 - peak/10; safe while the weighted channel peak is under 7.5 (stage 3 is at 8)
     highQ: 0.5,                                 // growth is too fast when this share quantile of ticks 30..300 is above the band ceiling
-    crashLo: 0.01, crashHi: 0.15, crashSafe: 0.04   // crash bar: log scale of the lowest share after the bust, 1% to 15%; safe from 4% (the band floor less a fifth)
+    crashLo: 0.01, crashHi: 0.15, crashSafe: 0.04,   // crash bar: log scale of the lowest share after the bust, 1% to 15%; safe from 4% (the band floor less a fifth)
+    heatScale: 0.25, heatSafe: 0.028, grazeScale: 0.06, grazeSafe: 0.015   // habitat 2: heat bar = 1 - loss/0.25 (loss: mean per tick over ticks 1..20), grazing bar = 1 - loss/0.06 (ticks 30..T)
   };
+  function csafe(D) { return D.crashSafe || ST.crashSafe; }
+  function heatLossOf(H, D) { var l = 0, t, w = D && D.temp && D.temp.swing ? D.temp.swing.period : 20; for (t = 1; t <= w; t++) l += H.heat[t] || 0; return l / w; }   // swinging dishes read one whole swing, so the cold half counts too
+  function grazeLossEarly(H, T, floor) { var l = 0, c = 0, t; for (t = 1; t <= T; t++) if ((H.share[t] || 0) < floor) { l += H.graze[t] || 0; c++; } return c ? l / c : 0; }
+  function grazeLossOf(H, T) { var l = 0, c = 0, t; for (t = 30; t <= T; t++) { l += H.graze[t] || 0; c++; } return c ? l / c : 0; }
   var fcCache = {}, fcCount = 0;
   function qtile(a, p) { var s = a.slice().sort(function (x, y) { return x - y; }); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; }
   // The forecast: a 16 by 16 run of the real simulation, and the few numbers the five stats read from it.
+  var agCache = {}, agKeys = [];
+  // Individual-cell dishes: the forecast is the real run (same seed, same simulation), kept for the last 40 builds.
+  function forecastAgent(D, build) {
+    var b = normalize(build), key = D.id + '|' + JSON.stringify(D.agents) + '|' + JSON.stringify(b);
+    if (agCache[key]) return agCache[key];
+    var f = forecastOf(play(Lv().PLANET, D, b, { record: false }), D);
+    if (agKeys.length >= 40) delete agCache[agKeys.shift()];
+    agCache[key] = f; agKeys.push(key);
+    return f;
+  }
   function forecast(D, build) {
+    if (D.agents) return forecastAgent(D, build);
     var b = normalize(build), key = D.id + '|' + JSON.stringify(b);
     if (fcCache[key]) return fcCache[key];
-    var run = play(Lv().PLANET, D, b, { n: 16 }), f = forecastOf(run, D);
+    var run = play(Lv().PLANET, D, b, { n: D.forecastN || 16 }), f = forecastOf(run, D);
     if (fcCount > 3000) { fcCache = {}; fcCount = 0; }
+    f.fc = true;   // marks the coarse forecast run: stats() may apply a dish's forecast margin to it (D.forecastLoMult), the real run never gets one
     fcCache[key] = f; fcCount++;
     return f;
   }
   // The numbers the stats read, taken from any finished run of the dish (the forecast above, or the real replay for the result grade).
   function forecastOf(run, D) {
+    if (D.agents) return S3().forecastOf(run, D, agentHelpers(D));
     var H = run.H, T = run.T, band = D.band, t, ramp = Lv().PLANET.event.ramp || 10;
     var ev = D.event && D.event.tick > 0 ? D.event.tick : 0;
     var all = [], low = [], post = [], loss = 0, lossMax = 0, gpeak = 0, mx = { waste: 0, regularity: 0 }, mn = 1, below = 0, above = 0;
@@ -993,16 +1247,22 @@ var LookAlive = (function () {
     for (t = 1; t <= 10; t++) loss += H.acid[t] || 0;
     for (t = 1; t <= T; t++) { if (H.susp.growth[t] > gpeak) gpeak = H.susp.growth[t]; if ((H.acid[t] || 0) > lossMax) lossMax = H.acid[t]; if (H.susp.waste[t] > mx.waste) mx.waste = H.susp.waste[t]; if (H.susp.regularity[t] > mx.regularity) mx.regularity = H.susp.regularity[t]; }
     if (ev) for (t = ev; t <= T; t++) if (H.share[t] < mn) mn = H.share[t];
-    return { acidLoss: loss / 10, acidLossMax: lossMax, p70: Math.max(qtile(all, ST.highQ), post.length ? qtile(post, 0.65) : 0), l70: qtile(low, ST.highQ), p30: qtile(low, 0.3), alive: run.v.alive, waste: mx.waste, reg: mx.regularity,
+    var hx = {};
+    if (H.heat) { var hm = 0; for (t = 1; t <= T; t++) if (H.heat[t] > hm) hm = H.heat[t]; hx = { heatLoss: heatLossOf(H, D), heatLossMax: hm, grazeLoss: grazeLossOf(H, T) }; }
+    return { heatLoss: hx.heatLoss || 0, heatLossMax: hx.heatLossMax || 0, grazeLoss: hx.grazeLoss || 0, acidLoss: loss / 10, acidLossMax: lossMax, p70: Math.max(qtile(all, ST.highQ), post.length ? qtile(post, 0.65) : 0), l70: qtile(low, ST.highQ), p30: qtile(low, 0.3), alive: run.v.alive, waste: mx.waste, reg: mx.regularity,
       crashMin: mn, pl30: post.length ? qtile(post, 0.3) : 1, win: run.v.win, bandFrac: run.v.bandFrac, below: below, above: above, cnt: T - band.warm + 1, gpeak: gpeak, maxStage: run.v.maxStage, hasEvent: !!ev };
   }
   function shareVal(s) { return clamp(Math.log(Math.max(s, 1e-4) / ST.shareLo) / Math.log(ST.shareHi / ST.shareLo), 0, 1); }
   function crashVal(s) { return clamp(Math.log(Math.max(s, 1e-4) / ST.crashLo) / Math.log(ST.crashHi / ST.crashLo), 0, 1); }
   function r3(x) { return Math.round(x * 1000) / 1000; }
+  function agentHelpers(D) { return { shareVal: shareVal, zone: function (id) { return [r3(shareVal(D.band.lo)), r3(shareVal(D.band.hi))]; } }; }
   function statZone(D, id) {
+    if (D.agents && id !== 'growth') return S3().zone3(id);
     if (id === 'acid') return [r3(1 - ST.acidSafeLoss / ST.acidScale), 1];
     if (id === 'growth') return [r3(shareVal(D.band.lo)), r3(shareVal(D.band.hi))];
-    if (id === 'crash') return [r3(crashVal(ST.crashSafe)), 1];
+    if (id === 'crash' || id === 'night') return [r3(crashVal(csafe(D))), 1];
+    if (id === 'heat') return [r3(1 - ST.heatSafe / ST.heatScale), 1];
+    if (id === 'grazing') return [r3(1 - ST.grazeSafe / ST.grazeScale), 1];
     return [r3(1 - (D.peakSafe || ST.peakSafe) / ST.peakLine), 1];
   }
   // Which stats a dish shows (D.stats) and which of them can lose it (D.checked, default all of D.stats).
@@ -1022,13 +1282,15 @@ var LookAlive = (function () {
     return o;
   }
   function statEval0(D, id, f) {
+    if (D.agents) { var e3 = f.agent[id]; return { id: id, name: STAT_INFO[id].name, value: e3.value, safe: e3.safe, state: e3.state, verdict: e3.verdict }; }
     var z = statZone(D, id), v, state = 'safe', verdict = 'Safe';
     if (id === 'acid') {
       v = clamp(1 - f.acidLoss / ST.acidScale, 0, 1);
       if (v < z[0]) { state = 'low'; verdict = 'Too low: you will dissolve'; }
     } else if (id === 'growth') {
       if (f.p70 > D.band.hi || (D.exam && (f.above > (1 - D.band.need) * f.cnt || f.gpeak > 4.5))) { v = shareVal(Math.max(f.p70, D.band.hi * 1.05)); state = 'high'; verdict = 'Too fast: you will take over'; }   // exam dishes: also high when above the band for over 30% of the run (a sleeping colony while the natives starve)
-      else if (f.p30 < D.band.lo || (f.crashMin >= ST.crashSafe && f.pl30 < D.band.lo)) { v = shareVal(Math.min(f.p30, f.pl30)); state = 'low'; verdict = 'Too slow: you will fade out'; }
+      // habitat 2: the coarse forecast grid reads a little high near the band floor, so the forecast (f.fc) must clear it by a margin
+      else if (f.p30 < D.band.lo * (f.fc && D.forecastLoMult || 1) || (f.crashMin >= csafe(D) && f.pl30 < D.band.lo)) { v = shareVal(Math.min(f.p30, f.pl30)); state = 'low'; verdict = 'Too slow: you will fade out'; }
       else v = shareVal(Math.sqrt(Math.max(f.p30, 1e-4) * Math.max(f.l70, 1e-4)));
     } else if (id === 'smell') {
       v = clamp(1 - f.waste / ST.peakLine, 0, 1);
@@ -1036,9 +1298,15 @@ var LookAlive = (function () {
     } else if (id === 'natural') {
       v = clamp(1 - f.reg / ST.peakLine, 0, 1);
       if (v < z[0]) { state = 'low'; verdict = 'Too perfect: you look like a machine'; }
+    } else if (id === 'heat') {
+      v = clamp(1 - f.heatLoss / ST.heatScale, 0, 1);
+      if (v < z[0]) { state = 'low'; verdict = D.temp && D.temp.swing ? 'The swing will stop you' : 'Too hot: you will cook'; }
+    } else if (id === 'grazing') {
+      v = clamp(1 - f.grazeLoss / ST.grazeScale, 0, 1);
+      if (v < z[0]) { state = 'low'; verdict = 'The grazers will eat you'; }
     } else {
       v = crashVal(f.crashMin);
-      if (v < z[0]) { state = 'low'; verdict = 'The crash will wipe you out'; }
+      if (v < z[0]) { state = 'low'; verdict = id === 'night' ? 'The night will wipe you out' : 'The crash will wipe you out'; }
     }
     return { id: id, name: STAT_INFO[id].name, value: r3(v), safe: z, state: state, verdict: verdict };
   }
@@ -1048,6 +1316,8 @@ var LookAlive = (function () {
     var f = forecast(D, build);
     return shownIds(D).map(function (id) { return statEval(D, id, f); });
   }
+  // The same stats read from a finished run (the real replay), for the result slides: what happened, not what was forecast.
+  function runStats(run) { var D = run.dish; if (!run.v) run.v = verdict(run); var f = forecastOf(run, D); return shownIds(D).map(function (id) { return statEval(D, id, f); }); }
   // A colony the acid dissolves has no meaningful Growth, Smell, Naturalness or Crash numbers (nothing is left to measure): only Acid defence counts then.
   function dissolved(D, b) { var f = forecast(D, b); return !f.alive && f.acidLoss > ST.acidSafeLoss; }
   function statDist(s) { return s.value < s.safe[0] ? s.safe[0] - s.value : s.value > s.safe[1] ? s.value - s.safe[1] : 0; }
@@ -1088,8 +1358,9 @@ var LookAlive = (function () {
   // A card already fitted (fitted: true, current: true) reports what it is doing: the cell with it against the cell without it.
   // Also: energy (the card's cost), used (energy of the build with it), fits (within the dish limit), preview (a legal preview build exists), build.
   // Old fields kept for the old page: helps and costs ({ stat, name, steps, dir +1|-1, delta }), checked stats only; `fitted` used to mean "preview exists" and now means "already fitted" (see `preview`).
-  var STAT_WORDS = { acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'],
-    natural: ['Naturalness up', 'Naturalness down'], crash: ['Crash survival up', 'Crash survival down'] };
+  var STAT_WORDS = { reach: ['Food reach better', 'Food reach worse'], motion: ['Movement more restless', 'Movement stiller'], light: ['Light safer', 'Light harsher'], acid: ['Acid defence up', 'Acid defence down'], growth: ['Growth faster', 'Growth slower'], smell: ['Smell closer', 'Smell further off'],
+    natural: ['Naturalness up', 'Naturalness down'], crash: ['Crash survival up', 'Crash survival down'],
+    heat: ['Heat tolerance up', 'Heat tolerance down'], grazing: ['Grazing safer', 'Grazing worse'], night: ['Night survival up', 'Night survival down'] };
   var STATE_RANK = { safe: 0, edge: 1, low: 2, high: 2, unchecked: 0 };
   function toneOf(x, y, dh) {
     var da = statDist(x), db = statDist(y), ra = STATE_RANK[x.state], rb = STATE_RANK[y.state];
@@ -1171,6 +1442,13 @@ var LookAlive = (function () {
   }
   // The same stats read live off a finished run at tick t (for the replay). value is null when the stat has nothing to show yet (Crash survival before the crash).
   function liveStats(run, t) {
+    if (run.dish.agents) {
+      var D3 = run.dish, hp = agentHelpers(D3);
+      return shownIds(D3).map(function (id) {
+        var e = S3().liveStat(run, D3, id, t, hp), chk = isChecked(D3, id);
+        return { id: id, name: STAT_INFO[id].name, value: e.value, safe: e.safe, state: chk ? e.state : 'unchecked', verdict: chk ? e.verdict : 'Not checked on this dish', checked: chk };
+      });
+    }
     var D = run.dish, H = run.H, ev = D.event && D.event.tick > 0 ? D.event.tick : 0, i, tt = Math.max(1, Math.min(run.T, Math.floor(t)));
     return shownIds(D).map(function (id) {
       var z = statZone(D, id), v = null, state = 'safe', verdict = 'Safe';
@@ -1184,9 +1462,15 @@ var LookAlive = (function () {
         v = clamp(1 - H.susp.waste[tt] / ST.peakLine, 0, 1); if (v < z[0]) { state = 'low'; verdict = 'They can smell you'; }
       } else if (id === 'natural') {
         v = clamp(1 - H.susp.regularity[tt] / ST.peakLine, 0, 1); if (v < z[0]) { state = 'low'; verdict = 'Too perfect: you look like a machine'; }
+      } else if (id === 'heat') {
+        var hh = 0, hc = 0; for (i = Math.max(1, tt - 2); i <= tt; i++) { hh += H.heat ? H.heat[i] || 0 : 0; hc++; }
+        v = clamp(1 - hh / hc / ST.heatScale, 0, 1); if (v < z[0]) { state = 'low'; verdict = D.temp && D.temp.swing ? 'The swing will stop you' : 'Too hot: you will cook'; }
+      } else if (id === 'grazing') {
+        var gg = 0, gc = 0; for (i = Math.max(1, tt - 2); i <= tt; i++) { gg += H.graze ? H.graze[i] || 0 : 0; gc++; }
+        v = clamp(1 - gg / gc / ST.grazeScale, 0, 1); if (v < z[0]) { state = 'low'; verdict = 'The grazers will eat you'; }
       } else {
-        if (ev && tt >= ev) { var mn = 1; for (i = ev; i <= tt; i++) if (H.share[i] < mn) mn = H.share[i]; v = crashVal(mn); if (v < z[0]) { state = 'low'; verdict = 'The crash will wipe you out'; } }
-        else verdict = 'Waiting for the crash';
+        if (ev && tt >= ev) { var mn = 1; for (i = ev; i <= tt; i++) if (H.share[i] < mn) mn = H.share[i]; v = crashVal(mn); if (v < z[0]) { state = 'low'; verdict = id === 'night' ? 'The night will wipe you out' : 'The crash will wipe you out'; } }
+        else verdict = id === 'night' ? 'Waiting for the night' : 'Waiting for the crash';
       }
       var chk = isChecked(D, id);
       if (!chk) { state = 'unchecked'; verdict = 'Not checked on this dish'; }
@@ -1204,6 +1488,7 @@ var LookAlive = (function () {
     var f = forecastOf(run, D), st = checkedIds(D).map(function (id) { return statEval(D, id, f); });
     var safe = st.every(function (x) { return x.state === 'safe'; }), edge = st.some(function (x) { return x.state === 'edge' || x.state === 'low' || x.state === 'high'; });
     if (isChecked(D, 'acid') && f.acidLossMax > ST.acidSafeLoss) safe = false;
+    if (isChecked(D, 'heat') && f.heatLossMax > ST.heatSafe) safe = false;
     var spare = D.energy - buildEnergy(normalize(build || run.build));
     var convincing = v.maxStage <= 1 && !edge && safe;
     if (v.maxStage <= 1 && !edge) convincing = true;
@@ -1228,7 +1513,7 @@ var LookAlive = (function () {
     return out;
   }
 
-  return { grade: grade, energyOf: buildEnergy, dissolved: dissolved, stats: stats, liveStats: liveStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
-    channelsOn: channelsOn, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { ST: ST, newState: newState, step: step, HK: HK } };
+  return { setDishNumber: function (fn) { dishNoFn = fn; }, grade: grade, energyOf: buildEnergy, dissolved: dissolved, stats: stats, liveStats: liveStats, runStats: runStats, statDiff: statDiff, cardEffects: cardEffects, statFixers: statFixers, diffWords: diffWords, STAT_INFO: STAT_INFO, STAT_ORDER: STAT_ORDER, CHAN: CHAN, DEFAULT_BUILD: DEFAULT_BUILD, SLOT_ORDER: SLOT_ORDER, normalize: normalize, toSlots: toSlots, fromSlots: fromSlots, fit: fit, unfit: unfit, conform: conform, offered: offered, slotState: slotState, lockedReason: lockedReason, opensOn: opensOn, treeNodes: treeNodes, treeBranches: treeBranches, lineageStage: lineageStage, treeState: treeState, treeMissing: treeMissing, diff: diff, params: params, validate: validate, play: play, verdict: verdict, scout: scout,
+    channelsOn: channelsOn, causeStat: causeStat, restore: restore, resume: resume, autopsy: autopsy, predict: predict, baseState: baseState, evLevel: evLevel, isDefault: isDefault, _internal: { ST: ST, newState: newState, step: step, HK: HK } };
 })();
 if (typeof module !== 'undefined') module.exports = LookAlive;

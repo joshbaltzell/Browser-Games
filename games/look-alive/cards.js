@@ -10,21 +10,25 @@ var LookAliveCards = (function () {
       real: 'Cells that use oxygen break sugar down completely and get far more energy from it than fermentation does.',
       game: 'High yield. Here the waste is wrong, so it raises Waste.',
       effect: 'Metabolism. Yield +20%. Waste mix differs from natives.',
+      tree: { branch: 'power', tier: 1, after: [], with: [] },
       fx: { yield: 1.20, mix: 0.2, waste: 1 } },
     { id: 'fermentation', slot: 'power', name: 'Fermentation', shelf: 'biology', kind: 'metabolism', energy: 0, counterpart: 'fuelcell',
       real: 'Lactic acid bacteria break sugar down without oxygen. Fast, low yield, and it leaves acid behind.',
       game: 'Your waste matches the sour natives. You get fewer births per meal.',
       effect: 'Metabolism. Yield -15%. Waste mix equals natives.',
+      tree: { branch: 'power', tier: 1, after: [], with: [] },
       fx: { yield: 0.85, mix: 0.7, waste: 1 } },
     { id: 'wall', slot: 'envelope', name: 'Cell wall', shelf: 'biology', kind: 'part', energy: 2, counterpart: 'repair',
       real: 'A stiff mesh around the membrane that stops the cell bursting.',
       game: 'You survive the events here better. It costs energy to build, so you divide a little slower.',
       effect: 'Toughness +2. Births -6%.',
+      tree: { branch: 'skin', tier: 2, after: [], with: [] },
       fx: { births: 0.94, tough: 2 } },
     { id: 'quorum', slot: 'signal', name: 'Head count (quorum signal)', shelf: 'biology', kind: 'part', energy: 2, counterpart: 'radio',
       real: 'Cells leak a small molecule and listen for it. Packed inside a bobtail squid, glowing Aliivibrio fischeri bacteria hear each other and all light up together.',
       game: 'Changed for the game: here the signal makes your cells slow down where they are crowded. It is slow and fades with distance.',
       effect: 'The Biology answer to overgrowth: births fall as the local signal rises. The signal lags by a few ticks and diffuses.',
+      tree: { branch: 'sense', tier: 1, after: [], with: [] },
       fx: { quorum: 1 } },
     // Random naps: a small, constant two-way flow between awake and napping. Napping cells do not eat or divide, are not hit by a food
     // crash and die at a fraction of the usual rate (death); they wake at `wake` a tick, but only when local food is back (wakeLo to wakeHi).
@@ -32,58 +36,143 @@ var LookAliveCards = (function () {
       real: 'In any colony a few cells randomly stop growing for a while. Sleepers survive what kills the rest, then wake and rebuild.',
       game: 'Some of your cells nap at random. You grow a little slower, you look natural, and the nappers ride out a food crash.',
       effect: 'Natural variance: lowers Regularity. Births -3%. A few cells nap and survive a food crash, then wake when food returns.',
+      tree: { branch: 'divide', tier: 2, after: [], with: [] },
       fx: { sigma: 0.03, births: 0.97, nap: { enter: 0.008, wake: 0.12, death: 0.6, wakeLo: 0.18, wakeHi: 0.33 } } },
     { id: 'pump', slot: 'envelope', name: 'Proton pump', shelf: 'biology', kind: 'part', energy: 2, counterpart: 'shell',
       real: 'Acid-loving archaea keep their insides near neutral by pumping acid back out. It costs a lot of energy.',
       game: 'You survive the acid. The pumping is expensive, so you divide slower.',
       effect: 'Full acid protection. Births -15%.',
+      tree: { branch: 'skin', tier: 2, after: ['lipids'], with: [] },
       fx: { births: 0.85, acid: 1 } },
     { id: 'lipids', slot: 'envelope', name: 'Tight membrane', shelf: 'biology', kind: 'part', energy: 1, counterpart: 'shell',
       real: 'Acid-loving archaea such as Picrophilus build membranes that let almost no acid through.',
       game: 'Most of the acid stays out. Cheap, and not quite enough alone in strong acid.',
       effect: 'Blocks most acid. Births -5%.',
+      tree: { branch: 'skin', tier: 1, after: [], with: [] },
       fx: { births: 0.95, acid: 0.85 } },
     { id: 'acidproof', slot: 'insides', name: 'Acid-proof insides', shelf: 'biology', kind: 'part', energy: 3, counterpart: 'shell',
       real: 'Picrophilus lives in acid as strong as battery acid. It lets its insides go acidic too, and builds every protein to cope.',
       game: 'Nothing to pump and nothing to block: the acid cannot hurt you. Rebuilding everything is expensive, so it takes the most energy.',
       effect: 'Full acid protection. No cost to births, but the highest energy cost of the acid defences.',
+      tree: { branch: 'insides', tier: 1, after: [], with: [] },
       fx: { acid: 1 } },
     { id: 'flagellum', slot: 'motor', name: 'Flagellum', shelf: 'biology', kind: 'part', energy: 2, counterpart: null,
       real: 'A spinning tail driven by a tiny motor. Bacteria run, tumble and run again, drifting toward food.',
       game: 'Your colony spreads toward food.',
       effect: 'Movement biased toward food. Births -4%.',
-      fx: { births: 0.96, moveFood: 0.06 } },
+      game3: 'In the thick water it swims. A cell runs about 20 micrometres a second, turns at random, and pays energy for every second it swims.',
+      tree: { branch: 'move', tier: 4, after: ['pili'], with: [] },
+      fx: { births: 0.96, moveFood: 0.06, grip: 0.5 } },
+
+    // ---- habitat 2 (the banded water): heat, grazing, the Motor ----
+    { id: 'chaperones', slot: 'insides', name: 'Heat-shock chaperones', shelf: 'biology', kind: 'part', energy: 2, counterpart: null, world: 2,
+      real: 'Heat unfolds proteins. Chaperones such as GroEL and DnaK catch the unfolded ones and help them fold back into shape.',
+      game: 'Your cell stands more heat. Refolding costs it a little growth.',
+      effect: 'Heat tolerance +18 C. Births -3%.',
+      tree: { branch: 'insides', tier: 4, after: ['polyamines'], with: [] },
+      fx: { heat: 18, births: 0.97 } },
+    { id: 'polyamines', slot: 'insides', name: 'Long polyamines', shelf: 'biology', kind: 'part', energy: 1, counterpart: null, world: 2,
+      real: 'Thermus thermophilus makes long, branched polyamines that hold its DNA, ribosomes and tRNA together at 80 C. Mutants that cannot make them fail above about 75 C.',
+      game: 'Cheap protection for the insides. On its own it is not enough here.',
+      effect: 'Heat tolerance +10 C. Not enough alone in hot water.',
+      tree: { branch: 'insides', tier: 3, after: [], with: [] },
+      fx: { heat: 10, births: 1.0 } },
+    { id: 'tetraether', slot: 'envelope', name: 'Tetraether membrane', shelf: 'biology', kind: 'part', energy: 2, counterpart: null, world: 2,
+      real: 'Heat-loving archaea such as Sulfolobus build a membrane from single long lipids that span it end to end, with more rings in hotter water (about 3.4 to 4.8 rings from 65 to 82 C). Bacteria do not make these.',
+      game: 'Changed for the game: your cell borrows an archaeal skin. It stays tight in hot water and costs some growth.',
+      effect: 'Heat tolerance +22 C. Births -5%.',
+      tree: { branch: 'skin', tier: 3, after: ['lipids'], with: [] },
+      fx: { heat: 22, births: 0.95 } },
+    { id: 'heatps', slot: 'power', name: 'Heat-stable photosystem', shelf: 'biology', kind: 'metabolism', energy: 1, counterpart: null, world: 2,
+      real: 'Thermostichus lineages that moved into hotter water have a more heat-stable photosystem, and it works worse when the water is cool. A real trade-off.',
+      game: 'Light gives you as much as the locals get, in hot water. In cool water you grow slower.',
+      effect: 'Power. Yield as the natives. Heat tolerance +14 C. Births -25% where the water is under 52 C.',
+      tree: { branch: 'power', tier: 3, after: [], with: [] },
+      fx: { yield: 1.0, mix: 0.7, waste: 1, heat: 14, coolBelow: 52, coolMult: 0.75 } },
+    { id: 'pili', slot: 'motor', name: 'Twitching pili', shelf: 'biology', kind: 'part', energy: 2, counterpart: null, world: 2,
+      real: 'Thermostichus moves toward light on type IV pili: thin threads it sticks to a surface and pulls back in. Cells without them cannot move.',
+      game: 'Changed for the game: here the pili hold your cells in place against the current.',
+      effect: 'Holds against the current; spreads less. Births -4%.',
+      game3: 'In the thick water it crawls. The pili pull in short jerks, a few micrometres a second, with a pause between pulls. Slow, and cheap to run.',
+      tree: { branch: 'move', tier: 3, after: [], with: [] },
+      fx: { grip: 1, births: 0.96 } },
+    { id: 'filament', slot: 'division', name: 'Filament form', shelf: 'biology', kind: 'part', energy: 1, counterpart: null, world: 2,
+      real: 'Bacteria that grow as long filaments or clumps are too big for small grazers such as flagellates to swallow, and grazing itself can push a colony to make more of them.',
+      game: 'Changed for the game: here filaments escape the slow shadow too. A real fly larva swallows anything.',
+      effect: 'Grazing -98%. Births -5%. A little less regular.',
+      tree: { branch: 'divide', tier: 3, after: [], with: [] },
+      fx: { graze: 0.98, births: 0.95, sigma: 0.01 } },
+
+    // ---- habitat 3 (the thick water): cells are individuals. fx is empty: sim3.js reads the card ids, not these numbers. `art` names the card image to borrow until the card has its own.
+    { id: 'vesicles', slot: 'motor', name: 'Gas vesicles', shelf: 'biology', kind: 'part', energy: 1, counterpart: null, world: 3, art: 'quorum',
+      real: 'Haloquadratum walsbyi makes gas-filled vesicles that let it float. A cell with them drifts in the water instead of sinking, but it cannot steer.',
+      game: 'Your cells drift a wider way through the water. They cannot steer toward food.',
+      effect: 'Motor. Wider drift. No steering. Cheap to run.',
+      tree: { branch: 'move', tier: 4, after: [], with: [] },
+      fx: {} },
+    { id: 'chemo', slot: 'signal', name: 'Chemoreceptor array', shelf: 'biology', kind: 'part', energy: 1, counterpart: null, world: 3, art: 'compass',
+      real: 'Swimming bacteria carry clusters of receptor proteins at one end. They let a cell compare what it tastes now with what it tasted a moment ago, and lengthen its runs when things are getting better.',
+      game: 'Lets a Flagellum or Twitching pili steer toward food. Without a motor it does nothing.',
+      effect: 'Signal. Steers a swimmer or a crawler toward food. A small cost to run.',
+      tree: { branch: 'sense', tier: 4, after: [], with: [] },
+      fx: {} },
+
+    // ---- the Light lineage (habitat 3, dish 17): three stages in the Skin slot, each doing what the one before did and one thing more. Only one stage fits in a cell. Card pictures are borrowed until the cards have their own.
+    { id: 'lightpump', slot: 'envelope', name: 'Light-driven pump', shelf: 'biology', kind: 'part', energy: 1, counterpart: null, world: 3,
+      real: 'Halobacterium salinarum carries bacteriorhodopsin, a purple protein in its skin. When light falls on it, it pushes protons out of the cell, and the push is energy the cell can spend without eating.',
+      game: 'Changed for the game: a cell with it gains a little energy while it sits in the useful light of a bright patch. That is small next to food. It cannot tell where the light is, and the white middle of the patch burns every cell, with the pump or without it.',
+      effect: 'Skin. A little energy in useful light. Cannot find the light.',
+      tree: { branch: 'light', tier: 1, after: [], with: [], lineage: 'light', stage: 1 },
+      fx: {} },
+    { id: 'lightsense', slot: 'envelope', name: 'Light sensing', shelf: 'biology', kind: 'part', energy: 2, counterpart: null, world: 3,
+      real: 'Halobacterium salinarum also makes sensory rhodopsins beside its pump. They make no energy. They tell the cell how bright it is, and the cell swims toward orange light.',
+      game: 'Changed for the game: a swimmer with it climbs toward light the way a Chemoreceptor array climbs toward food, and stays where there is enough. It cannot tell harmful light from useful light, so a bright patch that drifts over it burns it. Needs a Flagellum or Twitching pili to move. Does everything the Light-driven pump does. Opens when you clear a dish with the pump fitted.',
+      effect: 'Skin. Everything the pump does, and a moving cell climbs toward light and stays where it is bright enough.',
+      tree: { branch: 'light', tier: 2, after: ['lightpump'], with: [], lineage: 'light', stage: 2 },
+      fx: {} },
+    { id: 'lightcolor', slot: 'envelope', name: 'Colour sensing', shelf: 'biology', kind: 'part', energy: 3, counterpart: null, world: 3,
+      real: 'Halobacterium salinarum has two sensory rhodopsins. One sends it toward orange light. The other sends it away from blue and near-ultraviolet light, which harms cells.',
+      game: 'Changed for the game: it tells the harmful middle of a bright patch from the useful edge. A cell in the glare swims out, and its climbing toward light never goes into the glare. Needs a Flagellum or Twitching pili to swim out. Does everything Light sensing does. Opens when you clear a dish with Light sensing fitted.',
+      effect: 'Skin. Everything Light sensing does, and a moving cell senses glare and swims out of it.',
+      tree: { branch: 'light', tier: 3, after: ['lightsense'], with: [], lineage: 'light', stage: 3 },
+      fx: {} },
 
     // ---- Machine shelf (powerful, raises Regularity) ----
     { id: 'fuelcell', slot: 'power', name: 'Fuel cell', shelf: 'machine', kind: 'metabolism', energy: 1, counterpart: 'respiration',
       real: 'No cell does this. It burns sugar completely and leaves nothing.',
       game: 'Best yield. You leave no trail, and here everyone leaves a trail.',
       effect: 'Metabolism. Yield +35%. No waste: raises Waste strongly.',
+      tree: { branch: 'power', tier: 2, after: ['respiration'], with: [] },
       fx: { yield: 1.35, mix: 0.7, waste: 0, reg: 0.5 } },
     { id: 'clock', slot: 'division', name: 'Sync pulse', shelf: 'machine', kind: 'part', energy: 1, counterpart: null,
       real: 'Real cells can keep time. One cyanobacterium runs a 24-hour clock on three proteins. Each cell still divides on its own schedule.',
       game: 'Every unit divides at the same instant, the way your colony thinks as one. No wasted cycles, but dividing in unison is a tell: the locals never do.',
       effect: 'Births +15%. Regularity up.',
+      tree: { branch: 'divide', tier: 2, after: [], with: [] },
       fx: { births: 1.15, reg: 0.8 } },
     { id: 'shell', slot: 'envelope', layers: 2, name: 'Sealed shell', shelf: 'machine', kind: 'part', energy: 1, counterpart: 'pump',
       real: 'Diatoms build glass shells, full of pores so life can pass through. This one is sealed solid, which nothing alive could survive.',
       game: 'Acid cannot hurt you and it costs nothing to run. It does not look like skin.',
       effect: 'Full acid protection. Regularity up, once Regularity is switched on.',
+      tree: { branch: 'skin', tier: 3, after: ['pump'], with: [] },
       fx: { acid: 1, reg: 0.8 } },
     { id: 'radio', slot: 'signal', name: 'Radio mesh', shelf: 'machine', kind: 'part', energy: 2, counterpart: 'quorum',
       real: 'No cell has one. Every unit knows the exact head count at once.',
       game: 'Holds your share at a target. A perfectly flat line is a tell.',
       effect: 'The Machine answer to overgrowth: global feedback holds share near the band centre. Regularity up, more when the share graph is flat.',
+      tree: { branch: 'sense', tier: 2, after: ['quorum'], with: [] },
       fx: { radio: 1, reg: 0.8 } },
     { id: 'copier', slot: 'division', name: 'Perfect copier', shelf: 'machine', kind: 'part', energy: 1, counterpart: 'naps',
       real: 'No cell has one. Copies never fail.',
       game: 'Nothing ever dies, so you grow faster. Nothing ever dying looks wrong.',
       effect: 'Death rate near zero. Regularity up strongly.',
+      tree: { branch: 'divide', tier: 2, after: [], with: [] },
       fx: { deathMult: 0.1, reg: 1.6 } },
     { id: 'repair', slot: 'insides', name: 'Self-repair', shelf: 'machine', kind: 'part', energy: 2, counterpart: 'wall',
       real: 'No cell does this so well. Damaged units rebuild themselves.',
       game: 'You shrug off the events here.',
       effect: 'Toughness +4. Regularity up.',
+      tree: { branch: 'insides', tier: 2, after: [], with: [] },
       fx: { tough: 4, reg: 0.8 } }
   ];
 
@@ -94,35 +183,54 @@ var LookAliveCards = (function () {
   var bioReflexes = [
     { id: 'stringent', slot: 'reflex', name: 'Stringent response', shelf: 'biology', sentence: 'When food here is low, pause dividing.',
       real: 'Starved bacteria make an alarm molecule that shuts growth down until food returns.',
+      tree: { branch: 'react', tier: 2, after: [], with: [] },
       fx: { foodBelow: 0.375, softness: 0.12, deathMult: 0.035 } },
     // Sporulate: below `foodBelow` (smoothly, over `softness`) a fraction `rate` of the awake colony a tick becomes spores. Spores do not eat,
     // divide or die. They wake at `wakeRate` a tick, only when food is back above `wakeAbove` (smoothly), so recovery is slow.
     { id: 'sporulate', slot: 'reflex', name: 'Sporulate', shelf: 'biology', sentence: 'When food runs out, turn part of the colony into spores.',
       real: 'Starving Bacillus subtilis cells seal a copy of their DNA inside a tough spore that can survive boiling, drying and radiation for a very long time. Making one takes hours and cannot be undone.',
+      tree: { branch: 'react', tier: 3, after: ['stringent'], with: [] },
       fx: { foodBelow: 0.34, softness: 0.1, rate: 0.25, wakeAbove: 0.32, wakeRate: 0.02 } },
     { id: 'sos', slot: 'reflex', name: 'SOS response', shelf: 'biology', sentence: 'When under attack, stop dividing and repair.',
       real: 'Damage switches on repair genes and halts division until the damage is fixed.',
-      fx: { attackAbove: 0.0115, softness: 0.02, repair: 0.6, deathMult: 0.07 } }
+      tree: { branch: 'react', tier: 2, after: [], with: [] },
+      fx: { attackAbove: 0.0115, softness: 0.02, repair: 0.6, deathMult: 0.07 } },
+    { id: 'nightferm', slot: 'reflex', name: 'Night fermentation', shelf: 'biology', sentence: 'When the light goes, live on stored sugar.', world: 2,
+      real: 'At night the mat runs out of oxygen, and its cyanobacteria ferment the sugar they stored by day (glycogen) into acetate and propionate.',
+      game: 'In the dark your cell stops dividing, dies less, and makes a few daughters from stored sugar.',
+      tree: { branch: 'react', tier: 3, after: [], with: [] },
+      fx: { darkAbove: 0.2, softness: 0.3, store: 0.12, deathMult: 0.1 } }
   ];
 
   // Machine rule vocabulary. Readings are exact and instant; global and suspicion sensors are things no cell could know.
   var sensors = [
-    { id: 'food', name: 'food here', global: false, values: [0.15, 0.25, 0.35, 0.5], unit: '', note: 'Local sugar. Natives settle near 0.4.' },
+    { id: 'food', name: 'food here', global: false, values: [0.15, 0.25, 0.35, 0.5], values3: [0.005, 0.01, 0.015, 0.025, 0.04], unit: '', note: 'Local sugar. Natives settle near 0.4.' },
     { id: 'density', name: 'own density here', global: false, values: [0.05, 0.1, 0.2], unit: '', note: 'Your units per cell, against the natives\' normal of 1.' },
     { id: 'native', name: 'native density here', global: false, values: [0.6, 0.8, 1.0, 1.2], unit: '', note: 'Natives per cell, against their normal of 1.' },
     { id: 'share', name: 'own share of the dish', global: true, values: [0.05, 0.08, 0.10, 0.12, 0.15], unit: '', note: 'Global. No cell could know this.' },
-    { id: 'susp_growth', name: 'Growth suspicion', global: true, values: [0.5, 1, 2], unit: '', note: 'Global. Reads the immune system\'s mind.' },
-    { id: 'susp_waste', name: 'Waste suspicion', global: true, values: [0.5, 1, 2], unit: '', note: 'Global. Reads the immune system\'s mind.' },
-    { id: 'ttev', name: 'ticks until the event', global: true, values: [10, 25, 50], unit: 'ticks', note: 'Global. Counts down to the next event, then reads 0.' }
+    { id: 'susp_growth', name: 'Growth suspicion', global: true, values: [0.5, 1, 2], unit: '', note: 'Global. Reads the guards\' minds.' },
+    { id: 'susp_waste', name: 'Waste suspicion', global: true, values: [0.5, 1, 2], unit: '', note: 'Global. Reads the guards\' minds.' },
+    { id: 'ttev', name: 'ticks until the event', global: true, values: [10, 25, 50], unit: 'ticks', note: 'Global. Counts down to the next event, then reads 0.' },
+    { id: 'temp', name: 'temperature here', global: false, values: [40, 45, 50, 55, 60], unit: 'C', note: 'Exact local water temperature. No cell in these mats is known to steer by heat: they steer by light.' }
   ];
   var actions = [
     { id: 'pause', name: 'pause dividing', note: 'Births stop where the rule fires, and idle units die more slowly.' },
     { id: 'fast', name: 'divide faster', note: 'Births x1.5 where the rule fires, and so are deaths: more daughters, more failures. Divides unusually fast: a Growth tell.' },
     { id: 'sloppy', name: 'add sloppiness', note: 'Adds timing noise where the rule fires, but a rule that fires is itself a tell.' },
     { id: 'toward', name: 'move toward food', note: 'Some units drift to the richest neighbour cell.' },
-    { id: 'away', name: 'move away from natives', note: 'Some units drift to the emptiest neighbour cell.' }
+    { id: 'away', name: 'move away from natives', note: 'Some units drift to the emptiest neighbour cell.' },
+    { id: 'hotter', name: 'move toward heat', note: 'Some units step to the hottest neighbour cell.' },
+    { id: 'cooler', name: 'move toward cool', note: 'Some units step to the coolest neighbour cell.' }
   ];
-  var ruleFx = { pauseDeath: 0.15, fastMult: 1.5, fastDeath: 1.5, sloppyBirths: 1.0, sloppySigma: 0.015, move: 0.15 };
+  // Habitat 3 vocabulary (individual cells). Kept out of `sensors` and `actions` so nothing that loops over those lists sees them; sensor() and action() find both.
+  var sensors3 = [
+    { id: 'crowd', name: 'crowding here', global: false, values: [2, 4, 6, 8], unit: 'cells', note: 'How many cells, yours and the locals, stand in this square and the ones around it. Counted exactly.' }
+  ];
+  var actions3 = [
+    { id: 'seek', name: 'swim toward food', note: 'Swims and steers, if the cell has a motor. A cell with no motor only jitters.' },
+    { id: 'stay', name: 'stay and feed', note: 'Stops where it is and eats. Costs nothing to move, and a stopped cell does not count as moving.' }
+  ];
+  var ruleFx = { pauseDeath: 0.15, fastMult: 1.5, fastDeath: 1.5, sloppyBirths: 1.0, sloppySigma: 0.015, move: 0.15, heatMove: 0.10 };
 
   // The body slots (GAMEPLAY-V2 section 12). `where` is the place on the cell; `blurb` is the one-line job of the slot.
   var SLOTS = [
@@ -148,14 +256,14 @@ var LookAliveCards = (function () {
   function canon(id) { return ALIAS[id] || id; }
   function part(id) { return byId(parts, canon(id)); }
   function bio(id) { return byId(bioReflexes, canon(id)); }
-  function sensor(id) { return byId(sensors, id); }
-  function action(id) { return byId(actions, id); }
+  function sensor(id) { return byId(sensors, id) || byId(sensors3, id); }
+  function action(id) { return byId(actions, id) || byId(actions3, id); }
   function ruleText(r) {
     var s = sensor(r.sensor), a = action(r.action);
     return 'When ' + (s ? s.name : r.sensor) + ' is ' + (r.cmp === 'lt' ? 'less than' : 'more than') + ' ' + r.value + ', then ' + (a ? a.name : r.action) + '.';
   }
 
-  return { parts: parts, SLOTS: SLOTS, slotInfo: slotInfo, bySlot: bySlot, layersOf: layersOf, pairs: pairs, bioReflexes: bioReflexes, sensors: sensors, actions: actions, ruleFx: ruleFx,
+  return { parts: parts, SLOTS: SLOTS, slotInfo: slotInfo, bySlot: bySlot, layersOf: layersOf, pairs: pairs, bioReflexes: bioReflexes, sensors: sensors, actions: actions, sensors3: sensors3, actions3: actions3, ruleFx: ruleFx,
     canon: canon, part: part, bio: bio, sensor: sensor, action: action, ruleText: ruleText };
 })();
 if (typeof module !== 'undefined') module.exports = LookAliveCards;

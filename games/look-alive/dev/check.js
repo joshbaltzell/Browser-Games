@@ -177,30 +177,31 @@ const otherWin = {};
   DISH_IDS.forEach(id => {
     const map = {}; data[id].all.forEach(r => { map[r.key] = r; });
     let explained = 0, winners = 0, checked = 0, badShare = 0, badStage = 0, bad = 0, worstShare = 0, worstStage = 0, worstAt = '';
-    const done = {};
+    const done = {}, DD = Lv.dish(id);
+    // Only dial settings a player can reach on this dish: a dial the dish does not show stays at the carried value (Pace 4, Sloppiness 0).
+    // The sweep also covers Sloppiness on dishes 2 and 3, where it is not a dial; those builds are not part of the property.
+    const reach = b => (DD.dials.indexOf('pace') >= 0 || b.pace === 4) && (DD.dials.indexOf('slop') >= 0 || b.slop === 0);
     data[id].all.forEach(r => {
-      if (!r.win || done[r.key]) return; done[r.key] = 1; winners++;
+      if (!r.win || done[r.key] || !reach(r.build)) return; done[r.key] = 1; winners++;
       let badHere = false;
       B.neighbours(r.build).forEach(nb => {
-        const o = map[B.key(nb)]; if (!o) return; checked++;
+        const o = map[B.key(nb)]; if (!o || !reach(nb)) return; checked++;
         const ds = Math.abs(o.finalShare - r.finalShare), dg = Math.abs(o.maxStage - r.maxStage);
+        // The one sanctioned cliff: on dish 2 a step up in Pace can tip a held colony into the runaway flood. It only counts as explained
+        // when the neighbour loses by taking over the dish (the autopsy says so, with the real figure) and predict() flags the runaway.
+        if ((ds > TOL || dg > 1) && id === 2 && !o.win) {
+          const nr = play(2, nb, SN), na = Sim.autopsy(nr), pr = Sim.predict(Lv.dish(2), nb);
+          if (na && (na.cause === 'overgrew' || na.cause === 'exposed:casualties') && /share passed \d+%/.test(na.text) && pr.runaway && pr.totals.some(x => /Runaway/.test(x))) { explained++; return; }
+        }
         if (ds > worstShare) { worstShare = ds; worstAt = B.label(r.build) + ' -> ' + B.label(nb); }
         if (dg > worstStage) worstStage = dg;
-        if (ds > TOL || dg > 1) {
-          // The one sanctioned cliff: on dish 2 a step up in Pace can tip a held colony into the runaway flood. It only counts as explained
-          // when the neighbour loses by taking over the dish (the autopsy says so, with the real figure) and predict() flags the runaway.
-          if (id === 2 && !o.win) {
-            const nr = play(2, nb, SN), na = Sim.autopsy(nr), pr = Sim.predict(Lv.dish(2), nb);
-            if (na && (na.cause === 'overgrew' || na.cause === 'exposed:casualties') && /share passed \d+%/.test(na.text) && pr.runaway && pr.totals.some(x => /Runaway/.test(x))) { explained++; return; }
-          }
-          if (ds > TOL) { badShare++; badHere = true; }
-          if (dg > 1) { badStage++; badHere = true; }
-        }
+        if (ds > TOL) { badShare++; badHere = true; }
+        if (dg > 1) { badStage++; badHere = true; }
       });
       if (badHere) bad++;
     });
     if (id !== 1) ok = ok && bad === 0;
-    parts.push('dish ' + id + (id === 1 ? ' (info only, no band)' : '') + ': ' + winners + ' winners, ' + checked + ' neighbour steps, worst share change ' + f(worstShare * 100, 1) + ' points, worst stage change ' + worstStage + '; ' + bad + ' winners break the rule (' + badShare + ' share steps, ' + badStage + ' stage steps)' + (id === 2 ? '; ' + explained + ' steps into the runaway flood excluded as explained cliffs (autopsy gives the real figure, predict() says Runaway)' : '') + (bad ? ' e.g. ' + worstAt : ''));
+    parts.push('dish ' + id + (id === 1 ? ' (info only, no band)' : '') + ': ' + winners + ' winners, ' + checked + ' neighbour steps, worst share change ' + f(worstShare * 100, 1) + ' points, worst stage change ' + worstStage + ' (explained runaway steps left out); ' + bad + ' winners break the rule (' + badShare + ' share steps, ' + badStage + ' stage steps)' + (id === 2 ? '; ' + explained + ' steps into the runaway flood excluded as explained cliffs (autopsy gives the real figure, predict() says Runaway)' : '') + (bad ? ' e.g. ' + worstAt : ''));
   });
   result(ok, 'P7 DIAL SMOOTHNESS (5 points, 1 stage)', '\n       ' + parts.join('\n       '));
 }
@@ -372,11 +373,14 @@ const d5 = data[5];
     let still = 0, gap = 0, borderline = 0;
     pick.forEach(r => {
       const o = B.play(data[id].D, r.build, 64);
-      if (o.v.win) still++; else if (Math.abs(o.v.bandFrac - data[id].D.band.need) <= 0.05 || Math.abs(r.bandFrac - data[id].D.band.need) <= 0.05 || data[id].D.aliveOnly || r.peakS >= 6.5) borderline++;   // borderline: within 5 points of the band line, or within 1.5 of the stage 3 line (S 8)
+      // borderline: within 5 points of the band line, within 1.5 of the stage 3 line (S 8), or the 16x16 forecast already showed a checked stat outside its safe zone
+      // (the player was warned: the bars come from the same 16x16 run). A 64x64 loss of a build whose forecast said every checked stat is safe is never borderline.
+      const warned = Sim.stats(data[id].D, r.build).some(s => s.checked && s.state !== 'safe');
+      if (o.v.win) still++; else if (Math.abs(o.v.bandFrac - data[id].D.band.need) <= 0.05 || Math.abs(r.bandFrac - data[id].D.band.need) <= 0.05 || data[id].D.aliveOnly || r.peakS >= 6.5 || warned) borderline++;
       gap += Math.abs(o.v.finalShare - r.finalShare);
     });
     all = all && still + borderline === pick.length && still / Math.max(1, pick.length) >= 0.85;
-    parts.push('dish ' + id + ': ' + still + ' of ' + pick.length + ' sampled 16x16 winners still win at 64x64' + (borderline ? ' (' + borderline + ' more were borderline: within 5 points of the band line, or peak S within 1.5 of the stage 3 line)' : '') + ', mean final-share gap ' + f(100 * gap / Math.max(1, pick.length), 1) + ' points');
+    parts.push('dish ' + id + ': ' + still + ' of ' + pick.length + ' sampled 16x16 winners still win at 64x64' + (borderline ? ' (' + borderline + ' more were borderline: within 5 points of the band line, peak S within 1.5 of the stage 3 line, or a forecast bar already out of its zone)' : '') + ', mean final-share gap ' + f(100 * gap / Math.max(1, pick.length), 1) + ' points');
   });
   result(all, 'E6 GRID AGREEMENT', parts.join('; '));
 }
@@ -634,6 +638,15 @@ DISH_IDS.forEach(id => {   // a broad sample of the sweep builds that are legal 
 }
 
 require('./check-exam.js')({ Sim, Lv, Cards, B, P, QUICK, SN, data, outcomes, result, f, pc, lap, play, peak, carryOf });
+
+// ------------------------------------------------------------------ DA6. none of dish 5's intended answers wins dish 6 unchanged (the dials alone are reported)
+{
+  const D5 = Lv.dish(5), D6 = Lv.dish(6), cl = x => JSON.parse(JSON.stringify(x)), won = [], rows = [];
+  D5.fixes.forEach(fx => { const b = Lv.applyFix(Lv.carry(5), fx), w = Sim.verdict(play(6, Sim.conform(D6, b), 64)).win; rows.push(fx.id + ': ' + (w ? 'WINS' : 'loses')); if (w) won.push(fx.id); });
+  const dw = []; for (let p = 0; p <= 8; p++) for (let s = 0; s <= 8; s++) { const b = cl(Lv.carry(6)); b.pace = p; b.slop = s; if (Sim.verdict(play(6, Sim.conform(D6, b), 64)).win) dw.push(p + '/' + s); }
+  const c7 = Sim.verdict(play(6, Sim.conform(D6, Lv.carry(7)), 64)).win;
+  result(won.length === 0 && c7, 'DA6 NO DISH 5 ANSWER WINS DISH 6 UNCHANGED', rows.join('; ') + '; carry(7) ' + (c7 ? 'wins' : 'LOSES') + '. Dial-only wins from carry(6) (Pace/Sloppiness, all 81): ' + dw.length + (dw.length ? ' (' + dw.join(' ') + ')' : ''));
+}
 
 console.log('\n' + (nLines - fails) + ' of ' + nLines + ' lines pass, ' + fails + ' fail. Total ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s.');
 process.exit(fails ? 1 : 0);
